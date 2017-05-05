@@ -1,5 +1,6 @@
 '''
 This file should be run using the %run -i magic in ipython.
+Provides a command based user interface for IV measurements.
 '''
 
 # Reload the module
