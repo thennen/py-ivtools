@@ -5,6 +5,7 @@ import visa
 from fractions import Fraction
 from math import gcd
 import numpy as np
+import time
 
 # These are None until the instruments are connected
 ps = None
@@ -60,6 +61,12 @@ def connect_rigolawg():
         except:
             print('rigol variable is not None.  Doing nothing.')
 
+
+def connect():
+    ''' Connect all the necessary equipment '''
+    print('Attempting to connect all instruments.')
+    connect_picoscope()
+    connect_rigolawg()
 
 def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
                  trigsource='TriggerAux', triglevel=0.5):
@@ -142,18 +149,17 @@ def get_data(ch='A', raw=False):
     Wait for data and transfer it from pico memory.
     ch can be a list of channels
     TODO: if raw is True, do not convert from ADC value - this saves a lot of memory
-    return dict of arrays. TODO and metadata
+    return dict of arrays. TODO and metadata (sample rate, channel settings, time...)
     '''
+    data = dict()
     # Wait for data
     while(not ps.isReady()):
         time.sleep(0.01)
 
     if not hasattr(ch, '__iter__'):
-        data = ps.getDataV(ch)
-    else:
-        data = []
-        for c in ch:
-            data.append(ps.getDataV(c))
+        ch = [ch]
+    for c in ch:
+        data[c] = ps.getDataV(c)
 
     return data
 
