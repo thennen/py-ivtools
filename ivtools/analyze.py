@@ -299,3 +299,24 @@ def normalize(data):
     dataout['I'] = dataout['I'] / maxI
     return dataout
 
+
+def split(data):
+    ''' Split one loop into many loops '''
+    pass
+
+
+def pico_to_iv(datain):
+    ''' Convert picoscope channel data to IV structure '''
+    # TODO: A lot
+
+    # Keep all the data from picoscope
+    dataout = dotdict(datain)
+    A = datain['A']
+    B = datain['B']
+    #C = datain['C']
+    R = 5e3
+    dataout['V'] = A
+    #dataout['I'] = 1e3 * (B - C) / R
+    dataout['I'] = 1e3 * B / R
+    dataout['units'] = {'V':'V', 'I':'mA'}
+    return dataout

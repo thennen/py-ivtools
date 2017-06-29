@@ -2,6 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
+from .dotdict import dotdict
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=10000, **kwargs):
     ''' Plot an array vs another array contained in iv object '''
@@ -99,3 +100,18 @@ def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
         print('plotiv did not understand the input datatype {}'.format(dtype))
 
     return ax, line
+
+
+def plot_channels(chdata, ax=None):
+    '''
+    Plot the channel data of picoscope
+    '''
+    if ax is None:
+        fig, ax = plt.subplots()
+    # Colors match the code on the picoscope
+    colors = dict(A='Blue', B='Red', C='Green', D='Yellow')
+    channels = ['A', 'B', 'C', 'D']
+    for c in channels:
+        if c in chdata.keys():
+            ax.plot(chdata[c], color=colors[c], label=c)
+    ax.legend(title='Channel')

@@ -161,6 +161,10 @@ def get_data(ch='A', raw=False):
     for c in ch:
         data[c] = ps.getDataV(c)
 
+    data['RANGE'] = RANGE
+    data['COUPLINGS'] = COUPLINGS
+    data['ATTENUATION'] = ATTENUATION
+    data['OFFSET'] = OFFSET
     return data
 
 
@@ -191,7 +195,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1):
     return data
 
 
-def _rate_duration(vmax, vmin, rate=None, duration=None):
+def _rate_duration(vmin, vmax, rate=None, duration=None):
     '''
     Determines the duration or sweep rate of a triangle type pulse with constant sweep rate.
     Pass rate XOR duration, return (rate, duration).
@@ -215,9 +219,9 @@ def tripulse(n=1, vmax=1.0, vmin=-1.0, duration=None, rate=None):
     Trigger immediately
     '''
 
-    rate, duration = _rate_duration(rate, duration, vmax, vmin)
+    rate, duration = _rate_duration(vmin, vmax, rate, duration)
 
-    wfm = tri_wfm(vmax, vmin)
+    wfm = tri_wfm(vmin, vmax)
 
     pulse(wfm, duration, n=n)
 
@@ -234,7 +238,7 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     pulse(wfm, duration, n=n)
 
 
-def tri_wfm(vmax, vmin):
+def tri_wfm(vmin, vmax):
     '''
     Generate a triangle pulse waveform.
 
@@ -261,9 +265,9 @@ def tri_wfm(vmax, vmin):
 
     # Filling the AWG record length with probably take more time than it's worth.
     # Interpolate to a "Large enough" waveform size
-    enough = 2**16
-    x = np.linspace(0, 1, enough)
-    xp = np.linspace(0, 1, len(wfm))
-    wfm = np.interp(x, xp, wfm)
+    #enough = 2**16
+    #x = np.linspace(0, 1, enough)
+    #xp = np.linspace(0, 1, len(wfm))
+    #wfm = np.interp(x, xp, wfm)
 
     return wfm
