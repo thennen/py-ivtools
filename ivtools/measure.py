@@ -6,6 +6,7 @@ from fractions import Fraction
 from math import gcd
 import numpy as np
 import time
+from .dotdict import dotdict
 
 # These are None until the instruments are connected
 ps = None
@@ -17,6 +18,9 @@ COUPLINGS = {'A': 'DC50', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
 ATTENUATION = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
 OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
 RANGE = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
+
+COMPLIANCE_CURRENT = 0
+INPUT_OFFSET = 0
 
 def connect_picoscope():
     global ps
@@ -69,11 +73,11 @@ def connect():
     connect_rigolawg()
 
 def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
-                 trigsource='TriggerAux', triglevel=0.5):
+                 trigsource='TriggerAux', triglevel=0.5, timeout_ms=30000):
     '''
     Set up picoscope to capture from specified channel(s).
     Won't actually do it until it receives the specified trigger event.
-    I think it will trigger automatically after a timeout of 30s
+    Datasheet says it will trigger automatically after a timeout.
     ch can be a list of characters, i.e. ch=['A','B'].
     # TODO: provide a way to override the global variable channel settings
     '''
@@ -109,11 +113,11 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
                       probeAttenuation=ATTENUATION[c],
                       VOffset=OFFSET[c])
     # Set up the trigger.  Will timeout in 30s
-    ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=30000)
+    ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
     ps.runBlock()
 
 
-def pulse(waveform, duration, n=1, ch=1, trigsource='ScopeTrig'):
+def pulse(waveform, duration, n=1, ch=1):
     '''
     Generate n pulses of the input waveform on Rigol AWG.
     Trigger immediately.
@@ -123,15 +127,22 @@ def pulse(waveform, duration, n=1, ch=1, trigsource='ScopeTrig'):
     # Construct a string out of the waveform
     waveform = np.array(waveform, dtype=np.float32)
     maxamp = np.max(np.abs(waveform))
-    normwaveform = waveform/maxamp
+    if maxamp != 0:
+        normwaveform = waveform/maxamp
+    else:
+        normwaveform = waveform
     wfm_str = ','.join([str(w) for w in normwaveform])
     freq = 1 / duration
 
-    # TODO: toggling output state is slow and might not be necessary.
-    #       it might also cause some spiking that damages the device.
-    #       see if you can load a trace without leaving burst mode.
+    # To fix:
+    # toggling output state is slow, clunky, annoying, and should not be necessary.
+    # it might also cause some spiking that damages the device.
+    # Problem is that the command which loads in a volatile waveform switches rigol
+    # out of burst mode automatically.  If the output is still enabled, you will get a
+    # continuous pulse train until you can get back into burst mode.
+    #
     rigol.write(':OUTPUT:STATE OFF')
-    # This command switches out of burst mode...
+    # This command switches out of burst mode for some stupid reason
     rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
     rigol.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
     rigol.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, 2*maxamp))
@@ -144,12 +155,20 @@ def pulse(waveform, duration, n=1, ch=1, trigsource='ScopeTrig'):
     rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
 
 
+def testreload():
+    pass
+
+
 def get_data(ch='A', raw=False):
     '''
     Wait for data and transfer it from pico memory.
     ch can be a list of channels
+    This function returns a simple dict of the arrays and metadata.
+    Use pico_to_iv to convert to current, voltage, different data structure.
+
     TODO: if raw is True, do not convert from ADC value - this saves a lot of memory
     return dict of arrays. TODO and metadata (sample rate, channel settings, time...)
+
     '''
     data = dict()
     # Wait for data
@@ -256,6 +275,7 @@ def tri_wfm(vmin, vmax):
     # Doing it this other way.. Seems faster by a large factor.
     a, b = fmax.numerator, fmax.denominator
     c, d = fmin.numerator, fmin.denominator
+    # not a typo
     commond = float(b * d)
     vstep = gcd(a*d, b*c) / commond
     dv = vmax - vmin
@@ -271,3 +291,101 @@ def tri_wfm(vmin, vmax):
     #wfm = np.interp(x, xp, wfm)
 
     return wfm
+
+
+def measure_compliance():
+    '''
+    Our circuit does not yet compensate the output for different current compliance levels
+    Right now current compliance is set by a physical knob, not by the computer.  This will change.
+    The current way to measure compliance approximately is by measuring the output at zero volts input,
+    because in this case, the entire compliance current flows across the output resistor.
+
+    There is a second complication because the input is not always at zero volts, because it is not compensated fully.
+    This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
+    '''
+    global COMPLIANCE_CURRENT
+    global INPUT_OFFSET
+
+    # Put AWG in hi-Z mode (output channel off)
+    # Then current at compliance circuit input has to be ~zero
+    # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
+    ps.setChannel('A', 'DC', 50e-3, 1, 0)
+    rigol.write(':OUTPUT:STATE OFF')
+    # Immediately capture some samples on channels A and B
+    pico_capture(['A', 'B'], freq=1e6, duration=1e-1, timeout_ms=1)
+    picodata = get_data(['A', 'B'])
+    Amean = np.mean(picodata['A'])
+    Bmean = np.mean(picodata['B'])
+
+    # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
+    INPUT_OFFSET = Amean
+    print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
+
+    # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
+
+    # Circuit parameters
+    gain = 1
+    R = 2e3
+    # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
+    #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
+    ccurrent = Bmean / (R * gain)
+    COMPLIANCE_CURRENT = ccurrent
+    print('Measured compliance current: {} A'.format(ccurrent))
+
+    return (Amean, ccurrent)
+
+
+def pico_to_iv(datain):
+    ''' Convert picoscope channel data to IV structure '''
+    # TODO: A lot
+
+    # Keep all the data from picoscope
+    global COMPLIANCE_CURRENT
+    global INPUT_OFFSET
+
+    dataout = dotdict(datain)
+    A = datain['A']
+    B = datain['B']
+    #C = datain['C']
+    gain = 1
+    # Common base resistor
+    R = 2e3
+    dataout['V'] = A + OFFSET_
+    #dataout['I'] = 1e3 * (B - C) / R
+    # Current circuit has 0V output in compliance, and positive output under compliance
+    # Unless you know the compliance value, you can't get to current, because you don't know the offset
+    dataout['I'] = -1 * B / (R * gain)
+    dataout['units'] = {'V':'V', 'I':'mA'}
+    return dataout
+
+def analog_out(ch, value):
+    '''
+    I found a USB-1208HS so this is how you use it I guess.
+    Pass a digital value between 0 and 2**12 - 1
+    0 is -10V, 2**12 - 1 is 10V
+    Voltage values that don't make sense for my current set up are disallowed.
+    '''
+    # Import here because I don't want the entire module to error if you don't have mcculw installed
+    from mcculw import ul
+    from mcculw.enums import ULRange
+    from mcculw.ul import ULError
+    board_num = 0
+    ao_range = ULRange.BIP10VOLTS
+    voltage_value = ul.to_eng_units(board_num, ai_range, value)
+
+    # Just protect against doing something that doesn't make sense
+    if ch == 0 and voltage_value > 0:
+        print('I disallow voltage value {} for analog output {}'.format(voltage_value, ch))
+        return
+    elif ch == 1 and voltage_value < 0:
+        print('I disallow voltage value {} for analog output {}'.format(voltage_value, ch))
+        return
+    else:
+        print('Setting analog out {} to {} ({} V)'.format(ch, value, voltage_value))
+
+    try:
+        value = ul.a_out(board_num, channel, ai_range, value)
+    except ULError as e:
+        # Display the error
+        print("A UL error occurred. Code: " + str(e.errorcode)
+            + " Message: " + e.message)

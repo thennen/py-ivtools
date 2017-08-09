@@ -12,7 +12,7 @@ plt = pyplot
 import os
 import sys
 import time
-import ivtools
+#import ivtools
 import ivtools.measure
 import ivtools.plot
 import ivtools.io
@@ -24,12 +24,12 @@ def reload():
     # There's probably a better way to do this
     # This is why I hate modules
     import importlib
-    importlib.reload(ivtools)
+    #importlib.reload(ivtools)
     importlib.reload(ivtools.measure)
     importlib.reload(ivtools.plot)
     importlib.reload(ivtools.io)
     importlib.reload(ivtools.analyze)
-    importlib.reload(ivtools)
+    #importlib.reload(ivtools)
 
 # TODO: Don't overwrite certain variables
 
@@ -40,21 +40,35 @@ from ivtools import *
 from ivtools.measure import *
 from pylab import *
 from numpy import *
+# I am not satisfied with how these imports work..
+ps = ivtools.measure.ps
+rigol = ivtools.measure.rigol
 
-ivtools.measure.COUPLINGS = {'A': 'DC', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
+COUPLINGS = {'A': 'DC', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
 ivtools.measure.ATTENUATION = {'A': 1.0, 'B': 1, 'C': 1, 'D': 1.0}
 ivtools.measure.OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
 ivtools.measure.RANGE = {'A': 2.0, 'B': 2.0, 'C': 1.0, 'D': 1.0}
 
-# TODO: Can you get monitor size and pic figure size/location?
-# For crappy small lab monitor
-figsize = (6, 3.9)
-fig1loc = (660, 0)
-fig2loc = (660, 490)
-# For remote desktop on a big monitor
-# figsize = (6.4, 4.8)
-# fig1loc = (1265, 0)
-# fig2loc = (1265, 580)
+# Get monitor information so we can put the plots in the right spot.
+# Only works in windows ...
+import ctypes
+user32 = ctypes.windll.user32
+wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+dc = user32.GetDC(0)
+LOGPIXELSX = 88
+LOGPIXELSY = 90
+hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
+vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
+ctypes.windll.user32.ReleaseDC(0, dc)
+bordertop = 79
+borderleft = 7
+borderbottom = 28
+taskbar = 40
+figwidth = wpixels * .3
+figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+figsize = (figwidth / hdpi, figheight / vdpi)
+fig1loc = (wpixels - figwidth - 2*borderleft, 0)
+fig2loc = (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom)
 
 try:
     # Close the figs if they already exist
@@ -63,22 +77,28 @@ try:
 except:
     pass
 # Make some plot windows, put them in places
-fig1, ax1 = plt.subplots(figsize=figsize)
+fig1, ax1 = plt.subplots(figsize=figsize, dpi=hdpi)
 ax1.set_title('IV Measurements')
 ax1.set_xlabel('Voltage')
 ax1.set_ylabel('Current')
 fig1.canvas.manager.window.move(*fig1loc)
-fig2, ax2 = plt.subplots(figsize=figsize)
+fig2, ax2 = plt.subplots(figsize=figsize, dpi=hdpi)
 ax2.set_title('Picoscope Traces')
 # Would be really cool to show the signals in real time...
 ax2.set_xlabel('Data point')
 ax2.set_ylabel('Voltage [V]')
 fig2.canvas.manager.window.move(*fig2loc)
 
+def clear_plots():
+    # Clear IV loop plots
+    ax1.cla()
+    ax2.cla()
+
 # Try to connect the instruments
 # TODO: ps opens every time.  is this a problem?  how can we reuse the last connection?
 # TODO: don't override channel settings
-ivtools.measure.connect()
+#ivtools.measure.connect()
+measure.connect()
 
 # Your data gets stored in this variable
 data = np.array([], dtype=object)
