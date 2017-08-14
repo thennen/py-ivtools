@@ -2,7 +2,7 @@
 
 import matplotlib.pyplot as plt
 import numpy as np
-from .dotdict import dotdict
+from dotdict import dotdict
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=10000, **kwargs):
     ''' Plot an array vs another array contained in iv object '''

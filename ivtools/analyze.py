@@ -3,7 +3,7 @@
 from functools import wraps
 import numpy as np
 from itertools import groupby
-from .dotdict import dotdict
+from dotdict import dotdict
 
 def ivfunc(func):
     '''

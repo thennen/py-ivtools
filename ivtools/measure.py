@@ -6,7 +6,7 @@ from fractions import Fraction
 from math import gcd
 import numpy as np
 import time
-from .dotdict import dotdict
+from dotdict import dotdict
 
 # These are None until the instruments are connected
 ps = None
@@ -66,7 +66,7 @@ def connect_rigolawg():
             print('rigol variable is not None.  Doing nothing.')
 
 
-def connect():
+def connect_instruments():
     ''' Connect all the necessary equipment '''
     print('Attempting to connect all instruments.')
     connect_picoscope()
@@ -311,6 +311,7 @@ def measure_compliance():
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
     ps.setChannel('A', 'DC', 50e-3, 1, 0)
     rigol.write(':OUTPUT:STATE OFF')
+    time.sleep(.1)
     # Immediately capture some samples on channels A and B
     pico_capture(['A', 'B'], freq=1e6, duration=1e-1, timeout_ms=1)
     picodata = get_data(['A', 'B'])
@@ -332,7 +333,7 @@ def measure_compliance():
     COMPLIANCE_CURRENT = ccurrent
     print('Measured compliance current: {} A'.format(ccurrent))
 
-    return (Amean, ccurrent)
+    return (ccurrent, Amean)
 
 
 def pico_to_iv(datain):
@@ -358,7 +359,7 @@ def pico_to_iv(datain):
     dataout['units'] = {'V':'V', 'I':'mA'}
     return dataout
 
-def analog_out(ch, value):
+def analog_out(ch, dacval=None, volts=None):
     '''
     I found a USB-1208HS so this is how you use it I guess.
     Pass a digital value between 0 and 2**12 - 1
@@ -371,20 +372,26 @@ def analog_out(ch, value):
     from mcculw.ul import ULError
     board_num = 0
     ao_range = ULRange.BIP10VOLTS
-    voltage_value = ul.to_eng_units(board_num, ai_range, value)
+
+    # Can pass dacval or volts.  Prefer dacval.
+    if dacval is None:
+        # Better have passed volts...
+        dacval = ul.from_eng_units(board_num, ao_range, volts)
+    else:
+        volts = ul.to_eng_units(board_num, ao_range, dacval)
 
     # Just protect against doing something that doesn't make sense
-    if ch == 0 and voltage_value > 0:
-        print('I disallow voltage value {} for analog output {}'.format(voltage_value, ch))
+    if ch == 0 and volts > 0:
+        print('I disallow voltage value {} for analog output {}'.format(volts, ch))
         return
-    elif ch == 1 and voltage_value < 0:
-        print('I disallow voltage value {} for analog output {}'.format(voltage_value, ch))
+    elif ch == 1 and volts < 0:
+        print('I disallow voltage value {} for analog output {}'.format(volts, ch))
         return
     else:
-        print('Setting analog out {} to {} ({} V)'.format(ch, value, voltage_value))
+        print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
 
     try:
-        value = ul.a_out(board_num, channel, ai_range, value)
+        ul.a_out(board_num, ch, ao_range, dacval)
     except ULError as e:
         # Display the error
         print("A UL error occurred. Code: " + str(e.errorcode)

@@ -1,6 +1,6 @@
 """ Functions for saving and loading data """
 # TODO: def read_txt, and make read_txts call it repeatedly
-from . import dotdict
+from dotdict import dotdict
 import os
 import re
 import fnmatch
@@ -12,15 +12,16 @@ try:
 except:
    import pickle
 
-# Current datatype uses a small subclass of dict "dotdict"
-# This class lives in ivtools, and is not installed to normal package directory
-# Need to do this fancy thing so that pickle recognizes it
-sys.modules['dotdict'] = dotdict
-# It's better, though, to just convert all the dotdicts back to normal dicts so that
-# loading the data does not depend on having this module at all.
 
 def read_pickle(fp):
     ''' Read data from a pickle file '''
+    import dotdict
+    # Current datatype uses a small subclass of dict "dotdict"
+    # This class lives in ivtools, and is not installed to normal package directory
+    # Need to do this fancy thing so that pickle recognizes it
+    sys.modules['dotdict'] = dotdict
+    # It's better, though, to just convert all the dotdicts back to normal dicts so that
+    # loading the data does not depend on having this module at all.
     with open(fp, 'rb') as f:
         normaldict = pickle.load(f)
     # Convert all the normal dicts to dotdicts
