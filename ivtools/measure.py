@@ -293,6 +293,14 @@ def tri_wfm(vmin, vmax):
     return wfm
 
 
+def set_compliance():
+    '''
+    Use two analog outputs to set the compliance current and compensate input offset.
+    Right now we use static lookup tables for compliance and compensation values.
+    '''
+    analog_out(0, dacval=None)
+
+
 def measure_compliance():
     '''
     Our circuit does not yet compensate the output for different current compliance levels
@@ -313,7 +321,7 @@ def measure_compliance():
     rigol.write(':OUTPUT:STATE OFF')
     time.sleep(.1)
     # Immediately capture some samples on channels A and B
-    pico_capture(['A', 'B'], freq=1e6, duration=1e-1, timeout_ms=1)
+    pico_capture(['A', 'B'], freq=1e5, duration=5e-1, timeout_ms=1)
     picodata = get_data(['A', 'B'])
     Amean = np.mean(picodata['A'])
     Bmean = np.mean(picodata['B'])

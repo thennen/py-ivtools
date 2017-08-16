@@ -132,8 +132,8 @@ def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
     # liveplotter does this already
     #d = getdata()
 
-def getdata(history=True):
-    # Get keithley data arrays as strings, and convert them to arrays..
+def getdata(history=true):
+    # get keithley data arrays as strings, and convert them to arrays..
     # return dataarrays, metadict
     global dhistory
     metadict = {}
@@ -142,7 +142,6 @@ def getdata(history=True):
         readingstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.readings)'.format(numpts))
         sourcevalstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.sourcevalues)'.format(numpts))
         timestampstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.timestamps)'.format(numpts))
-
         # Dataframe version.  Let's keep it simple instead.
         #out = pd.DataFrame({'t':np.float16(readingstr.split(', ')),
         #                    'V':np.float32(sourcevalstr.split(', ')),
@@ -162,6 +161,7 @@ def getdata(history=True):
         #return pd.DataFrame({'t':[], 'V':[], 'I':[]}), {}
         empty = np.array([])
         out = dict(t=empty, V=empty, I=empty)
+
     if history:
         dhistory.append(out)
     return out
