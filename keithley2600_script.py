@@ -21,7 +21,7 @@ from matplotlib import pyplot as plt
 import ctypes
 from collections import deque
 import warnings
-# Stop a certain warning from showing up
+# Stop a certain matplotlib warning from showing up
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
 import time
 from shutil import copyfile
@@ -75,12 +75,15 @@ Keithley_func = '''
                     --smua.measure.delay		= smua.DELAY_AUTO
                     smua.measure.delay = delay
                     smua.measure.rangei = rangeI
+                    --smua.measure.rangev = 0
 
                     -- Prepare the Reading Buffers
                     smua.nvbuffer1.clear()
                     smua.nvbuffer1.collecttimestamps	= 1
+                    --smua.nvbuffer1.collectsourcevalues  = 1
                     smua.nvbuffer2.clear()
                     smua.nvbuffer2.collecttimestamps	= 1
+                    smua.nvbuffer2.collectsourcevalues  = 1
 
                     -- Configure SMU Trigger Model for Sweep
                     smua.trigger.source.listv(sweepList)
@@ -115,8 +118,9 @@ def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
     l = len(vlist)
     k.write('loadandrunscript')
     k.write('sweeplist = {')
-    for i in range(0, l, 100):
-        chunk = ','.join(['{:.3f}'.format(v) for v in vlist[i:i+100]])
+    chunksize = 50
+    for i in range(0, l, chunksize):
+        chunk = ','.join(['{:.6e}'.format(v) for v in vlist[i:i+chunksize]])
         k.write(chunk)
         k.write(',')
     k.write('}')
@@ -139,8 +143,9 @@ def getdata(history=True):
     metadict = {}
     numpts = int(float(k.ask('print(smua.nvbuffer1.n)')))
     if numpts > 0:
-        readingstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.readings)'.format(numpts))
-        sourcevalstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.sourcevalues)'.format(numpts))
+        Ireadingstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.readings)'.format(numpts))
+        Vreadingstr = k.ask('printbuffer(1, {}, smua.nvbuffer2.readings)'.format(numpts))
+        Vsourcevalstr = k.ask('printbuffer(1, {}, smua.nvbuffer2.sourcevalues)'.format(numpts))
         timestampstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.timestamps)'.format(numpts))
 
         # Dataframe version.  Let's keep it simple instead.
@@ -154,10 +159,18 @@ def getdata(history=True):
         #return out, metadict
 
         # Dict version.  Downside is you can't use dot notation anymore..
-        out = {'t':np.float16(readingstr.split(', ')),
-               'V':np.float32(sourcevalstr.split(', ')),
-               'I':np.float32(readingstr.split(', '))}
+        t = np.float16(timestampstr.split(', '))
+        V = np.float32(Vsourcevalstr.split(', '))
+        I = np.float32(Ireadingstr.split(', '))
+        Vmeasured = np.float32(Vreadingstr.split(', '))
+        mask = I != 9.90999953e+37
+        out = {'t':t[mask],
+               'V':V[mask],
+               'I':I[mask],
+               'Vmeasured':Vmeasured[mask]}
         out['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
+        # This just reads the last value of compliance used.  Could be a situation where it doesn't apply to the data?
+        out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
     else:
         #return pd.DataFrame({'t':[], 'V':[], 'I':[]}), {}
         empty = np.array([])
@@ -206,10 +219,28 @@ def keithley_error():
 # We append metadata to the IV data -- devicemeta + staticmeta + ivarrays
 
 # Data you care about
-data = []
+try:
+    data
+except:
+    print('Defining data = []')
+    data = []
+else:
+    answer = input('\'data\' variable already defined.  Clobber it? ')
+    if answer.lower() == 'y':
+        print('Defining data = []')
+        data = []
 
 # Data you forgot to save (only 10 of them)
-dhistory = deque(maxlen=10)
+try:
+    dhistory
+except:
+    print('Defining dhistory = deque(maxlen=10)')
+    dhistory = deque(maxlen=10)
+else:
+    answer = input('\'dhistory\' variable already defined.  Clobber it? ')
+    if answer.lower() == 'y':
+        print('Defining dhistory = deque(maxlen=10)')
+        data = []
 
 # The data index you are currently on
 meta_i = -1
@@ -227,19 +258,28 @@ devicemetalist = {'device_number':n for n in range(100)}
 prettykeys = None
 
 # Example of setting meta list
-wafer_df = pd.read_pickle(r"X:\emrl\Pool\Projekte\HGST-CERAM\Lassen_Test_Vehicle\all_lassen_device_info.pickle")
+wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
 # Select the samples you want to measure
 meta_df = wafer_df
-coupons = [2, 3]
+#### Filter devices to be measured #####
+coupons = [11, 23]
+modules = ['001G', '001H', '014I', '014E']
+devices001 = [2,3,4,5,6,7,8]
+devices014 = [4,5,6,7,8,9]
+dies = [37, 64]
+#########
 meta_df = meta_df[meta_df.coupon.isin(coupons)]
-modules = ['001G', '001E']
 meta_df = meta_df[meta_df.module.isin(modules)]
+meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
+meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
+meta_df = meta_df[meta_df.die.isin(dies)]
 # Merge with deposition data
-deposition_df = pd.read_excel('X:\emrl\Pool\Projekte\HGST-CERAM\CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
 merge_deposition_data_on = ['coupon']
 meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_on)
+meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
 devicemetalist = meta_df
-prettykeys = ['coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
 
 # Because who wants to type?
 class autocaller():
@@ -249,43 +289,58 @@ class autocaller():
         self.function()
         return 'autocalled ' + self.function.__name__
 
-def prettyprint_meta():
+def prettyprint_meta(hlkeys=None):
     # Print some information about the device
+    global prettykeys
     if prettykeys is None:
-        for k, v in devicemeta.items():
-            print('{:<12}\t\t{}'.format(k[:12], v))
-    else:
-        for key in prettykeys:
-            if key in devicemeta.keys():
-                print('{:<12}\t\t{}'.format(key[:12], devicemeta[key]))
+        # Print all the information
+        prettykeys = devicemeta.keys()
+    for key in prettykeys:
+        if key in devicemeta.keys():
+            if hlkeys is not None and key in hlkeys:
+                print('{:<18}\t{:<8} <----- Changed'.format(key[:18], devicemeta[key]))
+            else:
+                print('{:<18}\t{}'.format(key[:18], devicemeta[key]))
 
 pp = autocaller(prettyprint_meta)
 
 def nextsample():
     ''' Go to the next device '''
     global meta_i, devicemeta
+    lastdevicemeta = devicemeta
     meta_i += 1
     if type(devicemetalist) == pd.DataFrame:
         devicemeta = devicemetalist.iloc[meta_i]
     else:
         devicemeta = devicemetalist[meta_i]
+    # Highlight keys that have changed
+    hlkeys = []
+    for key in devicemeta.keys():
+        if key not in lastdevicemeta.keys() or devicemeta[key] != lastdevicemeta[key]:
+            hlkeys.append(key)
     print('You are now measuring this device (index {} of devicemetalist):'.format(meta_i))
     # Print some information about the device
-    prettyprint_meta()
+    prettyprint_meta(hlkeys)
 
 n = autocaller(nextsample)
 
 def previoussample():
     ''' Go to the previous device '''
     global meta_i, devicemeta
+    lastdevicemeta = devicemeta
     meta_i -= 1
     if type(devicemetalist) == pd.DataFrame:
         devicemeta = devicemetalist.iloc[meta_i]
     else:
         devicemeta = devicemetalist[meta_i]
+    # Highlight keys that have changed
+    hlkeys = []
+    for key in devicemeta.keys():
+        if key not in lastdevicemeta.keys() or devicemeta[key] != lastdevicemeta[key]:
+            hlkeys.append(key)
     print('You are now measuring this device (index {} of devicemetalist):'.format(meta_i))
     # Print some information about the device
-    prettyprint_meta()
+    prettyprint_meta(hlkeys)
 
 p = autocaller(previoussample)
 
@@ -306,6 +361,7 @@ def savedata(filename=None):
         filename = time.strftime('%Y-%m-%d_%H%M%S') + '_loop.s'
     datasubfolder = os.path.join(datafolder, subfolder)
     filepath = os.path.join(datafolder, subfolder, filename)
+    d['datafilepath'] = filepath
     if not os.path.isdir(datasubfolder):
         os.makedirs(datasubfolder)
     print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
@@ -322,19 +378,27 @@ def savedatalist(filename=None):
         filename = '{}_keithley_loops.df'.format(datestr)
     filepath = os.path.join(datafolder, subfolder, filename)
     print('Writing {}'.format(filepath))
-    pd.DataFrame(data).to_pickle(filepath)
+    df = pd.DataFrame(data)
+    df.to_pickle(filepath)
+    # Take out known arrays and export xls
+    xlspath = os.path.splitext(filepath)[0] + '.xls'
+    df.loc[:, ~df.columns.isin(['I', 'V', 't', 'Vmeasured'])].to_excel(xlspath)
+    
 
 ### Functions that actually tell Keithley to do something
 
-def autoresistance():
+def testshort():
     ''' Do some measurement '''
     # Keep increasing voltage amplitude and feed back on the resistance
-    set_compliance(ic)
-    sweeplist(triangle(2, -1, 80))
-    waitforkeithley()
-    plot(d['V'], d['I'], '.-')
-    # Do a live plot while doing this
-    # Only keep the last one, or keep the others somewhere?
+    iv(triangle(.01, -.01, 80), Irange=1e-2, Ilimit=1e-3)
+    R = Rfitplotter()
+    print('Resistance: {}'.format(R))
+    d['note'] = 'Short?'
+    return R
+
+def chooserange(Restimate):
+    ''' Choose a range once you have an estimate of the resistance'''
+    return Irange, Ilimit
 
 def calculate_resistance():
     # This belongs in the analyze.py file
@@ -381,7 +445,7 @@ def Rfitplotter(ax=None, **kwargs):
     ax.plot(fitv, 1e6 * fiti, **plotkwargs)
     return R
 
-def complianceplotter(ax=ax1, **kwargs):
+def complianceplotter(ax=None, **kwargs):
     # Plot a dotted line indicating compliance current
     pass
 
@@ -389,17 +453,27 @@ def plotter2(ax=None, **kwargs):
     if ax is None:
         ax = ax2
     ''' This defines what gets plotted on ax2'''
-    ax.plot(d['V'], '.-', **kwargs)
+    ax.plot(d['t'], d['V'], '.-', **kwargs)
     color = ax.lines[-1].get_color()
     ax.set_ylabel('Voltage [V]', color=color)
-    ax.set_xlabel('Data Point #')
+    ax.set_xlabel('Time [S]')
 
 def plotter3(ax=None, **kwargs):
     if ax is None:
         ax = ax3
-    ax.plot(d['I'], '.-', **kwargs)
+    ax.plot(d['t'], 1e6 * d['I'], '.-', **kwargs)
     color = ax.lines[-1].get_color()
     ax.set_ylabel('Current [$\mu$A]', color=color)
+
+def VoverIplotter(ax=None, **kwargs):
+    ''' Plot V/I vs V, like GPIB control program'''
+    if ax is None:
+        ax = ax2
+    ax.plot(d['V'], d['V'] / d['I'], '.-', **kwargs)
+    color = ax.lines[-1].get_color()
+    ax.set_xlabel('Data Point #')
+    ax.set_ylabel('Current [$\mu$A]', color=color)
+
 
 def updateplots(**kwargs):
     ''' Draw the standard plots for whatever data is in the d variable'''
@@ -459,6 +533,7 @@ def make_figs():
     global fig1, fig2, fig3, ax1, ax2, ax3
     user32 = ctypes.windll.user32
     wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    #aspect = hpixels / wpixels
     dc = user32.GetDC(0)
     LOGPIXELSX = 88
     LOGPIXELSY = 90
@@ -469,8 +544,10 @@ def make_figs():
     borderleft = 7
     borderbottom = 28
     taskbar = 40
-    figwidth = wpixels * .3
+    #figwidth = wpixels * .3
+    #figwidth = 500
     figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+    figwidth = figheight * 1.3
     figsize = (figwidth / hdpi, figheight / vdpi)
     fig1loc = (wpixels - figwidth - 2*borderleft, 0)
     fig2loc = (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom)
@@ -511,7 +588,7 @@ def clear_plots():
 # Make the figures and define which plotters are responsible for which axis
 # Might be able to get away with multiple plotters per axis
 make_figs()
-# Maybe could do it like this.  Too ugly.
+# Maybe could do it like this.  Too ugly.  only want to have to change one variable
 #plotters = {'iv':plotter1, 'channelsv':plotter2, 'channelsi':plotter3, 'fitline':Rfitplotter}
 #axes = {'iv':ax1, 'channelsv':ax2, 'channelsi':ax3, 'fitline':ax1}
 plotters = {ax1:plotter1, ax2:plotter2, ax3:plotter3}
