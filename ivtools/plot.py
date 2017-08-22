@@ -111,7 +111,13 @@ def plot_channels(chdata, ax=None):
     # Colors match the code on the picoscope
     colors = dict(A='Blue', B='Red', C='Green', D='Yellow')
     channels = ['A', 'B', 'C', 'D']
+    # Remove the previous range indicators
+    ax.collections = []
     for c in channels:
         if c in chdata.keys():
             ax.plot(chdata[c], color=colors[c], label=c)
+            # lightly indicate the channel range
+            choffset = chdata['OFFSET'][c]
+            chrange = chdata['RANGE'][c]
+            ax.fill_between((0, len(chdata[c])), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
     ax.legend(title='Channel')

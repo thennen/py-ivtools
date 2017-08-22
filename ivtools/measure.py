@@ -167,7 +167,7 @@ def get_data(ch='A', raw=False):
     Use pico_to_iv to convert to current, voltage, different data structure.
 
     TODO: if raw is True, do not convert from ADC value - this saves a lot of memory
-    return dict of arrays. TODO and metadata (sample rate, channel settings, time...)
+    return dict of arrays and metadata (sample rate, channel settings, time...)
 
     '''
     data = dict()
@@ -180,6 +180,8 @@ def get_data(ch='A', raw=False):
     for c in ch:
         data[c] = ps.getDataV(c)
 
+    # Careful about this ..  Just reading the state of the globals and assuming they haven't changed
+    # since the measurement.  This will mess you up one day
     data['RANGE'] = RANGE
     data['COUPLINGS'] = COUPLINGS
     data['ATTENUATION'] = ATTENUATION
@@ -293,12 +295,63 @@ def tri_wfm(vmin, vmax):
     return wfm
 
 
-def set_compliance():
+def set_compliance(cc_value):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
     Right now we use static lookup tables for compliance and compensation values.
     '''
-    analog_out(0, dacval=None)
+    global COMPLIANCE_CURRENT, INPUT_OFFSET
+    fn = 'compliance_calibration.pkl'
+    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+    with open(fn, 'rb') as f:
+        cc = pickle.load(f)
+    DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
+    print(DAC0)
+    DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
+    print(DAC1)
+    analog_out(0, dacval=DAC0)
+    analog_out(1, volts=DAC1)
+    COMPLIANCE_CURRENT = cc_value
+    INPUT_OFFSET = 0
+
+def calibrate_compliance(iterations=3):
+    '''
+    Set and measure some compliance values throughout the range, and save a calibration look up table
+    Need picoscope channel B connected to circuit output
+    and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
+    This takes some time..
+    '''
+    # Measure compliance currents and input offsets with static Vb
+    fig1, ax1 = plt.subplots()
+    fig2, ax2 = plt.subplots()
+    ccurrent_list = []
+    offsets_list = []
+    dacvals = range(0, 2**11, 40)
+    for it in range(iterations):
+        ccurrent = []
+        offsets = []
+        if len(offsets_list) == 0:
+            compensations = .55 /0.088 * np.ones(len(dacvals))
+        else:
+            compensations -= np.array(offsets_list[-1]) / .088
+        for v,cv in zip(dacvals, compensations):
+            analog_out(1, volts=cv)
+            analog_out(0, v)
+            time.sleep(.1)
+            cc, offs = measure_compliance()
+            ccurrent.append(cc)
+            offsets.append(offs)
+        ccurrent_list.append(ccurrent)
+        offsets_list.append(offsets)
+        ax1.plot(dacvals, ccurrent, '.-')
+        ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
+        ax2.legend()
+        plt.pause(.1)
+    output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
+              'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
+    with open('compliance_calibration.pkl', 'wb') as f:
+        pickle.dump(output, f)
+    return compensations
 
 
 def measure_compliance():
@@ -321,7 +374,7 @@ def measure_compliance():
     rigol.write(':OUTPUT:STATE OFF')
     time.sleep(.1)
     # Immediately capture some samples on channels A and B
-    pico_capture(['A', 'B'], freq=1e5, duration=5e-1, timeout_ms=1)
+    pico_capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1)
     picodata = get_data(['A', 'B'])
     Amean = np.mean(picodata['A'])
     Bmean = np.mean(picodata['B'])
@@ -345,10 +398,10 @@ def measure_compliance():
 
 
 def pico_to_iv(datain):
-    ''' Convert picoscope channel data to IV structure '''
-    # TODO: A lot
+    ''' Convert picoscope channel data to IV dict'''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
 
-    # Keep all the data from picoscope
     global COMPLIANCE_CURRENT
     global INPUT_OFFSET
 
@@ -359,12 +412,18 @@ def pico_to_iv(datain):
     gain = 1
     # Common base resistor
     R = 2e3
-    dataout['V'] = A + OFFSET_
+    dataout['V'] = A - INPUT_OFFSET
+    dataout['V_formula'] = 'CHA - INPUT_OFFSET'
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    dataout['I'] = -1 * B / (R * gain)
-    dataout['units'] = {'V':'V', 'I':'mA'}
+    dataout['I'] = -1 * B / (R * gain) + COMPLIANCE_CURRENT
+    dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    dataout['units'] = {'V':'V', 'I':'A'}
+    # parameters for conversion
+    dataout['Rout_conv'] = R
+    dataout['CC_conv'] = COMPLIANCE_CURRENT
+    dataout['gain_conv'] = gain
     return dataout
 
 def analog_out(ch, dacval=None, volts=None):
