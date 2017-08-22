@@ -12,6 +12,10 @@ plt = pyplot
 import os
 import sys
 import time
+import pandas as pd
+import warnings
+# Stop a certain matplotlib warning from showing up
+warnings.filterwarnings("ignore",".*GUI is implemented.*")
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 %matplotlib
@@ -19,11 +23,6 @@ import time
 %run -i ivtools/plot.py
 %run -i ivtools/io.py
 %run -i ivtools/analyze.py
-
-COUPLINGS = {'A': 'DC', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
-ATTENUATION = {'A': 1.0, 'B': 1, 'C': 1, 'D': 1.0}
-OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
-RANGE = {'A': 2.0, 'B': 2.0, 'C': 1.0, 'D': 1.0}
 
 ##### Make some plot windows, put them in places
 try:
@@ -49,9 +48,11 @@ clear_plots()
 #####
 
 # Try to connect the instruments
-# TODO: ps opens every time.  is this a problem?  how can we reuse the last connection?
-# TODO: don't override channel settings
 connect_instruments()
+
+print('Channel settings:')
+print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
+                   index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
 # Your data gets stored in this variable
 data = np.array([], dtype=object)
@@ -59,7 +60,7 @@ data = np.array([], dtype=object)
 meta = dotdict()
 plt.show()
 
-def iv(vmin, vmax, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
+def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
@@ -71,7 +72,7 @@ def iv(vmin, vmax, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
 
     # Need to know duration of pulse if only sweeprate is given
     # so that we know how long to capture
-    sweeprate, pulsedur = _rate_duration(vmin, vmax, rate, duration)
+    sweeprate, pulsedur = _rate_duration(v1, v2, rate, duration)
 
     if smartrange:
         # Auto offset for current input
@@ -86,8 +87,8 @@ def iv(vmin, vmax, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
                  duration=n*pulsedur)
     # Send a triangle pulse
     tripulse(n=n,
-             vmax=vmax,
-             vmin=vmin,
+             v1=v1,
+             v2=v2,
              duration=duration,
              rate=rate)
     # Get the picoscope data

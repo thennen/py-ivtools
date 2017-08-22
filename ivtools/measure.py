@@ -9,40 +9,51 @@ import time
 from dotdict import dotdict
 
 # These are None until the instruments are connected
-ps = None
-rigol = None
+# Don't clobber them though, in case this script is used with run -i
+try:
+    ps
+except:
+    ps = None
+try:
+    rigol
+except:
+    rigol = None
 
 # Settings for picoscope channels.
-# These can be modified by the user, but should not be modified by functions.
-COUPLINGS = {'A': 'DC50', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
-ATTENUATION = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
-OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
-RANGE = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
-
-COMPLIANCE_CURRENT = 0
-INPUT_OFFSET = 0
+# Also don't clobber them
+try:
+    COUPLINGS
+    ATTENUATION
+    OFFSET
+    RANGE
+    COMPLIANCE_CURRENT
+    INPUT_OFFSET
+except:
+    COUPLINGS = {'A': 'DC', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
+    ATTENUATION = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
+    OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
+    RANGE = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
+    COMPLIANCE_CURRENT = 0
+    INPUT_OFFSET = 0
 
 def connect_picoscope():
     global ps
     if ps is None:
         try:
             ps = ps6000.PS6000()
-            print('Picoscope connection succeeded.')
-            print(ps.getAllUnitInfo())
-            print('Channel settings:')
-            print('Couplings: {}'.format(COUPLINGS))
-            print('Attenuation: {}'.format(ATTENUATION))
-            print('Offset: {}'.format(OFFSET))
-            print('Range: {}'.format(RANGE))
+            model = ps.getUnitInfo('VariantInfo')
+            print('Picoscope {} connection succeeded.'.format(model))
+            #print(ps.getAllUnitInfo())
         except:
             print('Connection to picoscope failed.  Could be an unclosed session.')
     else:
         try:
-            info = ps.getAllUnitInfo()
-            print('Picoscope already connected.\n')
-            print(info)
+            model = ps.getUnitInfo('VariantInfo')
+            print('Picoscope {} already connected.'.format(model))
+            #info = ps.getAllUnitInfo()
+            #print(info)
         except:
-            print('ps variable is not None.  Doing nothing.')
+            print('ps variable is not None, and not an active picoscope connection.')
 
 
 def connect_rigolawg():
@@ -60,7 +71,7 @@ def connect_rigolawg():
         try:
             # Check if rigol is already defined and connected
             idn = rigol.query('*IDN?')
-            print('Rigol AWG already connected\n')
+            print('Rigol AWG already connected')
             print(idn)
         except:
             print('rigol variable is not None.  Doing nothing.')
@@ -216,7 +227,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1):
     return data
 
 
-def _rate_duration(vmin, vmax, rate=None, duration=None):
+def _rate_duration(v1, v2, rate=None, duration=None):
     '''
     Determines the duration or sweep rate of a triangle type pulse with constant sweep rate.
     Pass rate XOR duration, return (rate, duration).
@@ -225,24 +236,24 @@ def _rate_duration(vmin, vmax, rate=None, duration=None):
         raise Exception('Must give either duration or rate, and not both')
     if duration is not None:
         duration = float(duration)
-        rate = 2 * (vmax - vmin) / duration
+        rate = 2 * (v1 - v2) / duration
     elif rate is not None:
         rate = float(rate)
-        duration = 2 * (vmax - vmin) / rate
+        duration = 2 * (v1 - v2) / rate
 
     return rate, duration
 
 
-def tripulse(n=1, vmax=1.0, vmin=-1.0, duration=None, rate=None):
+def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
     '''
     Generate n bipolar triangle pulses.
     Voltage sweep rate will  be constant.
     Trigger immediately
     '''
 
-    rate, duration = _rate_duration(vmin, vmax, rate, duration)
+    rate, duration = _rate_duration(v1, v2, rate, duration)
 
-    wfm = tri_wfm(vmin, vmax)
+    wfm = tri_wfm(v1, v2)
 
     pulse(wfm, duration, n=n)
 
@@ -259,31 +270,32 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     pulse(wfm, duration, n=n)
 
 
-def tri_wfm(vmin, vmax):
+def tri_wfm(v1, v2):
     '''
     Generate a triangle pulse waveform.
 
     This is a slightly tricky because the AWG takes equally spaced samples,
-    so finding the shortest waveform that truly reaches vmax and vmin with
+    so finding the shortest waveform that truly reaches v1 and v2 with
     constant sweep rate involves finding the greatest common divisor of
-    vmin and vmax.
+    v1 and v2.
     '''
-    vmin = -abs(vmin)
-
-    fmax = Fraction(str(vmax))
-    fmin = Fraction(str(vmin))
+    f1 = Fraction(str(v1))
+    f2 = Fraction(str(v2))
     # This is depreciated for some reason
     #vstep = float(abs(fractions.gcd(fmax, fmin)))
     # Doing it this other way.. Seems faster by a large factor.
-    a, b = fmax.numerator, fmax.denominator
-    c, d = fmin.numerator, fmin.denominator
+    a, b = f1.numerator, f1.denominator
+    c, d = f2.numerator, f2.denominator
     # not a typo
     commond = float(b * d)
     vstep = gcd(a*d, b*c) / commond
-    dv = vmax - vmin
-    wfm = np.concatenate((np.linspace(0, vmax, vmax/vstep + 1),
-                         np.linspace(vmax, vmin, dv / vstep + 1)[1:-1],
-                         np.linspace(vmin, 0, -vmin/vstep + 1)))
+    dv = v1 - v2
+    n1 = int(abs(v1) / vstep + 1)
+    n2 = int(abs(dv) / vstep + 1)
+    n3 = int(abs(v2) / vstep + 1)
+    wfm = np.concatenate((np.linspace(0 , v1, n1),
+                          np.linspace(v1, v2, n2)[1:-1],
+                          np.linspace(v2, 0 , n3)))
 
     # Filling the AWG record length with probably take more time than it's worth.
     # Interpolate to a "Large enough" waveform size
