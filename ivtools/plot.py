@@ -121,3 +121,42 @@ def plot_channels(chdata, ax=None):
             chrange = chdata['RANGE'][c]
             ax.fill_between((0, len(chdata[c])), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
     ax.legend(title='Channel')
+
+def interactive_figures():
+    # Determine nice place to put some plots, and make the figures
+    # Need to get monitor information
+    # Only works in windows ...
+    import ctypes
+    user32 = ctypes.windll.user32
+    wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+    #aspect = hpixels / wpixels
+    dc = user32.GetDC(0)
+    LOGPIXELSX = 88
+    LOGPIXELSY = 90
+    hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
+    vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
+    ctypes.windll.user32.ReleaseDC(0, dc)
+    bordertop = 79
+    borderleft = 7
+    borderbottom = 28
+    taskbar = 40
+    figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+    # Nope
+    #figwidth = wpixels * .3
+    #figwidth = 500
+    figwidth = figheight * 1.3
+    figsize = (figwidth / hdpi, figheight / vdpi)
+    fig1loc = (wpixels - figwidth - 2*borderleft, 0)
+    fig2loc = (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom)
+
+    fig1, ax1 = plt.subplots(figsize=figsize, dpi=hdpi)
+    fig1.canvas.manager.window.move(*fig1loc)
+    fig2, ax2 = plt.subplots(figsize=figsize, dpi=hdpi)
+    fig2.canvas.manager.window.move(*fig2loc)
+
+    fig1.set_tight_layout(True)
+    fig2.set_tight_layout(True)
+
+    plt.show()
+
+    return (fig1, ax1), (fig2, ax2)
