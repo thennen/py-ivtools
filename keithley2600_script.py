@@ -26,6 +26,7 @@ warnings.filterwarnings("ignore",".*GUI is implemented.*")
 import time
 from shutil import copyfile
 import os
+from collections import defaultdict
 
 datestr = time.strftime('%Y-%m-%d')
 timestr = time.strftime('%Y-%m-%d_%H%M%S')
@@ -224,10 +225,11 @@ except:
     print('Defining data = []')
     data = []
 else:
-    answer = input('\'data\' variable already defined.  Clobber it? ')
-    if answer.lower() == 'y':
-        print('Defining data = []')
-        data = []
+    if data != []:
+        answer = input('\'data\' variable not empty.  Clobber it? ')
+        if answer.lower() == 'y':
+            print('Defining data = []')
+            data = []
 
 # Data you forgot to save (only 10 of them)
 try:
@@ -236,13 +238,16 @@ except:
     print('Defining dhistory = deque(maxlen=10)')
     dhistory = deque(maxlen=10)
 else:
-    answer = input('\'dhistory\' variable already defined.  Clobber it? ')
-    if answer.lower() == 'y':
-        print('Defining dhistory = deque(maxlen=10)')
-        data = []
+    if len(dhistory) > 0:
+        answer = input('\'dhistory\' variable not empty.  Clobber it? ')
+        if answer.lower() == 'y':
+            print('Defining dhistory = deque(maxlen=10)')
+            dhistory = deque(maxlen=10)
 
 # The data index you are currently on
-meta_i = -1
+meta_i = None
+
+d = None
 
 # Add keys to this and they will be appended as metadata to all subsequent measurements
 staticmeta = {'keithley':idn, 'script':__file__, 'scriptruntime':timestr}
@@ -254,18 +259,20 @@ devicemeta = {}
 devicemetalist = {'device_number':n for n in range(100)}
 
 # This controls which keys are printed when identifying a device
-prettykeys = None
+prettykeys = []
+# The value of these keys will be written to the filename
+filenamekeys = []
 
 # Example of setting meta list
 wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
 # Select the samples you want to measure
 meta_df = wafer_df
 #### Filter devices to be measured #####
-coupons = [11, 23]
-modules = ['001G', '001H', '014I', '014E']
+coupons = [23]
+modules = ['001H']
 devices001 = [2,3,4,5,6,7,8]
 devices014 = [4,5,6,7,8,9]
-dies = [37, 64]
+dies = [64]
 #########
 meta_df = meta_df[meta_df.coupon.isin(coupons)]
 meta_df = meta_df[meta_df.module.isin(modules)]
@@ -279,6 +286,7 @@ meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_
 meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
 devicemetalist = meta_df
 prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
 
 # Because who wants to type?
 class autocaller():
@@ -307,7 +315,10 @@ def nextsample():
     ''' Go to the next device '''
     global meta_i, devicemeta
     lastdevicemeta = devicemeta
-    meta_i += 1
+    if meta_i is None:
+        meta_i = 0
+    else:
+        meta_i += 1
     if type(devicemetalist) == pd.DataFrame:
         devicemeta = devicemetalist.iloc[meta_i]
     else:
@@ -345,6 +356,12 @@ p = autocaller(previoussample)
 
 ### Functions that write to disk
 
+def makedatafolder():
+    datasubfolder = os.path.join(datafolder, subfolder)
+    if not os.path.isdir(datasubfolder):
+        print('Making folder: {}'.format(datasubfolder))
+        os.makedirs(datasubfolder)
+
 def savedata(filename=None):
     global d
     ''' Write the current value of the d variable to places, attach metadata '''
@@ -357,12 +374,15 @@ def savedata(filename=None):
     d.update(staticmeta)
     # Write series to disk.  Append the path to metadata
     if filename is None:
-        filename = time.strftime('%Y-%m-%d_%H%M%S') + '_loop.s'
-    datasubfolder = os.path.join(datafolder, subfolder)
+        filename = time.strftime('%Y-%m-%d_%H%M%S')
+        for fnkey in filenamekeys:
+            if fnkey in d.keys():
+                filename += '_{}'.format(d[fnkey])
+        # s for series
+        filename += '.s'
     filepath = os.path.join(datafolder, subfolder, filename)
     d['datafilepath'] = filepath
-    if not os.path.isdir(datasubfolder):
-        os.makedirs(datasubfolder)
+    makedatafolder()
     print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
     pd.Series(d).to_pickle(filepath)
     # Append series to data list
@@ -381,8 +401,8 @@ def savedatalist(filename=None):
     df.to_pickle(filepath)
     # Take out known arrays and export xls
     xlspath = os.path.splitext(filepath)[0] + '.xls'
+    print('Writing {}'.format(xlspath))
     df.loc[:, ~df.columns.isin(['I', 'V', 't', 'Vmeasured'])].to_excel(xlspath)
-    
 
 ### Functions that actually tell Keithley to do something
 
@@ -392,7 +412,7 @@ def testshort():
     iv(triangle(.01, -.01, 80), Irange=1e-2, Ilimit=1e-3)
     R = Rfitplotter()
     print('Resistance: {}'.format(R))
-    d['note'] = 'Short?'
+    #d['note'] = 'Short?'
     return R
 
 def chooserange(Restimate):
@@ -438,7 +458,7 @@ def Rfitplotter(ax=None, **kwargs):
     vmax = min(max(d['V']), max(d['I'] * R))
     # Do some points in case you put it on a log scale later
     fitv = np.linspace(1.1 * vmin, 1.1 * vmax, 10)
-    fiti = polyval(line, fitv)
+    fiti = np.polyval(line, fitv)
     plotkwargs = dict(color='black', alpha=.3, linestyle='--')
     plotkwargs.update(kwargs)
     ax.plot(fitv, 1e6 * fiti, **plotkwargs)
@@ -468,11 +488,12 @@ def VoverIplotter(ax=None, **kwargs):
     ''' Plot V/I vs V, like GPIB control program'''
     if ax is None:
         ax = ax2
-    ax.plot(d['V'], d['V'] / d['I'], '.-', **kwargs)
+    ax.plot(d['V'], d['Vmeasured'] / d['I'], '.-', **kwargs)
     color = ax.lines[-1].get_color()
-    ax.set_xlabel('Data Point #')
-    ax.set_ylabel('Current [$\mu$A]', color=color)
-
+    
+    ax.set_yscale('log')
+    ax.set_xlabel('Voltage [V]')
+    ax.set_ylabel('V/I [$\Omega$]', color=color)
 
 def updateplots(**kwargs):
     ''' Draw the standard plots for whatever data is in the d variable'''
@@ -529,7 +550,7 @@ def make_figs():
     # Get monitor information so we can put the plots in the right spot.
     # Only works in windows ...
     # I'm using globals because I only want to write make_figs() and have these variables accessible
-    global fig1, fig2, fig3, ax1, ax2, ax3
+    global fig1, fig2, fig3, ax1, ax2, ax22, ax3
     user32 = ctypes.windll.user32
     wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
     #aspect = hpixels / wpixels
@@ -550,10 +571,12 @@ def make_figs():
     figsize = (figwidth / hdpi, figheight / vdpi)
     fig1loc = (wpixels - figwidth - 2*borderleft, 0)
     fig2loc = (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom)
+    fig3loc = (wpixels - 2*figwidth - 4*borderleft, 0)
     try:
         # Close the figs if they already exist
         plt.close(fig1)
         plt.close(fig2)
+        plt.close(fig3)
     except:
         pass
     # Make some plot windows, put them in places
@@ -561,28 +584,16 @@ def make_figs():
     fig1.canvas.manager.window.move(*fig1loc)
     fig2, ax2 = plt.subplots(figsize=figsize, dpi=hdpi)
     fig2.canvas.manager.window.move(*fig2loc)
-    fig3 = fig2
-    ax3 = ax2.twinx()
+    ax22 = ax2.twinx()
+    fig3, ax3 = plt.subplots(figsize=figsize, dpi=hdpi)
+    fig3.canvas.manager.window.move(*fig3loc)
 
-    # Some default labels so you know what the plots are all about
-
-    ax1.set_xlabel('Voltage [V]')
-    ax1.set_ylabel('Current [$\mu$A]')
-    ax2.set_ylabel('Voltage [V]')
-    ax2.set_xlabel('Data Point #')
-    ax3.set_ylabel('Current [$\mu$A]')
     # Stop axis labels from getting cut off
     fig1.set_tight_layout(True)
     fig2.set_tight_layout(True)
+    fig3.set_tight_layout(True)
 
     plt.show()
-
-    #return ((fig1, ax1), (fig2, ax2), (fig3, ax3))
-
-def clear_plots():
-    # Clear IV loop plots
-    for ax in plotters.keys():
-        ax.cla()
 
 # Make the figures and define which plotters are responsible for which axis
 # Might be able to get away with multiple plotters per axis
@@ -590,6 +601,24 @@ make_figs()
 # Maybe could do it like this.  Too ugly.  only want to have to change one variable
 #plotters = {'iv':plotter1, 'channelsv':plotter2, 'channelsi':plotter3, 'fitline':Rfitplotter}
 #axes = {'iv':ax1, 'channelsv':ax2, 'channelsi':ax3, 'fitline':ax1}
-plotters = {ax1:plotter1, ax2:plotter2, ax3:plotter3}
+plotters = {ax1:plotter1, ax2:plotter2, ax22:plotter3, ax3:VoverIplotter}
 defaultcolors = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
-linecolors = {ax1:defaultcolors, ax2:defaultcolors, ax3:defaultcolors[::-1]}
+linecolors = defaultdict(lambda: defaultcolors)
+linecolors[ax22] = defaultcolors[::-1]
+
+def clear_plots():
+    # Clear IV loop plots
+    for ax in plotters.keys():
+        ax.cla()
+    # Some default labels so you know what the plots are all about
+    ax1.set_xlabel('Voltage [V]')
+    ax1.set_ylabel('Current [$\mu$A]')
+    ax2.set_ylabel('Voltage [V]')
+    ax2.set_xlabel('Data Point #')
+    ax22.set_ylabel('Current [$\mu$A]')
+    ax3.set_ylabel('V/I [$\Omega$]')
+    ax3.set_xlabel('Voltage [V]')
+
+c = autocaller(clear_plots)
+
+clear_plots()
