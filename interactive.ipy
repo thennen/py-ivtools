@@ -55,7 +55,8 @@ print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
 # Your data gets stored in this variable
-data = np.array([], dtype=object)
+data = None
+datalist = []
 # Your metadata gets stored in this variable
 meta = dotdict()
 plt.show()
@@ -99,6 +100,7 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
     #data = np.append(data, ivdata) -- Doesn't work because of stupid data structure
     # For now just overwrite data..
     data = ivdata
+    datalist.append(data)
 
     # Plot the IV data
     plotiv(ivdata, ax=ax1)

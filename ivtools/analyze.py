@@ -19,47 +19,70 @@ def ivfunc(func):
     @wraps(func)
     def func_wrapper(data, *args, **kwargs):
         dtype = type(data)
-        if dtype == np.ndarray:
-            # Assuming it's an ndarray of iv dicts
-            return np.array([func(d, *args, **kwargs) for d in data])
-        elif dtype == dotdict:
+        if dtype == pd.DataFrame:
+            # Apply the function to the columns of the dataframe
+            # This will error if your function returns an array
+            #return data.apply(func, axis=1, args=args, **kwargs)
+            resultlist = []
+            for i, row in data.iterrows():
+                resultlist.append(func(row, *args, **kwargs))
+            # Let's decide how to return the values based on the datatype that the wrapped function returned
+            if type(resultlist[0]) == pd.Series:
+                return pd.DataFrame(resultlist)
+            else:
+                # Keep the index the same!
+                series_out = pd.Series(resultlist)
+                series_out.index = data.index
+                return series_out
+        elif dtype == list:
+            # Assuming it's a list of iv dicts
+            return [func(d, *args, **kwargs) for d in data]
+        elif dtype in (dotdict, dict, pd.Series):
+            # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
             print('ivfunc did not understand the input datatype {}'.format(dtype))
     return func_wrapper
 
+'''
+Functions that return a new value/new array per IV loop should just return that value
+Functions that modify the IV data should return a copy of the entire input structure
+'''
 
 @ivfunc
-def moving_avg(data, window=5):
-    ''' Smooth data with moving avg '''
-    V = data['V']
-    I = data['I']
-    lenV = len(V)
-    lenI = len(I)
-    if lenI != lenV:
-        print('I and V arrays have different length!')
-        return data
-    if lenI == 0:
-        return data
-    weights = np.repeat(1.0, window)/window
-    smoothV = np.convolve(V, weights, 'valid')
-    smoothI = np.convolve(I, weights, 'valid')
-
-    new_data = data.copy()
-    new_data.update({'I':smoothI, 'V':smoothV})
-    return new_data
-
-
-@ivfunc
-def index_iv(data, index_function):
-    '''
-    Index all the data arrays inside an iv loop container at once.
-    Condition specified by index function, which should take an iv dict and return an indexing array
-    '''
-    # Determine the arrays that will be split
+def find_data_arrays(data):
+    # Determine the names of arrays that have same length as 'I' ('V', 'R', 'P')
     # We will select them now just based on which values are arrays with same size as I and V
     lenI = len(data['I'])
-    splitkeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
+    arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
+    return arraykeys
+
+@ivfunc
+def moving_avg(data, columns=('I', 'V'), window=5):
+    ''' Smooth data arrays with moving avg '''
+    arrays = [data[c] for c in columns]
+    lens = [len(ar) for ar in arrays]
+    if not all([l - lens[0] == 0 for l in lens]):
+        raise Exception('Arrays to be smoothed have different lengths!')
+    if lens[0] == 0:
+        raise Exception('No data to smooth')
+    weights = np.repeat(1.0, window)/window
+    smootharrays = [np.convolve(ar, weights, 'valid') for ar in arrays]
+
+    dataout = data.copy()
+    #dataout.update({c:smooth for c,smooth in zip(columns, smootharrays)})
+    for c, smooth in zip(columns, smootharrays):
+        dataout[c] = smooth
+    return dataout
+
+
+@ivfunc
+def indexiv(data, index_function):
+    '''
+    Index all the data arrays inside an iv loop container at once.
+    Condition specified by index function, which should take an iv dict/series and return an indexing array
+    '''
+    splitkeys = find_data_arrays(data)
     dataout = data.copy()
     for sk in splitkeys:
         # Apply the filter to all the relevant items
@@ -68,14 +91,13 @@ def index_iv(data, index_function):
     return dataout
 
 @ivfunc
-def slice_iv(data, stop, start=0, step=None):
+def sliceiv(data, stop, start=0, step=None):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start, stop can be functions that take the iv loop as argument
     if those functions return nan, start defaults to 0 and stop to -1
     '''
-    lenI = len(data['I'])
-    splitkeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
+    slicekeys = find_data_arrays(data)
     dataout = data.copy()
     if callable(start):
         start = start(data)
@@ -83,12 +105,13 @@ def slice_iv(data, stop, start=0, step=None):
     if callable(stop):
         stop = stop(data)
         if np.isnan(stop): stop = -1
-    for sk in splitkeys:
+    for sk in slicekeys:
         # Apply the filter to all the relevant items
         dataout[sk] = dataout[sk][slice(start, stop, step)]
     return dataout
 
 
+# These are not needed for pandas types obviously
 @ivfunc
 def apply(data, func, column):
     '''
@@ -109,23 +132,57 @@ def extract(data, key):
     return array([d[key] for d in data])
 
 @ivfunc
-def dV_sign(iv):
+def slicebyvalue(data, column='V', minval=0, maxval=None):
+    # This is so commonly done that I will make a function for it, though it's just a special case of indexiv
+    # Including the endpoints in interval.  Change it later if you care.
+    keys = find_data_arrays(data)
+    dataout = data.copy()
+    if (minval is None) and (maxval is not None):
+        index = data[column] <= maxval
+    elif (maxval is None) and (minval is not None):
+        index = data[column] >= minval
+    elif (maxval is not None):
+        index = minval <= data[column] < maxval
+    else:
+        return data
+    for k in keys:
+        dataout[k] = dataout[k][index]
+
+    return dataout
+
+
+@ivfunc
+def sortvalues(iv, column='V', ascending=True):
+    # Sort the iv data points by a certain column
+    sortkeys = find_data_arrays(iv)
+    reindex = np.argsort(iv['V'])
+    if not ascending:
+        reindex = reindex[::-1]
+    dataout = iv.copy()
+    for k in sortkeys:
+        dataout[k] = iv[k][reindex]
+    return dataout
+
+@ivfunc
+def diffsign(iv, column='V'):
     '''
     Return boolean array indicating if V is increasing, decreasing, or constant.
     Will not handle noisy data.  Have to dig up the code that I wrote to do that.
     '''
-    direction = np.sign(np.diff(iv['V']))
+    direction = np.sign(np.diff(iv[column]))
     # Need the same size array as started with. Categorize the last point same as previous 
     return np.append(direction, direction[-1])
 
 @ivfunc
-def decreasing(iv):
-    return index_iv(iv, lambda l: dV_sign(iv) < 0)
+def decreasing(iv, column='V'):
+    # Could sort afterward, but that could lead to undesired behavior
+    return indexiv(iv, lambda l: diffsign(l, column) < 0)
 
 
 @ivfunc
-def increasing(iv):
-    return index_iv(iv, lambda l: dV_sign(iv) > 0)
+def increasing(iv, column='V'):
+    # Could sort afterward, but that could lead to undesired behavior
+    return indexiv(iv, lambda l: diffsign(l, column) > 0)
 
 
 @ivfunc
@@ -228,7 +285,7 @@ def first_jump(loop, **kwargs):
         first_jump = j[0][0]
     else:
         first_jump = np.nan
-    loop['first_jump'] = first_jump
+    #loop['first_jump'] = first_jump
     return first_jump
 
 @ivfunc
@@ -238,23 +295,56 @@ def last_jump(loop, **kwargs):
         last_jump = j[0][-1]
     else:
         last_jump = np.nan
-    loop['last_jump'] = last_jump
+    #loop['last_jump'] = last_jump
     return last_jump 
 
+@ivfunc
+def nth_jump(loop, n, **kwargs):
+    j = jumps(loop, **kwargs)
+    if np.any(j) and len(j[0]) > n:
+        last_jump = j[0][n]
+    else:
+        last_jump = np.nan
+    return last_jump 
 
-def pindex(loops, column, index):
+'''
+Can't do this because ivfunc doesn't know it also iterate through the "index", which is different for every loop
+could do it if index was a function (i.e. first_jump)
+@ivfunc
+def pindex(loop, column, index):
+    if np.isnan(index):
+        return np.nan
+    else:
+        return loop[column][index]
+'''
+
+@ivfunc
+def pindex_fromfunc(loop, column, indexfunc):
+    index = indexfunc(loop)
+    if np.isnan(index):
+        return np.nan
+    else:
+        return loop[column][index]
+
+
+def pindex_fromlist(loops, column, indexlist):
     # Index some column of all the ivloops in parallel
     # "index" is a list of indices with same len as loops
     # Understands list[nan] --> nan
     # TODO: index by a number contained in the ivloop object
+    # TODO: rename to something that makes sense
     vals = []
-    for l,i in zip(loops, index):
+    if type(loops) == pd.DataFrame:
+        loops = loops.iterrows()
+    else:
+        # Because I don't know how to iterate through the df rows without enumerating them
+        loops = enumerate(loops)
+    for (_, l), i in zip(loops, indexlist):
         if np.isnan(i):
             vals.append(np.nan)
         else:
             vals.append(l[column][int(i)])
     return np.array(vals)
-
 
 
 @ivfunc
@@ -303,5 +393,3 @@ def normalize(data):
 def split(data):
     ''' Split one loop into many loops '''
     pass
-
-

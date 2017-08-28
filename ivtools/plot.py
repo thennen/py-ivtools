@@ -3,6 +3,7 @@
 import matplotlib.pyplot as plt
 import numpy as np
 from dotdict import dotdict
+import pandas as pd
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=10000, **kwargs):
     ''' Plot an array vs another array contained in iv object '''
@@ -68,36 +69,52 @@ def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
         fig, ax = plt.subplots()
 
     dtype = type(data)
-    if dtype == np.ndarray:
-        # There are many loops
-        if x is None or hasattr(data[0][x], '__iter__'):
-            line = []
-            # Pick colors
-            # you can pass a list of colors, or a colormap
-            if isinstance(cm, list):
-                colors = cm
-            else:
-                if isinstance(cm, str):
-                    # Str refers to the name of a colormap
-                    cmap = plt.cm.get_cmap(cm)
-                elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
-                    cmap = cm
-                colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
-            for iv, c in zip(data, colors):
-                kwargs.update(c=c)
-                line.append(_plot_single_iv(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, **kwargs))
+
+    if dtype in (np.ndarray, list, pd.DataFrame):
+        # There are several loops
+        # Pick colors
+        # you can pass a list of colors, or a colormap
+        if isinstance(cm, list):
+            colors = cm
         else:
-            # Probably referencing scalar values.
-            # No tests to make sure both x and y scalar values for all loops.
-            X = extract(data, x)
-            Y = extract(data, y)
-            line = ax.plot(X, Y, **kwargs)
-            ax.set_xlabel(x)
-            ax.set_ylabel(y)
-    elif dtype == dotdict:
+            if isinstance(cm, str):
+                # Str refers to the name of a colormap
+                cmap = plt.cm.get_cmap(cm)
+            elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
+                cmap = cm
+            colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
+
+        if dtype == pd.DataFrame:
+            if x is None or hasattr(data.iloc[0][x], '__iter__'):
+                # Plot x array vs y array.  x can be none, then it will just be data point number
+                line = []
+                for (row, iv), c in zip(data.iterrows(), colors):
+                    kwargs.update(c=c)
+                    line.append(_plot_single_iv(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, **kwargs))
+            else:
+                line = plot(data[x], data[y], **kwargs)
+                ax.set_xlabel(x)
+                ax.set_ylabel(y)
+        else:
+            if x is None or hasattr(data[0][x], '__iter__'):
+                line = []
+                for iv, c in zip(data, colors):
+                    kwargs.update(c=c)
+                    line.append(_plot_single_iv(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, **kwargs))
+            else:
+                # Probably referencing scalar values.
+                # No tests to make sure both x and y scalar values for all loops.
+                X = [d[x] for d in data]
+                Y = [d[y] for d in data]
+                line = ax.plot(X, Y, **kwargs)
+                ax.set_xlabel(x)
+                ax.set_ylabel(y)
+    elif dtype in (dict, dotdict, pd.Series):
+        # Just one IV
         line = _plot_single_iv(data, ax, x=x, y=y, maxsamples=maxsamples, **kwargs)
     else:
         print('plotiv did not understand the input datatype {}'.format(dtype))
+        return
 
     return ax, line
 
