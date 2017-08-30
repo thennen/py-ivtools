@@ -126,6 +126,7 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
     # Set up the trigger.  Will timeout in 30s
     ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
     ps.runBlock()
+    return freq
 
 
 def pulse(waveform, duration, n=1, ch=1):
@@ -419,7 +420,9 @@ def pico_to_iv(datain):
     global COMPLIANCE_CURRENT
     global INPUT_OFFSET
 
-    dataout = dotdict(datain)
+    # dotdict was nice, but caused too many problems ...
+    #dataout = dotdict(datain)
+    dataout = datain
     A = datain['A']
     B = datain['B']
     #C = datain['C']

@@ -2,6 +2,14 @@
 This file should be run using the %run -i magic in ipython.
 Provides a command based user interface for IV measurements.
 make sure %matplotlib is in your ipython startup, or just make sure to run it first.
+
+
+There are some inefficiencies in the data storage, which is fine for moderately sized datasets.
+For very large datasets I will need to do some further optimization:
+store ADC values instead of floats
+Do not copy metadata to every single loop when it's all the same.  Maybe use a separate file.
+
+Storing metadata in a separate file could be a better idea in general  -- then you can just load the metadata to find which loops you need, instead of loading ALL the information including data arrays when you aren't sure what it is.  Could even use a csv for this. Arrays could then be stored very efficiently especially if they are about the same length.
 '''
 import numpy
 np = numpy
@@ -49,11 +57,12 @@ print('Channel settings:')
 print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
-def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave=True, autoplot=True):
+def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
+       autosave=True, autoplot=True, autosplit=True):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
-    global d
+    global d, chdata
 
     # Channels that need to be sampled for measurement
     # channels = ['A', 'B', 'C']
@@ -71,9 +80,9 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave
         # Can do some other cool tricks here
 
     # Set picoscope to capture
-    pico_capture(ch=channels,
-                 freq=fs,
-                 duration=n*pulsedur)
+    actual_fs = pico_capture(ch=channels,
+                             freq=fs,
+                             duration=n*pulsedur)
     # Send a triangle pulse
     tripulse(n=n,
              v1=v1,
@@ -86,10 +95,15 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave
     time.sleep(n * duration)
     print('Getting data from picoscope.')
     # Get the picoscope data
+    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
     chdata = get_data(channels)
     print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
+
+    if autosplit and n > 1:
+        print('Splitting data into individual pulses')
+        ivdata = split(ivdata, nsamples=pulsedur*actual_fs)
 
     d = ivdata
     dhistory.append(ivdata)
@@ -258,32 +272,55 @@ def makedatafolder():
         os.makedirs(datasubfolder)
 
 def savedata(filename=None):
-    ''' Attach sample information and write the current value of the d variable to disk '''
+    '''
+    Attach sample information and write the current value of the d variable to disk.
+    d variable can contain a single iv dict/series, or a list of them
+    This could get ugly..
+    '''
     global d
+    islist = type(d) == list
     # Append all the data together
     # devicemeta might be a dict or a series
     print('Appending metadata to last iv measured:')
     prettyprint_meta()
     print('...')
-    d.update(dict(devicemeta))
-    d.update(staticmeta)
-    # Write series to disk.  Append the path to metadata
+    if islist:
+        for l in d:
+            l.update(dict(devicemeta))
+            l.update(staticmeta)
+    else:
+        d.update(dict(devicemeta))
+        d.update(staticmeta)
+    # Write series/dataframe to disk.  Append the path to metadata
     if filename is None:
         filename = time.strftime('%Y-%m-%d_%H%M%S')
         for fnkey in filenamekeys:
-            if fnkey in d.keys():
+            if not islist and fnkey in d.keys():
                 filename += '_{}'.format(d[fnkey])
+            elif islist and fnkey in d[0].keys():
+                # Use metadata from first dict.  Should all be same
+                filename += '_{}'.format(d[0][fnkey])
+        if islist: filename += '.df'
         # s for series
-        filename += '.s'
+        else: filename += '.s'
     filepath = os.path.join(datafolder, subfolder, filename)
-    d['datafilepath'] = filepath
     makedatafolder()
-    print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
-    pd.Series(d).to_pickle(filepath)
+    if islist:
+        for l in d:
+            l['datafilepath'] = filepath
+        print('converting variable \'d\' to pd.DataFrame and writing as pickle to {}'.format(filepath))
+        pd.DataFrame(d).to_pickle(filepath)
+        # Extend data list with d
+        print('Extending list \'data\' with variable \'d\'')
+        data.extend(d)
+    else:
+        d['datafilepath'] = filepath
+        print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
+        pd.Series(d).to_pickle(filepath)
+        # Append series to data list
+        print('Appending variable \'d\' to list \'data\'')
+        data.append(d)
     print('File size: {:.3f} MB'.format(os.path.getsize(filepath) / 1048576))
-    # Append series to data list
-    print('Appending variable \'d\' to list \'data\'')
-    data.append(d)
 
 s = autocaller(savedata)
 
@@ -309,7 +346,12 @@ try:
     plt.close(fig2)
 except:
     pass
-(fig1, ax1) , (fig2, ax2) = interactive_figures()
+
+def make_figs():
+    global fig1, ax1, fig2, ax2
+    (fig1, ax1) , (fig2, ax2) = interactive_figures()
+
+make_figs()
 
 def clear_plots():
     # Clear IV loop plots
@@ -337,6 +379,7 @@ def plotupdate():
 # These functions define what gets plotted automatically on the interactive figures
 def ax1plotter(data, ax=ax1):
     # Smooth data a bit and give it to plotiv (from plot.py)
+    # Would be better to smooth before splitting ...
     smoothdata = moving_avg(data, window=5)
     plotiv(smoothdata, ax=ax)
 
@@ -344,12 +387,13 @@ def ax2plotter(data, ax=ax2):
     # Remove previous lines
     for l in ax2.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform
-    lendata = len(data['V'])
+    # Hoping data has channel A, or you will have to fix this later
+    lendata = len(chdata['A'])
     if lendata > 100000:
         print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
-        chdata = slice_iv(data, stop=100000)
+        plotdata = slice_iv(chdata, stop=100000)
     else:
-        chdata = data
-    plot_channels(chdata, ax=ax)
+        plotdata = chdata
+    plot_channels(plotdata, ax=ax)
 
 plotters = {ax1:ax1plotter, ax2:ax2plotter}

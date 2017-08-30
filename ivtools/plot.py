@@ -138,6 +138,8 @@ def plot_channels(chdata, ax=None):
             chrange = chdata['RANGE'][c]
             ax.fill_between((0, len(chdata[c])), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
     ax.legend(title='Channel')
+    ax.set_xlabel('Data Point')
+    ax.set_ylabel('Voltage [V]')
 
 def interactive_figures(n=2):
     # Determine nice place to put some plots, and make the figures
