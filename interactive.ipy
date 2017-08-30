@@ -49,7 +49,7 @@ print('Channel settings:')
 print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
-def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave=True):
+def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave=True, autoplot=True):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
@@ -80,28 +80,29 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave
              v2=v2,
              duration=duration,
              rate=rate)
+
+    pulseduration = n * duration
+    print('Applying pulse ({:.2e} seconds).'.format(pulseduration))
+    time.sleep(n * duration)
+    print('Getting data from picoscope.')
     # Get the picoscope data
     chdata = get_data(channels)
+    print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
-    # Append that data to global
-    #data = np.append(data, ivdata) -- Doesn't work because of stupid data structure
-    # For now just overwrite data..
+
     d = ivdata
-    dhistory.append(data)
+    dhistory.append(ivdata)
 
-    # Plot the IV data
-    plotupdate()
-    #plotiv(ivdata, ax=ax1)
-
-    # Remove previous lines
-    #for l in ax2.lines[::-1]: l.remove()
-    # Plot the channel data
-    #plot_channels(chdata, ax=ax2)
+    if autoplot:
+        # Plot the IV data
+        print('Plotting data')
+        plotupdate()
 
     if autosave:
         # Write to disk automatically
         # Can slow things down
+        print('Writing data to disk')
         savedata()
 
 
@@ -222,7 +223,7 @@ def nextdevice():
     for key in devicemeta.keys():
         if key not in lastdevicemeta.keys() or devicemeta[key] != lastdevicemeta[key]:
             hlkeys.append(key)
-    print('You are now measuring this device (index {} of devicemetalist):'.format(meta_i))
+    print('You have selected this device (index {} of devicemetalist):'.format(meta_i))
     # Print some information about the device
     prettyprint_meta(hlkeys)
 
@@ -279,6 +280,7 @@ def savedata(filename=None):
     makedatafolder()
     print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
     pd.Series(d).to_pickle(filepath)
+    print('File size: {:.3f} MB'.format(os.path.getsize(filepath) / 1048576))
     # Append series to data list
     print('Appending variable \'d\' to list \'data\'')
     data.append(d)
@@ -341,6 +343,13 @@ def ax1plotter(data, ax=ax1):
 def ax2plotter(data, ax=ax2):
     # Remove previous lines
     for l in ax2.lines[::-1]: l.remove()
-    plot_channels(data, ax=ax)
+    # Plot at most 100000 datapoints of the waveform
+    lendata = len(data['V'])
+    if lendata > 100000:
+        print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
+        chdata = slice_iv(data, stop=100000)
+    else:
+        chdata = data
+    plot_channels(chdata, ax=ax)
 
 plotters = {ax1:ax1plotter, ax2:ax2plotter}

@@ -47,6 +47,7 @@ def ivfunc(func):
 '''
 Functions that return a new value/new array per IV loop should just return that value
 Functions that modify the IV data should return a copy of the entire input structure
+# TODO: don't copy all the data arrays if you are returning new ones
 '''
 
 @ivfunc
@@ -69,10 +70,10 @@ def moving_avg(data, columns=('I', 'V'), window=5):
     weights = np.repeat(1.0, window)/window
     smootharrays = [np.convolve(ar, weights, 'valid') for ar in arrays]
 
-    dataout = data.copy()
-    #dataout.update({c:smooth for c,smooth in zip(columns, smootharrays)})
+    dataout = type(data)()
     for c, smooth in zip(columns, smootharrays):
         dataout[c] = smooth
+    add_missing_keys(data, dataout)
     return dataout
 
 
@@ -83,11 +84,14 @@ def indexiv(data, index_function):
     Condition specified by index function, which should take an iv dict/series and return an indexing array
     '''
     splitkeys = find_data_arrays(data)
-    dataout = data.copy()
+
+    dataout = type(data)()
     for sk in splitkeys:
         # Apply the filter to all the relevant items
         index = np.array(index_function(data))
-        dataout[sk] = dataout[sk][index]
+        dataout[sk] = data[sk][index]
+    add_missing_keys(data, dataout)
+
     return dataout
 
 @ivfunc
@@ -98,7 +102,7 @@ def sliceiv(data, stop, start=0, step=None):
     if those functions return nan, start defaults to 0 and stop to -1
     '''
     slicekeys = find_data_arrays(data)
-    dataout = data.copy()
+    dataout = type(data)()
     if callable(start):
         start = start(data)
         if np.isnan(start): start = 0
@@ -108,35 +112,83 @@ def sliceiv(data, stop, start=0, step=None):
     for sk in slicekeys:
         # Apply the filter to all the relevant items
         dataout[sk] = dataout[sk][slice(start, stop, step)]
+    add_missing_keys(data, dataout)
     return dataout
 
-
-# These are not needed for pandas types obviously
-@ivfunc
-def apply(data, func, column):
+# NOT an ivfunc -- can only be called on single IV
+# Would it make sense to collapse a list of IVs into a flattened list of list of IVs?
+def split_by_crossing(data, V=0, increasing=True, hys=1e-3):
     '''
-    This applies func to one column of the ivloop, and leaves the rest the same.
-    func should take an array and return an array of the same size
+    Split loops into multiple loops
+    Only implemented V threshold crossing
+    return list of input type
     '''
-    dataout = data.copy()
-    dataout[column] = func(dataout[column])
-    return dataout
+    # V threshold crossing
+    # Noisy data is hard to split this way
+    side = data['V'] >= V
+    crossings = np.diff(np.int8(side))
+    if increasing:
+        trigger = np.where(crossings == 1)
+    else:
+        trigger = np.where(crossings == -1)
+    # Put the endpoints in
+    trigger = np.concatenate(([0], trigger[0], [-1]))
 
-def insert(data, key, vals):
-    # Insert values into ivloop objects
-    for d,v in zip(data, vals):
-        d[key] = v
+    outlist = []
+    splitkeys = find_data_arrays(data)
+    for i, j in zip(trigger[:-1], trigger[1:]):
+        splitloop = type(data)()
+        for k in splitkeys:
+            splitloop[k] = data[k][i:j]
+        add_missing_keys(data, splitloop)
+        outlist.append(splitloop)
 
-def extract(data, key):
-    # Get array of values from ivloop objects
-    return array([d[key] for d in data])
+    if type(data) == pd.Series:
+        return pd.DataFrame(outlist)
+    else:
+        return outlist
+
+
+def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
+    '''
+    Split data into individual loops, specifying somehow the length of each loop
+    if you pass nloops, it splits evenly into n loops.
+    if you pass nsamples, it makes each loop have that many samples (except possibly the last one)
+    pass nsamples = PulseDuration * SampleFrequency if you don't know nsamples
+    '''
+    l = len(data['V'])
+    if nloops is not None:
+        nsamples = float(l / int(nloops))
+    # nsamples need not be an integer.  Will correct for extra time.
+    trigger = [int(n) for n in arange(0, l, nsamples)]
+    # If array is not evenly split, return the last fragment as well
+    if trigger[-1] != l - 1:
+        trigger.append(l - 1)
+
+    splitkeys = find_data_arrays(data)
+    outlist = []
+    for i, j in zip(trigger[:-1], trigger[1:]):
+        splitloop = type(data)()
+        for k in splitkeys:
+            splitloop[k] = data[k][i:j]
+        add_missing_keys(data, splitloop)
+        outlist.append(splitloop)
+
+    if type(data) == pd.Series:
+        return pd.DataFrame(outlist)
+    else:
+        return outlist
+
+
+return zip(Asplit, Bsplit)
+
 
 @ivfunc
 def slicebyvalue(data, column='V', minval=0, maxval=None):
     # This is so commonly done that I will make a function for it, though it's just a special case of indexiv
     # Including the endpoints in interval.  Change it later if you care.
     keys = find_data_arrays(data)
-    dataout = data.copy()
+    dataout = type(data)()
     if (minval is None) and (maxval is not None):
         index = data[column] <= maxval
     elif (maxval is None) and (minval is not None):
@@ -147,42 +199,46 @@ def slicebyvalue(data, column='V', minval=0, maxval=None):
         return data
     for k in keys:
         dataout[k] = dataout[k][index]
+    add_missing_keys(data, dataout)
 
     return dataout
 
 
 @ivfunc
-def sortvalues(iv, column='V', ascending=True):
+def sortvalues(data, column='V', ascending=True):
     # Sort the iv data points by a certain column
     sortkeys = find_data_arrays(iv)
-    reindex = np.argsort(iv['V'])
+    reindex = np.argsort(data['V'])
     if not ascending:
         reindex = reindex[::-1]
-    dataout = iv.copy()
+    dataout = type(data)()
     for k in sortkeys:
-        dataout[k] = iv[k][reindex]
+        dataout[k] = data[k][reindex]
+    add_missing_keys(data, dataout)
     return dataout
 
+
 @ivfunc
-def diffsign(iv, column='V'):
+def diffsign(data, column='V'):
     '''
     Return boolean array indicating if V is increasing, decreasing, or constant.
     Will not handle noisy data.  Have to dig up the code that I wrote to do that.
     '''
-    direction = np.sign(np.diff(iv[column]))
+    direction = np.sign(np.diff(data[column]))
     # Need the same size array as started with. Categorize the last point same as previous 
     return np.append(direction, direction[-1])
 
+
 @ivfunc
-def decreasing(iv, column='V'):
+def decreasing(data, column='V'):
     # Could sort afterward, but that could lead to undesired behavior
-    return indexiv(iv, lambda l: diffsign(l, column) < 0)
+    return indexiv(data, lambda l: diffsign(l, column) < 0)
 
 
 @ivfunc
-def increasing(iv, column='V'):
+def increasing(data, column='V'):
     # Could sort afterward, but that could lead to undesired behavior
-    return indexiv(iv, lambda l: diffsign(l, column) > 0)
+    return indexiv(data, lambda l: diffsign(l, column) > 0)
 
 
 @ivfunc
@@ -245,9 +301,10 @@ def largest_monotonic(data, column='I'):
     direction = int(directions[largest])
     startind, endind = segment_endpoints[largest]
 
-    dataout = data.copy()
+    dataout = type(data)()
     for k in keys:
         dataout[k] = dataout[k][startind:endind][::direction]
+    add_missing_keys(data, dataout)
 
     return dataout
 
@@ -374,22 +431,45 @@ def longest_monotonic(data, column='I'):
     startind = monolists[longest][1][0][0]
     endind = monolists[longest][1][-1][0] + 2
 
-    dataout = data.copy()
+    dataout = type(data)()
     for k in keys:
         dataout[k] = dataout[k][startind:endind][::direction]
+    add_missing_keys(data, dataout)
 
     return dataout
-
 
 @ivfunc
 def normalize(data):
     ''' Normalize by the maximum current '''
-    dataout = data.copy()
+    dataout = type(data)()
     maxI = np.max(data['I'])
     dataout['I'] = dataout['I'] / maxI
+    add_missing_keys(data, dataout)
+
     return dataout
 
+def add_missing_keys(datain, dataout):
+    for k in datain.keys():
+        if k not in dataout.keys():
+            dataout[k] = datain[k]
 
-def split(data):
-    ''' Split one loop into many loops '''
-    pass
+# These are not needed for pandas types obviously
+@ivfunc
+def apply(data, func, column):
+    '''
+    This applies func to one column of the ivloop, and leaves the rest the same.
+    func should take an array and return an array of the same size
+    '''
+    dataout = type(data)()
+    dataout[column] = func(dataout[column])
+    add_missing_keys(data, dataout)
+    return dataout
+
+def insert(data, key, vals):
+    # Insert values into ivloop objects
+    for d,v in zip(data, vals):
+        d[key] = v
+
+def extract(data, key):
+    # Get array of values from ivloop objects
+    return array([d[key] for d in data])
