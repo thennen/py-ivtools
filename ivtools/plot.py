@@ -5,7 +5,7 @@ import numpy as np
 from dotdict import dotdict
 import pandas as pd
 
-def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=10000, **kwargs):
+def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
     ''' Plot an array vs another array contained in iv object '''
     if ax is None:
         fig, ax = plt.subplots()
@@ -139,7 +139,7 @@ def plot_channels(chdata, ax=None):
             ax.fill_between((0, len(chdata[c])), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
     ax.legend(title='Channel')
 
-def interactive_figures():
+def interactive_figures(n=2):
     # Determine nice place to put some plots, and make the figures
     # Need to get monitor information
     # Only works in windows ...

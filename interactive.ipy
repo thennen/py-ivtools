@@ -16,6 +16,14 @@ import pandas as pd
 import warnings
 # Stop a certain matplotlib warning from showing up
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
+from collections import defaultdict, deque
+
+datestr = time.strftime('%Y-%m-%d')
+timestr = time.strftime('%Y-%m-%d_%H%M%S')
+datafolder = r'D:\t\ivdata'
+subfolder = datestr
+print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 %matplotlib
@@ -24,27 +32,14 @@ warnings.filterwarnings("ignore",".*GUI is implemented.*")
 %run -i ivtools/io.py
 %run -i ivtools/analyze.py
 
-##### Make some plot windows, put them in places
-try:
-    # Close the figs if they already exist
-    plt.close(fig1)
-    plt.close(fig2)
-except:
-    pass
-(fig1, ax1) , (fig2, ax2) = interactive_figures()
+# Because who wants to type?
+class autocaller():
+    def __init__(self, function):
+        self.function = function
+    def __repr__(self):
+        self.function()
+        return 'autocalled ' + self.function.__name__
 
-def clear_plots():
-    # Clear IV loop plots
-    ax1.cla()
-    ax2.cla()
-    ax1.set_title('IV Measurements')
-    ax1.set_xlabel('Voltage')
-    ax1.set_ylabel('Current')
-    ax2.set_title('Picoscope Traces')
-    ax2.set_xlabel('Data point')
-    ax2.set_ylabel('Voltage [V]')
-
-clear_plots()
 #####
 
 # Try to connect the instruments
@@ -54,18 +49,11 @@ print('Channel settings:')
 print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
-# Your data gets stored in this variable
-data = None
-datalist = []
-# Your metadata gets stored in this variable
-meta = dotdict()
-plt.show()
-
-def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
+def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False, autosave=True):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
-    global data
+    global d
 
     # Channels that need to be sampled for measurement
     # channels = ['A', 'B', 'C']
@@ -94,21 +82,265 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False):
              rate=rate)
     # Get the picoscope data
     chdata = get_data(channels)
-    # Convert to IV data
+    # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
     # Append that data to global
     #data = np.append(data, ivdata) -- Doesn't work because of stupid data structure
     # For now just overwrite data..
-    data = ivdata
-    datalist.append(data)
+    d = ivdata
+    dhistory.append(data)
 
     # Plot the IV data
-    plotiv(ivdata, ax=ax1)
+    plotupdate()
+    #plotiv(ivdata, ax=ax1)
 
     # Remove previous lines
-    for l in ax2.lines[::-1]: l.remove()
+    #for l in ax2.lines[::-1]: l.remove()
     # Plot the channel data
-    plot_channels(chdata, ax=ax2)
+    #plot_channels(chdata, ax=ax2)
 
-    #plt.draw()
-    plt.pause(.1)
+    if autosave:
+        # Write to disk automatically
+        # Can slow things down
+        savedata()
+
+
+#################### For interactive collection of IV loops ########################
+
+# We construct a data set in a list of dictionaries
+# The list of dictionaries can then be immediately converted to dataframe for storage and analysis
+
+# We append metadata to the IV data -- devicemeta + staticmeta + ivarrays
+
+# Data you care about
+try:
+    data
+except:
+    print('Defining data = []')
+    data = []
+else:
+    if data != []:
+        answer = input('\'data\' variable not empty.  Clobber it? ')
+        if answer.lower() == 'y':
+            print('Defining data = []')
+            data = []
+
+# Data you forgot to save (only 10 of them)
+try:
+    dhistory
+except:
+    print('Defining dhistory = deque(maxlen=10)')
+    dhistory = deque(maxlen=10)
+else:
+    if len(dhistory) > 0:
+        answer = input('\'dhistory\' variable not empty.  Clobber it? ')
+        if answer.lower() == 'y':
+            print('Defining dhistory = deque(maxlen=10)')
+            dhistory = deque(maxlen=10)
+
+# The data index you are currently on
+meta_i = None
+d = None
+
+# Add items to this and they will be appended as metadata to all subsequent measurements
+staticmeta = {'script':__file__, 'scriptruntime':timestr}
+
+'''
+If you want to measure more than one device, this code provides a nice way to step between the
+device information without having to type it in each time.  Less error prone, many advantages.
+'''
+
+# Metadata about the device currently being probed.  Controlled by a few of the following functions
+devicemeta = {}
+
+# Change this list of dicts (or dataframe) before starting
+devicemetalist = {'device_number':n for n in range(100)}
+
+# This controls which keys are printed when identifying a device
+prettykeys = []
+# The value of these keys will be written to the filename
+filenamekeys = []
+
+# Example of setting meta list
+def load_lassen(coupons=[23], dies=[64], modules=['001H']):
+    # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
+    global wafer_df, meta_df, prettykeys, filenamekeys, devicemetalist
+    wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
+    # Select the samples you want to measure
+    meta_df = wafer_df
+    #### Filter devices to be measured #####
+    devices001 = [2,3,4,5,6,7,8]
+    devices014 = [4,5,6,7,8,9]
+    #########
+    meta_df = meta_df[meta_df.coupon.isin(coupons)]
+    meta_df = meta_df[meta_df.module.isin(modules)]
+    meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
+    meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
+    meta_df = meta_df[meta_df.die.isin(dies)]
+    # Merge with deposition data
+    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+    merge_deposition_data_on = ['coupon']
+    meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_on)
+    meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+    devicemetalist = meta_df
+    prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+    filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
+
+def prettyprint_meta(hlkeys=None):
+    # Print some information about the device
+    global prettykeys
+    if prettykeys is None:
+        # Print all the information
+        prettykeys = devicemeta.keys()
+    for key in prettykeys:
+        if key in devicemeta.keys():
+            if hlkeys is not None and key in hlkeys:
+                print('{:<18}\t{:<8} <----- Changed'.format(key[:18], devicemeta[key]))
+            else:
+                print('{:<18}\t{}'.format(key[:18], devicemeta[key]))
+
+pp = autocaller(prettyprint_meta)
+
+def nextdevice():
+    ''' Go to the next device '''
+    global meta_i, devicemeta
+    lastdevicemeta = devicemeta
+    if meta_i is None:
+        meta_i = 0
+    else:
+        meta_i += 1
+    if len(devicemetalist) > meta_i:
+        if type(devicemetalist) == pd.DataFrame:
+            devicemeta = devicemetalist.iloc[meta_i]
+        else:
+            devicemeta = devicemetalist[meta_i]
+    else:
+        print('There is no more data in devicemetalist')
+        return
+    # Highlight keys that have changed
+    hlkeys = []
+    for key in devicemeta.keys():
+        if key not in lastdevicemeta.keys() or devicemeta[key] != lastdevicemeta[key]:
+            hlkeys.append(key)
+    print('You are now measuring this device (index {} of devicemetalist):'.format(meta_i))
+    # Print some information about the device
+    prettyprint_meta(hlkeys)
+
+n = autocaller(nextdevice)
+
+def previousdevice():
+    ''' Go to the previous device '''
+    global meta_i, devicemeta
+    lastdevicemeta = devicemeta
+    meta_i -= 1
+    if type(devicemetalist) == pd.DataFrame:
+        devicemeta = devicemetalist.iloc[meta_i]
+    else:
+        devicemeta = devicemetalist[meta_i]
+    # Highlight keys that have changed
+    hlkeys = []
+    for key in devicemeta.keys():
+        if key not in lastdevicemeta.keys() or devicemeta[key] != lastdevicemeta[key]:
+            hlkeys.append(key)
+    print('You are now measuring this device (index {} of devicemetalist):'.format(meta_i))
+    # Print some information about the device
+    prettyprint_meta(hlkeys)
+
+p = autocaller(previousdevice)
+
+### Functions that write to disk
+
+def makedatafolder():
+    datasubfolder = os.path.join(datafolder, subfolder)
+    if not os.path.isdir(datasubfolder):
+        print('Making folder: {}'.format(datasubfolder))
+        os.makedirs(datasubfolder)
+
+def savedata(filename=None):
+    ''' Attach sample information and write the current value of the d variable to disk '''
+    global d
+    # Append all the data together
+    # devicemeta might be a dict or a series
+    print('Appending metadata to last iv measured:')
+    prettyprint_meta()
+    print('...')
+    d.update(dict(devicemeta))
+    d.update(staticmeta)
+    # Write series to disk.  Append the path to metadata
+    if filename is None:
+        filename = time.strftime('%Y-%m-%d_%H%M%S')
+        for fnkey in filenamekeys:
+            if fnkey in d.keys():
+                filename += '_{}'.format(d[fnkey])
+        # s for series
+        filename += '.s'
+    filepath = os.path.join(datafolder, subfolder, filename)
+    d['datafilepath'] = filepath
+    makedatafolder()
+    print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
+    pd.Series(d).to_pickle(filepath)
+    # Append series to data list
+    print('Appending variable \'d\' to list \'data\'')
+    data.append(d)
+
+s = autocaller(savedata)
+
+def savedatalist(filename=None):
+    if filename is None:
+        # TODO: Figure out a filename that doesn't collide
+        filename = '{}_keithley_loops.df'.format(datestr)
+    filepath = os.path.join(datafolder, subfolder, filename)
+    print('Writing {}'.format(filepath))
+    df = pd.DataFrame(data)
+    df.to_pickle(filepath)
+    # Take out known arrays and export xls
+    xlspath = os.path.splitext(filepath)[0] + '.xls'
+    print('Writing {}'.format(xlspath))
+    df.loc[:, ~df.columns.isin(['I', 'V', 't', 'Vmeasured'])].to_excel(xlspath)
+
+##### Interactive Plotting
+
+## Make some plot windows, put them in places
+try:
+    # Close the figs if they already exist
+    plt.close(fig1)
+    plt.close(fig2)
+except:
+    pass
+(fig1, ax1) , (fig2, ax2) = interactive_figures()
+
+def clear_plots():
+    # Clear IV loop plots
+    ax1.cla()
+    ax2.cla()
+    ax1.set_title('IV Measurements')
+    ax1.set_xlabel('Voltage')
+    ax1.set_ylabel('Current')
+    ax2.set_title('Picoscope Traces')
+    ax2.set_xlabel('Data point')
+    ax2.set_ylabel('Voltage [V]')
+
+clear_plots()
+plt.show()
+c = autocaller(clear_plots)
+
+def plotupdate():
+    # Plot the data in the data variable
+    global d
+    for ax, plotter in plotters.items():
+        plotter(d, ax=ax)
+        ax.get_figure().canvas.draw()
+    plt.pause(.05)
+
+# These functions define what gets plotted automatically on the interactive figures
+def ax1plotter(data, ax=ax1):
+    # Smooth data a bit and give it to plotiv (from plot.py)
+    smoothdata = moving_avg(data, window=5)
+    plotiv(smoothdata, ax=ax)
+
+def ax2plotter(data, ax=ax2):
+    # Remove previous lines
+    for l in ax2.lines[::-1]: l.remove()
+    plot_channels(data, ax=ax)
+
+plotters = {ax1:ax1plotter, ax2:ax2plotter}

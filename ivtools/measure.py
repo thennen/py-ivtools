@@ -361,8 +361,10 @@ def calibrate_compliance(iterations=3):
         plt.pause(.1)
     output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
               'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
-    with open('compliance_calibration.pkl', 'wb') as f:
+    calibrationfile = 'compliance_calibration.pkl'
+    with open(calibrationfile, 'wb') as f:
         pickle.dump(output, f)
+    print('Wrote calibration to ' + calibrationfile)
     return compensations
 
 

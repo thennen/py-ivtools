@@ -264,29 +264,29 @@ prettykeys = []
 filenamekeys = []
 
 # Example of setting meta list
-wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
-# Select the samples you want to measure
-meta_df = wafer_df
-#### Filter devices to be measured #####
-coupons = [23]
-modules = ['001H']
-devices001 = [2,3,4,5,6,7,8]
-devices014 = [4,5,6,7,8,9]
-dies = [64]
-#########
-meta_df = meta_df[meta_df.coupon.isin(coupons)]
-meta_df = meta_df[meta_df.module.isin(modules)]
-meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
-meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-meta_df = meta_df[meta_df.die.isin(dies)]
-# Merge with deposition data
-deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
-merge_deposition_data_on = ['coupon']
-meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_on)
-meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
-devicemetalist = meta_df
-prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
-filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
+def load_lassen(coupons=[23], dies=[64], modules=['001H']):
+    # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
+    global wafer_df, meta_df, prettykeys, filenamekeys, devicemetalist
+    wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
+    # Select the samples you want to measure
+    meta_df = wafer_df
+    #### Filter devices to be measured #####
+    devices001 = [2,3,4,5,6,7,8]
+    devices014 = [4,5,6,7,8,9]
+    #########
+    meta_df = meta_df[meta_df.coupon.isin(coupons)]
+    meta_df = meta_df[meta_df.module.isin(modules)]
+    meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
+    meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
+    meta_df = meta_df[meta_df.die.isin(dies)]
+    # Merge with deposition data
+    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+    merge_deposition_data_on = ['coupon']
+    meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_on)
+    meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+    devicemetalist = meta_df
+    prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+    filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
 
 # Because who wants to type?
 class autocaller():
@@ -319,10 +319,14 @@ def nextsample():
         meta_i = 0
     else:
         meta_i += 1
-    if type(devicemetalist) == pd.DataFrame:
-        devicemeta = devicemetalist.iloc[meta_i]
+    if len(devicemetalist) > meta_i:
+        if type(devicemetalist) == pd.DataFrame:
+            devicemeta = devicemetalist.iloc[meta_i]
+        else:
+            devicemeta = devicemetalist[meta_i]
     else:
-        devicemeta = devicemetalist[meta_i]
+        print('There is no more data in devicemetalist')
+        return
     # Highlight keys that have changed
     hlkeys = []
     for key in devicemeta.keys():
