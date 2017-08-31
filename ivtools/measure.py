@@ -178,7 +178,7 @@ def get_data(ch='A', raw=False):
     This function returns a simple dict of the arrays and metadata.
     Use pico_to_iv to convert to current, voltage, different data structure.
 
-    TODO: if raw is True, do not convert from ADC value - this saves a lot of memory
+    if raw is True, do not convert from ADC value - this saves a lot of memory
     return dict of arrays and metadata (sample rate, channel settings, time...)
 
     '''
@@ -190,7 +190,14 @@ def get_data(ch='A', raw=False):
     if not hasattr(ch, '__iter__'):
         ch = [ch]
     for c in ch:
-        data[c] = ps.getDataV(c)
+        if raw:
+            # For some reason pico-python gives the values as int16
+            # Probably because some scopes have 16 bit resolution
+            # The 6403c is only 8 bit, and I'm looking to save memory here
+            rawint16, _, _ = ps.getDataRaw(c)
+            data[c] = np.int8(rawint16 / 2**8)
+        else:
+            data[c] = ps.getDataV(c)
 
     # Careful about this ..  Just reading the state of the globals and assuming they haven't changed
     # since the measurement.  This will mess you up one day
@@ -411,6 +418,21 @@ def measure_compliance():
 
     return (ccurrent, Amean)
 
+def raw_to_V(datain):
+    '''
+    Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
+    arrays and the RANGE and OFFSET values.
+    return a new dict with updated channel arrays
+    '''
+    channels = ['A', 'B', 'C', 'D']
+    dataout = {}
+    for c in channels:
+        if (c in datain.keys()) and (datain[c].dtype == np.int8):
+            dataout[c] = datain[c] / 2**8 * datain['RANGE'][c] * 2 - datain['OFFSET'][c]
+    for k in datain.keys():
+        if k not in dataout.keys():
+            dataout[k] = datain[k]
+    return dataout
 
 def pico_to_iv(datain):
     ''' Convert picoscope channel data to IV dict'''
@@ -423,6 +445,9 @@ def pico_to_iv(datain):
     # dotdict was nice, but caused too many problems ...
     #dataout = dotdict(datain)
     dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain)
     A = datain['A']
     B = datain['B']
     #C = datain['C']

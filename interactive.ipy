@@ -96,7 +96,7 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
     print('Getting data from picoscope.')
     # Get the picoscope data
     # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
-    chdata = get_data(channels)
+    chdata = get_data(channels, raw=True)
     print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
