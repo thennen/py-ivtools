@@ -111,7 +111,7 @@ def sliceiv(data, stop, start=0, step=None):
         if np.isnan(stop): stop = -1
     for sk in slicekeys:
         # Apply the filter to all the relevant items
-        dataout[sk] = dataout[sk][slice(start, stop, step)]
+        dataout[sk] = data[sk][slice(start, stop, step)]
     add_missing_keys(data, dataout)
     return dataout
 
@@ -180,9 +180,6 @@ def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
         return outlist
 
 
-return zip(Asplit, Bsplit)
-
-
 @ivfunc
 def slicebyvalue(data, column='V', minval=0, maxval=None):
     # This is so commonly done that I will make a function for it, though it's just a special case of indexiv
@@ -198,7 +195,7 @@ def slicebyvalue(data, column='V', minval=0, maxval=None):
     else:
         return data
     for k in keys:
-        dataout[k] = dataout[k][index]
+        dataout[k] = data[k][index]
     add_missing_keys(data, dataout)
 
     return dataout
@@ -303,7 +300,7 @@ def largest_monotonic(data, column='I'):
 
     dataout = type(data)()
     for k in keys:
-        dataout[k] = dataout[k][startind:endind][::direction]
+        dataout[k] = data[k][startind:endind][::direction]
     add_missing_keys(data, dataout)
 
     return dataout
@@ -433,7 +430,7 @@ def longest_monotonic(data, column='I'):
 
     dataout = type(data)()
     for k in keys:
-        dataout[k] = dataout[k][startind:endind][::direction]
+        dataout[k] = data[k][startind:endind][::direction]
     add_missing_keys(data, dataout)
 
     return dataout
@@ -443,7 +440,7 @@ def normalize(data):
     ''' Normalize by the maximum current '''
     dataout = type(data)()
     maxI = np.max(data['I'])
-    dataout['I'] = dataout['I'] / maxI
+    dataout['I'] = data['I'] / maxI
     add_missing_keys(data, dataout)
 
     return dataout

@@ -287,6 +287,9 @@ def tri_wfm(v1, v2):
     constant sweep rate involves finding the greatest common divisor of
     v1 and v2.
     '''
+    # Don't think we need better than 1 mV resolution
+    v1 = round(v1, 3)
+    v2 = round(v2, 3)
     f1 = Fraction(str(v1))
     f2 = Fraction(str(v2))
     # This is depreciated for some reason

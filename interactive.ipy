@@ -74,10 +74,35 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
 
     if smartrange:
         # Auto offset for current input
-        print('Smart ranging is on.  Changing CHB offset')
-        global OFFSET
-        OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
+        print('Smart ranging is on.  Maybe changing CHA/CHB offset/range')
+        global OFFSET, RANGE
+        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+
+        # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
+        amp = abs(v1 - v2) / 2
+        selectedrange = possible_ranges[possible_ranges > amp][0]
+        RANGE['A'] = selectedrange
+        middle = (v1 + v2) / 2
+        OFFSET['A'] = -middle
+
+        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
+        # Center the measurement range on zero current
+        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
+        # channelb should never go below zero, except for potentially op amp overshoot
+        # I have seen it reach -0.1V
+        b_min = 0
+        # Hypothetical resistance method
+        b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
+        b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3
+        b_amp = abs(b_max - b_min) / 2
+        b_selectedrange = possible_ranges[possible_ranges > b_amp][0]
+        RANGE['B'] = b_selectedrange
+        #b_middle = (b_max + b_min) / 2
+        b_middle = b_selectedrange
+        OFFSET['B'] = -b_middle
+
         # Can do some other cool tricks here
+        # Like look at previous measurements, use derivatives to predict appropriate range changes
 
     # Set picoscope to capture
     actual_fs = pico_capture(ch=channels,
@@ -103,21 +128,22 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
 
     if autosplit and n > 1:
         print('Splitting data into individual pulses')
-        ivdata = split(ivdata, nsamples=pulsedur*actual_fs)
+        ivdata = splitiv(ivdata, nsamples=pulsedur*actual_fs)
 
     d = ivdata
     dhistory.append(ivdata)
-
-    if autoplot:
-        # Plot the IV data
-        print('Plotting data')
-        plotupdate()
 
     if autosave:
         # Write to disk automatically
         # Can slow things down
         print('Writing data to disk')
         savedata()
+
+    if autoplot:
+        # Plot the IV data
+        print('Plotting data')
+        plotupdate()
+
 
 
 #################### For interactive collection of IV loops ########################
@@ -391,7 +417,7 @@ def ax2plotter(data, ax=ax2):
     lendata = len(chdata['A'])
     if lendata > 100000:
         print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
-        plotdata = slice_iv(chdata, stop=100000)
+        plotdata = sliceiv(chdata, stop=100000)
     else:
         plotdata = chdata
     plot_channels(plotdata, ax=ax)
