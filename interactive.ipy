@@ -57,6 +57,53 @@ print('Channel settings:')
 print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
+def smartrange(v1, v2, R=None):
+        # Auto offset for current input
+        global OFFSET, RANGE
+        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        # Sadly, each range has a maximum possible offset
+        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+
+        # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
+        amp = abs(v1 - v2) / 2
+        selectedrange = possible_ranges[possible_ranges >= amp][0]
+        RANGE['A'] = selectedrange
+        middle = (v1 + v2) / 2
+        OFFSET['A'] = -middle
+
+        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
+        # Center the measurement range on zero current
+        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
+        # channelb should never go below zero, except for potentially op amp overshoot
+        # I have seen it reach -0.1V
+        if R is None:
+            # Hypothetical resistance method
+            b_min = 0
+            b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
+            b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3
+        else:
+            # R was passed, assume device has constant resistance with this value
+            b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
+            b_max = (COMPLIANCE_CURRENT - min(v1, v2) / R) * 2e3
+        b_amp = abs(b_max - b_min) / 2
+        b_middle = (b_max + b_min) / 2
+        mask_of_possibilities = possible_ranges >= b_amp
+        for b_selectedrange, max_offset in zip(possible_ranges[mask_of_possibilities], max_offsets[mask_of_possibilities]):
+            # Is b_middle an acceptable offset?
+            if b_middle < max_offset:
+                RANGE['B'] = b_selectedrange
+                OFFSET['B'] = -b_middle
+                break
+            # Can we reduce the offset without the signal going out of range?
+            elif (max_offset + b_selectedrange >= b_max) and (-max_offset - b_selectedrange <= b_min):
+                RANGE['B'] = b_selectedrange
+                OFFSET['B'] = np.clip(-b_middle, -max_offset, max_offset)
+                break
+            # Neither worked, try increasing the range ...
+
+        # Could do some other cool tricks here
+        # Like look at previous measurements, use derivatives to predict appropriate range changes
+
 def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
        autosave=True, autoplot=True, autosplit=True):
     '''
@@ -73,36 +120,7 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
     sweeprate, pulsedur = _rate_duration(v1, v2, rate, duration)
 
     if smartrange:
-        # Auto offset for current input
-        print('Smart ranging is on.  Maybe changing CHA/CHB offset/range')
-        global OFFSET, RANGE
-        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
-
-        # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-        amp = abs(v1 - v2) / 2
-        selectedrange = possible_ranges[possible_ranges > amp][0]
-        RANGE['A'] = selectedrange
-        middle = (v1 + v2) / 2
-        OFFSET['A'] = -middle
-
-        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
-        # Center the measurement range on zero current
-        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
-        # channelb should never go below zero, except for potentially op amp overshoot
-        # I have seen it reach -0.1V
-        b_min = 0
-        # Hypothetical resistance method
-        b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
-        b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3
-        b_amp = abs(b_max - b_min) / 2
-        b_selectedrange = possible_ranges[possible_ranges > b_amp][0]
-        RANGE['B'] = b_selectedrange
-        #b_middle = (b_max + b_min) / 2
-        b_middle = b_selectedrange
-        OFFSET['B'] = -b_middle
-
-        # Can do some other cool tricks here
-        # Like look at previous measurements, use derivatives to predict appropriate range changes
+        smartrange(v1, v2)
 
     # Set picoscope to capture
     actual_fs = pico_capture(ch=channels,
@@ -195,7 +213,7 @@ device information without having to type it in each time.  Less error prone, ma
 devicemeta = {}
 
 # Change this list of dicts (or dataframe) before starting
-devicemetalist = {'device_number':n for n in range(100)}
+devicemetalist = [{'device_number':n} for n in range(100)]
 
 # This controls which keys are printed when identifying a device
 prettykeys = []
@@ -230,7 +248,7 @@ def load_lassen(coupons=[23], dies=[64], modules=['001H']):
 def prettyprint_meta(hlkeys=None):
     # Print some information about the device
     global prettykeys
-    if prettykeys is None:
+    if prettykeys is None or len(prettykeys) == 0:
         # Print all the information
         prettykeys = devicemeta.keys()
     for key in prettykeys:
@@ -361,7 +379,7 @@ def savedatalist(filename=None):
     # Take out known arrays and export xls
     xlspath = os.path.splitext(filepath)[0] + '.xls'
     print('Writing {}'.format(xlspath))
-    df.loc[:, ~df.columns.isin(['I', 'V', 't', 'Vmeasured'])].to_excel(xlspath)
+    df.loc[:, ~df.columns.isin(['I', 'V', 't', 'Vmeasured', 'A', 'B'])].to_excel(xlspath)
 
 ##### Interactive Plotting
 
@@ -403,11 +421,23 @@ def plotupdate():
     plt.pause(.05)
 
 # These functions define what gets plotted automatically on the interactive figures
+# We are potentially dealing with a lot of data points such that plotting would limit the measurement speed
+# Try to make some reasonable decisions about which subset of the data to display
+
 def ax1plotter(data, ax=ax1):
     # Smooth data a bit and give it to plotiv (from plot.py)
     # Would be better to smooth before splitting ...
     smoothdata = moving_avg(data, window=5)
-    plotiv(smoothdata, ax=ax)
+    if type(data) is list:
+        nloops = len(data)
+    else:
+        nloops = 1
+    maxloops = 100
+    if nloops > maxloops:
+        print('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        loopstep = int(nloops / 99)
+        smoothdata = smoothdata[::loopstep]
+    plotiv(smoothdata, ax=ax, maxsamples=5000)
 
 def ax2plotter(data, ax=ax2):
     # Remove previous lines

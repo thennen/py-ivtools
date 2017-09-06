@@ -84,7 +84,7 @@ def connect_instruments():
     connect_rigolawg()
 
 def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
-                 trigsource='TriggerAux', triglevel=0.5, timeout_ms=30000):
+                 trigsource='TriggerAux', triglevel=0.5, timeout_ms=30000, pretrig=0.0):
     '''
     Set up picoscope to capture from specified channel(s).
     Won't actually do it until it receives the specified trigger event.
@@ -125,7 +125,7 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
                       VOffset=OFFSET[c])
     # Set up the trigger.  Will timeout in 30s
     ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
-    ps.runBlock()
+    ps.runBlock(pretrig)
     return freq
 
 
@@ -171,7 +171,7 @@ def testreload():
     pass
 
 
-def get_data(ch='A', raw=False):
+def get_data(ch='A', raw=False, dtype=np.float32):
     '''
     Wait for data and transfer it from pico memory.
     ch can be a list of channels
@@ -197,14 +197,20 @@ def get_data(ch='A', raw=False):
             rawint16, _, _ = ps.getDataRaw(c)
             data[c] = np.int8(rawint16 / 2**8)
         else:
-            data[c] = ps.getDataV(c)
+            # dtype argument is not part of normal picoscope library!
+            data[c] = ps.getDataV(c, dtype=dtype)
 
-    # Careful about this ..  Just reading the state of the globals and assuming they haven't changed
-    # since the measurement.  This will mess you up one day
-    data['RANGE'] = RANGE
+    Channels = ['A', 'B', 'C', 'D']
+    data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
+    data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
+    #data['RANGE'] = RANGE
+    #data['OFFSET'] = OFFSET
+    data['sample_rate'] = ps.sampleRate
+    # Using the current state of the global variables to record what settings were used
+    # I don't know a way to get couplings and attenuations from the picoscope instance
     data['COUPLINGS'] = COUPLINGS
     data['ATTENUATION'] = ATTENUATION
-    data['OFFSET'] = OFFSET
+    # Sample frequency?
     return data
 
 
@@ -337,7 +343,7 @@ def set_compliance(cc_value):
     COMPLIANCE_CURRENT = cc_value
     INPUT_OFFSET = 0
 
-def calibrate_compliance(iterations=3):
+def calibrate_compliance(iterations=3, startfromfile=True):
     '''
     Set and measure some compliance values throughout the range, and save a calibration look up table
     Need picoscope channel B connected to circuit output
@@ -345,6 +351,16 @@ def calibrate_compliance(iterations=3):
     This takes some time..
     '''
     # Measure compliance currents and input offsets with static Vb
+    # Have to change the range.  I'll change it back ...
+    global RANGE
+    global OFFSET
+    oldrange = RANGE.copy()
+    oldoffset = OFFSET.copy()
+    RANGE['A'] = 1
+    #OFFSET['A'] = -.5
+    RANGE['B'] = 5
+    #OFFSET['B'] = -2.5
+
     fig1, ax1 = plt.subplots()
     fig2, ax2 = plt.subplots()
     ccurrent_list = []
@@ -354,9 +370,16 @@ def calibrate_compliance(iterations=3):
         ccurrent = []
         offsets = []
         if len(offsets_list) == 0:
-            compensations = .55 /0.088 * np.ones(len(dacvals))
+            if startfromfile:
+                fn = 'compliance_calibration.pkl'
+                print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+                with open(fn, 'rb') as f:
+                    cc = pickle.load(f)
+                compensations = cc['compensationV']
+            else:
+                compensations = .55 /0.088 * np.ones(len(dacvals))
         else:
-            compensations -= np.array(offsets_list[-1]) / .088
+            compensations -= np.array(offsets_list[-1]) / .085
         for v,cv in zip(dacvals, compensations):
             analog_out(1, volts=cv)
             analog_out(0, v)
@@ -367,7 +390,11 @@ def calibrate_compliance(iterations=3):
         ccurrent_list.append(ccurrent)
         offsets_list.append(offsets)
         ax1.plot(dacvals, ccurrent, '.-')
+        ax1.set_xlabel('DAC0 value')
+        ax1.set_ylabel('Compliance Current')
         ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
+        ax2.set_xlabel('DAC0 value')
+        ax2.set_ylabel('Input offset')
         ax2.legend()
         plt.pause(.1)
     output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
@@ -376,6 +403,11 @@ def calibrate_compliance(iterations=3):
     with open(calibrationfile, 'wb') as f:
         pickle.dump(output, f)
     print('Wrote calibration to ' + calibrationfile)
+
+    # Set scope settings back to old values
+    RANGE = oldrange
+    OFFSET = oldoffset
+
     return compensations
 
 
@@ -459,6 +491,7 @@ def pico_to_iv(datain):
     R = 2e3
     dataout['V'] = A - INPUT_OFFSET
     dataout['V_formula'] = 'CHA - INPUT_OFFSET'
+    dataout['INPUT_OFFSET'] = INPUT_OFFSET
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
@@ -508,3 +541,14 @@ def analog_out(ch, dacval=None, volts=None):
         # Display the error
         print("A UL error occurred. Code: " + str(e.errorcode)
             + " Message: " + e.message)
+
+
+def digital_out(ch, val):
+    # Import here because I don't want the entire module to error if you don't have mcculw installed
+    from mcculw import ul
+    from mcculw.enums import DigitalPortType, DigitalIODirection
+    from mcculw.ul import ULError
+    #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
+    ul.d_config_bit(0, DigitalPortType.AUXPORT, 8, DigitalIODirection.OUT)
+    ul.d_bit_out(0, DigitalPortType.AUXPORT, ch, val)
+

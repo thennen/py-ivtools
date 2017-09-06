@@ -59,8 +59,10 @@ def find_data_arrays(data):
     return arraykeys
 
 @ivfunc
-def moving_avg(data, columns=('I', 'V'), window=5):
+def moving_avg(data, columns=None, window=5):
     ''' Smooth data arrays with moving avg '''
+    if columns is None:
+        columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
@@ -449,6 +451,31 @@ def add_missing_keys(datain, dataout):
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
+
+@ivfunc
+def resistance(data, vmax=0.1, vmin=None):
+    ''' Fit a line '''
+    if vmin is None:
+        mask = abs(data['V']) <= vmax
+    else:
+        mask = (data['V'] <= vmax) & (data['V'] >= vmin)
+    poly = np.polyfit(data['I'][mask], data['V'][mask], 1)
+    return poly[0]
+
+@ivfunc
+def downsample_dumb(data, nsamples, columns=None):
+    ''' Downsample arrays with equal spacing. Probably won't be exactly nsamples'''
+    if columns is None:
+        columns = find_data_arrays(data)
+        l = len(data[columns[0]])
+        step = round(l / (nsamples - 1))
+    if step <= 1:
+        return data
+    dataout = type(data)()
+    for c in columns:
+        dataout[c] = data[c][::step]
+        add_missing_keys(data, dataout)
+    return dataout
 
 # These are not needed for pandas types obviously
 @ivfunc
