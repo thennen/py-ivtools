@@ -59,7 +59,7 @@ def find_data_arrays(data):
     return arraykeys
 
 @ivfunc
-def moving_avg(data, columns=None, window=5):
+def moving_avg(data, window=5, columns=('I', 'V')):
     ''' Smooth data arrays with moving avg '''
     if columns is None:
         columns = find_data_arrays(data)
@@ -97,7 +97,7 @@ def indexiv(data, index_function):
     return dataout
 
 @ivfunc
-def sliceiv(data, stop, start=0, step=None):
+def sliceiv(data, stop, start=0, step=1):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start, stop can be functions that take the iv loop as argument
@@ -113,9 +113,26 @@ def sliceiv(data, stop, start=0, step=None):
         if np.isnan(stop): stop = -1
     for sk in slicekeys:
         # Apply the filter to all the relevant items
-        dataout[sk] = data[sk][slice(start, stop, step)]
+        dataout[sk] = data[sk][slice(int(start), int(stop), int(step))]
     add_missing_keys(data, dataout)
     return dataout
+
+
+@ivfunc
+def slicefraction(data, stop=1/2, start=0, step=1):
+    '''
+    Slice all the data arrays inside an iv loop container at once.
+    start and stop point given as fraction of data length
+    '''
+    slicekeys = find_data_arrays(data)
+    dataout = type(data)()
+    lendata = len(data[slicekeys[0]])
+    for sk in slicekeys:
+        # Slice all the relevant arrays
+        dataout[sk] = data[sk][slice(int(start * lendata), int(stop * lendata), int(step))]
+    add_missing_keys(data, dataout)
+    return dataout
+
 
 # NOT an ivfunc -- can only be called on single IV
 # Would it make sense to collapse a list of IVs into a flattened list of list of IVs?
@@ -193,7 +210,7 @@ def slicebyvalue(data, column='V', minval=0, maxval=None):
     elif (maxval is None) and (minval is not None):
         index = data[column] >= minval
     elif (maxval is not None):
-        index = minval <= data[column] < maxval
+        index = (minval <= data[column]) & (data[column] < maxval)
     else:
         return data
     for k in keys:

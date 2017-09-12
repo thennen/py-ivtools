@@ -335,9 +335,7 @@ def set_compliance(cc_value):
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
     DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
-    print(DAC0)
     DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
-    print(DAC1)
     analog_out(0, dacval=DAC0)
     analog_out(1, volts=DAC1)
     COMPLIANCE_CURRENT = cc_value
@@ -453,7 +451,7 @@ def measure_compliance():
 
     return (ccurrent, Amean)
 
-def raw_to_V(datain):
+def raw_to_V(datain, dtype=np.float16):
     '''
     Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
     arrays and the RANGE and OFFSET values.
@@ -463,13 +461,13 @@ def raw_to_V(datain):
     dataout = {}
     for c in channels:
         if (c in datain.keys()) and (datain[c].dtype == np.int8):
-            dataout[c] = datain[c] / 2**8 * datain['RANGE'][c] * 2 - datain['OFFSET'][c]
+            dataout[c] = datain[c] / dtype(2**8) * dtype(datain['RANGE'][c] * 2) - dtype(datain['OFFSET'][c])
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
     return dataout
 
-def pico_to_iv(datain):
+def pico_to_iv(datain, dtype=np.float16):
     ''' Convert picoscope channel data to IV dict'''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
@@ -482,20 +480,20 @@ def pico_to_iv(datain):
     dataout = datain
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain)
+        datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     B = datain['B']
     #C = datain['C']
     gain = 1
     # Common base resistor
     R = 2e3
-    dataout['V'] = A - INPUT_OFFSET
+    dataout['V'] = A - dtype(INPUT_OFFSET)
     dataout['V_formula'] = 'CHA - INPUT_OFFSET'
     dataout['INPUT_OFFSET'] = INPUT_OFFSET
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    dataout['I'] = -1 * B / (R * gain) + COMPLIANCE_CURRENT
+    dataout['I'] = -1 * B / dtype(R * gain) + dtype(COMPLIANCE_CURRENT)
     dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
     dataout['units'] = {'V':'V', 'I':'A'}
     # parameters for conversion

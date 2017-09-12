@@ -26,19 +26,57 @@ import warnings
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
 from collections import defaultdict, deque
 
+def makedatafolder():
+    datasubfolder = os.path.join(datafolder, subfolder)
+    if not os.path.isdir(datasubfolder):
+        print('Making folder: {}'.format(datasubfolder))
+        os.makedirs(datasubfolder)
+
 datestr = time.strftime('%Y-%m-%d')
 timestr = time.strftime('%Y-%m-%d_%H%M%S')
 datafolder = r'D:\t\ivdata'
 subfolder = datestr
 print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+makedatafolder()
+
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
+magic = get_ipython().magic
+magic('logstop')
+# Fancy logging of ipython in and out, as well as standard out
+try:
+    sys.stdout = stdstdout
+except:
+    # This should run first time only
+    stdstdout = sys.stdout
+class Logger(object):
+    def __init__(self):
+        self.terminal = stdstdout
+        self.log = open(logfile, 'a')
+
+    def write(self, message):
+        self.terminal.write(message)
+        # Comment the lines and append them to ipython log file
+        self.log.writelines(['#[Stdout]# {}\n'.format(line) for line in message.split('\n') if line != ''])
+
+    def flush(self):
+        self.log.flush()
+try:
+    # Close the previous file
+    logger.log.close()
+except:
+    pass
+logfile = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
+magic('logstart -o {} append'.format(logfile))
+logger = Logger()
+sys.stdout = logger
+
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
-%matplotlib
-%run -i ivtools/measure.py
-%run -i ivtools/plot.py
-%run -i ivtools/io.py
-%run -i ivtools/analyze.py
+magic('matplotlib')
+magic('run -i C:/t/py-ivtools/ivtools/measure.py')
+magic('run -i C:/t/py-ivtools/ivtools/plot.py')
+magic('run -i C:/t/py-ivtools/ivtools/io.py')
+magic('run -i C:/t/py-ivtools/ivtools/analyze.py')
 
 # Because who wants to type?
 class autocaller():
@@ -104,7 +142,7 @@ def smartrange(v1, v2, R=None):
         # Could do some other cool tricks here
         # Like look at previous measurements, use derivatives to predict appropriate range changes
 
-def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
+def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, dumbrange=True,
        autosave=True, autoplot=True, autosplit=True):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
@@ -119,7 +157,7 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
     # so that we know how long to capture
     sweeprate, pulsedur = _rate_duration(v1, v2, rate, duration)
 
-    if smartrange:
+    if not dumbrange:
         smartrange(v1, v2)
 
     # Set picoscope to capture
@@ -171,6 +209,7 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
 
 # We append metadata to the IV data -- devicemeta + staticmeta + ivarrays
 
+'''
 # Data you care about
 try:
     data
@@ -183,6 +222,7 @@ else:
         if answer.lower() == 'y':
             print('Defining data = []')
             data = []
+'''
 
 # Data you forgot to save (only 10 of them)
 try:
@@ -309,11 +349,6 @@ p = autocaller(previousdevice)
 
 ### Functions that write to disk
 
-def makedatafolder():
-    datasubfolder = os.path.join(datafolder, subfolder)
-    if not os.path.isdir(datasubfolder):
-        print('Making folder: {}'.format(datasubfolder))
-        os.makedirs(datasubfolder)
 
 def savedata(filename=None):
     '''
@@ -355,15 +390,16 @@ def savedata(filename=None):
         print('converting variable \'d\' to pd.DataFrame and writing as pickle to {}'.format(filepath))
         pd.DataFrame(d).to_pickle(filepath)
         # Extend data list with d
-        print('Extending list \'data\' with variable \'d\'')
-        data.extend(d)
+        #print('Extending list \'data\' with variable \'d\'')
+        #data.extend(d)
     else:
         d['datafilepath'] = filepath
         print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
         pd.Series(d).to_pickle(filepath)
+        ### Decided this is a bad idea for the large datasets that tend to come out of this
         # Append series to data list
-        print('Appending variable \'d\' to list \'data\'')
-        data.append(d)
+        #print('Appending variable \'d\' to list \'data\'')
+        #data.append(d)
     print('File size: {:.3f} MB'.format(os.path.getsize(filepath) / 1048576))
 
 s = autocaller(savedata)
