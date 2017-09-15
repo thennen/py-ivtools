@@ -41,6 +41,8 @@ makedatafolder()
 
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
+############# Logging  ###########################
+
 magic = get_ipython().magic
 magic('logstop')
 # Fancy logging of ipython in and out, as well as standard out
@@ -73,10 +75,11 @@ sys.stdout = logger
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 magic('matplotlib')
-magic('run -i C:/t/py-ivtools/ivtools/measure.py')
-magic('run -i C:/t/py-ivtools/ivtools/plot.py')
-magic('run -i C:/t/py-ivtools/ivtools/io.py')
-magic('run -i C:/t/py-ivtools/ivtools/analyze.py')
+ivtoolsdir = 'C:/t/py-ivtools'
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/measure.py')))
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/plot.py')))
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/io.py')))
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 
 # Because who wants to type?
 class autocaller():
