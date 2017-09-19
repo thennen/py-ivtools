@@ -355,9 +355,10 @@ def calibrate_compliance(iterations=3, startfromfile=True):
     oldrange = RANGE.copy()
     oldoffset = OFFSET.copy()
     RANGE['A'] = 1
-    #OFFSET['A'] = -.5
-    RANGE['B'] = 5
-    #OFFSET['B'] = -2.5
+    OFFSET['A'] = 0
+    #RANGE['B'] = 5
+    RANGE['B'] = 2
+    OFFSET['B'] = -2
 
     fig1, ax1 = plt.subplots()
     fig2, ax2 = plt.subplots()
@@ -408,6 +409,19 @@ def calibrate_compliance(iterations=3, startfromfile=True):
 
     return compensations
 
+def plot_compliance_calibration():
+    fn = 'compliance_calibration.pkl'
+    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+    with open(fn, 'rb') as f:
+        cc = pickle.load(f)
+    ccurrent = cc['ccurrent']
+    dacvals = cc['dacvals']
+    fig, ax = plt.subplots()
+    ax.plot(dacvals, ccurrent, '.-')
+    ax.set_xlabel('DAC0 value')
+    ax.set_ylabel('Compliance Current')
+    plt.tight_layout()
+
 
 def measure_compliance():
     '''
@@ -431,6 +445,7 @@ def measure_compliance():
     # Immediately capture some samples on channels A and B
     pico_capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1)
     picodata = get_data(['A', 'B'])
+    #plot_channels(picodata)
     Amean = np.mean(picodata['A'])
     Bmean = np.mean(picodata['B'])
 
@@ -451,7 +466,7 @@ def measure_compliance():
 
     return (ccurrent, Amean)
 
-def raw_to_V(datain, dtype=np.float16):
+def raw_to_V(datain, dtype=np.float32):
     '''
     Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
     arrays and the RANGE and OFFSET values.
@@ -467,7 +482,7 @@ def raw_to_V(datain, dtype=np.float16):
             dataout[k] = datain[k]
     return dataout
 
-def pico_to_iv(datain, dtype=np.float16):
+def pico_to_iv(datain, dtype=np.float32):
     ''' Convert picoscope channel data to IV dict'''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them

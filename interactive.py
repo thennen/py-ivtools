@@ -22,6 +22,7 @@ import sys
 import time
 import pandas as pd
 import warnings
+from datetime import datetime
 # Stop a certain matplotlib warning from showing up
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
 from collections import defaultdict, deque
@@ -95,7 +96,7 @@ print('Channel settings:')
 print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
-def smartrange(v1, v2, R=None):
+def smart_range(v1, v2, R=None):
         # Auto offset for current input
         global OFFSET, RANGE
         possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
@@ -116,9 +117,12 @@ def smartrange(v1, v2, R=None):
         # I have seen it reach -0.1V
         if R is None:
             # Hypothetical resistance method
+            # Signal should never go below 0V (compliance)
             b_min = 0
             b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
-            b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3
+            # Compliance current sets the voltage offset at zero input.
+            # Add 10% to be safe.
+            b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3 * 1.1
         else:
             # R was passed, assume device has constant resistance with this value
             b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
@@ -142,8 +146,8 @@ def smartrange(v1, v2, R=None):
         # Could do some other cool tricks here
         # Like look at previous measurements, use derivatives to predict appropriate range changes
 
-def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, dumbrange=True,
-       autosave=True, autoplot=True, autosplit=True):
+def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
+       autosave=True, autoplot=True, autosplit=True, into50ohm=False):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
@@ -157,17 +161,24 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, dumbrange=True,
     # so that we know how long to capture
     sweeprate, pulsedur = _rate_duration(v1, v2, rate, duration)
 
-    if not dumbrange:
-        smartrange(v1, v2)
+    if smartrange:
+        smart_range(v1, v2)
 
     # Set picoscope to capture
     actual_fs = pico_capture(ch=channels,
                              freq=fs,
                              duration=n*pulsedur)
     # Send a triangle pulse
+    if into50ohm:
+        # Multiply voltages by 2 to account for 50 ohm input
+        triv1 = 2*v1
+        triv2 = 2*v2
+    else:
+        triv1 = v1
+        triv2 = v2
     tripulse(n=n,
-             v1=v1,
-             v2=v2,
+             v1=triv1,
+             v2=triv2,
              duration=duration,
              rate=rate)
 
@@ -372,7 +383,9 @@ def savedata(filename=None):
         d.update(staticmeta)
     # Write series/dataframe to disk.  Append the path to metadata
     if filename is None:
-        filename = time.strftime('%Y-%m-%d_%H%M%S')
+        #filename = time.strftime('%Y-%m-%d_%H%M%S')
+        #Need milliseconds
+        filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
         for fnkey in filenamekeys:
             if not islist and fnkey in d.keys():
                 filename += '_{}'.format(d[fnkey])
@@ -476,6 +489,7 @@ def ax1plotter(data, ax=ax1):
     plotiv(smoothdata, ax=ax, maxsamples=5000)
 
 def ax2plotter(data, ax=ax2):
+    # Right now just ignoring passed data and plotting from global chdata
     # Remove previous lines
     for l in ax2.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform

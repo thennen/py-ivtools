@@ -4,6 +4,7 @@ from functools import wraps
 import numpy as np
 from itertools import groupby
 from dotdict import dotdict
+from scipy import signal
 
 def ivfunc(func):
     '''
@@ -77,6 +78,48 @@ def moving_avg(data, window=5, columns=('I', 'V')):
         dataout[c] = smooth
     add_missing_keys(data, dataout)
     return dataout
+
+
+@ivfunc
+def medfilt(data, window=5, columns=('I', 'V')):
+    ''' Smooth data arrays with moving median '''
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    lens = [len(ar) for ar in arrays]
+    if not all([l - lens[0] == 0 for l in lens]):
+        raise Exception('Arrays to be smoothed have different lengths!')
+    if lens[0] == 0:
+        raise Exception('No data to smooth')
+    smootharrays = [signal.medfilt(ar, window) for ar in arrays]
+    dataout = type(data)()
+    for c, smooth in zip(columns, smootharrays):
+        dataout[c] = smooth
+    add_missing_keys(data, dataout)
+    return dataout
+
+@ivfunc
+def decimate(data, factor=5, columns=('I', 'V')):
+    ''' Decimate data arrays '''
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    lens = [len(ar) for ar in arrays]
+    if not all([l - lens[0] == 0 for l in lens]):
+        raise Exception('Arrays to be smoothed have different lengths!')
+    if lens[0] == 0:
+        raise Exception('No data to smooth')
+    decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
+    dataout = type(data)()
+    for c, dec in zip(columns, decarrays):
+        dataout[c] = dec
+    add_missing_keys(data, dataout)
+    return dataout
+
+
+@ivfunc
+def maketimearray(data):
+    return np.arange(len(data['V'])) * 1/data['sample_rate']
 
 
 @ivfunc
@@ -174,6 +217,7 @@ def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
     if you pass nloops, it splits evenly into n loops.
     if you pass nsamples, it makes each loop have that many samples (except possibly the last one)
     pass nsamples = PulseDuration * SampleFrequency if you don't know nsamples
+    Can only be called on a single loop
     '''
     l = len(data['V'])
     if nloops is not None:
@@ -199,6 +243,28 @@ def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
         return outlist
 
 
+def concativ(data):
+    ''' Inverse of splitiv.  Can only be called on multiple loops.  Keeps only keys from 0th loop.'''
+    if type(data) is pd.DataFrame:
+        firstrow = data.iloc[0]
+    else:
+        firstrow = data[0]
+
+    concatkeys = find_data_arrays(firstrow)
+
+    out = type(firstrow)()
+    for k in concatkeys:
+        if type(data) is pd.DataFrame:
+            out[k] = np.concatenate(list(data[k]))
+        else:
+            out[k] = np.concatenate([d[k] for d in data])
+    add_missing_keys(data, out)
+
+    return out
+
+
+# TODO: Rename this, because it doesn't return a true "slice" of the data
+# Maybe put "mask" in the name.  maskbyvalue? selectbyvalue?
 @ivfunc
 def slicebyvalue(data, column='V', minval=0, maxval=None):
     # This is so commonly done that I will make a function for it, though it's just a special case of indexiv
@@ -218,6 +284,15 @@ def slicebyvalue(data, column='V', minval=0, maxval=None):
     add_missing_keys(data, dataout)
 
     return dataout
+
+"""
+@ivfunc
+def slicebyvalue(data, column='V', startval=None, endval=None, occurance=0):
+    '''
+    Return a single continous slice of the IV data, between threshold values of a column.
+
+    '''
+"""
 
 
 @ivfunc
@@ -478,6 +553,12 @@ def resistance(data, vmax=0.1, vmin=None):
         mask = (data['V'] <= vmax) & (data['V'] >= vmin)
     poly = np.polyfit(data['I'][mask], data['V'][mask], 1)
     return poly[0]
+
+@ivfunc
+def convert_unit(column='I', prefix='u'):
+    #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+
 
 @ivfunc
 def downsample_dumb(data, nsamples, columns=None):
