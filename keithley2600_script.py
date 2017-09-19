@@ -27,6 +27,13 @@ import time
 from shutil import copyfile
 import os
 from collections import defaultdict
+import sys
+
+def makedatafolder():
+    datasubfolder = os.path.join(datafolder, subfolder)
+    if not os.path.isdir(datasubfolder):
+        print('Making folder: {}'.format(datasubfolder))
+        os.makedirs(datasubfolder)
 
 datestr = time.strftime('%Y-%m-%d')
 timestr = time.strftime('%Y-%m-%d_%H%M%S')
@@ -43,8 +50,50 @@ copyfile(scriptpath, scriptcopyfp)
 datafolder = r'C:\t\data'
 subfolder = datestr
 print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+makedatafolder()
+
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
+
+############# Logging  ###########################
+
+magic = get_ipython().magic
+magic('logstop')
+# Fancy logging of ipython in and out, as well as standard out
+try:
+    sys.stdout = stdstdout
+except:
+    # This should run first time only
+    stdstdout = sys.stdout
+class Logger(object):
+    def __init__(self):
+        self.terminal = stdstdout
+        self.log = open(logfile, 'a')
+
+    def write(self, message):
+        self.terminal.write(message)
+        # Comment the lines and append them to ipython log file
+        self.log.writelines(['#[Stdout]# {}\n'.format(line) for line in message.split('\n') if line != ''])
+
+    def flush(self):
+        self.log.flush()
+try:
+    # Close the previous file
+    logger.log.close()
+except:
+    pass
+logfile = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
+magic('logstart -o {} append'.format(logfile))
+logger = Logger()
+sys.stdout = logger
+
+# Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
+magic('matplotlib')
+ivtoolsdir = 'c:/Users/t/Desktop/py-ivtools'
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/measure.py')))
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/plot.py')))
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/io.py')))
+magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 
 ############# Keithley 2600 functions ###############
 
@@ -174,7 +223,7 @@ def getdata(history=True):
     else:
         #return pd.DataFrame({'t':[], 'V':[], 'I':[]}), {}
         empty = np.array([])
-        out = dict(t=empty, V=empty, I=empty)
+        out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
     if history:
         dhistory.append(out)
     return out
@@ -359,12 +408,6 @@ def previoussample():
 p = autocaller(previoussample)
 
 ### Functions that write to disk
-
-def makedatafolder():
-    datasubfolder = os.path.join(datafolder, subfolder)
-    if not os.path.isdir(datasubfolder):
-        print('Making folder: {}'.format(datasubfolder))
-        os.makedirs(datasubfolder)
 
 def savedata(filename=None):
     global d
