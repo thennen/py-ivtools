@@ -60,6 +60,35 @@ def find_data_arrays(data):
     return arraykeys
 
 @ivfunc
+def diffiv(data, stride=1, columns=None):
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    diffarrays = [ar.I[stride:] - ar.I[:-stride] for ar in arrays]
+    dataout = type(data)()
+    for c, diff in zip(columns, diffarrays):
+        dataout[c] = diff
+    add_missing_keys(data, dataout)
+    return dataout
+
+@ivfunc
+def thresholds_bydiff(data, stride=1):
+    ''' Find switching thresholds by finding the maximum differences. '''
+    diffI = data['I'][stride:] - data['I'][:-stride]
+    argmaxdiffI = np.argmax(diffI)
+    vset = data['V'][argmaxdiffI]
+    maxdiffI = diffI[argmaxdiffI]
+    argmindiffI = np.argmin(diffI)
+    vreset = data['V'][argmindiffI]
+    mindiffI = diffI[argmindiffI]
+    return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
+'''
+@ivfunc
+def thresholds_byval(data, value):
+    pindex(data, 'I', value)
+'''
+
+@ivfunc
 def moving_avg(data, window=5, columns=('I', 'V')):
     ''' Smooth data arrays with moving avg '''
     if columns is None:
@@ -70,12 +99,12 @@ def moving_avg(data, window=5, columns=('I', 'V')):
         raise Exception('Arrays to be smoothed have different lengths!')
     if lens[0] == 0:
         raise Exception('No data to smooth')
-    weights = np.repeat(1.0, window)/window
-    smootharrays = [np.convolve(ar, weights, 'valid') for ar in arrays]
-
+    #weights = np.repeat(1.0, window)/window
+    #smootharrays = [np.convolve(ar, weights, 'valid') for ar in arrays]
+    smootharrays = [smooth(ar, window) for ar in arrays]
     dataout = type(data)()
-    for c, smooth in zip(columns, smootharrays):
-        dataout[c] = smooth
+    for c, smootha in zip(columns, smootharrays):
+        dataout[c] = smootha
     add_missing_keys(data, dataout)
     return dataout
 
@@ -106,9 +135,9 @@ def decimate(data, factor=5, columns=('I', 'V')):
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
-        raise Exception('Arrays to be smoothed have different lengths!')
+        raise Exception('Arrays to be decimated have different lengths!')
     if lens[0] == 0:
-        raise Exception('No data to smooth')
+        raise Exception('No data to decimate')
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
     dataout = type(data)()
     for c, dec in zip(columns, decarrays):
@@ -116,11 +145,28 @@ def decimate(data, factor=5, columns=('I', 'V')):
     add_missing_keys(data, dataout)
     return dataout
 
+@ivfunc
+def smoothimate(data, window=10, factor=10, columns=('I', 'V')):
+    ''' Smooth with moving avg and then decimate the data'''
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    lens = [len(ar) for ar in arrays]
+    if not all([l - lens[0] == 0 for l in lens]):
+        raise Exception('Arrays to be smoothimated have different lengths!')
+    if lens[0] == 0:
+        raise Exception('No data to smooth')
+    smootharrays = [smooth(ar, window) for ar in arrays]
+    decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
+    dataout = type(data)()
+    for c, dec in zip(columns, decarrays):
+        dataout[c] = dec
+    add_missing_keys(data, dataout)
+    return dataout
 
 @ivfunc
 def maketimearray(data):
     return np.arange(len(data['V'])) * 1/data['sample_rate']
-
 
 @ivfunc
 def indexiv(data, index_function):
@@ -595,3 +641,10 @@ def insert(data, key, vals):
 def extract(data, key):
     # Get array of values from ivloop objects
     return array([d[key] for d in data])
+
+# Efficient rolling mean for arrays
+# ~3x faster than np.convolve
+# I like typing smooth instead of Rolling/running/moving average/mean
+def smooth(x, N):
+    cumsum = numpy.cumsum(numpy.insert(x, 0, 0)) 
+    return (cumsum[N:] - cumsum[:-N]) / N
