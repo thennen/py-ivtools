@@ -184,3 +184,16 @@ def interactive_figures(n=2):
     plt.show()
 
     return (fig1, ax1), (fig2, ax2)
+
+
+def mpfunc(x, pos):
+    #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
+    if abs(x) < min(values):
+        return '{:1.1f}'.format(x)
+    for v, p in zip(values, prefix):
+        if abs(x) >= v:
+            return '{:1.1f}{}'.format(x/v, p)
+
+metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)

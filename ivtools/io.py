@@ -11,6 +11,8 @@ try:
    import cPickle as pickle
 except:
    import pickle
+pjoin = os.path.join
+splitext = os.path.splitext
 
 
 def read_pickle(fp):
@@ -126,12 +128,12 @@ def read_txts(directory, pattern, **kwargs):
         ctime = os.path.getctime(fp)
         longnames = {'I':'Current', 'V':'Voltage'}
         units = {'I':'A', 'V':'V'}
-        dd = dotdict(I=np.array(df['I']), V=np.array(df['V']), filepath=fp,
-                     mtime=mtime, ctime=ctime, units=units, longnames=longnames,
-                     index=i)
+        dd = dict(I=np.array(df['I']), V=np.array(df['V']), filepath=fp,
+                  mtime=mtime, ctime=ctime, units=units, longnames=longnames,
+                  index=i)
         datalist.append(dd)
-    iv = np.array(datalist)
 
     # regular dict version
     #iv = np.array([{'I':np.array(df['I']), 'V':np.array(df['V']), 'filepath':fp} for fp, df in zip(fpaths, txt_iter())])
-    return dotdict(iv=iv, source_dir=directory)
+    #return dotdict(iv=iv, source_dir=directory)
+    return pd.DataFrame(datalist)

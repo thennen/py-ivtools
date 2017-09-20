@@ -149,16 +149,20 @@ def smart_range(v1, v2, R=None):
         # Could do some other cool tricks here
         # Like look at previous measurements, use derivatives to predict appropriate range changes
 
+# TODO: generalize this to take arbitrary waveforms. Make dedicated functions for triangle, square, etc
+# TODO: auto smoothimate
+# TODO: specify approximate number of samples instead of sample rate.  Pre or post decimate?
 def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
-       autosave=True, autoplot=True, autosplit=True, into50ohm=False):
+       autosave=True, autoplot=True, autosplit=True, into50ohm=False,
+       channels=['A', 'B'], smoothimate=True):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
-    global d, chdata
+    global d
+    global chdata
 
     # Channels that need to be sampled for measurement
     # channels = ['A', 'B', 'C']
-    channels = ['A', 'B']
 
     # Need to know duration of pulse if only sweeprate is given
     # so that we know how long to capture
@@ -492,17 +496,32 @@ def ax1plotter(data, ax=ax1):
     plotiv(smoothdata, ax=ax, maxsamples=5000)
 
 def ax2plotter(data, ax=ax2):
-    # Right now just ignoring passed data and plotting from global chdata
+    # data might contain multiple loops because of splitting, but we want the unsplit arrays
+    # To avoid pasting them back together again, there is a global variable called chdata
     # Remove previous lines
     for l in ax2.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform
-    # Hoping data has channel A, or you will have to fix this later
-    lendata = len(chdata['A'])
+    for ch in ['A', 'B', 'C', 'D']:
+        if ch in chdata:
+            lendata = len(chdata[ch])
+            break
     if lendata > 100000:
         print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
         plotdata = sliceiv(chdata, stop=100000)
     else:
         plotdata = chdata
     plot_channels(plotdata, ax=ax)
+
+
+def VoverIplotter(ax=None, **kwargs):
+    ''' Plot V/I vs V, like GPIB control program'''
+    if ax is None:
+        ax = ax2
+    ax.plot(d['V'], d['V'] / d['I'], '.-', **kwargs)
+
+    ax.set_yscale('log')
+    ax.set_xlabel('Voltage [V]')
+    ax.set_ylabel('V/I [$\Omega$]', color=color)
+    ax.yaxis.set_major_formatter(metricprefixformatter)
 
 plotters = {ax1:ax1plotter, ax2:ax2plotter}
