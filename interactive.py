@@ -154,7 +154,7 @@ def smart_range(v1, v2, R=None):
 # TODO: specify approximate number of samples instead of sample rate.  Pre or post decimate?
 def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
        autosave=True, autoplot=True, autosplit=True, into50ohm=False,
-       channels=['A', 'B'], smoothimate=True):
+       channels=['A', 'B'], autosmoothimate=True):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to data variable
     '''
@@ -200,6 +200,11 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
 
+    if autosmoothimate:
+        ivdata = smoothimate(ivdata, window=20, factor=5)
+        ivdata['smoothing'] = 20
+        ivdata['downsampling'] = 5
+
     if autosplit and n > 1:
         print('Splitting data into individual pulses')
         ivdata = splitiv(ivdata, nsamples=pulsedur*actual_fs)
@@ -215,6 +220,7 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
 
     if autoplot:
         # Plot the IV data
+        # Can slow things down
         print('Plotting data')
         plotupdate()
 
