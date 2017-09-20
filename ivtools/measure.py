@@ -19,6 +19,104 @@ try:
 except:
     rigol = None
 
+class picorange(dict):
+    # Holds the values for picoscope channel ranges.  Enforces valid values.
+    def __init__(self):
+        self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
+        self.setall(1.0)
+
+    def set(self, channel, value):
+        if value in self.possible_ranges:
+            self[channel] = value
+        else:
+            argclosest = argmin([abs(p - value) for p in self.possible_ranges])
+            closest = self.possible_ranges[argclosest]
+            print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
+            self[channel] = closest
+
+    def setall(self, value=1.0):
+        # Set all the channel ranges to this value
+        self.set('A', value)
+        self.set('B', value)
+        self.set('C', value)
+        self.set('D', value)
+
+    @property
+    def a(self):
+        print(self['A'])
+    @a.setter
+    def a(self, value):
+        self.set('A', value)
+    @property
+    def b(self):
+        print(self['B'])
+    @b.setter
+    def b(self, value):
+        self.set('B', value)
+    @property
+    def c(self):
+        print(self['C'])
+    @c.setter
+    def c(self, value):
+        self.set('C', value)
+    @property
+    def d(self):
+        print(self['D'])
+    @d.setter
+    def d(self, value):
+        self.set('D', value)
+
+class picooffset(dict):
+    # picooffset needs to be aware of the range setting in order to determine valid values
+    def __init__(self, picorange):
+        self._picorange = picorange
+        self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
+        self.max_offsets = (.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)
+        self.setall(0.0)
+
+    def set(self, channel, value):
+        # Assuming that _picorange has a valid range value for this channel
+        channelrange = self._picorange[channel]
+        maxoffset = self.max_offsets[self.possible_ranges.index(channelrange)]
+        if abs(value) < maxoffset:
+            self[channel] = value
+        else:
+            clippedvalue = np.sign(value) * maxoffset
+            print(('{} is above the maximum offset for channel {} with range {} V. '
+                   'Setting offset to {}.').format(value, channel, channelrange, clippedvalue))
+            self[channel] = clippedvalue
+
+    def setall(self, value=0.0):
+        # Set all the channel ranges to this value
+        self.set('A', value)
+        self.set('B', value)
+        self.set('C', value)
+        self.set('D', value)
+
+    @property
+    def a(self):
+        print(self['A'])
+    @a.setter
+    def a(self, value):
+        self.set('A', value)
+    @property
+    def b(self):
+        print(self['B'])
+    @b.setter
+    def b(self, value):
+        self.set('B', value)
+    @property
+    def c(self):
+        print(self['C'])
+    @c.setter
+    def c(self, value):
+        self.set('C', value)
+    @property
+    def d(self):
+        print(self['D'])
+    @d.setter
+    def d(self, value):
+        self.set('D', value)
 # Settings for picoscope channels.
 # Also don't clobber them
 try:
@@ -31,10 +129,17 @@ try:
 except:
     COUPLINGS = {'A': 'DC', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
     ATTENUATION = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
-    OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
-    RANGE = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
+    #RANGE = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
+    #OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
+    RANGE = picorange()
+    OFFSET = picooffset(RANGE)
     COMPLIANCE_CURRENT = 0
     INPUT_OFFSET = 0
+
+
+# For reference
+possible_ranges = pd.DataFrame(dict(Range=(0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0),
+                                    Max_offset=(.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)))
 
 def connect_picoscope():
     global ps
@@ -203,8 +308,6 @@ def get_data(ch='A', raw=False, dtype=np.float32):
     Channels = ['A', 'B', 'C', 'D']
     data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
     data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
-    #data['RANGE'] = RANGE
-    #data['OFFSET'] = OFFSET
     data['sample_rate'] = ps.sampleRate
     # Using the current state of the global variables to record what settings were used
     # I don't know a way to get couplings and attenuations from the picoscope instance
@@ -482,7 +585,8 @@ def raw_to_V(datain, dtype=np.float32):
             dataout[k] = datain[k]
     return dataout
 
-def pico_to_iv(datain, dtype=np.float32):
+# For compliance amp
+def ccircuit_to_iv(datain, dtype=np.float32):
     ''' Convert picoscope channel data to IV dict'''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
@@ -516,6 +620,56 @@ def pico_to_iv(datain, dtype=np.float32):
     dataout['CC_conv'] = COMPLIANCE_CURRENT
     dataout['gain_conv'] = gain
     return dataout
+
+# For Rehan current amp
+def rehan_to_iv(datain, dtype=np.float32):
+    ''' Convert picoscope channel data to IV dict'''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    C = datain['C']
+    D = datain['D']
+    # Volts per amp
+    gainC = 1074
+    gainD = 33411
+
+    dataout['V'] = A
+    dataout['I'] = C / gainC
+    dataout['I2'] = D / gainD
+    dataout['units'] = {'V':'V', 'I':'A'}
+    # parameters for conversion
+    dataout['Cgain'] = gainC
+    dataout['Dgain'] = gainD
+    return dataout
+
+# Change this when you change probing circuits
+pico_to_iv = rehan_to_iv
+#pico_to_iv = ccircuit_to_iv
+
+def measure_dc_gain(Vin=1, ch='C', R=10e3):
+    # Measure dc gain of rehan amplifier
+    # Apply voltage
+    print('Outputting {} volts on Rigol CH1'.format(Vin))
+    pulse(np.repeat(Vin, 100), 1e-3)
+    time.sleep(1)
+    # Measure output
+    measurechannels = ['A', ch]
+    pico_capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
+    time.sleep(.1)
+    chdata = get_data(measurechannels)
+    plot_channels(chdata)
+    chvalue = np.mean(chdata[ch])
+    print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
+
+    gain = R * chvalue / Vin
+    # Set output back to zero
+    pulse([Vin, 0,0,0,0], 1e-3)
+    return gain
 
 def analog_out(ch, dacval=None, volts=None):
     '''
