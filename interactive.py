@@ -22,6 +22,7 @@ import sys
 import time
 import pandas as pd
 import warnings
+import subprocess
 from datetime import datetime
 # Stop a certain matplotlib warning from showing up
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
@@ -43,6 +44,10 @@ makedatafolder()
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
 ############# Logging  ###########################
+def getGitRevision():
+    return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+
+gitrev = getGitRevision()
 
 magic = get_ipython().magic
 magic('logstop')
@@ -268,7 +273,7 @@ meta_i = None
 d = None
 
 # Add items to this and they will be appended as metadata to all subsequent measurements
-staticmeta = {'script':__file__, 'scriptruntime':timestr}
+staticmeta = {'gitrev':gitrev, 'scriptruntime':timestr}
 
 '''
 If you want to measure more than one device, this code provides a nice way to step between the
