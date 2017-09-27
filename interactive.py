@@ -64,6 +64,8 @@ class Logger(object):
 
     def flush(self):
         self.log.flush()
+        # This needs to be here otherwise there's no line break somewhere.  Don't worry about it.
+        self.terminal.flush()
 try:
     # Close the previous file
     logger.log.close()
@@ -99,99 +101,98 @@ print('Channel settings:')
 print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
 
-def smart_range(v1, v2, R=None):
+def smart_range(v1, v2, R=None, ch=['A', 'B']):
         # Auto offset for current input
         global OFFSET, RANGE
         possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
         # Sadly, each range has a maximum possible offset
         max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
 
-        # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-        amp = abs(v1 - v2) / 2
-        selectedrange = possible_ranges[possible_ranges >= amp][0]
-        RANGE['A'] = selectedrange
-        middle = (v1 + v2) / 2
-        OFFSET['A'] = -middle
+        if 'A' in ch:
+            # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
+            amp = abs(v1 - v2) / 2
+            selectedrange = possible_ranges[possible_ranges >= amp][0]
+            RANGE['A'] = selectedrange
+            middle = (v1 + v2) / 2
+            OFFSET['A'] = -middle
 
-        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
-        # Center the measurement range on zero current
-        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
-        # channelb should never go below zero, except for potentially op amp overshoot
-        # I have seen it reach -0.1V
-        if R is None:
-            # Hypothetical resistance method
-            # Signal should never go below 0V (compliance)
-            b_min = 0
-            b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
-            # Compliance current sets the voltage offset at zero input.
-            # Add 10% to be safe.
-            b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3 * 1.1
-        else:
-            # R was passed, assume device has constant resistance with this value
-            b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
-            b_max = (COMPLIANCE_CURRENT - min(v1, v2) / R) * 2e3
-        b_amp = abs(b_max - b_min) / 2
-        b_middle = (b_max + b_min) / 2
-        mask_of_possibilities = possible_ranges >= b_amp
-        for b_selectedrange, max_offset in zip(possible_ranges[mask_of_possibilities], max_offsets[mask_of_possibilities]):
-            # Is b_middle an acceptable offset?
-            if b_middle < max_offset:
-                RANGE['B'] = b_selectedrange
-                OFFSET['B'] = -b_middle
-                break
-            # Can we reduce the offset without the signal going out of range?
-            elif (max_offset + b_selectedrange >= b_max) and (-max_offset - b_selectedrange <= b_min):
-                RANGE['B'] = b_selectedrange
-                OFFSET['B'] = np.clip(-b_middle, -max_offset, max_offset)
-                break
-            # Neither worked, try increasing the range ...
+        if 'B' in ch:
+            # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
+            # Center the measurement range on zero current
+            #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
+            # channelb should never go below zero, except for potentially op amp overshoot
+            # I have seen it reach -0.1V
+            if R is None:
+                # Hypothetical resistance method
+                # Signal should never go below 0V (compliance)
+                b_min = 0
+                b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
+                # Compliance current sets the voltage offset at zero input.
+                # Add 10% to be safe.
+                b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3 * 1.1
+            else:
+                # R was passed, assume device has constant resistance with this value
+                b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
+                b_max = (COMPLIANCE_CURRENT - min(v1, v2) / R) * 2e3
+            b_amp = abs(b_max - b_min) / 2
+            b_middle = (b_max + b_min) / 2
+            mask_of_possibilities = possible_ranges >= b_amp
+            for b_selectedrange, max_offset in zip(possible_ranges[mask_of_possibilities], max_offsets[mask_of_possibilities]):
+                # Is b_middle an acceptable offset?
+                if b_middle < max_offset:
+                    RANGE['B'] = b_selectedrange
+                    OFFSET['B'] = -b_middle
+                    break
+                # Can we reduce the offset without the signal going out of range?
+                elif (max_offset + b_selectedrange >= b_max) and (-max_offset - b_selectedrange <= b_min):
+                    RANGE['B'] = b_selectedrange
+                    OFFSET['B'] = np.clip(-b_middle, -max_offset, max_offset)
+                    break
+                # Neither worked, try increasing the range ...
+            # Could do some other cool tricks here
+            # Like look at previous measurements, use derivatives to predict appropriate range changes
 
-        # Could do some other cool tricks here
-        # Like look at previous measurements, use derivatives to predict appropriate range changes
-
-# TODO: generalize this to take arbitrary waveforms. Make dedicated functions for triangle, square, etc
 # TODO: auto smoothimate
-# TODO: specify approximate number of samples instead of sample rate.  Pre or post decimate?
-def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
+def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
        autosave=True, autoplot=True, autosplit=True, into50ohm=False,
-       channels=['A', 'B'], autosmoothimate=True):
+       channels=['A', 'B'], autosmoothimate=(20, 5)):
     '''
-    Pulse a triangle waveform, plot pico channels, IV, and save to data variable
+    Pulse a triangle waveform, plot pico channels, IV, and save to d variable
+    Provide either fs or nsamples
     '''
-    global d
-    global chdata
+    global d, chdata
 
     # Channels that need to be sampled for measurement
     # channels = ['A', 'B', 'C']
 
-    # Need to know duration of pulse if only sweeprate is given
-    # so that we know how long to capture
-    sweeprate, pulsedur = _rate_duration(v1, v2, rate, duration)
+
+    if not (bool(fs) ^ bool(nsamples)):
+        raise Exception('Must pass either fs or nsamples, and not both')
+    if fs is None:
+        fs = nsamples / duration
 
     if smartrange:
-        smart_range(v1, v2)
+        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
+    else:
+        # Always smart range channel A
+        smart_range(np.min(wfm), np.max(wfm), ch=['A'])
 
     # Set picoscope to capture
+    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_fs = pico_capture(ch=channels,
                              freq=fs,
-                             duration=n*pulsedur)
-    # Send a triangle pulse
+                             duration=n*duration)
     if into50ohm:
         # Multiply voltages by 2 to account for 50 ohm input
-        triv1 = 2*v1
-        triv2 = 2*v2
-    else:
-        triv1 = v1
-        triv2 = v2
-    tripulse(n=n,
-             v1=triv1,
-             v2=triv2,
-             duration=duration,
-             rate=rate)
+        wfm = 2 * wfm
 
-    pulseduration = n * duration
-    print('Applying pulse ({:.2e} seconds).'.format(pulseduration))
-    time.sleep(n * duration)
+    # Send a pulse
+    pulse(wfm, duration, n=n)
+
+    trainduration = n * duration
+    print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    time.sleep(n * duration * 1.05)
+    #ps.waitReady()
     print('Getting data from picoscope.')
     # Get the picoscope data
     # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
@@ -201,13 +202,14 @@ def iv(v1, v2, duration=None, rate=None, n=1, fs=1e7, smartrange=False,
     ivdata = pico_to_iv(chdata)
 
     if autosmoothimate:
+        # Autosmoothimate should have two numbers, smoothing window and down sampling factor
         ivdata = smoothimate(ivdata, window=20, factor=5)
         ivdata['smoothing'] = 20
         ivdata['downsampling'] = 5
 
     if autosplit and n > 1:
         print('Splitting data into individual pulses')
-        ivdata = splitiv(ivdata, nsamples=pulsedur*actual_fs)
+        ivdata = splitiv(ivdata, nsamples=duration*actual_fs)
 
     d = ivdata
     dhistory.append(ivdata)
@@ -486,20 +488,20 @@ def plotupdate():
 # We are potentially dealing with a lot of data points such that plotting would limit the measurement speed
 # Try to make some reasonable decisions about which subset of the data to display
 
-def ax1plotter(data, ax=ax1):
+def ax1plotter(data, ax=ax1, maxloops=100, smooth=True):
     # Smooth data a bit and give it to plotiv (from plot.py)
     # Would be better to smooth before splitting ...
-    smoothdata = moving_avg(data, window=5)
+    if smooth:
+        data = moving_avg(data, window=5)
     if type(data) is list:
         nloops = len(data)
     else:
         nloops = 1
-    maxloops = 100
     if nloops > maxloops:
         print('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
         loopstep = int(nloops / 99)
-        smoothdata = smoothdata[::loopstep]
-    plotiv(smoothdata, ax=ax, maxsamples=5000)
+        data = data[::loopstep]
+    plotiv(data, ax=ax, maxsamples=5000)
 
 def ax2plotter(data, ax=ax2):
     # data might contain multiple loops because of splitting, but we want the unsplit arrays
@@ -519,7 +521,7 @@ def ax2plotter(data, ax=ax2):
     plot_channels(plotdata, ax=ax)
 
 
-def VoverIplotter(ax=None, **kwargs):
+def VoverIplotter(data, ax=None, **kwargs):
     ''' Plot V/I vs V, like GPIB control program'''
     if ax is None:
         ax = ax2
@@ -527,7 +529,7 @@ def VoverIplotter(ax=None, **kwargs):
 
     ax.set_yscale('log')
     ax.set_xlabel('Voltage [V]')
-    ax.set_ylabel('V/I [$\Omega$]', color=color)
+    ax.set_ylabel('V/I [$\Omega$]')
     ax.yaxis.set_major_formatter(metricprefixformatter)
 
 plotters = {ax1:ax1plotter, ax2:ax2plotter}
