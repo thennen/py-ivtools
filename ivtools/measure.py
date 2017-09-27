@@ -167,8 +167,8 @@ def connect_rigolawg():
     if rigol is None:
         try:
             rigol = visa.ResourceManager().open_resource(rigolstr)
-            print('Rigol connection succeeded.')
             idn = rigol.query('*IDN?')
+            print('Rigol connection succeeded.')
             print('*IDN?  {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
@@ -234,7 +234,7 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
     return freq
 
 
-def pulse(waveform, duration, n=1, ch=1):
+def pulse(waveform, duration, n=1, ch=1, interp=True):
     '''
     Generate n pulses of the input waveform on Rigol AWG.
     Trigger immediately.
@@ -259,6 +259,12 @@ def pulse(waveform, duration, n=1, ch=1):
     # continuous pulse train until you can get back into burst mode.
     #
     rigol.write(':OUTPUT:STATE OFF')
+    if interp==True:
+        # Turn on interpolation for IVs
+        rigol.write(':DATA:POIN:INT LIN')
+    elif interp==False:
+        # Turn off interpolation for steps
+        rigol.write(':DATA:POIN:INT OFF')
     # This command switches out of burst mode for some stupid reason
     rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
     rigol.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
