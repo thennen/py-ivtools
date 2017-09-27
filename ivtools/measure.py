@@ -370,7 +370,7 @@ def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
 
     rate, duration = _rate_duration(v1, v2, rate, duration)
 
-    wfm = tri_wfm(v1, v2)
+    wfm = tri(v1, v2)
 
     pulse(wfm, duration, n=n)
 
@@ -387,9 +387,9 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     pulse(wfm, duration, n=n)
 
 
-def tri_wfm(v1, v2):
+def tri(v1, v2):
     '''
-    Generate a triangle pulse waveform.
+    Calculate a triangle pulse waveform.
 
     This is a slightly tricky because the AWG takes equally spaced samples,
     so finding the shortest waveform that truly reaches v1 and v2 with
@@ -425,6 +425,22 @@ def tri_wfm(v1, v2):
     #wfm = np.interp(x, xp, wfm)
 
     return wfm
+
+def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
+    '''
+    Calculate a square pulse waveform.
+    manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
+    '''
+    ontime = int(duty * length)
+    remainingtime = length - ontime
+    pretime = int(startendratio * remainingtime / (startendratio + 1))
+    pretime = max(1, pretime)
+    posttime = remainingtime - pretime
+    posttime = max(1, posttime)
+    prearray = np.ones(pretime) * startval
+    pulsearray = np.ones(ontime) * vpulse
+    postarray = np.ones(posttime) * endval
+    return np.concatenate((prearray, pulsearray, postarray))
 
 
 def set_compliance(cc_value):
@@ -627,29 +643,33 @@ def rehan_to_iv(datain, dtype=np.float32):
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
+    # Volts per amp
+    gainC = 2615
+    gainD = 56490
+
     dataout = datain
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     C = datain['C']
-    D = datain['D']
-    # Volts per amp
-    gainC = 1074
-    gainD = 33411
 
     dataout['V'] = A
     dataout['I'] = C / gainC
-    dataout['I2'] = D / gainD
     dataout['units'] = {'V':'V', 'I':'A'}
-    # parameters for conversion
     dataout['Cgain'] = gainC
-    dataout['Dgain'] = gainD
+
+    if 'D' in datain:
+        D = datain['D']
+        dataout['I2'] = D / gainD
+        dataout['Dgain'] = gainD
+        dataout['units'].update({'I2':'A'})
+
     return dataout
 
 # Change this when you change probing circuits
-pico_to_iv = rehan_to_iv
-#pico_to_iv = ccircuit_to_iv
+#pico_to_iv = rehan_to_iv
+pico_to_iv = ccircuit_to_iv
 
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier
