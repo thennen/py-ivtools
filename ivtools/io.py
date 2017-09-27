@@ -8,12 +8,22 @@ from pandas import read_csv
 import sys
 import numpy as np
 try:
-   import cPickle as pickle
+    import cPickle as pickle
 except:
-   import pickle
+    import pickle
+import scipy.io as spio
+from scipy.io import savemat
 pjoin = os.path.join
 splitext = os.path.splitext
 
+# Make valid variable name from string
+def validvarname(varStr):
+    sub_ = re.sub('\W|^(?=\d)','_', varStr)
+    sub_strip = sub_.strip('_')
+    if sub_strip[0].isdigit():
+       # Can't start with a digit
+       sub_strip = 'm_' + sub_strip
+    return sub_strip
 
 def read_pickle(fp):
     ''' Read data from a pickle file '''
@@ -137,3 +147,142 @@ def read_txts(directory, pattern, **kwargs):
     #iv = np.array([{'I':np.array(df['I']), 'V':np.array(df['V']), 'filepath':fp} for fp, df in zip(fpaths, txt_iter())])
     #return dotdict(iv=iv, source_dir=directory)
     return pd.DataFrame(datalist)
+
+def write_matlab(data, filepath, varname=None, compress=True):
+   # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
+   # Haven't figured out what sucks less to work with in matlab
+   # Each IV loop is a struct, has to be
+   # For multiple IV loops, can either make a cell array of structs (plot(cell{1,1}.V, cell{1,1}.I))
+   # Or just dump a whole bunch of structs into the namespace (plot(loop1.V, loop1.I))
+   if varname is None:
+      varname = validvarname(splitext(os.path.split(filepath)[-1])[0])
+      print(varname)
+   dtype = type(data)
+   if dtype is list:
+      savemat(filepath, {varname:data}, do_compression=compress)
+   elif dtype is dict:
+      # This will dump a bunch of names into namespace unless encapsulated in a list
+      savemat(filepath, {varname:[data]}, do_compression=compress)
+   elif dtype is pd.Series:
+      # Same
+      savemat(filepath, {varname:[dict(data)]}, do_compression=compress)
+   elif dtype is pd.DataFrame:
+      savemat(filepath, {varname: data.to_dict('records')}, do_compression=compress)
+
+
+
+def read_matlab(filepath):
+   # Read matlab file into dataframe or series
+   '''
+   These functions solve the problem of not properly recovering python dictionaries
+   from mat files. It calls the function check keys to cure all entries
+   which are still mat-objects
+
+   Stolen from
+   https://stackoverflow.com/questions/7008608/scipy-io-loadmat-nested-structures-i-e-dictionaries
+   Tyler's edit only recurses into level 0 np.arrays
+   '''
+   def _check_keys(d):
+      '''
+      checks if entries in dictionary are mat-objects. If yes
+      todict is called to change them to nested dictionaries
+      '''
+      for key in d:
+            if isinstance(d[key], spio.matlab.mio5_params.mat_struct):
+               d[key] = _todict(d[key])
+            elif isinstance(d[key], np.ndarray):
+               d[key] = _tolist(d[key])
+      return d
+
+   def _todict(matobj):
+      '''
+      A recursive function which constructs from matobjects nested dictionaries
+      '''
+      d = {}
+      for strg in matobj._fieldnames:
+            elem = matobj.__dict__[strg]
+            if isinstance(elem, spio.matlab.mio5_params.mat_struct):
+               d[strg] = _todict(elem)
+            # Don't do this, in my case I want to preserve nd.arrays that are not lists containing dicts
+            #elif isinstance(elem, np.ndarray):
+            #    d[strg] = _tolist(elem)
+            else:
+               d[strg] = elem
+      return d
+
+   def _tolist(ndarray):
+      '''
+      A recursive function which constructs lists from cellarrays
+      (which are loaded as numpy ndarrays), recursing into the elements
+      if they contain matobjects.
+      '''
+      elem_list = []
+      for sub_elem in ndarray:
+            if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):
+               elem_list.append(_todict(sub_elem))
+            # Only the first level -- in case it's a list of dicts with np arrays
+            # Better not be a list of dicts of list of dicts ....
+            #elif isinstance(sub_elem, np.ndarray):
+            #    elem_list.append(_tolist(sub_elem))
+            else:
+               elem_list.append(sub_elem)
+      return elem_list
+
+   # Squeeze me gets rid of dimensions that have length 1
+   # So if you saved a 1x1 cell array, you just get back the element
+   mat_in = spio.loadmat(filepath, struct_as_record=False, squeeze_me=True)
+   mat_in = _check_keys(mat_in)
+   # Should only be one key
+   mat_vars = [k for k in mat_in.keys() if not k.startswith('__')]
+   if len(mat_vars) > 1:
+      print('More than one matlab variable stored in {}. Returning dict.'.format(filepath))
+      return mat_in
+   else:
+      # List of dicts
+      #return mat_in[mat_vars[0]]
+      # DataFrame
+      var_in = mat_in[mat_vars[0]]
+      if type(var_in) is list:
+         # More than one loop
+         return pd.DataFrame(var_in)
+      else:
+         return pd.Series(var_in)
+
+
+
+
+def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
+   # Make a plot of all the .s and .df files in a directory
+   # Save as pngs with the same name
+   files = os.listdir(datadir)
+   series_fns = [f for f in files if f.endswith('.s')]
+   dataframe_fns = [f for f in files if f.endswith('.df')]
+
+   fig, ax = plt.subplots()
+
+   for sfn in series_fns:
+      s = pd.read_pickle(sfn)
+      s.I *= 1e6
+      s.units['I'] = '$\mu$A'
+      smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
+      plotiv(moving_avg(s, smoothn), ax=ax)
+      pngfn = sfn[:-2] + '.png'
+      pngfp = os.path.join(datadir, pngfn)
+      plt.savefig(pngfp)
+      print('Wrote {}'.format(pngfp))
+      ax.cla()
+
+   for dffn in dataframe_fns:
+      df = pd.read_pickle(dffn)
+      df.I *= 1e6
+      df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
+      step = int(ceil(len(df) / maxloops))
+      smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
+      plotiv(moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+      pngfn = dffn[:-3] + '.png'
+      pngfp = os.path.join(datadir, pngfn)
+      plt.savefig(pngfp)
+      print('Wrote {}'.format(pngfp))
+      ax.cla()
+
+   plt.close(fig)
