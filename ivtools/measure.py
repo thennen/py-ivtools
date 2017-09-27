@@ -247,18 +247,26 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     if maxamp != 0:
         normwaveform = waveform/maxamp
     else:
+        # Not a valid waveform anyway .. rigol will beep
         normwaveform = waveform
     wfm_str = ','.join([str(w) for w in normwaveform])
     freq = 1 / duration
 
-    # To fix:
     # toggling output state is slow, clunky, annoying, and should not be necessary.
-    # it might also cause some spiking that damages the device.
+    # it might also cause some spikes that could damage the device.
+    # Also goes into high impedance output which could have some undesirable consequences.
     # Problem is that the command which loads in a volatile waveform switches rigol
     # out of burst mode automatically.  If the output is still enabled, you will get a
     # continuous pulse train until you can get back into burst mode.
+    # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
     #
+    # Turn off screen saver.  It sends a premature pulse on SYNC if on..  Really dumb.
+    rigol.write(':DISP:SAV OFF')
     rigol.write(':OUTPUT:STATE OFF')
+    # Manual says you can change output resistance from 1 to 10k
+    #rigol.write('OUTPUT{}:IMPEDANCE 50'.format(ch))
+    # Can turn on/off the sync output (on rear)
+    #rigol.write('OUTPUT{}:SYNC ON')
     if interp==True:
         # Turn on interpolation for IVs
         rigol.write(':DATA:POIN:INT LIN')
@@ -276,6 +284,8 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     rigol.write(':OUTPUT{}:STATE ON'.format(ch))
     # Trigger rigol
     rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
+    # Enable screensaver again because it makes me feel good
+    rigol.write(':DISP:SAV ON')
 
 
 def testreload():
@@ -436,6 +446,7 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
     '''
     Calculate a square pulse waveform.
     manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
+    Another part of the manual says it is limited to 512 kpts, but can't do that either.
     '''
     ontime = int(duty * length)
     remainingtime = length - ontime
