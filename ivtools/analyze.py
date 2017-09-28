@@ -10,12 +10,9 @@ def ivfunc(func):
     '''
     Decorator which allows the same function to be used on a single loop, as
     well as a container of loops.
-
-    Don't know if this is a good idea or not ...
-
     Decorated function should take a single loop and return anything
-
     Then this function will also take multiple loops, and return an array of the outputs
+    Handles both "list of dict" structures and DataFrames
     '''
     @wraps(func)
     def func_wrapper(data, *args, **kwargs):
@@ -28,7 +25,8 @@ def ivfunc(func):
             for i, row in data.iterrows():
                 resultlist.append(func(row, *args, **kwargs))
             # Let's decide how to return the values based on the datatype that the wrapped function returned
-            if type(resultlist[0]) == pd.Series:
+            #if type(resultlist[0]) == pd.Series:
+            if type(resultlist[0]) in (pd.Series, dict):
                 return pd.DataFrame(resultlist)
             else:
                 # Keep the index the same!
@@ -38,7 +36,15 @@ def ivfunc(func):
         elif dtype == list:
             # Assuming it's a list of iv dicts
             return [func(d, *args, **kwargs) for d in data]
-        elif dtype in (dotdict, dict, pd.Series):
+        elif dtype is pd.Series:
+            # It's just one IV Series
+            # If it returns a dict, convert it back to a series
+            result = func(data, *args, **kwargs)
+            if type(result) is dict:
+                return(pd.Series(result))
+            else:
+                return result
+        elif dtype in (dotdict, dict):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
@@ -48,7 +54,6 @@ def ivfunc(func):
 '''
 Functions that return a new value/new array per IV loop should just return that value
 Functions that modify the IV data should return a copy of the entire input structure
-# TODO: don't copy all the data arrays if you are returning new ones
 '''
 
 @ivfunc
@@ -65,9 +70,7 @@ def diffiv(data, stride=1, columns=None):
         columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
     diffarrays = [ar.I[stride:] - ar.I[:-stride] for ar in arrays]
-    dataout = type(data)()
-    for c, diff in zip(columns, diffarrays):
-        dataout[c] = diff
+    dataout = {c:diff for c,diff in zip(columns, diffarrays)}
     add_missing_keys(data, dataout)
     return dataout
 
@@ -102,9 +105,7 @@ def moving_avg(data, window=5, columns=('I', 'V')):
     #weights = np.repeat(1.0, window)/window
     #smootharrays = [np.convolve(ar, weights, 'valid') for ar in arrays]
     smootharrays = [smooth(ar, window) for ar in arrays]
-    dataout = type(data)()
-    for c, smootha in zip(columns, smootharrays):
-        dataout[c] = smootha
+    dataout = {c:sm for c,sm in zip(columns, smootharrays)}
     add_missing_keys(data, dataout)
     return dataout
 
@@ -121,9 +122,7 @@ def medfilt(data, window=5, columns=('I', 'V')):
     if lens[0] == 0:
         raise Exception('No data to smooth')
     smootharrays = [signal.medfilt(ar, window) for ar in arrays]
-    dataout = type(data)()
-    for c, smooth in zip(columns, smootharrays):
-        dataout[c] = smooth
+    dataout = {c:sm for c,sm in zip(columns, smootharrays)}
     add_missing_keys(data, dataout)
     return dataout
 
@@ -139,9 +138,7 @@ def decimate(data, factor=5, columns=('I', 'V')):
     if lens[0] == 0:
         raise Exception('No data to decimate')
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
-    dataout = type(data)()
-    for c, dec in zip(columns, decarrays):
-        dataout[c] = dec
+    dataout = {c:dec for c,dec in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
     return dataout
 
@@ -158,14 +155,13 @@ def smoothimate(data, window=10, factor=10, columns=('I', 'V')):
         raise Exception('No data to smooth')
     smootharrays = [smooth(ar, window) for ar in arrays]
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
-    dataout = type(data)()
-    for c, dec in zip(columns, decarrays):
-        dataout[c] = dec
+    dataout = {c:ar for c,ar in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
     return dataout
 
 @ivfunc
 def maketimearray(data):
+    # TODO: need to account for any possible downsampling!
     return np.arange(len(data['V'])) * 1/data['sample_rate']
 
 @ivfunc
@@ -176,13 +172,9 @@ def indexiv(data, index_function):
     '''
     splitkeys = find_data_arrays(data)
 
-    dataout = type(data)()
-    for sk in splitkeys:
-        # Apply the filter to all the relevant items
-        index = np.array(index_function(data))
-        dataout[sk] = data[sk][index]
+    index = np.array(index_function(data))
+    dataout = {c:data[c][index] for c in splitkeys}
     add_missing_keys(data, dataout)
-
     return dataout
 
 @ivfunc
@@ -193,13 +185,13 @@ def sliceiv(data, stop, start=0, step=1):
     if those functions return nan, start defaults to 0 and stop to -1
     '''
     slicekeys = find_data_arrays(data)
-    dataout = type(data)()
     if callable(start):
         start = start(data)
         if np.isnan(start): start = 0
     if callable(stop):
         stop = stop(data)
         if np.isnan(stop): stop = -1
+    dataout = {}
     for sk in slicekeys:
         # Apply the filter to all the relevant items
         dataout[sk] = data[sk][slice(int(start), int(stop), int(step))]
@@ -214,8 +206,8 @@ def slicefraction(data, stop=1/2, start=0, step=1):
     start and stop point given as fraction of data length
     '''
     slicekeys = find_data_arrays(data)
-    dataout = type(data)()
     lendata = len(data[slicekeys[0]])
+    dataout = {}
     for sk in slicekeys:
         # Slice all the relevant arrays
         dataout[sk] = data[sk][slice(int(start * lendata), int(stop * lendata), int(step))]
@@ -245,7 +237,7 @@ def split_by_crossing(data, V=0, increasing=True, hys=1e-3):
     outlist = []
     splitkeys = find_data_arrays(data)
     for i, j in zip(trigger[:-1], trigger[1:]):
-        splitloop = type(data)()
+        splitloop = {}
         for k in splitkeys:
             splitloop[k] = data[k][i:j]
         add_missing_keys(data, splitloop)
@@ -277,7 +269,7 @@ def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
     splitkeys = find_data_arrays(data)
     outlist = []
     for i, j in zip(trigger[:-1], trigger[1:]):
-        splitloop = type(data)()
+        splitloop = {}
         for k in splitkeys:
             splitloop[k] = data[k][i:j]
         add_missing_keys(data, splitloop)
@@ -298,7 +290,7 @@ def concativ(data):
 
     concatkeys = find_data_arrays(firstrow)
 
-    out = type(firstrow)()
+    out = {}
     for k in concatkeys:
         if type(data) is pd.DataFrame:
             out[k] = np.concatenate(list(data[k]))
@@ -306,7 +298,10 @@ def concativ(data):
             out[k] = np.concatenate([d[k] for d in data])
     add_missing_keys(data, out)
 
-    return out
+    if type(data) == pd.DataFrame:
+        return pd.Series(out)
+    else:
+        return out
 
 
 # TODO: Rename this, because it doesn't return a true "slice" of the data
@@ -315,8 +310,6 @@ def concativ(data):
 def slicebyvalue(data, column='V', minval=0, maxval=None):
     # This is so commonly done that I will make a function for it, though it's just a special case of indexiv
     # Including the endpoints in interval.  Change it later if you care.
-    keys = find_data_arrays(data)
-    dataout = type(data)()
     if (minval is None) and (maxval is not None):
         index = data[column] <= maxval
     elif (maxval is None) and (minval is not None):
@@ -325,11 +318,15 @@ def slicebyvalue(data, column='V', minval=0, maxval=None):
         index = (minval <= data[column]) & (data[column] < maxval)
     else:
         return data
+
+    dataout = {}
+    keys = find_data_arrays(data)
     for k in keys:
         dataout[k] = data[k][index]
     add_missing_keys(data, dataout)
 
     return dataout
+
 
 """
 @ivfunc
@@ -348,7 +345,7 @@ def sortvalues(data, column='V', ascending=True):
     reindex = np.argsort(data['V'])
     if not ascending:
         reindex = reindex[::-1]
-    dataout = type(data)()
+    dataout = {}
     for k in sortkeys:
         dataout[k] = data[k][reindex]
     add_missing_keys(data, dataout)
@@ -366,7 +363,8 @@ def diffsign(data, column='V'):
     return np.append(direction, direction[-1])
 
 
-@ivfunc
+# I guess a func that just calls ivfuncs doesn't need to be an ivfunc itself
+#@ivfunc
 def decreasing(data, column='V', sort=False):
     decreased = indexiv(data, lambda l: diffsign(l, column) < 0)
     if sort:
@@ -375,7 +373,7 @@ def decreasing(data, column='V', sort=False):
         return decreased
 
 
-@ivfunc
+#@ivfunc
 def increasing(data, column='V', sort=False):
     increased = indexiv(data, lambda l: diffsign(l, column) > 0)
     if sort:
@@ -444,7 +442,7 @@ def largest_monotonic(data, column='I'):
     direction = int(directions[largest])
     startind, endind = segment_endpoints[largest]
 
-    dataout = type(data)()
+    dataout = {}
     for k in keys:
         dataout[k] = data[k][startind:endind][::direction]
     add_missing_keys(data, dataout)
@@ -518,6 +516,8 @@ def pindex(loop, column, index):
         return loop[column][index]
 '''
 
+# These are dumb names.  Supposed to be pindex for parallel index
+# just gets a single value of a single column determined by a function
 @ivfunc
 def pindex_fromfunc(loop, column, indexfunc):
     index = indexfunc(loop)
@@ -574,7 +574,7 @@ def longest_monotonic(data, column='I'):
     startind = monolists[longest][1][0][0]
     endind = monolists[longest][1][-1][0] + 2
 
-    dataout = type(data)()
+    dataout = {}
     for k in keys:
         dataout[k] = data[k][startind:endind][::direction]
     add_missing_keys(data, dataout)
@@ -584,11 +584,12 @@ def longest_monotonic(data, column='I'):
 @ivfunc
 def normalize(data):
     ''' Normalize by the maximum current '''
-    dataout = type(data)()
+    dataout = {}
     maxI = np.max(data['I'])
     dataout['I'] = data['I'] / maxI
     add_missing_keys(data, dataout)
-
+    if 'units' in dataout:
+        dataout['units']['I'] = 'Normalized'
     return dataout
 
 def add_missing_keys(datain, dataout):
@@ -597,12 +598,16 @@ def add_missing_keys(datain, dataout):
             dataout[k] = datain[k]
 
 @ivfunc
-def resistance(data, vmax=0.1, vmin=None):
-    ''' Fit a line '''
-    if vmin is None:
-        mask = abs(data['V']) <= vmax
-    else:
-        mask = (data['V'] <= vmax) & (data['V'] >= vmin)
+def resistance(data, v0=0.1, v1=None):
+    '''
+    Fit a line to IV data to find R.
+    if v1 not given, fit from -v0 to +v0
+    '''
+    if v1 is None:
+        v1 = -v0
+    vmin = min(v0, v1)
+    vmax = max(v0, v1)
+    mask = (data['V'] <= vmax) & (data['V'] >= vmin)
     poly = np.polyfit(data['I'][mask], data['V'][mask], 1)
     return poly[0]
 
@@ -621,36 +626,50 @@ def downsample_dumb(data, nsamples, columns=None):
         step = round(l / (nsamples - 1))
     if step <= 1:
         return data
-    dataout = type(data)()
-    for c in columns:
-        dataout[c] = data[c][::step]
-        add_missing_keys(data, dataout)
+    dataout = {c:data[c][::step] for c in columns}
+    add_missing_keys(data, dataout)
     return dataout
 
+def df_to_listofdicts(df):
+    return df.to_dict('records')
+
 # These are not needed for pandas types obviously
+# Just trying to get some of that functionality into list of dicts
 @ivfunc
 def apply(data, func, column):
     '''
     This applies func to one column of the ivloop, and leaves the rest the same.
     func should take an array and return an array of the same size
     '''
-    dataout = type(data)()
+    dataout = {}
     dataout[column] = func(dataout[column])
     add_missing_keys(data, dataout)
     return dataout
 
 def insert(data, key, vals):
-    # Insert values into ivloop objects
-    for d,v in zip(data, vals):
-        d[key] = v
+    '''
+    Insert key:values into list of dicts
+    Like a pandas column
+    '''
+    if hasattr(vals, '__getitem__'):
+        for d,v in zip(data, vals):
+            d[key] = v
+    else:
+        for d in data:
+            d[key] = vals
+
 
 def extract(data, key):
-    # Get array of values from ivloop objects
+    '''
+    Get array of values from list of dicts
+    '''
     return array([d[key] for d in data])
 
-# Efficient rolling mean for arrays
-# ~3x faster than np.convolve
 # I like typing smooth instead of Rolling/running/moving average/mean
 def smooth(x, N):
+    '''
+    Efficient rolling mean for arrays
+    ~3x faster than np.convolve
+    '''
     cumsum = numpy.cumsum(numpy.insert(x, 0, 0)) 
     return (cumsum[N:] - cumsum[:-N]) / N
