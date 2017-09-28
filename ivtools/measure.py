@@ -151,6 +151,7 @@ def connect_picoscope():
             #print(ps.getAllUnitInfo())
         except:
             print('Connection to picoscope failed.  Could be an unclosed session.')
+            ps = None
     else:
         try:
             model = ps.getUnitInfo('VariantInfo')
@@ -172,6 +173,7 @@ def connect_rigolawg():
             print('*IDN?  {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
+            rigol = None
     else:
         try:
             # Check if rigol is already defined and connected
@@ -238,7 +240,12 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     '''
     Generate n pulses of the input waveform on Rigol AWG.
     Trigger immediately.
+    Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
+    Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
     '''
+
+    if len(waveform) > 512e3:
+        raise Exception('Too many samples requested for rigol AWG (probably?)')
 
     # Rigol uses stupid SCPI commands.
     # Construct a string out of the waveform
@@ -259,10 +266,10 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     # out of burst mode automatically.  If the output is still enabled, you will get a
     # continuous pulse train until you can get back into burst mode.
     # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
+    rigol.write(':OUTPUT:STATE OFF')
     #
     # Turn off screen saver.  It sends a premature pulse on SYNC if on..  Really dumb.
     rigol.write(':DISP:SAV OFF')
-    rigol.write(':OUTPUT:STATE OFF')
     # Manual says you can change output resistance from 1 to 10k
     #rigol.write('OUTPUT{}:IMPEDANCE 50'.format(ch))
     # Can turn on/off the sync output (on rear)
@@ -445,8 +452,6 @@ def tri(v1, v2):
 def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
     '''
     Calculate a square pulse waveform.
-    manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
-    Another part of the manual says it is limited to 512 kpts, but can't do that either.
     '''
     ontime = int(duty * length)
     remainingtime = length - ontime
@@ -540,8 +545,10 @@ def calibrate_compliance(iterations=3, startfromfile=True):
     print('Wrote calibration to ' + calibrationfile)
 
     # Set scope settings back to old values
-    RANGE = oldrange
-    OFFSET = oldoffset
+    RANGE['A'] = oldrange['A']
+    OFFSET['A'] = oldoffset['A']
+    RANGE['B'] = oldrange['B']
+    OFFSET['B'] = oldoffset['B']
 
     return compensations
 

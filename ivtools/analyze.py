@@ -344,7 +344,7 @@ def slicebyvalue(data, column='V', startval=None, endval=None, occurance=0):
 @ivfunc
 def sortvalues(data, column='V', ascending=True):
     # Sort the iv data points by a certain column
-    sortkeys = find_data_arrays(iv)
+    sortkeys = find_data_arrays(data)
     reindex = np.argsort(data['V'])
     if not ascending:
         reindex = reindex[::-1]
@@ -367,15 +367,21 @@ def diffsign(data, column='V'):
 
 
 @ivfunc
-def decreasing(data, column='V'):
-    # Could sort afterward, but that could lead to undesired behavior
-    return indexiv(data, lambda l: diffsign(l, column) < 0)
+def decreasing(data, column='V', sort=False):
+    decreased = indexiv(data, lambda l: diffsign(l, column) < 0)
+    if sort:
+        return sortvalues(decreased, column='V', ascending=True)
+    else:
+        return decreased
 
 
 @ivfunc
-def increasing(data, column='V'):
-    # Could sort afterward, but that could lead to undesired behavior
-    return indexiv(data, lambda l: diffsign(l, column) > 0)
+def increasing(data, column='V', sort=False):
+    increased = indexiv(data, lambda l: diffsign(l, column) > 0)
+    if sort:
+        return sortvalues(increased, column='V', ascending=True)
+    else:
+        return increased
 
 
 @ivfunc

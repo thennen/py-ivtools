@@ -185,6 +185,52 @@ def interactive_figures(n=2):
 
     return (fig1, ax1), (fig2, ax2)
 
+def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0):
+    '''
+    Write set of ivloops to disk to make a movie which shows their evolution nicely
+    I rewrote this ten times before decided to make it a function
+    probably there's a better version in ipython history
+    '''
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    fig, ax = plt.subplots()
+    fig.set_tight_layout(True)
+    if shadow:
+        # Plot them all on top of each other transparently for reference
+        plotiv(data, color='gray', linewidth=.5, alpha=.05, ax=ax)
+    #colors = plt.cm.rainbow(arange(len(data))/len(data))
+    colors = ['black'] * len(data)
+    if extent is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+    if type(data) is pd.DataFrame:
+        thingtoloop = data.iterrows()
+    else:
+        thingtoloop = enumerate(data)
+    for i,l in thingtoloop:
+        if splitbranch:
+            # Split branches
+            plotiv(increasing(l, sort=True), ax=ax, color='C0', label='>>')
+            plotiv(decreasing(l, sort=True), ax=ax, color='C2', label='<<')
+            legend(title='Sweep Direction')
+        else:
+            # Colors will mess up if you pass a dataframe with non range(0, ..) index
+            plotiv(l, ax=ax, color=colors[i])
+        title('Loop {}'.format(i+startloopnum))
+        plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
+        del ax.lines[-1]
+        del ax.lines[-1]
+
+def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
+    # Send command to create video with ffmpeg
+    # TODO: have it recognize the file prefix
+    # Don't know difference between -framerate and -r options, but it
+    # seems both need to be set to the desired fps.  Even the order matters.  Don't change it.
+
+    cmd = (r'cd "{0}" & ffmpeg -framerate {1} -i {3}_%03d.png -c:v libx264 '
+            '-r {2} -pix_fmt yuv420p -crf 18 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
+            '{4}.mp4').format(directory, fps, fps+5, prefix, outname)
+    os.system(cmd)
 
 def mpfunc(x, pos):
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']

@@ -497,7 +497,7 @@ def ax1plotter(data, ax=ax1, maxloops=100, smooth=True):
     # Smooth data a bit and give it to plotiv (from plot.py)
     # Would be better to smooth before splitting ...
     if smooth:
-        data = moving_avg(data, window=5)
+        data = moving_avg(data, window=10)
     if type(data) is list:
         nloops = len(data)
     else:
