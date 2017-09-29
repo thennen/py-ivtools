@@ -160,7 +160,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
 # TODO: auto smoothimate
 def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
        autosave=True, autoplot=True, autosplit=True, into50ohm=False,
-       channels=['A', 'B'], autosmoothimate=(20, 5)):
+       channels=['A', 'B'], autosmoothimate=True, splitbylevel=None):
     '''
     Pulse a triangle waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
@@ -207,14 +207,27 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
     ivdata = pico_to_iv(chdata)
 
     if autosmoothimate:
-        # Autosmoothimate should have two numbers, smoothing window and down sampling factor
-        ivdata = smoothimate(ivdata, window=20, factor=5)
-        ivdata['smoothing'] = 20
-        ivdata['downsampling'] = 5
+        nsamples = ivdata.nsamples
+        window = max(int(nsamples * 0.003), 1)
+        # End up with about 1000 data points
+        factor = max(int(nsamples / 1000), 1)
+        print('Smoothimating data with window {}, factor {}'.format(window, factor))
+        ivdata = smoothimate(ivdata, window=window, factor=factor)
 
-    if autosplit and n > 1:
+    if autosplit:
         print('Splitting data into individual pulses')
-        ivdata = splitiv(ivdata, nsamples=duration*actual_fs)
+        if n > 1 and (splitbylevel is None):
+            nsamples = duration * actual_fs
+            if 'downsampling' in ivdata:
+                # Not exactly correct but I hope it's close enough
+                nsamples /= ivdata['downsampling']
+            ivdata = splitiv(ivdata, nsamples=nsamples)
+        elif splitbylevel is not None:
+            # splitbylevel can split loops even if they are not the same length
+            # Could take more time though?
+            # This is not a genius way to determine to split at + or - dV/dt
+            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
+            ivdata = split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
     d = ivdata
     dhistory.append(ivdata)
@@ -530,8 +543,10 @@ def VoverIplotter(data, ax=None, **kwargs):
     ''' Plot V/I vs V, like GPIB control program'''
     if ax is None:
         ax = ax2
-    ax.plot(d['V'], d['V'] / d['I'], '.-', **kwargs)
-
+    mask = np.abs(d['V']) > .01
+    vmasked = d['V'][mask]
+    imasked = d['I'][mask]
+    ax.plot(vmasked, vmasked / imasked, '.-', **kwargs)
     ax.set_yscale('log')
     ax.set_xlabel('Voltage [V]')
     ax.set_ylabel('V/I [$\Omega$]')

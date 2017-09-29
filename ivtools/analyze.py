@@ -5,6 +5,7 @@ import numpy as np
 from itertools import groupby
 from dotdict import dotdict
 from scipy import signal
+from numbers import Number
 
 def ivfunc(func):
     '''
@@ -17,6 +18,7 @@ def ivfunc(func):
     @wraps(func)
     def func_wrapper(data, *args, **kwargs):
         dtype = type(data)
+        ###  If a DataFrame is passed
         if dtype == pd.DataFrame:
             # Apply the function to the columns of the dataframe
             # This will error if your function returns an array
@@ -28,14 +30,37 @@ def ivfunc(func):
             #if type(resultlist[0]) == pd.Series:
             if type(resultlist[0]) in (pd.Series, dict):
                 return pd.DataFrame(resultlist)
-            else:
-                # Keep the index the same!
-                series_out = pd.Series(resultlist)
-                series_out.index = data.index
-                return series_out
+            elif (type(resultlist[0]) is list):
+                if (type(resultlist[0][0]) is dict):
+                    # Each row returns a list of dicts, stack the lists into new dataframe
+                    # Mainly used for splitting loops, so that everything stays flat
+                    # Index will get reset ...
+                    return pd.DataFrame([item for sublist in resultlist for item in sublist])
+                elif isinstance(resultlist[0][0], Number):
+                    # Each row returns a list of numbers
+                    # Make dataframe
+                    df_out = pd.DataFrame(resultlist)
+                    df_out.index = data.index
+                    return df_out
+            # For all other cases
+            # Keep the index the same!
+            series_out = pd.Series(resultlist)
+            series_out.index = data.index
+            return series_out
+        ### If a list (of dicts) is passed
         elif dtype == list:
             # Assuming it's a list of iv dicts
-            return [func(d, *args, **kwargs) for d in data]
+            resultlist = [func(d, *args, **kwargs) for d in data]
+            if (type(resultlist[0]) is list):
+                if (type(resultlist[0][0]) is dict):
+                    # Each func(dict) returns a list of dicts, stack the lists
+                    return [item for sublist in resultlist for item in sublist]
+                elif isinstance(resultlist[0][0], Number):
+                    # Each iv dict returns a list of numbers
+                    # "Unpack" them
+                    return zip(*resultlist)
+            # For all other return types
+            return resultlist
         elif dtype is pd.Series:
             # It's just one IV Series
             # If it returns a dict, convert it back to a series
@@ -84,6 +109,7 @@ def thresholds_bydiff(data, stride=1):
     argmindiffI = np.argmin(diffI)
     vreset = data['V'][argmindiffI]
     mindiffI = diffI[argmindiffI]
+    # TODO: This is breaking the pattern of other ivfuncs -- list of dict will return list of series...
     return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
 '''
 @ivfunc
@@ -107,6 +133,7 @@ def moving_avg(data, window=5, columns=('I', 'V')):
     smootharrays = [smooth(ar, window) for ar in arrays]
     dataout = {c:sm for c,sm in zip(columns, smootharrays)}
     add_missing_keys(data, dataout)
+    data['smoothing'] = window
     return dataout
 
 
@@ -140,6 +167,10 @@ def decimate(data, factor=5, columns=('I', 'V')):
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
     dataout = {c:dec for c,dec in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
+    if 'downsampling' in data:
+        data['downsampling'] *= factor
+    else:
+        data['downsampling'] = factor
     return dataout
 
 @ivfunc
@@ -219,22 +250,30 @@ def slicefraction(data, stop=1/2, start=0, step=1):
 
 # NOT an ivfunc -- can only be called on single IV
 # Would it make sense to collapse a list of IVs into a flattened list of list of IVs?
-def split_by_crossing(data, V=0, increasing=True, hys=1e-3):
+@ivfunc
+def split_by_crossing(data, V=0, increasing=True, hyspts=50):
     '''
-    Split loops into multiple loops
+    Split loops into multiple loops, by threshold crossing
     Only implemented V threshold crossing
     return list of input type
+    Noisy data is hard to split this way
+    hyspts will require that on a crossing, the value of V was above/below threshold hyspts ago
+    set it to less than half of the minimum loop length
     '''
     # V threshold crossing
-    # Noisy data is hard to split this way
     side = data['V'] >= V
     crossings = np.diff(np.int8(side))
     if increasing:
-        trigger = np.where(crossings == 1)
+        trigger = np.where((crossings[hyspts-1:] == 1) & (side[:-hyspts] == False))[0] + hyspts
     else:
-        trigger = np.where(crossings == -1)
+        trigger = np.where((crossings[hyspts-1:] == -1) & (side[:-hyspts] == True))[0] + hyspts
     # Put the endpoints in
-    trigger = np.concatenate(([0], trigger[0], [-1]))
+    trigger = np.concatenate(([0], trigger, [len(data['V'])]))
+    # Delete triggers that are too close to each other
+    # This is not perfect.
+    trigthresh = np.diff(trigger) > hyspts
+    trigmask = np.insert(trigthresh, 0, 1)
+    trigger = trigger[trigmask]
 
     outlist = []
     splitkeys = find_data_arrays(data)
@@ -245,23 +284,67 @@ def split_by_crossing(data, V=0, increasing=True, hys=1e-3):
         add_missing_keys(data, splitloop)
         outlist.append(splitloop)
 
-    if type(data) == pd.Series:
-        return pd.DataFrame(outlist)
+    return outlist
+
+@ivfunc
+def splitbranch(data, columns=None):
+    '''
+    Split a loop into two branches
+    Assumptions are that loop starts at intermediate V (like zero), goes to one extremum, to another extremum, then back to zero.
+    Can also just go to one extreme and back to zero
+    Not sure how to extend to splitting multiple loops.  Should it return interleaved branches or two separate dataframes/lists?
+    '''
+    if columns is None:
+        columns = find_data_arrays(data)
+    imax = np.argmax(data['V'])
+    imin = np.argmin(data['V'])
+    firstextreme = min(imax, imin)
+    secondextreme = max(imax, imin)
+    start = data['V'][0]
+    firstxval = data['V'][firstextreme]
+    secondxval = data['V'][secondextreme]
+    pp = abs(firstxval - secondxval)
+    branch1 = {}
+    branch2 = {}
+
+    # Determine if loop goes to two extremes or just one
+    # Is the start value close to one of the extremes?
+    if (abs(start - firstextreme) < .01 * pp):
+        singleextreme = secondextreme
+    elif (abs(start - secondextreme) < .01 * pp):
+        singleextreme = firstextreme
     else:
-        return outlist
+        singleextreme = None
+
+    if singleextreme is None:
+        # Assume there are two extremes..
+        for c in columns:
+            branch1[c] = np.concatenate((data[c][secondextreme:], data[c][:firstextreme]))
+            branch2[c] = data[c][firstextreme:secondextreme]
+    else:
+        for c in columns:
+            branch1[c] = data[c][:singleextreme]
+            branch2[c] = data[c][singleextreme:]
+
+    add_missing_keys(data, branch1)
+    add_missing_keys(data, branch2)
+
+    return [branch1, branch2]
 
 
-def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
+@ivfunc
+def splitiv(data, nloops=None, nsamples=None):
     '''
     Split data into individual loops, specifying somehow the length of each loop
     if you pass nloops, it splits evenly into n loops.
     if you pass nsamples, it makes each loop have that many samples (except possibly the last one)
     pass nsamples = PulseDuration * SampleFrequency if you don't know nsamples
-    Can only be called on a single loop
     '''
     l = len(data['V'])
     if nloops is not None:
         nsamples = float(l / int(nloops))
+    if nsamples is None:
+        raise Exception('You must pass nloops or nsamples')
     # nsamples need not be an integer.  Will correct for extra time.
     trigger = [int(n) for n in arange(0, l, nsamples)]
     # If array is not evenly split, return the last fragment as well
@@ -277,10 +360,7 @@ def splitiv(data, nloops=None, nsamples=None, fs=None, duration=None):
         add_missing_keys(data, splitloop)
         outlist.append(splitloop)
 
-    if type(data) == pd.Series:
-        return pd.DataFrame(outlist)
-    else:
-        return outlist
+    return outlist
 
 
 def concativ(data):
@@ -298,7 +378,7 @@ def concativ(data):
             out[k] = np.concatenate(list(data[k]))
         else:
             out[k] = np.concatenate([d[k] for d in data])
-    add_missing_keys(data, out)
+    add_missing_keys(firstrow, out)
 
     if type(data) == pd.DataFrame:
         return pd.Series(out)
@@ -468,7 +548,7 @@ def jumps(loop, column='I', thresh=0.25, normalize=True, abs=True):
         jumps = np.where(d < thresh)[0]
     else:
         jumps = np.where(d > thresh)[0]
-    return jumps, d[jumps]
+    return [jumps, d[jumps]]
 
 @ivfunc
 def njumps(loop, **kwargs):
@@ -487,6 +567,7 @@ def first_jump(loop, **kwargs):
         first_jump = np.nan
     #loop['first_jump'] = first_jump
     return first_jump
+
 
 @ivfunc
 def last_jump(loop, **kwargs):
@@ -612,6 +693,12 @@ def resistance(data, v0=0.1, v1=None):
     mask = (data['V'] <= vmax) & (data['V'] >= vmin)
     poly = np.polyfit(data['I'][mask], data['V'][mask], 1)
     return poly[0]
+
+@ivfunc
+def resistance_states(data, v0=0.1, v1=None):
+    ''' Calculate resistance for increasing/decreasing branches '''
+    RS1, RS2 = resistance(splitbranch(data), v0, v1)
+    return [RS1, RS2]
 
 @ivfunc
 def convert_unit(column='I', prefix='u'):

@@ -325,13 +325,14 @@ def get_data(ch='A', raw=False, dtype=np.float32):
             rawint16, _, _ = ps.getDataRaw(c)
             data[c] = np.int8(rawint16 / 2**8)
         else:
-            # dtype argument is not part of normal picoscope library!
+            # I added dtype argument to pico-python
             data[c] = ps.getDataV(c, dtype=dtype)
 
     Channels = ['A', 'B', 'C', 'D']
     data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
     data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
     data['sample_rate'] = ps.sampleRate
+    data['nsamples'] = len(data[ch[0]])
     # Using the current state of the global variables to record what settings were used
     # I don't know a way to get couplings and attenuations from the picoscope instance
     data['COUPLINGS'] = COUPLINGS
