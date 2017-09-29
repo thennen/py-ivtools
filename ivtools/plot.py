@@ -118,6 +118,26 @@ def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
 
     return ax, line
 
+def plot_R_states(data, **kwargs):
+    resist_states = resistance_states(data)
+    resist1 = resist_states[0]
+    resist2 = resist_states[1]
+    if type(resist1) is pd.Series:
+        cycle1 = resist1.index
+        cycle2 = resist2.index
+    else:
+        cycle1 = cycle2 = len(resist1)
+
+    fig, ax = plt.subplots()
+    scatterargs = dict(s=10, alpha=.8, edgecolor='none')
+    scatterargs.update(kwargs)
+    ax.scatter(cycle1, resist1, c='royalblue', **scatterargs)
+    ax.scatter(cycle2, resist2,  c='seagreen', **scatterargs)
+    #ax.legend(['HRS', 'LRS'], loc=0)
+    ax.set_xlabel('Cycle #')
+    ax.set_ylabel('Resistance / $\\Omega$')
+
+
 
 def plot_channels(chdata, ax=None):
     '''

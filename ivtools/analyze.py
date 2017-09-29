@@ -58,7 +58,7 @@ def ivfunc(func):
                 elif isinstance(resultlist[0][0], Number):
                     # Each iv dict returns a list of numbers
                     # "Unpack" them
-                    return zip(*resultlist)
+                    return list(zip(*resultlist))
             # For all other return types
             return resultlist
         elif dtype is pd.Series:

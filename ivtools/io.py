@@ -148,6 +148,33 @@ def read_txts(directory, pattern, **kwargs):
     #return dotdict(iv=iv, source_dir=directory)
     return pd.DataFrame(datalist)
 
+
+def read_pandas(directory='.', pattern='*'):
+    '''
+    Load in all dataframes and series matching a glob pattern
+    return concatenated dataframe
+    '''
+    files = os.listdir(directory)
+    matchfiles = fnmatch.filter(files, pattern)
+    pdlist = []
+    # Try to get pandas to read the files, but don't give up if some fail
+    for f in matchfiles:
+        fp = os.path.join(directory, f)
+        try:
+            # pdlist may have some combination of Series and DataFrames.  Series should be rows
+            pdobject = pd.read_pickle(fp)
+            if type(pdobject) is pd.DataFrame:
+                pdlist.append(pdobject)
+            elif type(pdobject) is pd.Series:
+                pdlist.append(pd.DataFrame(pdobject).transpose())
+            else:
+                print('Do not know wtf this file is:')
+            print('Loaded {}.'.format(f))
+        except:
+            print('Failed to interpret {} as a pandas pickle!'.format(f))
+    return pd.concat(pdlist)
+
+
 def write_matlab(data, filepath, varname=None, compress=True):
    # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
    # Haven't figured out what sucks less to work with in matlab
