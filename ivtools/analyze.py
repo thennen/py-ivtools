@@ -143,7 +143,7 @@ def decimate(data, factor=5, columns=('I', 'V')):
     return dataout
 
 @ivfunc
-def smoothimate(data, window=10, factor=10, columns=('I', 'V')):
+def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
     ''' Smooth with moving avg and then decimate the data'''
     if columns is None:
         columns = find_data_arrays(data)
@@ -153,8 +153,10 @@ def smoothimate(data, window=10, factor=10, columns=('I', 'V')):
         raise Exception('Arrays to be smoothimated have different lengths!')
     if lens[0] == 0:
         raise Exception('No data to smooth')
-    smootharrays = [smooth(ar, window) for ar in arrays]
-    decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
+    decarrays = arrays
+    for _ in range(passes):
+        smootharrays = [smooth(ar, window) for ar in decarrays]
+        decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
     dataout = {c:ar for c,ar in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
     return dataout
