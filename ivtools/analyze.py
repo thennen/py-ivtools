@@ -34,6 +34,7 @@ def ivfunc(func):
                 if (type(resultlist[0][0]) is dict):
                     # Each row returns a list of dicts, stack the lists into new dataframe
                     # Mainly used for splitting loops, so that everything stays flat
+                    # Maybe return a panel instead?
                     # Index will get reset ...
                     return pd.DataFrame([item for sublist in resultlist for item in sublist])
                 elif isinstance(resultlist[0][0], Number):
@@ -99,6 +100,8 @@ def diffiv(data, stride=1, columns=None):
     add_missing_keys(data, dataout)
     return dataout
 
+
+
 @ivfunc
 def thresholds_bydiff(data, stride=1):
     ''' Find switching thresholds by finding the maximum differences. '''
@@ -133,7 +136,7 @@ def moving_avg(data, window=5, columns=('I', 'V')):
     smootharrays = [smooth(ar, window) for ar in arrays]
     dataout = {c:sm for c,sm in zip(columns, smootharrays)}
     add_missing_keys(data, dataout)
-    data['smoothing'] = window
+    dataout['smoothing'] = window
     return dataout
 
 
@@ -167,10 +170,10 @@ def decimate(data, factor=5, columns=('I', 'V')):
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
     dataout = {c:dec for c,dec in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
-    if 'downsampling' in data:
-        data['downsampling'] *= factor
+    if 'downsampling' in dataout:
+        dataout['downsampling'] *= factor
     else:
-        data['downsampling'] = factor
+        dataout['downsampling'] = factor
     return dataout
 
 @ivfunc
@@ -185,11 +188,23 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
     if lens[0] == 0:
         raise Exception('No data to smooth')
     decarrays = arrays
+    dtype = type(arrays[0][0])
     for _ in range(passes):
         smootharrays = [smooth(ar, window) for ar in decarrays]
+        # After all that work to keep the same datatype, signal.decimate converts them to float64
+        # I will ignore the problem for now and just convert back in the end...
         decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
-    dataout = {c:ar for c,ar in zip(columns, decarrays)}
+    if dtype is np.float64:
+        dataout = {c:ar for c,ar in zip(columns, decarrays)}
+    else:
+        # Convert back to original data type
+        dataout = {c:dtype(ar) for c,ar in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
+    if 'downsampling' in dataout:
+        dataout['downsampling'] *= factor
+    else:
+        dataout['downsampling'] = factor
+    dataout['smoothing'] = window
     return dataout
 
 @ivfunc
@@ -309,9 +324,9 @@ def splitbranch(data, columns=None):
 
     # Determine if loop goes to two extremes or just one
     # Is the start value close to one of the extremes?
-    if (abs(start - firstextreme) < .01 * pp):
+    if (abs(start - firstxval) < .01 * pp):
         singleextreme = secondextreme
-    elif (abs(start - secondextreme) < .01 * pp):
+    elif (abs(start - firstxval) < .01 * pp):
         singleextreme = firstextreme
     else:
         singleextreme = None
@@ -384,6 +399,31 @@ def concativ(data):
         return pd.Series(out)
     else:
         return out
+
+def meaniv(data, columns=None):
+    '''
+    Return the average of all iv columns.
+    not an ivfunc -- takes multiple loops and returns one
+    '''
+    if type(data) is pd.DataFrame:
+        isdf = True
+        firstrow = data.iloc[0]
+    else:
+        isdf = False
+        firstrow = data[0]
+    if columns is None:
+        columns = find_data_arrays(firstrow)
+    dataout = {}
+    for k in columns:
+        if isdf:
+            dataout[k] = data[k].mean()
+        else:
+            dataout[k] = np.mean([d[k] for d in data])
+    add_missing_keys(firstrow, dataout)
+    if isdf:
+        return pd.Series(dataout)
+    else:
+        return dataout
 
 
 # TODO: Rename this, because it doesn't return a true "slice" of the data
@@ -758,7 +798,28 @@ def extract(data, key):
 def smooth(x, N):
     '''
     Efficient rolling mean for arrays
-    ~3x faster than np.convolve
+    Faster than numpy.convolve for most situations (window < 10)
+    Floating point errors will accumulate if you use lower precision!
     '''
+    if N <= 10:
+        # Use convolve
+        return smooth_conv(x, N)
+    dtypein = type(x[0])
+    converted = False
+    if dtypein in (np.float32, np.float16):
+        if len(x) > 100000:
+            # Convert to and back from float64
+            converted = True
+            x = np.float64(x)
+    # Do the smoothing
     cumsum = numpy.cumsum(numpy.insert(x, 0, 0)) 
-    return (cumsum[N:] - cumsum[:-N]) / N
+    movingavg = (cumsum[N:] - cumsum[:-N]) / N
+    if converted:
+        return dtypein(movingavg)
+    else:
+        return movingavg
+
+def smooth_conv(x, N, mode='valid'):
+    ''' Smooth (moving avg) with convolution '''
+    dtypein = type(x[0])
+    return np.convolve(x, np.ones(N, dtype=dtypein)/dtypein(N), mode)

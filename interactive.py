@@ -115,11 +115,9 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
 
         if 'A' in ch:
             # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-            amp = abs(v1 - v2) / 2
-            selectedrange = possible_ranges[possible_ranges >= amp][0]
-            RANGE['A'] = selectedrange
-            middle = (v1 + v2) / 2
-            OFFSET['A'] = -middle
+            arange, aoffs = best_range((v1, v2))
+            RANGE['A'] = arange
+            OFFSET['A'] = aoffs
 
         if 'B' in ch:
             # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
@@ -139,21 +137,9 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
                 # R was passed, assume device has constant resistance with this value
                 b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
                 b_max = (COMPLIANCE_CURRENT - min(v1, v2) / R) * 2e3
-            b_amp = abs(b_max - b_min) / 2
-            b_middle = (b_max + b_min) / 2
-            mask_of_possibilities = possible_ranges >= b_amp
-            for b_selectedrange, max_offset in zip(possible_ranges[mask_of_possibilities], max_offsets[mask_of_possibilities]):
-                # Is b_middle an acceptable offset?
-                if b_middle < max_offset:
-                    RANGE['B'] = b_selectedrange
-                    OFFSET['B'] = -b_middle
-                    break
-                # Can we reduce the offset without the signal going out of range?
-                elif (max_offset + b_selectedrange >= b_max) and (-max_offset - b_selectedrange <= b_min):
-                    RANGE['B'] = b_selectedrange
-                    OFFSET['B'] = np.clip(-b_middle, -max_offset, max_offset)
-                    break
-                # Neither worked, try increasing the range ...
+            brange, boffs = best_range((b_min, b_max))
+            RANGE['B'] = brange
+            OFFSET['B'] = boffs
             # Could do some other cool tricks here
             # Like look at previous measurements, use derivatives to predict appropriate range changes
 
@@ -207,10 +193,14 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
     ivdata = pico_to_iv(chdata)
 
     if autosmoothimate:
-        nsamples = ivdata.nsamples
-        window = max(int(nsamples * 0.003), 1)
-        # End up with about 1000 data points
-        factor = max(int(nsamples / 1000), 1)
+        nsamples_shot = ivdata['nsamples_capture'] / n
+        # Smooth by 0.3% of a shot
+        window = max(int(nsamples_shot * 0.003), 1)
+        # End up with about 1000 data points per shot
+        # This will be bad if you send in a single shot waveform with multiple cycles
+        # In that case, you shouldn't be using autosmoothimate or autosplit
+        # TODO: make a separate function for IV trains?
+        factor = max(int(nsamples_shot / 1000), 1)
         print('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = smoothimate(ivdata, window=window, factor=factor)
 
@@ -394,7 +384,7 @@ p = autocaller(previousdevice)
 ### Functions that write to disk
 
 
-def savedata(filename=None):
+def savedata(filename=None, keepchannels=False):
     '''
     Attach sample information and write the current value of the d variable to disk.
     d variable can contain a single iv dict/series, or a list of them
@@ -433,15 +423,26 @@ def savedata(filename=None):
     if islist:
         for l in d:
             l['datafilepath'] = filepath
-        print('converting variable \'d\' to pd.DataFrame and writing as pickle to {}'.format(filepath))
-        pd.DataFrame(d).to_pickle(filepath)
+        print('Converting variable \'d\' to pd.DataFrame for storage.')
+        df = pd.DataFrame(d)
+        if not keepchannels:
+            print('Removing channel data to save space.'.format(filepath))
+            todrop = set(('A', 'B', 'C', 'D')) & set(df.columns)
+            df.drop(todrop, 1, inplace=True)
+        print('Writing data as pickle to {}'.format(filepath))
+        df.to_pickle(filepath)
         # Extend data list with d
         #print('Extending list \'data\' with variable \'d\'')
         #data.extend(d)
     else:
         d['datafilepath'] = filepath
-        print('converting variable \'d\' to pd.Series and writing as pickle to {}'.format(filepath))
-        pd.Series(d).to_pickle(filepath)
+        print('Converting variable \'d\' to pd.Series for storage.')
+        s = pd.Series(d)
+        if not keepchannels:
+            todrop = set(('A', 'B', 'C', 'D')) & set(df.columns)
+            s.drop(todrop, inplace=True)
+        print('Writing data as pickle to {}'.format(filepath))
+        s.to_pickle(filepath)
         ### Decided this is a bad idea for the large datasets that tend to come out of this
         # Append series to data list
         #print('Appending variable \'d\' to list \'data\'')

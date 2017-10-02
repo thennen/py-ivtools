@@ -118,8 +118,8 @@ def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
 
     return ax, line
 
-def plot_R_states(data, **kwargs):
-    resist_states = resistance_states(data)
+def plot_R_states(data, v0=.1, v1=None, **kwargs):
+    resist_states = resistance_states(data, v0, v1)
     resist1 = resist_states[0]
     resist2 = resist_states[1]
     if type(resist1) is pd.Series:
