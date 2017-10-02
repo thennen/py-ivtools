@@ -19,8 +19,12 @@ try:
 except:
     rigol = None
 
+# TODO make a container class for all the pico settings, so that they are aware of each other and enforce valid values.  Can build in some fancy methods.  Could split it to another file.  Could submit PR to pico-python.
+#class picosettings(dict):
+
 class picorange(dict):
     # Holds the values for picoscope channel ranges.  Enforces valid values.
+    # TODO: add increment and decrement
     def __init__(self):
         self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
         self.setall(1.0)
@@ -117,6 +121,56 @@ class picooffset(dict):
     @d.setter
     def d(self, value):
         self.set('D', value)
+
+def best_range(data):
+    '''
+    Return the best RANGE and OFFSET values to use for a particular input signal (array)
+    Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
+    Don't pass int8 signals, would then need channel information to convert to V
+    '''
+    possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+    # Sadly, each range has a different maximum possible offset
+    max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+    minimum = np.min(data)
+    maximum = np.max(data)
+    amplitude = abs(maximum - minimum) / 2
+    middle = round((maximum + minimum) / 2, 3)
+    # Mask of possible ranges that fit the signal
+    mask = possible_ranges >= amplitude
+    for selectedrange, max_offset in zip(possible_ranges[mask], max_offsets[mask]):
+        # Is middle an acceptable offset?
+        if middle < max_offset:
+            return (selectedrange, -middle)
+            break
+        # Can we reduce the offset without the signal going out of range?
+        elif (max_offset + selectedrange >= maximum) and (-max_offset - selectedrange <= minimum):
+            return(selectedrange, np.clip(-middle, -max_offset, max_offset))
+            break
+        # Neither worked, try increasing the range ...
+    # If no range was enough to fit the signal
+    print('Signal out of pico range!')
+    return (max(possible_ranges), 0)
+
+def squeeze_range(data, ch=['A', 'B', 'C', 'D']):
+    '''
+    Find the best range for given input data (can be any number of channels)
+    Set the range and offset to the lowest required to fit the data
+    '''
+    global RANGE, OFFSET
+    for c in ch:
+        if c in data:
+            if type(data[c][0]) is np.int8:
+                # Need to convert to float
+                usedrange = data['RANGE'][c]
+                usedoffset = data['OFFSET'][c]
+                maximum = np.max(data[c])  / 2**8 * usedrange * 2 - usedoffset
+                minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
+                rang, offs = best_range((minimum, maximum))
+            else:
+                rang, offs = best_range(data[c])
+            RANGE[c] = rang
+            OFFSET[c] = offs
+
 # Settings for picoscope channels.
 # Also don't clobber them
 try:
@@ -295,10 +349,6 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     rigol.write(':DISP:SAV ON')
 
 
-def testreload():
-    pass
-
-
 def get_data(ch='A', raw=False, dtype=np.float32):
     '''
     Wait for data and transfer it from pico memory.
@@ -332,7 +382,9 @@ def get_data(ch='A', raw=False, dtype=np.float32):
     data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
     data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
     data['sample_rate'] = ps.sampleRate
-    data['nsamples'] = len(data[ch[0]])
+    # Specify captured, because this field will persist even after splitting for example
+    # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
+    data['nsamples_capture'] = len(data[ch[0]])
     # Using the current state of the global variables to record what settings were used
     # I don't know a way to get couplings and attenuations from the picoscope instance
     data['COUPLINGS'] = COUPLINGS
@@ -434,12 +486,14 @@ def tri(v1, v2):
     commond = float(b * d)
     vstep = gcd(a*d, b*c) / commond
     dv = v1 - v2
-    n1 = int(abs(v1) / vstep + 1)
-    n2 = int(abs(dv) / vstep + 1)
-    n3 = int(abs(v2) / vstep + 1)
+    # Using round because floating point errors suck
+    # e.g. int(0.3 / 0.1) = int(2.9999999999999996) = 2
+    n1 = round(abs(v1) / vstep + 1)
+    n2 = round(abs(dv) / vstep + 1)
+    n3 = round(abs(v2) / vstep + 1)
     wfm = np.concatenate((np.linspace(0 , v1, n1),
-                          np.linspace(v1, v2, n2)[1:-1],
-                          np.linspace(v2, 0 , n3)))
+                          np.linspace(v1, v2, n2)[1:],
+                          np.linspace(v2, 0 , n3)[1:]))
 
     # Filling the AWG record length with probably take more time than it's worth.
     # Interpolate to a "Large enough" waveform size
@@ -448,6 +502,7 @@ def tri(v1, v2):
     #xp = np.linspace(0, 1, len(wfm))
     #wfm = np.interp(x, xp, wfm)
 
+    # Let AWG do the interpolation
     return wfm
 
 def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
@@ -560,11 +615,17 @@ def plot_compliance_calibration():
         cc = pickle.load(f)
     ccurrent = cc['ccurrent']
     dacvals = cc['dacvals']
+    compensationV = cc['compensationV']
     fig, ax = plt.subplots()
+    fig2, ax2 = plt.subplots()
     ax.plot(dacvals, ccurrent, '.-')
     ax.set_xlabel('DAC0 value')
     ax.set_ylabel('Compliance Current')
+    ax2.plot(dacvals, compensationV, '.-')
+    ax2.set_xlabel('DAC0 value')
+    ax2.set_ylabel('Compensation V (DAC1)')
     plt.tight_layout()
+    return cc
 
 
 def measure_compliance():
@@ -656,6 +717,7 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['I'] = -1 * B / dtype(R * gain) + dtype(COMPLIANCE_CURRENT)
     dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
     dataout['units'] = {'V':'V', 'I':'A'}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
     dataout['Rout_conv'] = R
     dataout['CC_conv'] = COMPLIANCE_CURRENT
