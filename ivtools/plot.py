@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from dotdict import dotdict
 import pandas as pd
+from matplotlib.widgets import SpanSelector
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
     ''' Plot an array vs another array contained in iv object '''
@@ -137,6 +138,39 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_xlabel('Cycle #')
     ax.set_ylabel('Resistance / $\\Omega$')
 
+def plot_span(data=None, ax=None):
+    '''
+    Select index range from plot of some parameter vs index.  Plot the loops there.
+    To use selector, just make sure you don't have any other gui widgets active
+    Will remain active as long as the return value is not garbage collected
+    Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
+    '''
+    if data is None:
+        # Check for global variables ...
+        # Sorry if this offends you ..
+        print('No data passed. Looking for global variable d')
+        try:
+            data = d
+        except:
+            print('No global variable d. Looking for global variable df')
+            try:
+                data = df
+            except:
+                raise Exception('No data can be found')
+                
+    if ax is None:
+        ax = plt.gca()
+    def onselect(xmin, xmax):
+        # Plot max 1000 loops
+        xmin = int(xmin)
+        xmax = int(xmax)
+        n = xmax - xmin
+        step = max(1, int(n / 1000))
+        print('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
+        plotiv(data[xmin:xmax+1:step], alpha=.8)
+        plt.show()
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
 
 
 def plot_channels(chdata, ax=None):
@@ -230,8 +264,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
     for i,l in thingtoloop:
         if splitbranch:
             # Split branches
-            plotiv(increasing(l, sort=True), ax=ax, color='C0', label='>>')
-            plotiv(decreasing(l, sort=True), ax=ax, color='C2', label='<<')
+            plotiv(increasing(l, sort=True), ax=ax, color='C0', label=r'$\rightarrow$')
+            plotiv(decreasing(l, sort=True), ax=ax, color='C2', label=r'$\leftarrow$')
             legend(title='Sweep Direction')
         else:
             # Colors will mess up if you pass a dataframe with non range(0, ..) index
@@ -240,6 +274,65 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
         del ax.lines[-1]
         del ax.lines[-1]
+
+def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
+    ''' Temporary name, make a movie showing iv loops as they are swept'''
+    if not os.path.isdir(directory):
+        os.makedirs(directory)
+    fig, ax = plt.subplots(figsize=(8,6))
+    fig.set_tight_layout(True)
+    if extent is not None:
+        ax.set_xlim(extent[0], extent[1])
+        ax.set_ylim(extent[2], extent[3])
+    #colors = plt.cm.rainbow(arange(len(data))/len(data))
+    colors = ['black'] * len(data)
+    if type(data) is pd.DataFrame:
+        thingtoloop = data.iterrows()
+    else:
+        thingtoloop = enumerate(data)
+    frame = 0
+    for i,l in thingtoloop:
+        npts = len(l['V'])
+        step = max(1, int(npts / framesperloop))
+        # empty plots to update with data
+        # Assuming there is ONE loop, starting and ending at zero
+        # Up to first extreme
+        C1 = 'forestgreen'
+        C2 = 'darkmagenta'
+        line1 = ax.plot([], color=C1, alpha=1)[0]
+        # Down to min
+        line2 = ax.plot([], color=C2, alpha=1)[0]
+        # Back up to zero
+        line3 = ax.plot([], color=C1, alpha=1)[0]
+
+        plt.title('Loop {}'.format(i))
+        ax.set_xlabel('Applied Voltage [V]')
+        ax.set_ylabel('Device Current [$\mu$A]')
+        imax = np.argmax(l['V'])
+        imin = np.argmin(l['V'])
+        firstextreme = min(imax, imin)
+        secondextreme = max(imax, imin)
+        for endpt in np.int32(np.linspace(step, npts+1, framesperloop)):
+            end1 = min(firstextreme, endpt)
+            line1.set_data(l['V'][:end1], l['I'][:end1])
+            end2 = min(secondextreme, endpt)
+            line2.set_data(l['V'][firstextreme:end2], l['I'][firstextreme:end2])
+            line3.set_data(l['V'][secondextreme:endpt], l['I'][secondextreme:endpt])
+            plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(frame)))
+            frame += 1
+            # Reduce opacity of all previous loops, every frame (because cool)
+            for part in ax.lines[:-3]:
+                part.set_alpha(part.get_alpha() * 0.96)
+                part.set_color('black')
+                part.set_linewidth(1)
+        # Suddenly reduce opacity of previous loop
+        line1.set_alpha(.75)
+        line2.set_alpha(.75)
+        line3.set_alpha(.75)
+        # I hope i starts at zero, it won't if you pass a dataframe slice
+        if i > persist:
+            # Remove the oldest loop
+            del ax.lines[0:3]
 
 def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
     # Send command to create video with ffmpeg
