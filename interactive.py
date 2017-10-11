@@ -202,7 +202,7 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
         # TODO: make a separate function for IV trains?
         factor = max(int(nsamples_shot / 1000), 1)
         print('Smoothimating data with window {}, factor {}'.format(window, factor))
-        ivdata = smoothimate(ivdata, window=window, factor=factor)
+        ivdata = smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit:
         print('Splitting data into individual pulses')
@@ -295,29 +295,59 @@ prettykeys = []
 filenamekeys = []
 
 # Example of setting meta list
-def load_lassen(coupons=[23], dies=[64], modules=['001H']):
+def load_lassen(**kwargs):
+    ''' Load lassen, specify lists of keys to match on
+    e.g. coupon=[23, 24], module=['001H', '014B']
+    '''
     # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
-    global wafer_df, meta_df, prettykeys, filenamekeys, devicemetalist
-    wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
-    # Select the samples you want to measure
-    meta_df = wafer_df
+    global lassen_df, meta_df, prettykeys, filenamekeys, devicemetalist
+    # Load information from files on disk
+    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+    # Only use Lassen devices
+    deposition_df = deposition_df[deposition_df['wafer_code'] == 'Lassen']
+    lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
+    # Merge data
+    merge_deposition_data_on = ['coupon']
+    meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
+
+    # Check that function got valid arguments
+    for key, values in kwargs.items():
+        if key not in meta_df.columns:
+            raise Exception('Key must be in {}'.format(meta_df.columns))
+        if isinstance(values, str) or not hasattr(values, '__iter__'):
+            kwargs[key] = [values]
+
+    #### Filter kwargs ####
+    for key, values in kwargs.items():
+        meta_df = meta_df[meta_df[key].isin(values)]
     #### Filter devices to be measured #####
     devices001 = [2,3,4,5,6,7,8]
     devices014 = [4,5,6,7,8,9]
-    #########
-    meta_df = meta_df[meta_df.coupon.isin(coupons)]
-    meta_df = meta_df[meta_df.module.isin(modules)]
     meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
     meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-    meta_df = meta_df[meta_df.die.isin(dies)]
-    # Merge with deposition data
-    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
-    merge_deposition_data_on = ['coupon']
-    meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_on)
+
     meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+
+    # Try to convert data types
+    typedict = dict(wafer_number=np.uint8,
+                    coupon=np.uint8,
+                    sample_number=np.uint16,
+                    number_of_dies=np.uint8,
+                    cr=np.uint8,
+                    thickness_1=np.uint16,
+                    thickness_2=np.uint16,
+                    dep_temp=np.uint16,
+                    etch_time=np.float32,
+                    etch_depth=np.float32)
+    for k,v in typedict.items():
+        # int arrays don't support missing data, because python sucks
+        if not any(meta_df[k].isnull()):
+            meta_df[k] = meta_df[k].astype(v)
+
     devicemetalist = meta_df
     prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
     filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
+    print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
 
 def prettyprint_meta(hlkeys=None):
     # Print some information about the device
@@ -439,7 +469,7 @@ def savedata(filename=None, keepchannels=False):
         print('Converting variable \'d\' to pd.Series for storage.')
         s = pd.Series(d)
         if not keepchannels:
-            todrop = set(('A', 'B', 'C', 'D')) & set(df.columns)
+            todrop = set(('A', 'B', 'C', 'D')) & set(s.index)
             s.drop(todrop, inplace=True)
         print('Writing data as pickle to {}'.format(filepath))
         s.to_pickle(filepath)
@@ -466,35 +496,6 @@ def savedatalist(filename=None):
 
 ##### Interactive Plotting
 
-## Make some plot windows, put them in places
-try:
-    # Close the figs if they already exist
-    plt.close(fig1)
-    plt.close(fig2)
-except:
-    pass
-
-def make_figs():
-    global fig1, ax1, fig2, ax2
-    (fig1, ax1) , (fig2, ax2) = interactive_figures()
-
-make_figs()
-
-def clear_plots():
-    # Clear IV loop plots
-    ax1.cla()
-    ax2.cla()
-    ax1.set_title('IV Measurements')
-    ax1.set_xlabel('Voltage')
-    ax1.set_ylabel('Current')
-    ax2.set_title('Picoscope Traces')
-    ax2.set_xlabel('Data point')
-    ax2.set_ylabel('Voltage [V]')
-
-clear_plots()
-plt.show()
-c = autocaller(clear_plots)
-
 def plotupdate():
     # Plot the data in the data variable
     global d
@@ -507,9 +508,11 @@ def plotupdate():
 # We are potentially dealing with a lot of data points such that plotting would limit the measurement speed
 # Try to make some reasonable decisions about which subset of the data to display
 
-def ax1plotter(data, ax=ax1, maxloops=100, smooth=True):
+def ax1plotter(data, ax=None, maxloops=100, smooth=True):
     # Smooth data a bit and give it to plotiv (from plot.py)
     # Would be better to smooth before splitting ...
+    if ax is None:
+        fig, ax = plt.subplots()
     if smooth:
         data = moving_avg(data, window=10)
     if type(data) is list:
@@ -522,9 +525,28 @@ def ax1plotter(data, ax=ax1, maxloops=100, smooth=True):
         data = data[::loopstep]
     plotiv(data, ax=ax, maxsamples=5000)
 
-def ax2plotter(data, ax=ax2):
+def ax1plotter_2(data, ax=None, maxloops=100, smooth=True):
+    # Smooth data a bit and give it to plotiv (from plot.py)
+    # Would be better to smooth before splitting ...
+    if ax is None:
+        fig, ax = plt.subplots()
+    if smooth:
+        data = moving_avg(data, window=10, columns=None)
+    if type(data) is list:
+        nloops = len(data)
+    else:
+        nloops = 1
+    if nloops > maxloops:
+        print('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        loopstep = int(nloops / 99)
+        data = data[::loopstep]
+    plotiv(data, y='I2', ax=ax, maxsamples=5000)
+
+def ax2plotter(data, ax=None):
     # data might contain multiple loops because of splitting, but we want the unsplit arrays
     # To avoid pasting them back together again, there is a global variable called chdata
+    if ax is None:
+        fig, ax = plt.subplots()
     # Remove previous lines
     for l in ax2.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform
@@ -543,7 +565,7 @@ def ax2plotter(data, ax=ax2):
 def VoverIplotter(data, ax=None, **kwargs):
     ''' Plot V/I vs V, like GPIB control program'''
     if ax is None:
-        ax = ax2
+        fig, ax = plt.subplots()
     mask = np.abs(d['V']) > .01
     vmasked = d['V'][mask]
     imasked = d['I'][mask]
@@ -553,4 +575,49 @@ def VoverIplotter(data, ax=None, **kwargs):
     ax.set_ylabel('V/I [$\Omega$]')
     ax.yaxis.set_major_formatter(metricprefixformatter)
 
+def dVdIplotter(data, ax=None, **kwargs):
+    ''' Plot dV/dI vs V'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    mask = np.abs(d['V']) > .01
+    vmasked = d['V'][mask]
+    imasked = d['I'][mask]
+    dv = np.diff(vmasked)
+    di = np.diff(imasked)
+    ax.plot(vmasked[1:], dv/di, '.-', **kwargs)
+    ax.set_yscale('log')
+    ax.set_xlabel('Voltage [V]')
+    ax.set_ylabel('V/I [$\Omega$]')
+    ax.yaxis.set_major_formatter(metricprefixformatter)
+
+
+## Make some plot windows, put them in places
+try:
+    # Close the figs if they already exist
+    plt.close(fig1)
+    plt.close(fig2)
+except:
+    pass
+
+def make_figs():
+    global fig1, ax1, fig2, ax2
+    (fig1, ax1) , (fig2, ax2) = interactive_figures()
+
+make_figs()
+
 plotters = {ax1:ax1plotter, ax2:ax2plotter}
+
+def clear_plots():
+    # Clear IV loop plots
+    for ax in plotters:
+        ax.cla()
+    ax1.set_title('IV Measurements')
+    ax1.set_xlabel('Voltage')
+    ax1.set_ylabel('Current')
+    ax2.set_title('Picoscope Traces')
+    ax2.set_xlabel('Data point')
+    ax2.set_ylabel('Voltage [V]')
+
+clear_plots()
+plt.show()
+c = autocaller(clear_plots)
