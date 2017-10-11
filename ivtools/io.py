@@ -52,17 +52,23 @@ def write_pickle(data, fp):
         pickle.dump(normaldict, f)
 
 
-def read_txts(directory, pattern, **kwargs):
+def read_txts(directory, pattern, exclude=None, **kwargs):
     ''' Load list of loops from separate text files. Specify files by glob
     pattern.  kwargs are passed to loadtxt'''
+    pattern = pattern.join('**')
     fnames = fnmatch.filter(os.listdir(directory), pattern)
+    if exclude is not None:
+        exclude = exclude.join('**')
+        excludefiles = fnmatch.filter(fnames, exclude)
+        fnames = [mf for mf in fnames if mf not in excludefiles]
 
     # Try to sort by file number, even if fixed width numbers are not used
     # For now I will assume the filename ends in _(somenumber)
     try:
         fnames.sort(key=lambda fn: int(splitext(fn.split('_')[-1])[0]))
     except:
-        print('Failed to sort files by file number')
+        print('Failed to sort files by file number. Sorting by mtime.')
+        fnames.sort(key=lambda fn: os.path.getctime(pjoin(directory, fn)))
 
     print('Loading the following files:')
     print('\n'.join(fnames))
@@ -149,13 +155,19 @@ def read_txts(directory, pattern, **kwargs):
     return pd.DataFrame(datalist)
 
 
-def read_pandas(directory='.', pattern='*'):
+def read_pandas(directory='.', pattern='*', exclude=None, concat=True):
     '''
     Load in all dataframes and series matching a glob pattern
     return concatenated dataframe
     '''
+    # Put wildcards at the ends of pattern
+    pattern = pattern.join('**')
     files = os.listdir(directory)
     matchfiles = fnmatch.filter(files, pattern)
+    if exclude is not None:
+        exclude = exclude.join('**')
+        excludefiles = fnmatch.filter(matchfiles, exclude)
+        matchfiles = [mf for mf in matchfiles if mf not in excludefiles]
     pdlist = []
     # Try to get pandas to read the files, but don't give up if some fail
     for f in matchfiles:
@@ -172,7 +184,10 @@ def read_pandas(directory='.', pattern='*'):
             print('Loaded {}.'.format(f))
         except:
             print('Failed to interpret {} as a pandas pickle!'.format(f))
-    return pd.concat(pdlist)
+    if concat:
+        return pd.concat(pdlist)
+    else:
+        return pdlist
 
 
 def write_matlab(data, filepath, varname=None, compress=True):
@@ -282,8 +297,8 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
    files = os.listdir(datadir)
-   series_fns = [f for f in files if f.endswith('.s')]
-   dataframe_fns = [f for f in files if f.endswith('.df')]
+   series_fns = [pjoin(datadir, f) for f in files if f.endswith('.s')]
+   dataframe_fns = [pjoin(datadir, f) for f in files if f.endswith('.df')]
 
    fig, ax = plt.subplots()
 
@@ -295,6 +310,8 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
       plotiv(moving_avg(s, smoothn), ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
+      if 'thickness_1' in s:
+          plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
       plt.savefig(pngfp)
       print('Wrote {}'.format(pngfp))
       ax.cla()
@@ -308,8 +325,35 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
       plotiv(moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
+      s = df.iloc[0]
+      if 'thickness_1' in s:
+          plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
       plt.savefig(pngfp)
       print('Wrote {}'.format(pngfp))
       ax.cla()
 
    plt.close(fig)
+
+
+def change_devicemeta(filepath, newmeta, deleteold=False):
+    ''' For when you accidentally write a file with the wrong sample information attached '''
+    filedir, filename = os.path.split(filepath)
+    filename, extension = os.path.splitext(filename)
+    datain = pd.read_pickle(filepath)
+    if type(datain) == pd.Series:
+        datain[newmeta.index] = newmeta
+        s = datain
+    if type(datain) == pd.DataFrame:
+        datain[devicemeta.index] = pd.DataFrame([devicemeta] * len(datain)).reset_index(drop=True)
+        s = datain.iloc[0]
+    # Retain time information in filename
+    newfilename = filename[:21]
+    for fnkey in filenamekeys:
+        if fnkey in s.index:
+            newfilename += '_{}'.format(s[fnkey])
+    newpath = os.path.join(filedir, newfilename + extension)
+    print('writing new file {}'.format(newpath))
+    datain.to_pickle(newpath)
+    if deleteold:
+        print('deleting old file {}'.format(filepath))
+        os.remove(filepath)
