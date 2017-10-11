@@ -36,7 +36,9 @@ def ivfunc(func):
                     # Mainly used for splitting loops, so that everything stays flat
                     # Maybe return a panel instead?
                     # Index will get reset ...
-                    return pd.DataFrame([item for sublist in resultlist for item in sublist])
+                    # Unless ...
+                    index = np.repeat(data.index, [len(sublist) for sublist in resultlist])
+                    return pd.DataFrame([item for sublist in resultlist for item in sublist], index=index)
                 elif isinstance(resultlist[0][0], Number):
                     # Each row returns a list of numbers
                     # Make dataframe
@@ -76,6 +78,11 @@ def ivfunc(func):
         else:
             print('ivfunc did not understand the input datatype {}'.format(dtype))
     return func_wrapper
+
+class paramlist(list):
+    # Only a class so that ivfunc can know what you want to do with it
+    # Which is pass a list of parameters to use for each loop
+    pass
 
 '''
 Functions that return a new value/new array per IV loop should just return that value
@@ -187,18 +194,21 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
         raise Exception('Arrays to be smoothimated have different lengths!')
     if lens[0] == 0:
         raise Exception('No data to smooth')
+    dataout = {}
     decarrays = arrays
-    dtype = type(arrays[0][0])
+    dtypes = [type(ar[0]) for ar in arrays]
     for _ in range(passes):
         smootharrays = [smooth(ar, window) for ar in decarrays]
         # After all that work to keep the same datatype, signal.decimate converts them to float64
         # I will ignore the problem for now and just convert back in the end...
         decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
-    if dtype is np.float64:
-        dataout = {c:ar for c,ar in zip(columns, decarrays)}
-    else:
-        # Convert back to original data type
-        dataout = {c:dtype(ar) for c,ar in zip(columns, decarrays)}
+    for c, ar, dtype in zip(columns, decarrays, dtypes):
+        if dtype is np.float64:
+            # Datatype was already float64, don't convert float64 to float64
+            dataout[c] = ar
+        else:
+            # Convert back to original data type
+            dataout[c] = dtype(ar)
     add_missing_keys(data, dataout)
     if 'downsampling' in dataout:
         dataout['downsampling'] *= factor
@@ -661,7 +671,12 @@ def pindex_fromlist(loops, column, indexlist):
         loops = loops.iterrows()
     else:
         # Because I don't know how to iterate through the df rows without enumerating them
+        # Also enumerate through list
         loops = enumerate(loops)
+
+    if not hasattr(indexlist, '__iter__'):
+        indexlist = [indexlist] * len(loops)
+
     for (_, l), i in zip(loops, indexlist):
         if np.isnan(i):
             vals.append(np.nan)
@@ -721,18 +736,54 @@ def add_missing_keys(datain, dataout):
             dataout[k] = datain[k]
 
 @ivfunc
-def resistance(data, v0=0.1, v1=None):
+def resistance(data, v0=0.1, v1=None, x='V', y='I'):
     '''
     Fit a line to IV data to find R.
     if v1 not given, fit from -v0 to +v0
+    TODO: call polyfitiv
     '''
     if v1 is None:
         v1 = -v0
     vmin = min(v0, v1)
     vmax = max(v0, v1)
-    mask = (data['V'] <= vmax) & (data['V'] >= vmin)
-    poly = np.polyfit(data['I'][mask], data['V'][mask], 1)
+    V = data[x]
+    I = data[y]
+    mask = (V <= vmax) & (V >= vmin)
+    poly = np.polyfit(I[mask], V[mask], 1)
+    if 'units' in data:
+        if y in data['units']:
+            Iunit = data['units'][y]
+            if Iunit == 'A':
+                return poly[0]
+            elif Iunit == '$\mu$A':
+                return poly[0] * 1e6
+            elif Iunit == 'mA':
+                return poly[0] * 1e3
+            else:
+                print('Did not understand current unit!')
     return poly[0]
+
+@ivfunc
+def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax=None):
+    '''
+    Fit a polynomial to IV data.  Can specify the value range of x and y to use
+    xmin < xmax,  ymin < ymax
+    '''
+    X = data[x]
+    Y = data[y]
+    mask = np.ones(len(X), dtype=bool)
+    if xmin is not None:
+        mask &= X >= xmin
+    if xmax is not None:
+        mask &= X <= xmax
+    if ymin is not None:
+        mask &= Y >= ymin
+    if ymax is not None:
+        mask &= Y <= ymax
+
+    pf = polyfit(X[mask], Y[mask], order)
+
+    return pf
 
 @ivfunc
 def resistance_states(data, v0=0.1, v1=None):
@@ -800,6 +851,7 @@ def smooth(x, N):
     Efficient rolling mean for arrays
     Faster than numpy.convolve for most situations (window < 10)
     Floating point errors will accumulate if you use lower precision!
+    Converts to and back from float64.  Still seems to be an issue using float16.
     '''
     if N <= 10:
         # Use convolve
@@ -823,3 +875,9 @@ def smooth_conv(x, N, mode='valid'):
     ''' Smooth (moving avg) with convolution '''
     dtypein = type(x[0])
     return np.convolve(x, np.ones(N, dtype=dtypein)/dtypein(N), mode)
+
+@ivfunc
+def convert_to_uA(data):
+    ''' Works in place and returns nothing.  Sorry for inconsistency'''
+    data['I'] *= 1e6
+    data['units']['I'] = '$\mu$A'

@@ -7,6 +7,7 @@ from math import gcd
 import numpy as np
 import time
 from dotdict import dotdict
+import pandas as pd
 
 # These are None until the instruments are connected
 # Don't clobber them though, in case this script is used with run -i
@@ -324,6 +325,7 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     #
     # Turn off screen saver.  It sends a premature pulse on SYNC if on..  Really dumb.
     rigol.write(':DISP:SAV OFF')
+    time.sleep(.01)
     # Manual says you can change output resistance from 1 to 10k
     #rigol.write('OUTPUT{}:IMPEDANCE 50'.format(ch))
     # Can turn on/off the sync output (on rear)
@@ -346,7 +348,7 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     # Trigger rigol
     rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
     # Enable screensaver again because it makes me feel good
-    rigol.write(':DISP:SAV ON')
+    #rigol.write(':DISP:SAV ON')
 
 
 def get_data(ch='A', raw=False, dtype=np.float32):
@@ -527,12 +529,15 @@ def set_compliance(cc_value):
     Right now we use static lookup tables for compliance and compensation values.
     '''
     global COMPLIANCE_CURRENT, INPUT_OFFSET
+    if cc_value > 1e-3:
+        raise Exception('Compliance value out of range! Max 1 mA.')
     fn = 'compliance_calibration.pkl'
     print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
     DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
     DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
+    print('Setting compliance to {} A'.format(cc_value))
     analog_out(0, dacval=DAC0)
     analog_out(1, volts=DAC1)
     COMPLIANCE_CURRENT = cc_value
@@ -709,19 +714,19 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     # Common base resistor
     R = 2e3
     dataout['V'] = A - dtype(INPUT_OFFSET)
-    dataout['V_formula'] = 'CHA - INPUT_OFFSET'
+    #dataout['V_formula'] = 'CHA - INPUT_OFFSET'
     dataout['INPUT_OFFSET'] = INPUT_OFFSET
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
     dataout['I'] = -1 * B / dtype(R * gain) + dtype(COMPLIANCE_CURRENT)
-    dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
     dataout['units'] = {'V':'V', 'I':'A'}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
-    dataout['Rout_conv'] = R
-    dataout['CC_conv'] = COMPLIANCE_CURRENT
-    dataout['gain_conv'] = gain
+    #dataout['Rout_conv'] = R
+    dataout['CC'] = COMPLIANCE_CURRENT
+    dataout['gain'] = gain * R
     return dataout
 
 # For Rehan current amp
@@ -731,8 +736,9 @@ def rehan_to_iv(datain, dtype=np.float32):
     # Make I, V arrays and store the parameters used to make them
 
     # Volts per amp
-    gainC = 2615
-    gainD = 56490
+    gainC = 1050
+    gainD = 12867
+    # 1 Meg, 33,000
 
     dataout = datain
     # If data is raw, convert it here
