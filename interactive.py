@@ -345,8 +345,8 @@ def load_lassen(**kwargs):
             meta_df[k] = meta_df[k].astype(v)
 
     devicemetalist = meta_df
-    prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
-    filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
+    prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+    filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
     print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
 
 def prettyprint_meta(hlkeys=None):
@@ -414,47 +414,49 @@ p = autocaller(previousdevice)
 ### Functions that write to disk
 
 
-def savedata(filename=None, keepchannels=False):
+def savedata(data=None, filename=None, keepchannels=False):
     '''
     Attach sample information and write the current value of the d variable to disk.
     d variable can contain a single iv dict/series, or a list of them
     This could get ugly..
     '''
-    global d
-    islist = type(d) == list
+    if data is None:
+        global d
+        data = d
+    islist = type(data) == list
     # Append all the data together
     # devicemeta might be a dict or a series
     print('Appending metadata to last iv measured:')
     prettyprint_meta()
     print('...')
     if islist:
-        for l in d:
+        for l in data:
             l.update(dict(devicemeta))
             l.update(staticmeta)
     else:
-        d.update(dict(devicemeta))
-        d.update(staticmeta)
+        data.update(dict(devicemeta))
+        data.update(staticmeta)
     # Write series/dataframe to disk.  Append the path to metadata
     if filename is None:
         #filename = time.strftime('%Y-%m-%d_%H%M%S')
         #Need milliseconds
         filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
         for fnkey in filenamekeys:
-            if not islist and fnkey in d.keys():
-                filename += '_{}'.format(d[fnkey])
-            elif islist and fnkey in d[0].keys():
+            if not islist and fnkey in data.keys():
+                filename += '_{}'.format(data[fnkey])
+            elif islist and fnkey in data[0].keys():
                 # Use metadata from first dict.  Should all be same
-                filename += '_{}'.format(d[0][fnkey])
+                filename += '_{}'.format(data[0][fnkey])
         if islist: filename += '.df'
         # s for series
         else: filename += '.s'
     filepath = os.path.join(datafolder, subfolder, filename)
     makedatafolder()
     if islist:
-        for l in d:
+        for l in data:
             l['datafilepath'] = filepath
-        print('Converting variable \'d\' to pd.DataFrame for storage.')
-        df = pd.DataFrame(d)
+        print('Converting data to pd.DataFrame for storage.')
+        df = pd.DataFrame(data)
         if not keepchannels:
             print('Removing channel data to save space.'.format(filepath))
             todrop = set(('A', 'B', 'C', 'D')) & set(df.columns)
@@ -465,9 +467,9 @@ def savedata(filename=None, keepchannels=False):
         #print('Extending list \'data\' with variable \'d\'')
         #data.extend(d)
     else:
-        d['datafilepath'] = filepath
+        data['datafilepath'] = filepath
         print('Converting variable \'d\' to pd.Series for storage.')
-        s = pd.Series(d)
+        s = pd.Series(data)
         if not keepchannels:
             todrop = set(('A', 'B', 'C', 'D')) & set(s.index)
             s.drop(todrop, inplace=True)

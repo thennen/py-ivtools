@@ -291,14 +291,10 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
     return freq
 
 
-def pulse(waveform, duration, n=1, ch=1, interp=True):
+def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
     '''
-    Generate n pulses of the input waveform on Rigol AWG.
-    Trigger immediately.
-    Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
-    Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
+    Load waveform into volatile memory, but don't trigger
     '''
-
     if len(waveform) > 512e3:
         raise Exception('Too many samples requested for rigol AWG (probably?)')
 
@@ -345,10 +341,25 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     rigol.write(':SOURCE{}:BURST:TRIG:SOURCE MAN'.format(ch))
     rigol.write(':SOURCE{}:BURST:STATE ON'.format(ch))
     rigol.write(':OUTPUT{}:STATE ON'.format(ch))
-    # Trigger rigol
-    rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
     # Enable screensaver again because it makes me feel good
     #rigol.write(':DISP:SAV ON')
+
+def trigger_rigol(ch=1):
+    ''' Send signal to rigol to trigger immediately'''
+    rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
+
+
+def pulse(waveform, duration, n=1, ch=1, interp=True):
+    '''
+    Generate n pulses of the input waveform on Rigol AWG.
+    Trigger immediately.
+    Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
+    Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
+    '''
+    # Load waveform
+    load_volatile_wfm(waveform, duration, n, ch, interp)
+    # Trigger rigol
+    trigger_rigol(ch=1)
 
 
 def get_data(ch='A', raw=False, dtype=np.float32):

@@ -201,7 +201,12 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
         smootharrays = [smooth(ar, window) for ar in decarrays]
         # After all that work to keep the same datatype, signal.decimate converts them to float64
         # I will ignore the problem for now and just convert back in the end...
-        decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
+        # IIR filter has really bad step response!
+        #decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in smootharrays]
+        # FIR filter seems more appropriate
+        #decarrays = [signal.decimate(ar, factor, type='fir', n=30, zero_phase=True) for ar in smootharrays]
+        # But I see no reason not to simply downsample the array
+        decarrays = [ar[::factor] for ar in smootharrays]
     for c, ar, dtype in zip(columns, decarrays, dtypes):
         if dtype is np.float64:
             # Datatype was already float64, don't convert float64 to float64
@@ -210,11 +215,9 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
             # Convert back to original data type
             dataout[c] = dtype(ar)
     add_missing_keys(data, dataout)
-    if 'downsampling' in dataout:
-        dataout['downsampling'] *= factor
-    else:
-        dataout['downsampling'] = factor
+    dataout['downsampling'] = factor
     dataout['smoothing'] = window
+    dataout['smoothimate_passes'] = passes
     return dataout
 
 @ivfunc
