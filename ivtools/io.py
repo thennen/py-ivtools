@@ -178,7 +178,10 @@ def read_pandas(directory='.', pattern='*', exclude=None, concat=True):
             if type(pdobject) is pd.DataFrame:
                 pdlist.append(pdobject)
             elif type(pdobject) is pd.Series:
-                pdlist.append(pd.DataFrame(pdobject).transpose())
+                # Took me a while to figure out how to convert series into single row dataframe
+                pdlist.append(pd.DataFrame.from_records([pdobject]))
+                # This resets all the datatypes to object !!
+                #pdlist.append(pd.DataFrame(pdobject).transpose())
             else:
                 print('Do not know wtf this file is:')
             print('Loaded {}.'.format(f))
