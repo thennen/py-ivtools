@@ -3,7 +3,6 @@ This file should be run using the %run -i magic in ipython.
 Provides a command based user interface for IV measurements.
 make sure %matplotlib is in your ipython startup, or just make sure to run it first.
 
-
 There are some inefficiencies in the data storage, which is fine for moderately sized datasets.
 For very large datasets I will need to do some further optimization:
 store ADC values instead of floats
@@ -23,6 +22,7 @@ import time
 import pandas as pd
 import warnings
 import subprocess
+import socket
 from datetime import datetime
 # Stop a certain matplotlib warning from showing up
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
@@ -34,6 +34,7 @@ def makedatafolder():
         print('Making folder: {}'.format(datasubfolder))
         os.makedirs(datasubfolder)
 
+hostname = socket.gethostname()
 datestr = time.strftime('%Y-%m-%d')
 timestr = time.strftime('%Y-%m-%d_%H%M%S')
 datafolder = r'D:\t\ivdata'
@@ -45,7 +46,11 @@ print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directo
 
 ############# Logging  ###########################
 def getGitRevision():
-    return subprocess.check_output(['git', 'rev-parse', 'HEAD'])
+    try:
+        return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
+    except:
+        # Either there is no git or you are not in the py-ivtools directory.  Don't error because of that
+        return 'Dunno'
 
 gitrev = getGitRevision()
 
