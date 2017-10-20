@@ -772,8 +772,8 @@ def rehan_to_iv(datain, dtype=np.float32):
     return dataout
 
 # Change this when you change probing circuits
-#pico_to_iv = rehan_to_iv
-pico_to_iv = ccircuit_to_iv
+pico_to_iv = rehan_to_iv
+#pico_to_iv = ccircuit_to_iv
 
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier
@@ -794,6 +794,40 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Set output back to zero
     pulse([Vin, 0,0,0,0], 1e-3)
     return gain
+
+def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
+    global RANGE
+    global OFFSET
+    oldrange = RANGE.copy()
+    oldoffset = OFFSET.copy()
+
+    # Send a test pulse to determine better range to use
+    arange, aoffset = best_range([outamp, -outamp])
+    RANGE['A'] = arange
+    OFFSET['A'] = aoffset
+    # Power supply is 5V, so this should cover the whole range
+    RANGE[ch] = 5
+    OFFSET[ch] = 0
+    sinwave = outamp * sin(linspace(0, 1, 2**12)*2*pi)
+    chs = ['A', ch]
+    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1)
+    data = get_data(chs)
+    plot_channels(data)
+
+    squeeze_range(data, [ch])
+
+    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
+    data = get_data(chs)
+
+    # Set scope settings back to old values
+    RANGE['A'] = oldrange['A']
+    OFFSET['A'] = oldoffset['A']
+    RANGE[ch] = oldrange[ch]
+    OFFSET[ch] = oldoffset[ch]
+
+    plot_channels(data)
+
+    return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 def analog_out(ch, dacval=None, volts=None):
     '''
