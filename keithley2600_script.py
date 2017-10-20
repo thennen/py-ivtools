@@ -28,6 +28,8 @@ from shutil import copyfile
 import os
 from collections import defaultdict
 import sys
+import socket
+import subprocess
 
 def makedatafolder():
     datasubfolder = os.path.join(datafolder, subfolder)
@@ -35,9 +37,24 @@ def makedatafolder():
         print('Making folder: {}'.format(datasubfolder))
         os.makedirs(datasubfolder)
 
+def getGitRevision():
+    try:
+        return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
+    except:
+        # Either there is no git or you are not in the py-ivtools directory.
+        # Don't error because of this
+        return 'Dunno'
+
+gitrev = getGitRevision()
+print("Git Revision:" + gitrev)
+
 datestr = time.strftime('%Y-%m-%d')
 timestr = time.strftime('%Y-%m-%d_%H%M%S')
+hostname = socket.gethostname()
 
+# Script copies itself
+# Obsolete with good git practice
+'''
 scriptpath = os.path.realpath(__file__)
 scriptdir, scriptfile = os.path.split(scriptpath)
 scriptcopydir = os.path.join(scriptdir, 'Script_copies')
@@ -46,8 +63,12 @@ scriptcopyfp = os.path.join(scriptcopydir, scriptcopyfn)
 if not os.path.isdir(scriptcopydir):
     os.makedirs(scriptcopydir)
 copyfile(scriptpath, scriptcopyfp)
+'''
 
-datafolder = r'C:\t\data'
+if hostname == 'pciwe46':
+    datafolder = 'D:/t/ivdata/'
+else:
+    datafolder = r'C:\t\data'
 subfolder = datestr
 print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
 makedatafolder()
@@ -77,6 +98,7 @@ class Logger(object):
 
     def flush(self):
         self.log.flush()
+        self.terminal.flush()
 try:
     # Close the previous file
     logger.log.close()
@@ -89,7 +111,13 @@ sys.stdout = logger
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 magic('matplotlib')
-ivtoolsdir = 'c:/Users/t/Desktop/py-ivtools'
+if hostname == 'pciwe46':
+    ivtoolsdir = 'C:/t/py-ivtools/'
+elif hostname == 'fenster': # Just guessed craptop hostname ..
+    ivtoolsdir = 'c:/Users/t/Desktop/py-ivtools'
+else:
+    # Hope you are already running in the py-ivtools directory
+    ivtoolsdir = '.'
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/measure.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/plot.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/io.py')))
@@ -313,29 +341,60 @@ prettykeys = []
 filenamekeys = []
 
 # Example of setting meta list
-def load_lassen(coupons=[23], dies=[64], modules=['001H']):
+def load_lassen(**kwargs):
+    ''' Load lassen, specify lists of keys to match on
+    e.g. coupon=[23, 24], module=['001H', '014B']
+    '''
     # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
-    global wafer_df, meta_df, prettykeys, filenamekeys, devicemetalist
-    wafer_df = pd.read_pickle(r"all_lassen_device_info.pickle")
-    # Select the samples you want to measure
-    meta_df = wafer_df
+    global lassen_df, meta_df, prettykeys, filenamekeys, devicemetalist
+    # Load information from files on disk
+    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+    # Only use Lassen devices
+    deposition_df = deposition_df[deposition_df['wafer_code'] == 'Lassen']
+    lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
+    # Merge data
+    merge_deposition_data_on = ['coupon']
+    meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
+
+    # Check that function got valid arguments
+    for key, values in kwargs.items():
+        if key not in meta_df.columns:
+            raise Exception('Key must be in {}'.format(meta_df.columns))
+        if isinstance(values, str) or not hasattr(values, '__iter__'):
+            kwargs[key] = [values]
+
+    #### Filter kwargs ####
+    for key, values in kwargs.items():
+        meta_df = meta_df[meta_df[key].isin(values)]
     #### Filter devices to be measured #####
     devices001 = [2,3,4,5,6,7,8]
     devices014 = [4,5,6,7,8,9]
-    #########
-    meta_df = meta_df[meta_df.coupon.isin(coupons)]
-    meta_df = meta_df[meta_df.module.isin(modules)]
     meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
     meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-    meta_df = meta_df[meta_df.die.isin(dies)]
-    # Merge with deposition data
-    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
-    merge_deposition_data_on = ['coupon']
-    meta_df = pd.merge(meta_df, deposition_df, how='left', on=merge_deposition_data_on)
+
     meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+
+    # Try to convert data types
+    typedict = dict(wafer_number=np.uint8,
+                    coupon=np.uint8,
+                    sample_number=np.uint16,
+                    number_of_dies=np.uint8,
+                    cr=np.uint8,
+                    thickness_1=np.uint16,
+                    thickness_2=np.uint16,
+                    dep_temp=np.uint16,
+                    etch_time=np.float32,
+                    etch_depth=np.float32)
+    for k,v in typedict.items():
+        # int arrays don't support missing data, because python sucks
+        if not any(meta_df[k].isnull()):
+            meta_df[k] = meta_df[k].astype(v)
+
     devicemetalist = meta_df
-    prettykeys = ['deposition_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
-    filenamekeys = ['deposition_code', 'sample_number', 'module', 'device']
+    prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+    filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
+    print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
+
 
 # Because who wants to type?
 class autocaller():
