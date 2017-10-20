@@ -14,8 +14,6 @@ class dotdict(dict):
             for k, v in kwargs.items():
                 self[k] = v
 
-    def __getattr__(self, attr):
-        return self.get(attr)
 
     def __setattr__(self, key, value):
         self.__setitem__(key, value)
@@ -26,6 +24,7 @@ class dotdict(dict):
 
     def __delattr__(self, item):
         self.__delitem__(item)
+        # Hello world
 
     def __delitem__(self, key):
         super(dotdict, self).__delitem__(key)
