@@ -180,7 +180,8 @@ def plot_channels(chdata, ax=None):
     if ax is None:
         fig, ax = plt.subplots()
     # Colors match the code on the picoscope
-    colors = dict(A='Blue', B='Red', C='Green', D='Yellow')
+    # Yellow is too hard to see
+    colors = dict(A='Blue', B='Red', C='Green', D='Gold')
     channels = ['A', 'B', 'C', 'D']
     # Remove the previous range indicators
     ax.collections = []
