@@ -89,13 +89,28 @@ Functions that return a new value/new array per IV loop should just return that 
 Functions that modify the IV data should return a copy of the entire input structure
 '''
 
-@ivfunc
+#@ivfunc
 def find_data_arrays(data):
-    # Determine the names of arrays that have same length as 'I' ('V', 'R', 'P')
-    # We will select them now just based on which values are arrays with same size as I and V
-    lenI = len(data['I'])
-    arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
-    return arraykeys
+    '''
+    Try to find the names of arrays in a dataframe that have the same length
+    If the keys 'I' or 'V' exist, use the arrays that have the same length as those.
+    If those keys are not present, and there are arrays different sizes, choose the one
+    that has the most arrays of that size
+    '''
+    # Get lengths of all arrays
+    #arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
+    arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray)]
+    lens = [len(data[a]) for a in arraykeys]
+    # If 'I' or 'V' is in array keys, use that length array
+    if 'I' in arraykeys:
+        Ilen = len(data['I'])
+        return [ak for ak,l in zip(arraykeys, lens) if l == Ilen]
+    elif 'V' in arraykeys:
+        Vlen = len(data['I'])
+        return [ak for ak,l in zip(arraykeys, lens) if l == Vlen]
+    else:
+        Alen = max(lens, key=lens.count)
+        return [ak for ak,l in zip(arraykeys, lens) if l == Alen]
 
 @ivfunc
 def diffiv(data, stride=1, columns=None):

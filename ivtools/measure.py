@@ -772,8 +772,8 @@ def rehan_to_iv(datain, dtype=np.float32):
     return dataout
 
 # Change this when you change probing circuits
-pico_to_iv = rehan_to_iv
-#pico_to_iv = ccircuit_to_iv
+#pico_to_iv = rehan_to_iv
+pico_to_iv = ccircuit_to_iv
 
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier

@@ -148,12 +148,11 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
             # Could do some other cool tricks here
             # Like look at previous measurements, use derivatives to predict appropriate range changes
 
-# TODO: auto smoothimate
-def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
+def iv(wfm=None, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
        autosave=True, autoplot=True, autosplit=True, into50ohm=False,
        channels=['A', 'B'], autosmoothimate=True, splitbylevel=None):
     '''
-    Pulse a triangle waveform, plot pico channels, IV, and save to d variable
+    Pulse a waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
     '''
     global d, chdata
@@ -183,7 +182,10 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
         wfm = 2 * wfm
 
     # Send a pulse
-    pulse(wfm, duration, n=n)
+    # if wfm is none, Rigol will just pulse whatever is already in the volatile buffer
+    if wfm is not None:
+        load_volatile_wfm(wfm, duration=duration, n=n, ch=1, interp=True)
+    trigger_rigol(ch=1)
 
     trainduration = n * duration
     print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
