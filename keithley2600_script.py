@@ -1,4 +1,4 @@
-'''
+ivplotter'''
 Simple script to do IV sweeps with keithley 2600 (Using 2634B) without hating your life very much
 Optionally pass a dataframe that contains sample/device information, and "fill it in" with iv data
 Data is stored in a list of dicts, so that it can be appended in both axes efficiently
@@ -16,6 +16,7 @@ Author: Tyler Hennen 2017
 '''
 
 import visa
+import matplotlib as mpl
 import pandas as pd
 from matplotlib import pyplot as plt
 import ctypes
@@ -138,6 +139,7 @@ idn = k.ask('*IDN?')
 print(idn)
 
 
+
 # This is the code that runs on the keithley's lua interpreter.
 Keithley_func = '''
                 loadandrunscript
@@ -257,8 +259,11 @@ def getdata(history=True):
     return out
 
 def triangle(v1, v2, n=None, step=None):
-    # We like triangle sweeps a lot
-    # Very basic triangle pulse with some problems.
+    '''
+    We like triangle sweeps a lot
+    Very basic triangle pulse with some problems.
+    Give either number of points or step size
+    '''
     if n is not None:
         dv = abs(v1) + abs(v2 - v1) + abs(v2)
         step = dv / n
@@ -308,17 +313,17 @@ else:
             print('Defining data = []')
             data = []
 
-# Data you forgot to save (only 10 of them)
+# Data you forgot to save (100 of them)
 try:
     dhistory
 except:
-    print('Defining dhistory = deque(maxlen=10)')
+    print('Defining dhistory = deque(maxlen=100)')
     dhistory = deque(maxlen=10)
 else:
     if len(dhistory) > 0:
         answer = input('\'dhistory\' variable not empty.  Clobber it? ')
         if answer.lower() == 'y':
-            print('Defining dhistory = deque(maxlen=10)')
+            print('Defining dhistory = deque(maxlen=100)')
             dhistory = deque(maxlen=10)
 
 # The data index you are currently on
@@ -327,7 +332,7 @@ meta_i = None
 d = None
 
 # Add keys to this and they will be appended as metadata to all subsequent measurements
-staticmeta = {'keithley':idn, 'script':__file__, 'scriptruntime':timestr}
+staticmeta = {'keithley':idn, 'script':'keithley2600_script.py', 'gitrev':gitrev, 'scriptruntime':timestr}
 
 # Metadata about the device currently being probed.  Controlled by a few of the following functions
 devicemeta = {}
@@ -538,7 +543,7 @@ def calculate_resistance():
 # TODO: figure out how to handle more than one plotter per axis
 
 
-def plotter1(ax=None, **kwargs):
+def ivplotter(ax=None, **kwargs):
     ''' This defines what gets plotted on ax1'''
     if ax is None:
         ax = ax1
@@ -574,7 +579,7 @@ def complianceplotter(ax=None, **kwargs):
     # Plot a dotted line indicating compliance current
     pass
 
-def plotter2(ax=None, **kwargs):
+def vtplotter(ax=None, **kwargs):
     if ax is None:
         ax = ax2
     ''' This defines what gets plotted on ax2'''
@@ -583,7 +588,7 @@ def plotter2(ax=None, **kwargs):
     ax.set_ylabel('Voltage [V]', color=color)
     ax.set_xlabel('Time [S]')
 
-def plotter3(ax=None, **kwargs):
+def itplotter(ax=None, **kwargs):
     if ax is None:
         ax = ax3
     ax.plot(d['t'], 1e6 * d['I'], '.-', **kwargs)
@@ -596,7 +601,7 @@ def VoverIplotter(ax=None, **kwargs):
         ax = ax2
     ax.plot(d['V'], d['Vmeasured'] / d['I'], '.-', **kwargs)
     color = ax.lines[-1].get_color()
-    
+
     ax.set_yscale('log')
     ax.set_xlabel('Voltage [V]')
     ax.set_ylabel('V/I [$\Omega$]', color=color)
@@ -705,9 +710,9 @@ def make_figs():
 # Might be able to get away with multiple plotters per axis
 make_figs()
 # Maybe could do it like this.  Too ugly.  only want to have to change one variable
-#plotters = {'iv':plotter1, 'channelsv':plotter2, 'channelsi':plotter3, 'fitline':Rfitplotter}
+#plotters = {'iv':ivplotter, 'channelsv':vtplotter, 'channelsi':itplotter, 'fitline':Rfitplotter}
 #axes = {'iv':ax1, 'channelsv':ax2, 'channelsi':ax3, 'fitline':ax1}
-plotters = {ax1:plotter1, ax2:plotter2, ax22:plotter3, ax3:VoverIplotter}
+plotters = {ax1:ivplotter, ax2:vtplotter, ax22:itplotter, ax3:VoverIplotter}
 defaultcolors = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
 linecolors = defaultdict(lambda: defaultcolors)
 linecolors[ax22] = defaultcolors[::-1]
