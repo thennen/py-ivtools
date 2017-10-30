@@ -294,11 +294,10 @@ def read_matlab(filepath):
          return pd.Series(var_in)
 
 
-
-
 def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
+   # TODO: Optionally group by sample, making one plot per sample
    files = os.listdir(datadir)
    series_fns = [pjoin(datadir, f) for f in files if f.endswith('.s')]
    dataframe_fns = [pjoin(datadir, f) for f in files if f.endswith('.df')]
@@ -347,7 +346,7 @@ def change_devicemeta(filepath, newmeta, deleteold=False):
         datain[newmeta.index] = newmeta
         s = datain
     if type(datain) == pd.DataFrame:
-        datain[devicemeta.index] = pd.DataFrame([devicemeta] * len(datain)).reset_index(drop=True)
+        datain[newmeta.index] = pd.DataFrame([newmeta] * len(datain)).reset_index(drop=True)
         s = datain.iloc[0]
     # Retain time information in filename
     newfilename = filename[:21]
