@@ -119,6 +119,29 @@ def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
 
     return ax, line
 
+def auto_title(data, keys=None, ax=None):
+    '''
+    Label an axis to identify the device.
+    Quickly written, needs improvement
+    '''
+    if ax is None:
+        ax = plt.gca()
+    if keys is None:
+        if type(data) is pd.DataFrame:
+            meta = data.iloc[0]
+        else:
+            meta = data
+        id = '{}_{}_{}_{}'.format(*list(meta[['dep_code','sample_number','module','device']]))
+        layer = meta['layer_1']
+        thickness = meta['thickness_1']
+        width = meta['width_nm']
+        title = '{}, {}, t={}nm, w={}nm'.format(id, layer, thickness, width)
+    else:
+        title = ', '.join(['{}:{}'.format(k, data[k]) for k in keys if k in data)])
+
+    ax.set_title(title)
+
+
 def plot_R_states(data, v0=.1, v1=None, **kwargs):
     resist_states = resistance_states(data, v0, v1)
     resist1 = resist_states[0]
