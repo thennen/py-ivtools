@@ -9,6 +9,15 @@ store ADC values instead of floats
 Do not copy metadata to every single loop when it's all the same.  Maybe use a separate file.
 
 Storing metadata in a separate file could be a better idea in general  -- then you can just load the metadata to find which loops you need, instead of loading ALL the information including data arrays when you aren't sure what it is.  Could even use a csv for this. Arrays could then be stored very efficiently especially if they are about the same length.
+
+TODO: Use some flag to determine if script has already been run, then avoid overwriting stuff.  Take out all the try, except blocks
+TODO: pulse using built in waveforms, then maybe don't need to toggle output relay
+TODO: push some of the code into the main library. here we should only handle interactive plotting, logging, metadata, and exposure of data to global variables
+TODO: Think of a way to share this code while measuring with other instruments
+TODO: Store metadata in a separate txt file with the same name
+TODO: Maintain a database of all the metadata for all the data files created
+TODO: GUI for displaying and changing channel settings, other status information
+TODO: create a class for managing the automatic plotting.  make adding plots easy.
 '''
 import numpy
 np = numpy
@@ -148,9 +157,9 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
             # Could do some other cool tricks here
             # Like look at previous measurements, use derivatives to predict appropriate range changes
 
-def iv(wfm=None, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
+def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
        autosave=True, autoplot=True, autosplit=True, into50ohm=False,
-       channels=['A', 'B'], autosmoothimate=True, splitbylevel=None):
+       channels=['A', 'B'], autosmoothimate=True, splitbylevel=None, refreshwfm=True):
     '''
     Pulse a waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
@@ -182,8 +191,9 @@ def iv(wfm=None, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
         wfm = 2 * wfm
 
     # Send a pulse
-    # if wfm is none, Rigol will just pulse whatever is already in the volatile buffer
-    if wfm is not None:
+    # if no refresh, Rigol will just pulse whatever is already in the volatile buffer
+    # This saves the annoying *click* of the output relay
+    if refreshwfm:
         load_volatile_wfm(wfm, duration=duration, n=n, ch=1, interp=True)
     trigger_rigol(ch=1)
 
@@ -517,7 +527,7 @@ def plotupdate():
 # We are potentially dealing with a lot of data points such that plotting would limit the measurement speed
 # Try to make some reasonable decisions about which subset of the data to display
 
-def ax1plotter(data, ax=None, maxloops=100, smooth=True):
+def ivplotter(data, ax=None, maxloops=100, smooth=True):
     # Smooth data a bit and give it to plotiv (from plot.py)
     # Would be better to smooth before splitting ...
     if ax is None:
@@ -534,7 +544,7 @@ def ax1plotter(data, ax=None, maxloops=100, smooth=True):
         data = data[::loopstep]
     plotiv(data, ax=ax, maxsamples=5000)
 
-def ax1plotter_2(data, ax=None, maxloops=100, smooth=True):
+def ivplotter_2(data, ax=None, maxloops=100, smooth=True):
     # Smooth data a bit and give it to plotiv (from plot.py)
     # Would be better to smooth before splitting ...
     if ax is None:
@@ -551,7 +561,7 @@ def ax1plotter_2(data, ax=None, maxloops=100, smooth=True):
         data = data[::loopstep]
     plotiv(data, y='I2', ax=ax, maxsamples=5000)
 
-def ax2plotter(data, ax=None):
+def chplotter(data, ax=None):
     # data might contain multiple loops because of splitting, but we want the unsplit arrays
     # To avoid pasting them back together again, there is a global variable called chdata
     if ax is None:
@@ -614,7 +624,7 @@ def make_figs():
 
 make_figs()
 
-plotters = {ax1:ax1plotter, ax2:ax2plotter}
+plotters = {ax1:ivplotter, ax2:chplotter}
 
 def clear_plots():
     # Clear IV loop plots

@@ -11,25 +11,48 @@ def ivfunc(func):
     '''
     Decorator which allows the same function to be used on a single loop, as
     well as a container of loops.
+
     Decorated function should take a single loop and return anything
-    Then this function will also take multiple loops, and return an array of the outputs
-    Handles both "list of dict" structures and DataFrames
+    Then this function will also take multiple loops, and return a list/dataframe of the outputs
+
+    Handles dicts and pd.Series as IV data, and "list of dict" and DataFrames for multiple IV data
+    An attempt is made to return the most reasonable type, given the input and output types
+
+    If any of the arguments instances of "paramlist", this tells ivfunc to also index into this list when
+    calling the wrapped function, so that you can pass a list of parameters to use for each iv loop.
+
+    If you pass a function wrapped with the paramfunc function, that function will get called on the data to
+    determine the argument.
     '''
+    def paramtransform(param, i, data):
+        if type(param) == paramlist:
+            # Index param if it is a paramlist. Otherwise, don't.
+            return param[i]
+        elif hasattr(param, '__call__'):
+            # Call function with data as argument, and use the return value as the parameter
+            if param.__name__ == 'paramfunc':
+                return param(data)
+        else:
+            return param
     @wraps(func)
     def func_wrapper(data, *args, **kwargs):
         dtype = type(data)
         ###  If a DataFrame is passed
         if dtype == pd.DataFrame:
             # Apply the function to the columns of the dataframe
-            # This will error if your function returns an array
-            #return data.apply(func, axis=1, args=args, **kwargs)
+            # Sadly, the line below will error if your function returns an array
+            # return data.apply(func, axis=1, args=args, **kwargs)
             resultlist = []
-            for i, row in data.iterrows():
-                resultlist.append(func(row, *args, **kwargs))
-            # Let's decide how to return the values based on the datatype that the wrapped function returned
-            #if type(resultlist[0]) == pd.Series:
+            for i, (rownum, row) in enumerate(data.iterrows()):
+                #resultlist.append(func(row, *args, **kwargs))
+                result = func(row, *[paramtransform(arg, i, row) for arg in args],
+                              **{k:paramtransform(v, i, row) for k,v in kwargs.items()})
+                resultlist.append(result)
+            ### Decide how to return the values based on the datatype that the wrapped function returned
             if type(resultlist[0]) in (pd.Series, dict):
-                return pd.DataFrame(resultlist)
+                df_out = pd.DataFrame(resultlist)
+                df_out.index = data.index
+                return df_out
             elif (type(resultlist[0]) is list):
                 if (type(resultlist[0][0]) is dict):
                     # Each row returns a list of dicts, stack the lists into new dataframe
@@ -53,7 +76,12 @@ def ivfunc(func):
         ### If a list (of dicts) is passed
         elif dtype == list:
             # Assuming it's a list of iv dicts
-            resultlist = [func(d, *args, **kwargs) for d in data]
+            #resultlist = [func(d, *args, **kwargs) for d in data]
+            resultlist = []
+            for i, d in enumerate(data):
+                result = func(d, *[paramtransform(arg, i, d) for arg in args],
+                              **{k:paramtransform(v, i, d) for k,v in kwargs.items()})
+                resultlist.append(result)
             if (type(resultlist[0]) is list):
                 if (type(resultlist[0][0]) is dict):
                     # Each func(dict) returns a list of dicts, stack the lists
@@ -84,6 +112,11 @@ class paramlist(list):
     # Which is pass a list of parameters to use for each loop
     pass
 
+def paramfunc(func):
+    # Wraps a function to identify itself to ivfunc as a function to be called on the data to determine input parameters
+    func.__name__ = 'paramfunc'
+    return func
+
 '''
 Functions that return a new value/new array per IV loop should just return that value
 Functions that modify the IV data should return a copy of the entire input structure
@@ -112,17 +145,16 @@ def find_data_arrays(data):
         Alen = max(lens, key=lens.count)
         return [ak for ak,l in zip(arraykeys, lens) if l == Alen]
 
+
 @ivfunc
 def diffiv(data, stride=1, columns=None):
     if columns is None:
         columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
-    diffarrays = [ar.I[stride:] - ar.I[:-stride] for ar in arrays]
+    diffarrays = [ar[stride:] - ar[:-stride] for ar in arrays]
     dataout = {c:diff for c,diff in zip(columns, diffarrays)}
     add_missing_keys(data, dataout)
     return dataout
-
-
 
 @ivfunc
 def thresholds_bydiff(data, stride=1):
@@ -136,6 +168,7 @@ def thresholds_bydiff(data, stride=1):
     mindiffI = diffI[argmindiffI]
     # TODO: This is breaking the pattern of other ivfuncs -- list of dict will return list of series...
     return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
+
 '''
 @ivfunc
 def thresholds_byval(data, value):
@@ -241,20 +274,25 @@ def maketimearray(data):
     return np.arange(len(data['V'])) * 1/data['sample_rate']
 
 @ivfunc
-def indexiv(data, index_function):
+def indexiv(data, index):
     '''
     Index all the data arrays inside an iv loop container at once.
-    Condition specified by index function, which should take an iv dict/series and return an indexing array
+    Index can be anything that works with np array __getitem__
+    if index is np.nan, return np.nan
     '''
     splitkeys = find_data_arrays(data)
 
-    index = np.array(index_function(data))
-    dataout = {c:data[c][index] for c in splitkeys}
+    #index = np.array(index_function(data))
+    if np.isnan(index):
+        dataout = {c:np.nan for c in splitkeys}
+    else:
+        dataout = {c:data[c][index] for c in splitkeys}
+
     add_missing_keys(data, dataout)
     return dataout
 
 @ivfunc
-def sliceiv(data, stop, start=0, step=1):
+def sliceiv(data, stop=-1, start=0, step=1):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start, stop can be functions that take the iv loop as argument
@@ -503,6 +541,13 @@ def sortvalues(data, column='V', ascending=True):
 
 
 @ivfunc
+def reversearrays(data, columns=None):
+    ''' Reverse the direction of arrays.
+    Faster than sorting if you know that they are reverse sorted'''
+    # Changed my mind about writing it
+    pass
+
+@ivfunc
 def diffsign(data, column='V'):
     '''
     Return boolean array indicating if V is increasing, decreasing, or constant.
@@ -533,7 +578,7 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpolate(data, interpvalues, column='I'):
+def interpolate(data, interpvalues, column='I', reverse=False, findmonotonic=False):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"
@@ -544,16 +589,22 @@ def interpolate(data, interpvalues, column='I'):
     interpkeys = [ik for ik in interpkeys if ik != column]
 
     # Get the largest monotonic subsequence of data, with 'column' increasing
-    dataout = largest_monotonic(data)
+    if findmonotonic:
+        data = largest_monotonic(data)
 
     # not doing this anymore, but might want the code for something else
     #saturated = abs(dataout[column]/dataout[column][-1]) - 1 < 0.0001
     #lastindex = np.where(saturated)[0][0]
     #dataout[column] = dataout[column][:lastindex
 
+    dataout = {}
     for ik in interpkeys:
-        dataout[ik] = np.interp(interpvalues, dataout[column], dataout[ik])
+        if reverse:
+            dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1])
+        else:
+            dataout[ik] = np.interp(interpvalues, data[column], data[ik])
     dataout[column] = interpvalues
+    add_missing_keys(data, dataout)
 
     return dataout
 
@@ -616,7 +667,9 @@ def jumps(loop, column='I', thresh=0.25, normalize=True, abs=True):
         jumps = np.where(d < thresh)[0]
     else:
         jumps = np.where(d > thresh)[0]
-    return [jumps, d[jumps]]
+
+    return {'jumpind': jumps, 'jumpval':d[jumps]}
+    #return [jumps, d[jumps]]
 
 @ivfunc
 def njumps(loop, **kwargs):
@@ -669,6 +722,8 @@ def pindex(loop, column, index):
 
 # These are dumb names.  Supposed to be pindex for parallel index
 # just gets a single value of a single column determined by a function
+
+
 @ivfunc
 def pindex_fromfunc(loop, column, indexfunc):
     index = indexfunc(loop)
@@ -702,6 +757,13 @@ def pindex_fromlist(loops, column, indexlist):
             vals.append(l[column][int(i)])
     return np.array(vals)
 
+@ivfunc
+def pindex(data, column, index):
+    '''
+    Index some column of all the ivloops in parallel
+    '''
+    # This one replaces _fromfunc and _fromlist using paramlist() and paramfunc()
+    pass
 
 @ivfunc
 def longest_monotonic(data, column='I'):
@@ -780,6 +842,35 @@ def resistance(data, v0=0.1, v1=None, x='V', y='I'):
             else:
                 print('Did not understand current unit!')
     return poly[0]
+
+
+"""
+# Lol I wrote nearly the same function twice, keeping it here to laugh at myself
+@ivfunc
+def polyfitiv(data, Vmax=None, Imax=None, Vmin=None, Imin=None, order=1, x='V', y='I'):
+    ''' Fit polynomials to range of voltage and current values '''
+    ones = np.ones(len(data[x]), dtype=bool)
+    if Vmin is None:
+        xminmask = ones
+    else:
+        xminmask = Vmin <= data[x]
+    if Vmax is None:
+        xmaxmask = ones
+    else:
+        xmaxmask = data[x] <= Vmax
+    if Imin is None:
+        yminmask = ones
+    else:
+        yminmask = Imin <= data[y]
+    if Imax is None:
+        ymaxmask = ones
+    else:
+        ymaxmask = data[y] <= Imax
+    mask = xminmask & xmaxmask & yminmask & ymaxmask
+    yfit = data[y][mask]
+    xfit = data[x][mask]
+    return np.polyfit(xfit, yfit, order)
+"""
 
 @ivfunc
 def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax=None):
@@ -899,3 +990,14 @@ def convert_to_uA(data):
     ''' Works in place and returns nothing.  Sorry for inconsistency'''
     data['I'] *= 1e6
     data['units']['I'] = '$\mu$A'
+
+@ivfunc
+def drop_arrays(data):
+    ''' Drop all numpy arrays from the data '''
+    keys = data.keys()
+    types = [type(data[k]) for k in keys]
+    arrays = [k for k,t in zip(keys, types) if t == np.ndarray]
+    savekeys = [k for k in keys if k not in arrays]
+    return {sk:data[sk] for sk in savekeys}
+    # In pandas you can do df.drop(arrays, 1), which is much much faster
+
