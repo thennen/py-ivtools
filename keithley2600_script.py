@@ -375,20 +375,26 @@ def ti(sourceV, sourceVB, points, interval,rangeI, limitI, nplc):
     #d = getdata()
 
 
-
-   
-
 def getdata(history=True):
     # Get keithley data arrays as strings, and convert them to arrays..
     # return dataarrays, metadict
     global dhistory
     metadict = {}
     numpts = int(float(k.ask('print(smua.nvbuffer1.n)')))
-    if numpts > 0:
-        Ireadingstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.readings)'.format(numpts))
-        Vreadingstr = k.ask('printbuffer(1, {}, smua.nvbuffer2.readings)'.format(numpts))
-        Vsourcevalstr = k.ask('printbuffer(1, {}, smua.nvbuffer2.sourcevalues)'.format(numpts))
-        timestampstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.timestamps)'.format(numpts))
+    # Starts reading the buffer right after the last read section.
+    # In the beginning of each measurement d is deleted, so the exception is thrown
+    # and the read starts at position 1
+    try:
+        start = d['n']+1
+    except:
+        start = 1
+
+
+    if numpts > 0 and numpts > start:
+        Ireadingstr = k.ask('printbuffer({}, {}, smua.nvbuffer1.readings)'.format(start, numpts))
+        Vreadingstr = k.ask('printbuffer({}, {}, smua.nvbuffer2.readings)'.format(start, numpts))
+        Vsourcevalstr = k.ask('printbuffer({}, {}, smua.nvbuffer2.sourcevalues)'.format(start, numpts))
+        timestampstr = k.ask('printbuffer({}, {}, smua.nvbuffer1.timestamps)'.format(start, numpts))
 
         # Dataframe version.  Let's keep it simple instead.
         #out = pd.DataFrame({'t':np.float16(readingstr.split(', ')),
@@ -401,22 +407,38 @@ def getdata(history=True):
         #return out, metadict
 
         # Dict version.  Downside is you can't use dot notation anymore..
-        t = np.float16(timestampstr.split(', '))
-        V = np.float32(Vsourcevalstr.split(', '))
-        I = np.float32(Ireadingstr.split(', '))
-        Vmeasured = np.float32(Vreadingstr.split(', '))
+        
+        # Tries to append read data to existing arrays in the dict.
+        # If d does not yet exist, dict is created.
+        try:
+            t = np.append(d['t'], np.float32(timestampstr.split(', ')))
+            V = np.append(d['V'], np.float32(Vsourcevalstr.split(', ')))
+            I = np.append(d['I'], np.float32(Ireadingstr.split(', ')))
+            Vmeasured = np.append(d['Vmeasured'], np.float32(Vreadingstr.split(', ')))
+        except:
+            t = np.float32(timestampstr.split(', '))
+            V = np.float32(Vsourcevalstr.split(', '))
+            I = np.float32(Ireadingstr.split(', '))
+            Vmeasured = np.float32(Vreadingstr.split(', '))
         mask = I != 9.90999953e+37
+    
         out = {'t':t[mask],
                'V':V[mask],
                'I':I[mask],
-               'Vmeasured':Vmeasured[mask]}
+               'Vmeasured':Vmeasured[mask],
+               'n':numpts}
+            
+
         out['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
         # This just reads the last value of compliance used.  Could be a situation where it doesn't apply to the data?
         out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
     else:
         #return pd.DataFrame({'t':[], 'V':[], 'I':[]}), {}
-        empty = np.array([])
-        out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
+        try:
+            out = d
+        except:
+            empty = np.array([])
+            out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
     if history:
         dhistory.append(out)
     return out
@@ -801,18 +823,16 @@ def liveplotter():
     # Returns '2.00000e+00\n' when it is sweeping
     # Not quite what I want, I want it to stop when it captured the total number of samples
     global d
+    del d
     sweeping = True
     firstiter = True
     lastiter = False
     while sweeping or measuring or lastiter:
-        try:
-            sweeping = bool(float(k.ask('print(status.operation.sweeping.condition)')))
-            measuring = bool(float(k.ask('print(status.operation.measuring.condition)')))
-            # print('Sweeping: {}'.format(sweeping))
-            # print('Measuring: {}'.format(measuring))
-        except:
-            sweeping = True
-            measuring = True
+        
+        sweeping = bool(float(k.ask('print(status.operation.sweeping.condition)')))
+        measuring = bool(float(k.ask('print(status.operation.measuring.condition)')))
+        # print('Sweeping: {}'.format(sweeping))
+        # print('Measuring: {}'.format(measuring))
 
         #sweeping = bool(float(k.ask('print(smua.source.output)')))
         if not sweeping and not measuring and not lastiter:
@@ -839,6 +859,7 @@ def liveplotter():
         plt.pause(.1)
         firstiter = False
     d = getdata(history=True)
+    
 
 def make_figs():
     # Get monitor information so we can put the plots in the right spot.
