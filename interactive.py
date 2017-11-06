@@ -620,7 +620,7 @@ except:
 
 def make_figs():
     global fig1, ax1, fig2, ax2
-    (fig1, ax1) , (fig2, ax2) = interactive_figures()
+    (fig1, ax1), (fig2, ax2) = interactive_figures()
 
 make_figs()
 
