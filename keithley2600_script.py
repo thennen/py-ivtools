@@ -1,4 +1,4 @@
-ivplotter'''
+'''
 Simple script to do IV sweeps with keithley 2600 (Using 2634B) without hating your life very much
 Optionally pass a dataframe that contains sample/device information, and "fill it in" with iv data
 Data is stored in a list of dicts, so that it can be appended in both axes efficiently
