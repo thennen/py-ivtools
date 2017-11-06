@@ -15,6 +15,7 @@ Python language interactively.
 Author: Tyler Hennen 2017
 '''
 
+import matplotlib as mpl
 import visa
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -118,7 +119,7 @@ elif hostname == 'fenster': # Just guessed craptop hostname ..
 else:
     # Hope you are already running in the py-ivtools directory
     ivtoolsdir = '.'
-magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/measure.py')))
+#magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/measure.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/plot.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/io.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
@@ -137,6 +138,17 @@ print('Keithley *IDN?')
 idn = k.ask('*IDN?')
 print(idn)
 
+def rst(k):
+    '''Resets keithley''' 
+    print('reset()')
+    k.write('reset()')
+    print('errorqueue.clear()')
+    k.write('errorqueue.clear()')
+    for line in Keithley_func.split('\n'):
+        k.write(line)
+    print('Keithley *IDN?')
+    idn = k.ask('*IDN?')
+    print(idn)
 
 # This is the code that runs on the keithley's lua interpreter.
 Keithley_func = '''
@@ -180,11 +192,105 @@ Keithley_func = '''
                     -- Start the trigger model execution
                     smua.trigger.initiate()
                 end
+
+ function SweepVList2CH(sweepList1,VB, rangeI, limitI, nplc, delay)
+                    reset()
+
+                
+                    -- Configure the SMU
+                    smua.reset()
+                    smua.source.func            = smua.OUTPUT_DCVOLTS
+                    smua.source.limiti          = limitI
+                    smua.measure.nplc           = nplc
+                    --smua.measure.delay        = smua.DELAY_AUTO
+                    smua.measure.delay = delay
+                    smua.measure.rangei = rangeI
+                    --smua.measure.rangev = 0
+
+                    -- Prepare the Reading Buffers
+                    smua.nvbuffer1.clear()
+                    smua.nvbuffer1.collecttimestamps    = 1
+                    --smua.nvbuffer1.collectsourcevalues  = 1
+                    smua.nvbuffer2.clear()
+                    smua.nvbuffer2.collecttimestamps    = 1
+                    smua.nvbuffer2.collectsourcevalues  = 1
+                    --smub.nvbuffer.clear()
+                    --smub.nvbuffer.count
+
+                    -- Configure SMU Trigger Model for Sweep
+                    smua.trigger.source.listv(sweepList1)
+                    smua.trigger.source.limiti          = limitI
+                    smua.trigger.measure.action         = smua.ENABLE
+                    smua.trigger.measure.iv(smua.nvbuffer1, smua.nvbuffer2)
+                    smua.trigger.endpulse.action        = smua.SOURCE_HOLD
+                    -- By setting the endsweep action to SOURCE_IDLE, the output will return
+                    -- to the bias level at the end of the sweep.
+                    smua.trigger.endsweep.action        = smua.SOURCE_IDLE
+                    numPoints = table.getn(sweepList1)
+                    smua.trigger.count                  = numPoints
+                    smua.trigger.source.action          = smua.ENABLE
+                    
+                    -- Ready to begin the test
+                    smua.source.output                  = smua.OUTPUT_ON
+                    smub.source.output                  = smub.OUTPUT_ON
+                    -- Start the trigger model execution
+
+
+                    -- Set ChB
+                    smub.reset()
+                    smub.source.func            = smub.OUTPUT_DCVOLTS
+                    smub.source.limiti          = limitI
+                    smub.measure.rangei         = limitI
+                    smub.source.levelv = VB
+                    --smub.measure.count = table.getn(sweepList1)
+                    --smub.measure.overlappedi(smub.nvbuffer)
+                    smua.trigger.initiate()                  
+                end
+
+                function constantVMeasI(sourceV,sourceVB, points, interval, rangeI, limitI, nplc)
+                     reset()
+
+                    -- Configure the SMU
+                    smua.reset()
+                    smua.source.func            = smua.OUTPUT_DCVOLTS
+                    smua.source.limiti          = limitI
+                    smua.measure.nplc           = nplc
+                    smua.measure.rangei = rangeI
+        
+                    -- Prepare the Reading Buffers
+                    smua.nvbuffer1.clear()
+                    smua.nvbuffer1.collecttimestamps    = 1
+                    --smua.nvbuffer1.collectsourcevalues  = 1
+                    smua.nvbuffer2.clear()
+                    smua.nvbuffer2.collecttimestamps    = 1
+                    smua.nvbuffer2.collectsourcevalues  = 1
+
+                    smua.source.levelv          = sourceV
+                    smua.measure.count          = points
+                    smua.measure.interval       = interval
+                    
+                    -- Set ChB
+                    smub.reset()
+                    smub.source.func            = smua.OUTPUT_DCVOLTS
+                    smub.source.limiti          = limitI
+                    smub.measure.rangei         = limitI
+                    smub.source.levelv          = sourceVB
+
+                    -- Ready to begin the test
+                    smua.source.output                  = smua.OUTPUT_ON
+                    smub.source.output                  = smub.OUTPUT_ON
+                    -- Start the trigger model execution
+                    
+                    smua.measure.overlappediv(smua.nvbuffer1, smua.nvbuffer2)
+                     
+                end   
                 endscript
                 '''
+
+rst(k)
 # Load the script into keithley
-for line in Keithley_func.split('\n'):
-    k.write(line)
+#for line in Keithley_func.split('\n'):
+ #   k.write(line)
 
 def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
     '''Wraps the SweepVList lua function defined on keithley''' 
@@ -212,6 +318,64 @@ def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
     liveplotter()
     # liveplotter does this already
     #d = getdata()
+
+def iv2C(vlist1,vlist2, VB1, VB2, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
+    '''Wraps the SweepVList lua function defined on keithley''' 
+
+    # Hack to shove more data points into keithley despite its questionable design.
+    # still sending a string, but need to break it into several lines due to small input buffer
+    # Define an anonymous script that defines the array variable
+    for j in range(0,1):
+        if j ==0:
+            vlist=vlist1
+            VB=VB1
+        else:
+            vlist=vlist2
+            VB=VB2
+        l = len(vlist)
+        k.write('loadandrunscript')
+        k.write('sweeplist1 = {')
+        chunksize = 50
+        for i in range(0, l, chunksize):
+            chunk = ','.join(['{:.6e}'.format(v) for v in vlist[i:i+chunksize]])
+            k.write(chunk)
+            k.write(',')
+        k.write('}')
+        k.write('endscript')
+
+
+        # Call SweepVList
+        # TODO: make sure the inputs are valid
+        # Built in version -- locks communication so you can't get the incomplete array
+        #k.write('SweepVListMeasureI(smua, sweeplist, {}, {})'.format(.1, l))
+        print('SweepVList2CH(sweeplist1, {}, {}, {}, {}, {})'.format(VB, Irange, Ilimit, nplc, delay))
+        k.write('SweepVList2CH(sweeplist1, {}, {}, {}, {}, {})'.format(VB, Irange, Ilimit, nplc, delay))
+        liveplotter()
+        k.write('smub.source.levelv = 0')
+        k.write(' smub.source.output = smub.OUTPUT_OFF')
+    
+        # liveplotter does this already
+        #d = getdata()
+
+
+def ti(sourceV, sourceVB, points, interval,rangeI, limitI, nplc):
+    '''Wraps the constantVoltageMeasI lua function defined on keithley''' 
+   
+    # Call constantVoltageMeasI
+    # TODO: make sure the inputs are valid
+    print('constantVMeasI({}, {}, {}, {}, {}, {}, {})'.format(sourceV, sourceVB, points, interval, rangeI, limitI, nplc))
+    k.write('constantVMeasI({}, {}, {}, {}, {}, {}, {})'.format(sourceV, sourceVB, points, interval, rangeI, limitI, nplc))
+    liveplotter()
+    k.write(' smua.source.levelv = 0')
+    k.write(' smua.source.output = smub.OUTPUT_OFF')
+    k.write(' smub.source.levelv = 0')
+    k.write(' smub.source.output = smub.OUTPUT_OFF')
+    # liveplotter does this already
+    #d = getdata()
+
+
+
+   
 
 def getdata(history=True):
     # Get keithley data arrays as strings, and convert them to arrays..
@@ -265,6 +429,17 @@ def triangle(v1, v2, n=None, step=None):
     wfm = np.concatenate((np.arange(0, v1, np.sign(v1) * step),
                         np.arange(v1, v2, np.sign(v2 - v1) * step),
                         np.arange(v2, 0, -np.sign(v2) * step),
+                        [0]))
+    #if len(wfm) > 100:
+        #print('Too many steps for my idiot program.  Interpolating to 100 pts')
+        #wfm = np.interp(np.linspace(0, 1, 100), np.linspace(0, 1, len(wfm)), wfm)
+    return wfm
+
+def trihalf(v, step=None):
+    # We like triangle sweeps a lot
+    # Basic sweep to one voltage and back to zero
+    wfm = np.concatenate((np.arange(0, v1, np.sign(v1) * step),
+                         np.arange(v1, 0, -np.sign(v1) * step),
                         [0]))
     #if len(wfm) > 100:
         #print('Too many steps for my idiot program.  Interpolating to 100 pts')
@@ -625,9 +800,18 @@ def liveplotter():
     sweeping = True
     firstiter = True
     lastiter = False
-    while sweeping or lastiter:
-        sweeping = bool(float(k.ask('print(status.operation.sweeping.condition)')))
-        if not sweeping and not lastiter:
+    while sweeping or measuring or lastiter:
+        try:
+            sweeping = bool(float(k.ask('print(status.operation.sweeping.condition)')))
+            measuring = bool(float(k.ask('print(status.operation.measuring.condition)')))
+            # print('Sweeping: {}'.format(sweeping))
+            # print('Measuring: {}'.format(measuring))
+        except:
+            sweeping = True
+            measuring = True
+
+        #sweeping = bool(float(k.ask('print(smua.source.output)')))
+        if not sweeping and not measuring and not lastiter:
             lastiter = True
         else:
             lastiter = False
