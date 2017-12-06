@@ -68,7 +68,7 @@ def read_txts(directory, pattern, exclude=None, **kwargs):
         fnames.sort(key=lambda fn: int(splitext(fn.split('_')[-1])[0]))
     except:
         print('Failed to sort files by file number. Sorting by mtime.')
-        fnames.sort(key=lambda fn: os.path.getctime(pjoin(directory, fn)))
+        fnames.sort(key=lambda fn: os.path.getmtime(pjoin(directory, fn)))
 
     print('Loading the following files:')
     print('\n'.join(fnames))
@@ -214,6 +214,9 @@ def write_matlab(data, filepath, varname=None, compress=True):
    elif dtype is pd.DataFrame:
       savemat(filepath, {varname: data.to_dict('records')}, do_compression=compress)
 
+
+def write_csv(data, filepath, columns=['I', 'V']):
+    # For true dinosaurs
 
 
 def read_matlab(filepath):
