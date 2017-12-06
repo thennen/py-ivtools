@@ -57,7 +57,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
 
     return ax.plot(X, Y, **kwargs)[0]
 
-def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
+def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     maxsamples : downsample to this number of data points if necessary
@@ -83,7 +83,16 @@ def plotiv(data, x='V', y='I', ax=None, maxsamples=10000, cm='jet', **kwargs):
                 cmap = plt.cm.get_cmap(cm)
             elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
                 cmap = cm
-            colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
+            if c is None:
+                colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
+            elif type(c) is str:
+                # color by the column given
+                normc = (data[c] - np.min(data[c])) / (np.max(data[c]) - np.min(data[c]))
+                colors = cmap(normc)
+            else:
+                # It's probably an array of values?  Map them to colors
+                normc = (c - np.min(c)) / (np.max(c) - np.min(c))
+                colors = cmap(normc)
 
         if dtype == pd.DataFrame:
             if x is None or hasattr(data.iloc[0][x], '__iter__'):
@@ -137,7 +146,7 @@ def auto_title(data, keys=None, ax=None):
         width = meta['width_nm']
         title = '{}, {}, t={}nm, w={}nm'.format(id, layer, thickness, width)
     else:
-        title = ', '.join(['{}:{}'.format(k, data[k]) for k in keys if k in data)])
+        title = ', '.join(['{}:{}'.format(k, data[k]) for k in keys if k in data])
 
     ax.set_title(title)
 
@@ -379,4 +388,5 @@ def mpfunc(x, pos):
         if abs(x) >= v:
             return '{:1.1f}{}'.format(x/v, p)
 
+# Use it like this: ax.yaxis.set_major_formatter(metricprefixformatter)
 metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)

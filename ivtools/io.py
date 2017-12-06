@@ -294,7 +294,7 @@ def read_matlab(filepath):
          return pd.Series(var_in)
 
 
-def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
+def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
    # TODO: Optionally group by sample, making one plot per sample
@@ -309,7 +309,7 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=1):
       s.I *= 1e6
       s.units['I'] = '$\mu$A'
       smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-      plotiv(moving_avg(s, smoothn), ax=ax)
+      plotiv(moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       if 'thickness_1' in s:

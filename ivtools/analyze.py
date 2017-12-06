@@ -28,10 +28,10 @@ def ivfunc(func):
         if type(param) == paramlist:
             # Index param if it is a paramlist. Otherwise, don't.
             return param[i]
-        elif hasattr(param, '__call__'):
+        #elif hasattr(param, '__call__'):
+        elif hasattr(param, '__name__') and (param.__name__ == 'paramfunc'):
             # Call function with data as argument, and use the return value as the parameter
-            if param.__name__ == 'paramfunc':
-                return param(data)
+            return param(data)
         else:
             return param
     @wraps(func)
@@ -544,8 +544,13 @@ def sortvalues(data, column='V', ascending=True):
 def reversearrays(data, columns=None):
     ''' Reverse the direction of arrays.
     Faster than sorting if you know that they are reverse sorted'''
-    # Changed my mind about writing it
-    pass
+    if columns == None:
+        columns = find_data_arrays(data)
+    dataout = {}
+    for k in columns:
+        dataout[k] = data[k][::-1]
+    add_missing_keys(data, dataout)
+    return dataout
 
 @ivfunc
 def diffsign(data, column='V'):

@@ -8,6 +8,7 @@ import numpy as np
 import time
 from dotdict import dotdict
 import pandas as pd
+import os
 
 # These are None until the instruments are connected
 # Don't clobber them though, in case this script is used with run -i
