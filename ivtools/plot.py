@@ -137,7 +137,7 @@ def auto_title(data, keys=None, ax=None):
         width = meta['width_nm']
         title = '{}, {}, t={}nm, w={}nm'.format(id, layer, thickness, width)
     else:
-        title = ', '.join(['{}:{}'.format(k, data[k]) for k in keys if k in data)])
+        title = ', '.join(['{}:{}'.format(k, data[k]) for k in keys if k in data])
 
     ax.set_title(title)
 

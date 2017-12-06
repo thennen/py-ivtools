@@ -280,13 +280,15 @@ def indexiv(data, index):
     Index can be anything that works with np array __getitem__
     if index is np.nan, return np.nan
     '''
-    splitkeys = find_data_arrays(data)
+    colnames = find_data_arrays(data)
 
-    #index = np.array(index_function(data))
-    if np.isnan(index):
-        dataout = {c:np.nan for c in splitkeys}
+    if hasattr(index, '__call__'):
+        # If index is a function, call it on the data
+        index = index(data)
+    if not hasattr(index, '__iter__') and np.isnan(index):
+        dataout = {c:np.nan for c in colnames}
     else:
-        dataout = {c:data[c][index] for c in splitkeys}
+        dataout = {c:data[c][index] for c in colnames}
 
     add_missing_keys(data, dataout)
     return dataout
