@@ -169,6 +169,25 @@ def thresholds_bydiff(data, stride=1):
     # TODO: This is breaking the pattern of other ivfuncs -- list of dict will return list of series...
     return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
 
+@ivfunc
+def thresholds_bycrossing(data, column='I', thresh=0.5, direction=True):
+    '''
+    Determine threshold datapoint by the first to cross a certain value
+    return the whole datastructure with the data arrays replaced by the value at the threshold point
+    '''
+    # Find threshold
+    if direction:
+        threshside = np.where(data[column] >= thresh)
+    else:
+        threshside = np.where(data[column] <= thresh)
+
+    if any(threshside[0]):
+        index = threshside[0][0]
+    else:
+        index = np.nan
+
+    return indexiv(data, index)
+
 '''
 @ivfunc
 def thresholds_byval(data, value):
@@ -176,10 +195,12 @@ def thresholds_byval(data, value):
 '''
 
 @ivfunc
-def moving_avg(data, window=5, columns=('I', 'V')):
+def moving_avg(data, window=5, columns=('I', 'V', 't')):
     ''' Smooth data arrays with moving avg '''
     if columns is None:
         columns = find_data_arrays(data)
+    else:
+        columns = [c for c in columns if c in data.keys()]
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
@@ -376,6 +397,7 @@ def splitbranch(data, columns=None):
     Assumptions are that loop starts at intermediate V (like zero), goes to one extremum, to another extremum, then back to zero.
     Can also just go to one extreme and back to zero
     Not sure how to extend to splitting multiple loops.  Should it return interleaved branches or two separate dataframes/lists?
+    right now it returns one dataframe of interleaved branches
     '''
     if columns is None:
         columns = find_data_arrays(data)
@@ -414,6 +436,9 @@ def splitbranch(data, columns=None):
 
     return [branch1, branch2]
 
+def split_updown():
+    ''' dunno I am sick of writing updown = splitbranch(data), up =updown[::2], down=updown[1::2]'''
+    pass
 
 @ivfunc
 def splitiv(data, nloops=None, nsamples=None):
@@ -770,7 +795,11 @@ def pindex(data, column, index):
     Index some column of all the ivloops in parallel
     '''
     # This one replaces _fromfunc and _fromlist using paramlist() and paramfunc()
-    pass
+    # Dunno didn't test it..
+    if np.isnan(index):
+        return np.nan
+    else:
+        return data[column][index]
 
 @ivfunc
 def longest_monotonic(data, column='I'):
