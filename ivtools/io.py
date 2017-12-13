@@ -155,26 +155,18 @@ def read_txts(directory, pattern, exclude=None, **kwargs):
     return pd.DataFrame(datalist)
 
 
-def read_pandas(directory='.', pattern='*', exclude=None, concat=True):
+def read_pandas_files(filepaths, concat=True):
     '''
-    Load in all dataframes and series matching a glob pattern
+    Load in dataframes and/or series in list of filepaths
     return concatenated dataframe
+    series will all have index 0 ...
     '''
-    # Put wildcards at the ends of pattern
-    pattern = pattern.join('**')
-    files = os.listdir(directory)
-    matchfiles = fnmatch.filter(files, pattern)
-    if exclude is not None:
-        exclude = exclude.join('**')
-        excludefiles = fnmatch.filter(matchfiles, exclude)
-        matchfiles = [mf for mf in matchfiles if mf not in excludefiles]
     pdlist = []
     # Try to get pandas to read the files, but don't give up if some fail
-    for f in matchfiles:
-        fp = os.path.join(directory, f)
+    for f in filepaths:
         try:
             # pdlist may have some combination of Series and DataFrames.  Series should be rows
-            pdobject = pd.read_pickle(fp)
+            pdobject = pd.read_pickle(f)
             if type(pdobject) is pd.DataFrame:
                 pdlist.append(pdobject)
             elif type(pdobject) is pd.Series:
@@ -191,6 +183,31 @@ def read_pandas(directory='.', pattern='*', exclude=None, concat=True):
         return pd.concat(pdlist)
     else:
         return pdlist
+
+def read_pandas_glob(directory='.', pattern='*', exclude=None, concat=True):
+    '''
+    Load in all dataframes and series matching a glob pattern
+    return concatenated dataframe
+    '''
+    # Put wildcards at the ends of pattern
+    pattern = pattern.join('**')
+    files = os.listdir(directory)
+    matchfiles = fnmatch.filter(files, pattern)
+    if exclude is not None:
+        exclude = exclude.join('**')
+        excludefiles = fnmatch.filter(matchfiles, exclude)
+        matchfiles = [mf for mf in matchfiles if mf not in excludefiles]
+    matchfilepaths = [os.path.join(directory, f) for f in matchfiles]
+
+    return read_pandas_files(matchfilepaths, concat=concat)
+
+def read_pandas_recent(directory='.', pastseconds=60, concat=True):
+    ''' Read files in directory which were made in the last pastseconds '''
+    now = time.time()
+    filepaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+    ctimes = [os.path.getctime(fp) for fp in filepaths]
+    recentfps = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
+    return read_pandas_files(recentfps, concat=concat)
 
 
 def write_matlab(data, filepath, varname=None, compress=True):
@@ -217,6 +234,7 @@ def write_matlab(data, filepath, varname=None, compress=True):
 
 def write_csv(data, filepath, columns=['I', 'V']):
     # For true dinosaurs
+    pass
 
 
 def read_matlab(filepath):
@@ -339,6 +357,23 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
 
    plt.close(fig)
 
+def write_meta_csv(data, filepath):
+    ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
+    dtype = type(data)
+    if dtype is pd.Series:
+        s = pd.read_pickle(pjoin(root, f))
+    elif dtype is pd.Dataframe:
+        # Only save first row metadata -- Usually it's the same for all
+        df = pd.read_pickle(pjoin(root, f))
+        s = df.iloc[0]
+        s['nloops'] = len(df)
+    elif dtype is list:
+        s = pd.Series(data[0])
+    elif dtype is dict:
+        s = pd.Series(data)
+    # Drop all arrays from data
+    arrays = s[s.apply(type) == np.ndarray].index
+    s.drop(arrays).to_csv(filepath, sep='\t', encoding='utf-8')
 
 def change_devicemeta(filepath, newmeta, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
