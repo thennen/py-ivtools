@@ -390,3 +390,38 @@ def mpfunc(x, pos):
 
 # Use it like this: ax.yaxis.set_major_formatter(metricprefixformatter)
 metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)
+# Note I might be stupid and this could already be built in, using mpl.ticker.EngFormatter()
+
+def plot_log_reference_lines(ax, slope=-2):
+    ''' Put some reference lines on a log-log plot indicating a certain power dependence'''
+    ylims = ax.get_ylim()
+    ymin, ymax = ylims
+    logymin, logymax = np.log10(ymin), np.log10(ymax)
+    xlims = ax.get_xlim()
+    xmin, xmax = xlims
+    # Starting y points for the lines
+    y = np.logspace(logymin, logymax + np.log10(ymax - ymin), 20)
+    # Plot one at a time so you can just label one (for legend)
+    for yi in y[:-1]:
+        ax.plot(xlims, (yi, yi + yi/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black')
+    # Label the last one
+    ax.plot(xlims, (y[-1], y[-1] + y[-1]/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black', label='Area scaling')
+    # Put the limits back
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
+
+def plot_power_lines(pvals=(1e-9, 1e-8, 1e-7), ax=None):
+    '''
+    Plot lines of constant power on the indicated axis  (should be I vs V)
+    TODO: Label power values
+    TODO: detect power range from axis range
+    '''
+    if ax is None:
+        ax = plt.gca()
+    x0, x1 = ax.get_xlim()
+    # Easiest to space equally in x.  Could change this later so that high slope areas get enough data points.
+    x = linspace(x0, x1, 1000)
+    #pvals = linspace(pmin, pmax, nlines)
+    ylist = [p/x for p in pvals]
+    for y in ylist:
+        ax.plot(x, y, '--', color='black', alpha=.3)
