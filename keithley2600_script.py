@@ -351,7 +351,7 @@ def load_lassen(**kwargs):
     e.g. coupon=[23, 24], module=['001H', '014B']
     '''
     # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
-    global lassen_df, meta_df, prettykeys, filenamekeys, devicemetalist
+    global lassen_df, meta_df, prettykeys, filenamekeys, devicemetalist, deposition_df
     # Load information from files on disk
     deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
     # Only use Lassen devices
@@ -359,6 +359,14 @@ def load_lassen(**kwargs):
     lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
     # Merge data
     merge_deposition_data_on = ['coupon']
+
+    # If someone neglected to write the coupon number in the deposition sheet
+    # Merge the non-coupon specific portion of lassen_df
+    coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
+    non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
+    non_coupon_specific = lassen_df[lassen_df.coupon == 30][non_coupon_cols]
+    lassen_df = pd.concat((lassen_df, non_coupon_specific))
+
     meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
 
     # Check that function got valid arguments

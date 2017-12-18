@@ -51,6 +51,10 @@ subfolder = datestr
 print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
 makedatafolder()
 
+def datadir():
+    return os.path.join(datafolder, subfolder)
+
+
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
 ############# Logging  ###########################
@@ -325,6 +329,14 @@ def load_lassen(**kwargs):
     lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
     # Merge data
     merge_deposition_data_on = ['coupon']
+
+    # If someone neglected to write the coupon number in the deposition sheet
+    # Merge the non-coupon specific portion of lassen_df
+    coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
+    non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
+    non_coupon_specific = lassen_df[lassen_df.coupon == 1][non_coupon_cols]
+    lassen_df = pd.concat((lassen_df, non_coupon_specific))
+
     meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
 
     # Check that function got valid arguments
