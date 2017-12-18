@@ -54,10 +54,6 @@ makedatafolder()
 def datadir():
     return os.path.join(datafolder, subfolder)
 
-
-print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
-
-############# Logging  ###########################
 def getGitRevision():
     try:
         return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
@@ -66,6 +62,13 @@ def getGitRevision():
         return 'Dunno'
 
 gitrev = getGitRevision()
+
+print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+
+############# Logging  ###########################
+# Want IPython to save a log of input/output in the data directory
+# This code is supposed to transparently mirror ipython input/output as well as standard output to a file
+# However it's a bit of a hack and sometimes has problems when you run this script again (spyder crashes for example)
 
 magic = get_ipython().magic
 magic('logstop')
@@ -87,7 +90,7 @@ class Logger(object):
 
     def flush(self):
         self.log.flush()
-        # This needs to be here otherwise there's no line break somewhere.  Don't worry about it.
+        # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
         self.terminal.flush()
 try:
     # Close the previous file
@@ -98,6 +101,8 @@ logfile = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
 magic('logstart -o {} append'.format(logfile))
 logger = Logger()
 sys.stdout = logger
+
+############# End of Logging ###########################
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 magic('matplotlib')

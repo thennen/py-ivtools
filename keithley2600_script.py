@@ -53,19 +53,6 @@ datestr = time.strftime('%Y-%m-%d')
 timestr = time.strftime('%Y-%m-%d_%H%M%S')
 hostname = socket.gethostname()
 
-# Script copies itself
-# Obsolete with good git practice
-'''
-scriptpath = os.path.realpath(__file__)
-scriptdir, scriptfile = os.path.split(scriptpath)
-scriptcopydir = os.path.join(scriptdir, 'Script_copies')
-scriptcopyfn = timestr + scriptfile
-scriptcopyfp = os.path.join(scriptcopydir, scriptcopyfn)
-if not os.path.isdir(scriptcopydir):
-    os.makedirs(scriptcopydir)
-copyfile(scriptpath, scriptcopyfp)
-'''
-
 if hostname == 'pciwe46':
     datafolder = 'D:/t/ivdata/'
 else:
@@ -78,6 +65,9 @@ print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directo
 
 
 ############# Logging  ###########################
+# Want IPython to save a log of input/output in the data directory
+# This code is supposed to transparently mirror ipython input/output as well as standard output to a file
+# However it's a bit of a hack and sometimes has problems when you run this script again (spyder crashes for example)
 
 magic = get_ipython().magic
 magic('logstop')
@@ -110,6 +100,9 @@ magic('logstart -o {} append'.format(logfile))
 logger = Logger()
 sys.stdout = logger
 
+############# End of Logging ###########################
+
+
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 magic('matplotlib')
 if hostname == 'pciwe46':
@@ -138,131 +131,110 @@ print('Keithley *IDN?')
 idn = k.ask('*IDN?')
 print(idn)
 
+# Sadly, Keithley decided to embed a lua interpreter into its source meters instead of providing a proper programming interface.
+# This means we have to communicate with Keithley via sending and receiving strings in the lua programming language.
+# One could decide to wrap every useful lua command in a python function which writes the lua string, and parses the response, but this would be quite an undertaking
+# Here we maintain a separate lua file "Keithley_2600.lua" which defines lua functions on the keithley, then we wrap those in python.
+
+def run_lua_lines(lines):
+    ''' Send some lines (list of strings) to Keithley lua interpreter '''
+    k.write('loadandrunscript')
+    for line in lines:
+        k.write(line)
+    k.write('endscript')
 
 
-# This is the code that runs on the keithley's lua interpreter.
-Keithley_func = '''
-                loadandrunscript
-                function SweepVList(sweepList, rangeI, limitI, nplc, delay)
-                    reset()
+# Run the lua file on keithley
+with open('lua/Keithley_2600.lua', 'r') as kfile:
+    run_lua_lines(kfile.readlines())
 
-                    -- Configure the SMU
-                    smua.reset()
-                    smua.source.func			= smua.OUTPUT_DCVOLTS
-                    smua.source.limiti			= limitI
-                    smua.measure.nplc			= nplc
-                    --smua.measure.delay		= smua.DELAY_AUTO
-                    smua.measure.delay = delay
-                    smua.measure.rangei = rangeI
-                    --smua.measure.rangev = 0
 
-                    -- Prepare the Reading Buffers
-                    smua.nvbuffer1.clear()
-                    smua.nvbuffer1.collecttimestamps	= 1
-                    --smua.nvbuffer1.collectsourcevalues  = 1
-                    smua.nvbuffer2.clear()
-                    smua.nvbuffer2.collecttimestamps	= 1
-                    smua.nvbuffer2.collectsourcevalues  = 1
+def send_list_to_keithley(list_in, varname='pythonlist'):
+    '''
+    In order to send a list of values to keithley, we need to compose a lua string to define it as a variable.
+    Problem is that the input buffer of Keithley is very small, so the lua string needs to be separated into many lines.
+    This function accomplishes that.
+    '''
+    chunksize = 50
+    l = len(list_in)
+    # List of commands to send to keithley
+    cmdlist = []
+    cmdlist.append('{} = {{'.format(varname))
+    # Split array into chunks and write the string representation line-by-line
+    for i in range(0, l, chunksize):
+        chunk = ','.join(['{:.6e}'.format(v) for v in list_in[i:i+chunksize]])
+        cmdlist.append(chunk)
+        cmdlist.append(',')
+    cmdlist.append('}')
 
-                    -- Configure SMU Trigger Model for Sweep
-                    smua.trigger.source.listv(sweepList)
-                    smua.trigger.source.limiti			= limitI
-                    smua.trigger.measure.action			= smua.ENABLE
-                    smua.trigger.measure.iv(smua.nvbuffer1, smua.nvbuffer2)
-                    smua.trigger.endpulse.action		= smua.SOURCE_HOLD
-                    -- By setting the endsweep action to SOURCE_IDLE, the output will return
-                    -- to the bias level at the end of the sweep.
-                    smua.trigger.endsweep.action		= smua.SOURCE_IDLE
-                    numPoints = table.getn(sweepList)
-                    smua.trigger.count					= numPoints
-                    smua.trigger.source.action			= smua.ENABLE
-                    -- Ready to begin the test
+    run_lua_lines(cmdlist)
 
-                    smua.source.output					= smua.OUTPUT_ON
-                    -- Start the trigger model execution
-                    smua.trigger.initiate()
-                end
-                endscript
-                '''
-# Load the script into keithley
-for line in Keithley_func.split('\n'):
-    k.write(line)
 
 def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
     '''Wraps the SweepVList lua function defined on keithley''' 
 
-    # Hack to shove more data points into keithley despite its questionable design.
-    # still sending a string, but need to break it into several lines due to small input buffer
-    # Define an anonymous script that defines the array variable
-    l = len(vlist)
-    k.write('loadandrunscript')
-    k.write('sweeplist = {')
-    chunksize = 50
-    for i in range(0, l, chunksize):
-        chunk = ','.join(['{:.6e}'.format(v) for v in vlist[i:i+chunksize]])
-        k.write(chunk)
-        k.write(',')
-    k.write('}')
-    k.write('endscript')
+    # Send list of voltage values to keithley
+    send_list_to_keithley(vlist, varname='sweeplist')
 
-    # Call SweepVList
     # TODO: make sure the inputs are valid
-    # Built in version -- locks communication so you can't get the incomplete array
-    #k.write('SweepVListMeasureI(smua, sweeplist, {}, {})'.format(.1, l))
-    print('SweepVList(sweeplist, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay))
     k.write('SweepVList(sweeplist, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay))
     liveplotter()
     # liveplotter does this already
     #d = getdata()
 
-def getdata(history=True):
-    # Get keithley data arrays as strings, and convert them to arrays..
-    # return dataarrays, metadict
-    global dhistory
-    metadict = {}
-    numpts = int(float(k.ask('print(smua.nvbuffer1.n)')))
-    if numpts > 0:
-        Ireadingstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.readings)'.format(numpts))
-        Vreadingstr = k.ask('printbuffer(1, {}, smua.nvbuffer2.readings)'.format(numpts))
-        Vsourcevalstr = k.ask('printbuffer(1, {}, smua.nvbuffer2.sourcevalues)'.format(numpts))
-        timestampstr = k.ask('printbuffer(1, {}, smua.nvbuffer1.timestamps)'.format(numpts))
 
-        # Dataframe version.  Let's keep it simple instead.
-        #out = pd.DataFrame({'t':np.float16(readingstr.split(', ')),
-        #                    'V':np.float32(sourcevalstr.split(', ')),
-        #                    'I':np.float32(readingstr.split(', '))})
-        #out = out[out['t'] != inf]
-        # Collect the measurement conditions
-        # TODO: see what other information is available
-        #metadict['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
-        #return out, metadict
+def getdata(start=1, end=None, history=True):
+    '''
+    Ask Keithley to print out the data arrays of interest (I, V, t, ...)
+    Parse the strings into python arrays
+    Return dict of arrays
+    dict can also contain scalar values or other meta data
+
+    Can pass start and end values if you want just a specific part of the arrays
+    '''
+    global dhistory
+    numpts = int(float(k.ask('print(smua.nvbuffer1.n)')))
+    if end is None:
+        end = numpts
+    if numpts > 0:
+        Ireadingstr = k.ask('printbuffer({}, {}, smua.nvbuffer1.readings)'.format(start, end))
+        Vreadingstr = k.ask('printbuffer({}, {}, smua.nvbuffer2.readings)'.format(start, end))
+        Vsourcevalstr = k.ask('printbuffer({}, {}, smua.nvbuffer2.sourcevalues)'.format(start, end))
+        timestampstr = k.ask('printbuffer({}, {}, smua.nvbuffer1.timestamps)'.format(start, end))
 
         # Dict version.  Downside is you can't use dot notation anymore..
-        t = np.float16(timestampstr.split(', '))
-        V = np.float32(Vsourcevalstr.split(', '))
-        I = np.float32(Ireadingstr.split(', '))
+        t = np.float64(timestampstr.split(', '))
+        V = np.float64(Vsourcevalstr.split(', '))
+        I = np.float64(Ireadingstr.split(', '))
         Vmeasured = np.float32(Vreadingstr.split(', '))
-        mask = I != 9.90999953e+37
-        out = {'t':t[mask],
-               'V':V[mask],
-               'I':I[mask],
-               'Vmeasured':Vmeasured[mask]}
+        # Keithley returns this special value when the measurement is out of range
+        # replace it with a real nan so it doesn't mess up the plots
+        nanvalue = 9.9100000000000005e+37
+        I[I == nanvalue] = np.nan
+        Vmeasured[Vmeasured == nanvalue] = np.nan
+        out = {'t':t,
+               'V':V,
+               'I':I,
+               'Vmeasured':Vmeasured}
+        # Collect measurement conditions
+        # TODO: What other information is available?
         out['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
         # This just reads the last value of compliance used.  Could be a situation where it doesn't apply to the data?
         out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
     else:
-        #return pd.DataFrame({'t':[], 'V':[], 'I':[]}), {}
         empty = np.array([])
         out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
     if history:
         dhistory.append(out)
     return out
 
+
 def triangle(v1, v2, n=None, step=None):
     '''
     We like triangle sweeps a lot
     Very basic triangle pulse with some problems.
     Give either number of points or step size
+    Pass either v1 or v2 = 0 to do a single sided sweep.
     '''
     if n is not None:
         dv = abs(v1) + abs(v2 - v1) + abs(v2)
@@ -271,14 +243,13 @@ def triangle(v1, v2, n=None, step=None):
                         np.arange(v1, v2, np.sign(v2 - v1) * step),
                         np.arange(v2, 0, -np.sign(v2) * step),
                         [0]))
-    #if len(wfm) > 100:
-        #print('Too many steps for my idiot program.  Interpolating to 100 pts')
-        #wfm = np.interp(np.linspace(0, 1, 100), np.linspace(0, 1, len(wfm)), wfm)
     return wfm
 
+
 def waitforkeithley():
-    # I can't find out how to do this from the manual.
+    # I can't find out how to do this from the manual.  Should be possible
     # Shouldn't be necessary if you don't run any blocking scripts on keithley
+    # Also I think this is dumb and should never be used
     k.write('print("lol")')
     done = None
     while done is None:
@@ -287,6 +258,7 @@ def waitforkeithley():
         except:
             plt.pause(.1)
             print('waiting for keithley...')
+
 
 def keithley_error():
     ''' Get the next error from keithley queue'''
@@ -409,6 +381,7 @@ def load_lassen(**kwargs):
     print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
 
 
+# Dumb hack to call a function without using ()
 # Because who wants to type?
 class autocaller():
     def __init__(self, function):
