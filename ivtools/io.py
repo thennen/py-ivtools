@@ -397,3 +397,21 @@ def change_devicemeta(filepath, newmeta, deleteold=False):
     if deleteold:
         print('deleting old file {}'.format(filepath))
         os.remove(filepath)
+
+
+def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False):
+    # write the current figure to disk
+    # Can also write a pickle of the figure
+    plotsubdir = os.path.join(plotdir, subdir)
+    if not os.path.isdir(plotsubdir):
+        os.makedirs(plotsubdir)
+    plotfp = os.path.join(plotsubdir, filename)
+    if os.path.isfile(plotfp + '.png') and not overwrite:
+        print('Not overwriting {}'.format(plotfp))
+    else:
+        plt.savefig(plotfp)
+        print('Wrote {}.png'.format(plotfp))
+        if savefig:
+            with open(plotfp + '.plt', 'wb') as f:
+                pickle.dump(plt.gcf(), f)
+            print('Wrote {}.plt'.format(plotfp))

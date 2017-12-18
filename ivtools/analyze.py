@@ -107,10 +107,12 @@ def ivfunc(func):
             print('ivfunc did not understand the input datatype {}'.format(dtype))
     return func_wrapper
 
+
 class paramlist(list):
     # Only a class so that ivfunc can know what you want to do with it
     # Which is pass a list of parameters to use for each loop
     pass
+
 
 def paramfunc(func):
     # Wraps a function to identify itself to ivfunc as a function to be called on the data to determine input parameters
@@ -148,6 +150,7 @@ def find_data_arrays(data):
 
 @ivfunc
 def diffiv(data, stride=1, columns=None):
+    ''' Calculate first difference of arrays.'''
     if columns is None:
         columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
@@ -155,6 +158,10 @@ def diffiv(data, stride=1, columns=None):
     dataout = {c:diff for c,diff in zip(columns, diffarrays)}
     add_missing_keys(data, dataout)
     return dataout
+
+
+
+### Determine switching thresholds ###
 
 @ivfunc
 def thresholds_bydiff(data, stride=1):
@@ -169,11 +176,14 @@ def thresholds_bydiff(data, stride=1):
     # TODO: This is breaking the pattern of other ivfuncs -- list of dict will return list of series...
     return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
 
+
 @ivfunc
-def thresholds_bycrossing(data, column='I', thresh=0.5, direction=True):
+def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
     '''
     Determine threshold datapoint by the first to cross a certain value
     return the whole datastructure with the data arrays replaced by the value at the threshold point
+    If data in column is decreasing, specify direction=False
+    Return a new iv structure with the values at the threshold in place of data arrays
     '''
     # Find threshold
     if direction:
@@ -181,12 +191,62 @@ def thresholds_bycrossing(data, column='I', thresh=0.5, direction=True):
     else:
         threshside = np.where(data[column] <= thresh)
 
+
     if any(threshside[0]):
         index = threshside[0][0]
     else:
         index = np.nan
 
     return indexiv(data, index)
+
+@ivfunc
+def threshold_byderivative(data, threshold=None, interp=False, debug=False):
+    '''
+    Find thresholds by derivative method
+    Selects the first point where the derivative crosses the threshold
+    (Where the sign of dI/dV - threshold changes for the first time)
+    normalizing the threshold value by resistance is a good idea. (e.g. pass threshold=100 / R)
+    If interp=False, will return the nearest point in the actual dataset
+    '''
+    # I don't want the real dI/dV, because dV can be negative
+    # I will assume the array is ~equally spaced in voltage and use the mean value for dV
+    # slope will therefore be considered negative for decreasing voltages
+    dV = np.mean(np.abs(np.diff(data['V'])))
+    dI = np.diff(data['I'])
+
+    if threshold is None:
+        # TODO: guess a threshold based on histogram of dV/dI, maybe just a percentile or something
+        # TODO: Or try a fit for resistance and use a standard value normalized by resistance
+        raise Exception('Autothreshold not implemented!')
+
+    if interp:
+        raise Exception('Interpolation not implemented!')
+    else:
+        sideofthresh = np.sign(dI/dV - threshold)
+        index = np.where(np.diff(sideofthresh))
+        if any(index[0]):
+            # If side of threshold ever changed, use the first time
+            # Do I need to add one?
+            index = index[0][0] + 1
+        else:
+            index = np.nan
+
+        dataout = indexiv(data, index)
+
+    if debug:
+        # TODO: Make debug plots work when there are multiple curves passed. might be hard.
+        fig, ax = plt.subplots()
+        ax.plot(dI/dV)
+        ax.hlines(threshold, *ax.get_xlim())
+
+        plotiv(data)
+        scatter(dataout['V'], dataout['I'])
+
+    return dataout
+
+
+### End determine switching thresholds ###
+
 
 '''
 @ivfunc
@@ -232,6 +292,7 @@ def medfilt(data, window=5, columns=('I', 'V')):
     add_missing_keys(data, dataout)
     return dataout
 
+
 @ivfunc
 def decimate(data, factor=5, columns=('I', 'V')):
     ''' Decimate data arrays '''
@@ -251,6 +312,7 @@ def decimate(data, factor=5, columns=('I', 'V')):
     else:
         dataout['downsampling'] = factor
     return dataout
+
 
 @ivfunc
 def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
@@ -289,10 +351,12 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
     dataout['smoothimate_passes'] = passes
     return dataout
 
+
 @ivfunc
 def maketimearray(data):
     # TODO: need to account for any possible downsampling!
     return np.arange(len(data['V'])) * 1/data['sample_rate']
+
 
 @ivfunc
 def indexiv(data, index):
@@ -313,6 +377,7 @@ def indexiv(data, index):
 
     add_missing_keys(data, dataout)
     return dataout
+
 
 @ivfunc
 def sliceiv(data, stop=-1, start=0, step=1):
@@ -352,8 +417,6 @@ def slicefraction(data, stop=1/2, start=0, step=1):
     return dataout
 
 
-# NOT an ivfunc -- can only be called on single IV
-# Would it make sense to collapse a list of IVs into a flattened list of list of IVs?
 @ivfunc
 def split_by_crossing(data, V=0, increasing=True, hyspts=50):
     '''
@@ -389,6 +452,7 @@ def split_by_crossing(data, V=0, increasing=True, hyspts=50):
         outlist.append(splitloop)
 
     return outlist
+
 
 @ivfunc
 def splitbranch(data, columns=None):
@@ -436,9 +500,11 @@ def splitbranch(data, columns=None):
 
     return [branch1, branch2]
 
+
 def split_updown():
     ''' dunno I am sick of writing updown = splitbranch(data), up =updown[::2], down=updown[1::2]'''
     pass
+
 
 @ivfunc
 def splitiv(data, nloops=None, nsamples=None):
@@ -492,6 +558,7 @@ def concativ(data):
         return pd.Series(out)
     else:
         return out
+
 
 def meaniv(data, columns=None):
     '''
@@ -789,6 +856,7 @@ def pindex_fromlist(loops, column, indexlist):
             vals.append(l[column][int(i)])
     return np.array(vals)
 
+
 @ivfunc
 def pindex(data, column, index):
     '''
@@ -800,6 +868,7 @@ def pindex(data, column, index):
         return np.nan
     else:
         return data[column][index]
+
 
 @ivfunc
 def longest_monotonic(data, column='I'):
@@ -835,6 +904,7 @@ def longest_monotonic(data, column='I'):
 
     return dataout
 
+
 @ivfunc
 def normalize(data):
     ''' Normalize by the maximum current '''
@@ -846,10 +916,12 @@ def normalize(data):
         dataout['units']['I'] = 'Normalized'
     return dataout
 
+
 def add_missing_keys(datain, dataout):
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
+
 
 @ivfunc
 def resistance(data, v0=0.1, v1=None, x='V', y='I'):
@@ -880,34 +952,6 @@ def resistance(data, v0=0.1, v1=None, x='V', y='I'):
     return poly[0]
 
 
-"""
-# Lol I wrote nearly the same function twice, keeping it here to laugh at myself
-@ivfunc
-def polyfitiv(data, Vmax=None, Imax=None, Vmin=None, Imin=None, order=1, x='V', y='I'):
-    ''' Fit polynomials to range of voltage and current values '''
-    ones = np.ones(len(data[x]), dtype=bool)
-    if Vmin is None:
-        xminmask = ones
-    else:
-        xminmask = Vmin <= data[x]
-    if Vmax is None:
-        xmaxmask = ones
-    else:
-        xmaxmask = data[x] <= Vmax
-    if Imin is None:
-        yminmask = ones
-    else:
-        yminmask = Imin <= data[y]
-    if Imax is None:
-        ymaxmask = ones
-    else:
-        ymaxmask = data[y] <= Imax
-    mask = xminmask & xmaxmask & yminmask & ymaxmask
-    yfit = data[y][mask]
-    xfit = data[x][mask]
-    return np.polyfit(xfit, yfit, order)
-"""
-
 @ivfunc
 def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax=None):
     '''
@@ -930,11 +974,13 @@ def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax
 
     return pf
 
+
 @ivfunc
 def resistance_states(data, v0=0.1, v1=None):
     ''' Calculate resistance for increasing/decreasing branches '''
     RS1, RS2 = resistance(splitbranch(data), v0, v1)
     return [RS1, RS2]
+
 
 @ivfunc
 def convert_unit(column='I', prefix='u'):
@@ -955,8 +1001,10 @@ def downsample_dumb(data, nsamples, columns=None):
     add_missing_keys(data, dataout)
     return dataout
 
+
 def df_to_listofdicts(df):
     return df.to_dict('records')
+
 
 # These are not needed for pandas types obviously
 # Just trying to get some of that functionality into list of dicts
@@ -970,6 +1018,7 @@ def apply(data, func, column):
     dataout[column] = func(dataout[column])
     add_missing_keys(data, dataout)
     return dataout
+
 
 def insert(data, key, vals):
     '''
@@ -989,6 +1038,7 @@ def extract(data, key):
     Get array of values from list of dicts
     '''
     return array([d[key] for d in data])
+
 
 # I like typing smooth instead of Rolling/running/moving average/mean
 def smooth(x, N):
@@ -1016,16 +1066,19 @@ def smooth(x, N):
     else:
         return movingavg
 
+
 def smooth_conv(x, N, mode='valid'):
     ''' Smooth (moving avg) with convolution '''
     dtypein = type(x[0])
     return np.convolve(x, np.ones(N, dtype=dtypein)/dtypein(N), mode)
+
 
 @ivfunc
 def convert_to_uA(data):
     ''' Works in place and returns nothing.  Sorry for inconsistency'''
     data['I'] *= 1e6
     data['units']['I'] = '$\mu$A'
+
 
 @ivfunc
 def drop_arrays(data):

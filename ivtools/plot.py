@@ -57,6 +57,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
 
     return ax.plot(X, Y, **kwargs)[0]
 
+
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
@@ -128,6 +129,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', **kw
 
     return ax, line
 
+
 def auto_title(data, keys=None, ax=None):
     '''
     Label an axis to identify the device.
@@ -170,12 +172,14 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_xlabel('Cycle #')
     ax.set_ylabel('Resistance / $\\Omega$')
 
-def plot_span(data=None, ax=None):
+
+def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     '''
     Select index range from plot of some parameter vs index.  Plot the loops there.
     To use selector, just make sure you don't have any other gui widgets active
     Will remain active as long as the return value is not garbage collected
     Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
+    # TODO pass the plotting function (could be different than plotiv)
     '''
     if data is None:
         # Check for global variables ...
@@ -189,7 +193,7 @@ def plot_span(data=None, ax=None):
                 data = df
             except:
                 raise Exception('No data can be found')
-                
+
     if ax is None:
         ax = plt.gca()
     def onselect(xmin, xmax):
@@ -199,10 +203,60 @@ def plot_span(data=None, ax=None):
         n = xmax - xmin
         step = max(1, int(n / 1000))
         print('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
-        plotiv(data[xmin:xmax+1:step], alpha=.8)
+        plotfunc(data[xmin:xmax+1:step], **kwargs)
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
     return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
+
+
+def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
+              sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None, **kwargs):
+    '''
+    Plot y vs x for any number of parameters
+    Can choose a subset of the parameter values to plot, and the colors will be the same as if the
+    subset was not passed.  does that make any sense? sorry.
+    '''
+    fig, ax = plt.subplots()
+    fig.set_tight_layout(True)
+    if xlog:
+        ax.set_xscale('log')
+    if ylog:
+        ax.set_yscale('log')
+    if type(parameters) == str:
+        parameters = [parameters]
+    grp = df.groupby(parameters, sort=sortparams)
+    ngrps = len(grp)
+    colors = cmap(np.linspace(.1, .9, ngrps))
+    colordict = {k:c for k,c in zip(grp.groups.keys(), colors)}
+    for k, g in grp:
+        if paramvals is None or k in paramvals:
+            # Figure out how to label the lines
+            if type(k) == tuple:
+                if labelformatter is not None:
+                    label = labelformatter.format(*k)
+                else:
+                    label = ', '.join(map(str, k))
+            else:
+                if labelformatter is not None:
+                    label = labelformatter.format(k)
+                else:
+                    label = str(k)
+            plotkwargs = dict(color=colordict[k],
+                            marker='.',
+                            label=label)
+            plotkwargs.update(kwargs)
+            plotg = g.sort_values(by=x)
+            plt.plot(plotg[x], plotg[y], **plotkwargs)
+            if yerr is not None:
+                plt.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
+    if sparseticks:
+        # Only label the values present
+        ux = np.sort(df[x].unique())
+        ax.xaxis.set_ticks(ux)
+        ax.xaxis.set_ticklabels(ux)
+        ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    ax.legend(loc=0, title=', '.join(parameters))
+    return fig, ax
 
 
 def plot_channels(chdata, ax=None):
@@ -232,6 +286,7 @@ def plot_channels(chdata, ax=None):
     ax.legend(title='Channel')
     ax.set_xlabel('Data Point')
     ax.set_ylabel('Voltage [V]')
+
 
 def interactive_figures(n=2):
     # Determine nice place to put some plots, and make the figures
@@ -272,6 +327,7 @@ def interactive_figures(n=2):
 
     return (fig1, ax1), (fig2, ax2)
 
+
 def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0):
     '''
     Write set of ivloops to disk to make a movie which shows their evolution nicely
@@ -307,6 +363,7 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
         del ax.lines[-1]
         del ax.lines[-1]
+
 
 def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
     ''' Temporary name, make a movie showing iv loops as they are swept'''
@@ -367,6 +424,7 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
             # Remove the oldest loop
             del ax.lines[0:3]
 
+
 def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
     # Send command to create video with ffmpeg
     # TODO: have it recognize the file prefix
@@ -377,6 +435,7 @@ def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
             '-r {2} -pix_fmt yuv420p -crf 18 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
             '{4}.mp4').format(directory, fps, fps+5, prefix, outname)
     os.system(cmd)
+
 
 def mpfunc(x, pos):
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
@@ -409,6 +468,7 @@ def plot_log_reference_lines(ax, slope=-2):
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
+
 
 def plot_power_lines(pvals=(1e-9, 1e-8, 1e-7), ax=None):
     '''
