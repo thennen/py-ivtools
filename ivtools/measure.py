@@ -418,7 +418,7 @@ def close():
     rigol = None
 
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1):
+def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
     Duration determines the length of one repetition of waveform.
@@ -427,7 +427,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1):
     # Set up to capture for n times the duration of the pulse
     pico_capture(ch, freq=fs, duration=n*duration)
     # Pulse the waveform n times, this will trigger the picoscope capture.
-    pulse(waveform, duration, n=n)
+    pulse(waveform, duration, n=n, interp=interpwfm)
 
     data = get_data(ch)
 
@@ -543,7 +543,7 @@ def set_compliance(cc_value):
     global COMPLIANCE_CURRENT, INPUT_OFFSET
     if cc_value > 1e-3:
         raise Exception('Compliance value out of range! Max 1 mA.')
-    fn = 'compliance_calibration.pkl'
+    fn = 'c:/t/py-ivtools/compliance_calibration.pkl'
     print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
         cc = pickle.load(f)

@@ -51,9 +51,9 @@ subfolder = datestr
 print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
 makedatafolder()
 
-print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+def datadir():
+    return os.path.join(datafolder, subfolder)
 
-############# Logging  ###########################
 def getGitRevision():
     try:
         return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
@@ -62,6 +62,13 @@ def getGitRevision():
         return 'Dunno'
 
 gitrev = getGitRevision()
+
+print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+
+############# Logging  ###########################
+# Want IPython to save a log of input/output in the data directory
+# This code is supposed to transparently mirror ipython input/output as well as standard output to a file
+# However it's a bit of a hack and sometimes has problems when you run this script again (spyder crashes for example)
 
 magic = get_ipython().magic
 magic('logstop')
@@ -83,7 +90,7 @@ class Logger(object):
 
     def flush(self):
         self.log.flush()
-        # This needs to be here otherwise there's no line break somewhere.  Don't worry about it.
+        # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
         self.terminal.flush()
 try:
     # Close the previous file
@@ -94,6 +101,8 @@ logfile = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
 magic('logstart -o {} append'.format(logfile))
 logger = Logger()
 sys.stdout = logger
+
+############# End of Logging ###########################
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
 magic('matplotlib')
@@ -325,6 +334,14 @@ def load_lassen(**kwargs):
     lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
     # Merge data
     merge_deposition_data_on = ['coupon']
+
+    # If someone neglected to write the coupon number in the deposition sheet
+    # Merge the non-coupon specific portion of lassen_df
+    coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
+    non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
+    non_coupon_specific = lassen_df[lassen_df.coupon == 1][non_coupon_cols]
+    lassen_df = pd.concat((lassen_df, non_coupon_specific))
+
     meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
 
     # Check that function got valid arguments
