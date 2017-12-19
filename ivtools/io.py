@@ -1,10 +1,9 @@
 """ Functions for saving and loading data """
-# TODO: def read_txt, and make read_txts call it repeatedly
 from dotdict import dotdict
 import os
 import re
 import fnmatch
-from pandas import read_csv
+import pandas as pd
 import sys
 import numpy as np
 try:
@@ -52,7 +51,96 @@ def write_pickle(data, fp):
         pickle.dump(normaldict, f)
 
 
-def read_txts(directory, pattern, exclude=None, **kwargs):
+def read_txt(filepath, **kwargs):
+    '''
+    Function to read IV data from text files, trying to accomodate all the ridiculous formats I have encountered at IWEII.
+    All columns will be loaded, but can be renamed to a standard value such as 'I' and 'V', or to a more reasonable name.
+    Return pd.Series with additional information, like mtime, filepath, etc.
+    kwargs passes through to pd.readcsv, so you can pass decimal = ',' or sep=' ', etc..
+    '''
+    # Different headers
+    # Decimal commas instead of decimal points
+    # Inconsistent use of delimiters within one file
+    # Delimiters in the column names
+    # ...
+
+    # Here is a dict which constructs a mapping between various column names I have seen and a standard column name
+    colnamemap = {'I': ['Current Probe (A)', 'Current [A]'],
+                  'V': ['Voltage Source (V)', 'Voltage [V]'],
+                  'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
+                  't': ['time', 'Time [S]'],
+                  'Vmeasured': ['Voltage Probe (V)']}
+
+    # Default arguments for readcsv
+    readcsv_args = dict(sep='\t', decimal='.')
+    readcsv_args.update(kwargs)
+
+    # Need to do different things for different file formats
+    # Can't rely on file extensions.
+    # For now, read the first row of the file to determine readcsv arguments
+    with open(filepath, 'r') as f:
+        firstline = f.readline()
+        if firstline == '*********** I(V) ***********\n':
+            # From Lakeshore labview monstrosity
+            readcsv_args['skiprows'] = 8
+            more_header = []
+            for _ in range(7):
+                more_header.append(f.readline())
+            header = [firstline]
+            header.extend(more_header)
+            # Save this line to parse later
+            colname_line = more_header[-1]
+            # Single string version
+            header = ''.join(header)
+        else:
+            # Assume first row contains column names
+            # But cannot trust that they are properly delimited
+            readcsv_args['skiprows'] = 1
+            colname_line = firstline
+            header = firstline
+
+        # Try to split the colname line by the normal delimiter
+        splitnames = colname_line.strip().split(readcsv_args['sep'])
+
+        if len(splitnames) > 1:
+            # Probably these are the column names?
+            readcsv_args['names'] = splitnames
+        else:
+            # Another format that I have seen is like 'col name [unit]'
+            # with a random number of spaces interspersed. Split after ].
+            colnames = re.findall('[^\]]+\]', header)
+            readcsv_args['names'] = [c.strip() for c in colnames]
+
+    df = pd.read_csv(filepath, index_col=False, **readcsv_args)
+
+    # Rename recognized columns to standard names
+    dfcols = df.columns
+    for k in colnamemap:
+        if k not in dfcols:
+            # If a column is not already named with the standard name
+            for altname in colnamemap[k]:
+                if altname in dfcols:
+                    df.rename(columns={altname:k}, inplace=True)
+
+    # My preferred format for a single IV loop is a dict with arrays and scalars and whatever else
+    # Pandas equivalent is a pd.Series.
+
+    longnames = {'I':'Current', 'V':'Voltage', 't':'Time', 'T':'Temperature'}
+    # Note that the unit names are simply assumed here -- no attempt to read the units from the file
+    units = {'I':'A', 'V':'V', 't':'s', 'T':'K'}
+
+    dataout = {k:df[k].as_matrix() for k in df.columns}
+    dataout['mtime'] = os.path.getmtime(filepath)
+    dataout['units'] = {k:v for k,v in units.items() if k in dataout.keys()}
+    dataout['longnames'] = {k:v for k,v in longnames.items() if k in dataout.keys()}
+    dataout['filepath'] = os.path.abspath(filepath)
+    dataout['header'] = header
+
+    return pd.Series(dataout)
+
+
+
+def read_txts(directory, pattern='*', exclude=None, **kwargs):
     ''' Load list of loops from separate text files. Specify files by glob
     pattern.  kwargs are passed to loadtxt'''
     pattern = pattern.join('**')
@@ -67,7 +155,7 @@ def read_txts(directory, pattern, exclude=None, **kwargs):
     try:
         fnames.sort(key=lambda fn: int(splitext(fn.split('_')[-1])[0]))
     except:
-        print('Failed to sort files by file number. Sorting by mtime.')
+        print('Failed to sort files by file number. Sorting by mtime instead.')
         fnames.sort(key=lambda fn: os.path.getmtime(pjoin(directory, fn)))
 
     print('Loading the following files:')
@@ -75,83 +163,10 @@ def read_txts(directory, pattern, exclude=None, **kwargs):
 
     fpaths = [pjoin(directory, fn) for fn in fnames]
 
-    ### List of np arrays version ..
-    # Load all the data
-    # loadtxt_args = {'unpack':True,
-    #                 'usecols':(0,1),
-    #                 'delimiter':'\t',
-    #                 'skiprows':1}
-    # loadtxt_args.update(kwargs)
-    # return [np.loadtxt(fp, **loadtxt_args) for fp in fpaths]
-
-    ### Array of DataFrames version
-    readcsv_args = dict(sep='\t', decimal='.')
-    readcsv_args.update(kwargs)
-    def txt_iter():
-        # Iterate through text files, load data, and modify in some way
-        # Using pandas here only because its read_csv can handle comma decimals easily..
-        # Will convert back to numpy arrays.
-        for fp in fpaths:
-            # TODO: Guess which column has Voltage and Current based on various
-            # different names people give them.  Here it seems the situation
-            # is very bad and sometimes there are no delimiters in the header.
-            # Even this is not consistent.
-
-            # For now, read the first row and try to make sense of it
-            with open(fp, 'r') as f:
-                header = f.readline()
-                if header == '*********** I(V) ***********\n':
-                    skiprows = 8
-                    for _ in range(7):
-                        header = f.readline()
-                else:
-                    skiprows = 1
-                # Try to split it by the normal delimiter
-                splitheader = header.split(readcsv_args['sep'])
-                if len(splitheader) > 1:
-                    # Probably these are the column names?
-                    colnames = splitheader
-                else:
-                    # The other format that I have seen is like 'col name [unit]'
-                    # with a random number of spaces interspersed. Split after ].
-                    colnames = re.findall('[^\]]+\]', header)
-                    colnames = [c.strip() for c in colnames]
-
-            df = read_csv(fp, skiprows=skiprows, names=colnames, index_col=False, **readcsv_args)
-
-            # These will be recognized as the Voltage and Current columns
-            Vnames = ['Voltage Source (V)', 'Voltage [V]']
-            Inames = ['Current Probe (A)', 'Current [A]']
-            # Rename columns
-            dfcols = df.columns
-            if 'V' not in dfcols:
-                for Vn in Vnames:
-                    if Vn in dfcols:
-                        df.rename(columns={Vn:'V'}, inplace=True)
-            if 'I' not in dfcols:
-                for In in Inames:
-                    if In in dfcols:
-                        df.rename(columns={In:'I'}, inplace=True)
-            yield df
-    # Have to make an intermediate list?  Hopefully this does not take too much time/memory
-    # Probably it is not a lot of data if it came from a csv ....
-    # This doesn't work because it tries to cast each dataframe into an array first ...
-    #return np.array(list(txt_iter()))
-    #return (list(txt_iter()), dict(source_directory=directory), [dict(filepath=fp) for fp in fpaths])
     datalist = []
-    for i, (fp, df) in enumerate(zip(fpaths, txt_iter())):
-        mtime = os.path.getmtime(fp)
-        ctime = os.path.getctime(fp)
-        longnames = {'I':'Current', 'V':'Voltage'}
-        units = {'I':'A', 'V':'V'}
-        dd = dict(I=np.array(df['I']), V=np.array(df['V']), filepath=fp,
-                  mtime=mtime, ctime=ctime, units=units, longnames=longnames,
-                  index=i)
-        datalist.append(dd)
+    for fp in fpaths:
+        datalist.append(read_txt(fp, **kwargs))
 
-    # regular dict version
-    #iv = np.array([{'I':np.array(df['I']), 'V':np.array(df['V']), 'filepath':fp} for fp, df in zip(fpaths, txt_iter())])
-    #return dotdict(iv=iv, source_dir=directory)
     return pd.DataFrame(datalist)
 
 
