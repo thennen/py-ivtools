@@ -646,6 +646,7 @@ def reversearrays(data, columns=None):
     add_missing_keys(data, dataout)
     return dataout
 
+
 @ivfunc
 def diffsign(data, column='V'):
     '''
@@ -657,8 +658,17 @@ def diffsign(data, column='V'):
     return np.append(direction, direction[-1])
 
 
+@ivfunc
+def nanmask(data, column='I', value=9.9100000000000005e+37):
+    ''' Replace a value with nan.  Wrote this for replacing keithley special nan value ..'''
+    mask = data[column] == value
+    dataout = data.copy()
+    dataout[column][mask] = np.nan
+    return dataout
+
 # I guess a func that just calls ivfuncs doesn't need to be an ivfunc itself
 #@ivfunc
+
 def decreasing(data, column='V', sort=False):
     decreased = indexiv(data, lambda l: diffsign(l, column) < 0)
     if sort:

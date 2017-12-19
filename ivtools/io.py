@@ -136,6 +136,10 @@ def read_txt(filepath, **kwargs):
     dataout['filepath'] = os.path.abspath(filepath)
     dataout['header'] = header
 
+    # Replace Keithley nan values with real nans
+    nanmask = dataout['I'] == 9.9100000000000005e+37
+    dataout['I'][nanmask] = np.nan
+
     return pd.Series(dataout)
 
 
