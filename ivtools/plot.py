@@ -272,7 +272,14 @@ def interactive_figures(n=2):
 
     return (fig1, ax1), (fig2, ax2)
 
-def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0):
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', **kwargs):
+    ''' Usually you need a "mappable" to create a colormap on a plot.  This function lets you create one manually. '''
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    plt.colorbar(sm, **kwargs)
+
+def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0, title=None):
     '''
     Write set of ivloops to disk to make a movie which shows their evolution nicely
     I rewrote this ten times before decided to make it a function
@@ -284,7 +291,7 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
     fig.set_tight_layout(True)
     if shadow:
         # Plot them all on top of each other transparently for reference
-        plotiv(data, color='gray', linewidth=.5, alpha=.05, ax=ax)
+        plotiv(data, color='gray', linewidth=.5, alpha=.03, ax=ax)
     #colors = plt.cm.rainbow(arange(len(data))/len(data))
     colors = ['black'] * len(data)
     if extent is not None:
@@ -297,13 +304,21 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
     for i,l in thingtoloop:
         if splitbranch:
             # Split branches
-            plotiv(increasing(l, sort=True), ax=ax, color='C0', label=r'$\rightarrow$')
-            plotiv(decreasing(l, sort=True), ax=ax, color='C2', label=r'$\leftarrow$')
-            legend(title='Sweep Direction')
+            colorup = 'Red'
+            colordown = 'DarkBlue'
+            plotiv(increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$')
+            plotiv(decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$')
+            ax.legend(title='Sweep Direction')
         else:
             # Colors will mess up if you pass a dataframe with non range(0, ..) index
             plotiv(l, ax=ax, color=colors[i])
-        title('Loop {}'.format(i+startloopnum))
+        if title is None:
+            ax.set_title('Loop {}'.format(i+startloopnum))
+        else:
+            # Make title from the key indicated in argument
+            # Could make it a function and then call the function on the data
+            # Yeah let's do that
+            ax.set_title(title(l))
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
         del ax.lines[-1]
         del ax.lines[-1]

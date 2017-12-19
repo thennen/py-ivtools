@@ -217,6 +217,7 @@ def write_matlab(data, filepath, varname=None, compress=True):
 
 def write_csv(data, filepath, columns=['I', 'V']):
     # For true dinosaurs
+    pass
 
 
 def read_matlab(filepath):

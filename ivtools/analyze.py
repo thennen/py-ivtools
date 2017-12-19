@@ -429,7 +429,7 @@ def splitiv(data, nloops=None, nsamples=None):
     if nsamples is None:
         raise Exception('You must pass nloops or nsamples')
     # nsamples need not be an integer.  Will correct for extra time.
-    trigger = [int(n) for n in arange(0, l, nsamples)]
+    trigger = [int(n) for n in np.arange(0, l, nsamples)]
     # If array is not evenly split, return the last fragment as well
     if trigger[-1] != l - 1:
         trigger.append(l - 1)
