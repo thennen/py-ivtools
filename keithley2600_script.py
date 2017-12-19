@@ -144,9 +144,14 @@ def run_lua_lines(lines):
     k.write('endscript')
 
 
-# Run the lua file on keithley
-with open('lua/Keithley_2600.lua', 'r') as kfile:
-    run_lua_lines(kfile.readlines())
+def run_lua_file(filepath):
+    ''' Send the contents of a file to Keithley lua interpreter '''
+    with open(filepath, 'r') as kfile:
+        run_lua_lines(kfile.readlines())
+
+
+# Run the separatue lua file on keithley
+run_lua_file('lua/Keithley_2600.lua')
 
 
 def send_list_to_keithley(list_in, varname='pythonlist'):
