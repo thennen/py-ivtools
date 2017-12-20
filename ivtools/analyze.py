@@ -68,6 +68,9 @@ def ivfunc(func):
                     df_out = pd.DataFrame(resultlist)
                     df_out.index = data.index
                     return df_out
+            elif all([r is None for r in resultlist]):
+                # If ivfunc returns nothing, return nothing
+                return None
             # For all other cases
             # Keep the index the same!
             series_out = pd.Series(resultlist)
@@ -90,6 +93,9 @@ def ivfunc(func):
                     # Each iv dict returns a list of numbers
                     # "Unpack" them
                     return list(zip(*resultlist))
+            elif all([r is None for r in resultlist]):
+                # If ivfunc returns nothing, return nothing
+                return None
             # For all other return types
             return resultlist
         elif dtype is pd.Series:
@@ -160,7 +166,6 @@ def diffiv(data, stride=1, columns=None):
     return dataout
 
 
-
 ### Determine switching thresholds ###
 
 @ivfunc
@@ -168,13 +173,19 @@ def thresholds_bydiff(data, stride=1):
     ''' Find switching thresholds by finding the maximum differences. '''
     diffI = data['I'][stride:] - data['I'][:-stride]
     argmaxdiffI = np.argmax(diffI)
-    vset = data['V'][argmaxdiffI]
-    maxdiffI = diffI[argmaxdiffI]
-    argmindiffI = np.argmin(diffI)
-    vreset = data['V'][argmindiffI]
-    mindiffI = diffI[argmindiffI]
+
+    #vset = data['V'][argmaxdiffI]
+    #maxdiffI = diffI[argmaxdiffI]
+    #argmindiffI = np.argmin(diffI)
+    #vreset = data['V'][argmindiffI]
+    #mindiffI = diffI[argmindiffI]
     # TODO: This is breaking the pattern of other ivfuncs -- list of dict will return list of series...
-    return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
+    #return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
+
+    return indexiv(data, argmaxdiffI)
+
+
+
 
 
 @ivfunc
@@ -198,6 +209,7 @@ def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
         index = np.nan
 
     return indexiv(data, index)
+
 
 @ivfunc
 def threshold_byderivative(data, threshold=None, interp=False, debug=False):
@@ -234,13 +246,15 @@ def threshold_byderivative(data, threshold=None, interp=False, debug=False):
         dataout = indexiv(data, index)
 
     if debug:
-        # TODO: Make debug plots work when there are multiple curves passed. might be hard.
-        fig, ax = plt.subplots()
+        #fig, ax = plt.subplots()
+        ax = plt.gca()
         ax.plot(dI/dV)
-        ax.hlines(threshold, *ax.get_xlim())
+        xmin, xmax = ax.get_xlim()
+        ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
+        ax.set_xlim(xmin, xmax)
 
-        plotiv(data)
-        scatter(dataout['V'], dataout['I'])
+        #plotiv(data)
+        #scatter(dataout['V'], dataout['I'])
 
     return dataout
 
@@ -1015,6 +1029,32 @@ def downsample_dumb(data, nsamples, columns=None):
 def df_to_listofdicts(df):
     return df.to_dict('records')
 
+
+@ivfunc
+def set_dict_kv(data, dictname, key, value):
+    '''
+    Set a dict key:value pair for all dicts in iv list.
+    basically setting second level k:v for nested dicts
+    i.e. set_dict_kv(df, 'longnames', 'T', 'Temperature')
+    '''
+    # TODO: test if dict is in data or not
+    data[dictname][key] = value
+
+def set_unit(data, name, unit):
+    set_dict_kv(data, 'units', name, unit)
+
+def set_longname(data, name, longname):
+    set_dict_kv(data, 'longnames', name, longname)
+
+def set_unit_info(data, colname, unit=None, longname=None):
+    '''
+    Set information about the units in a column (array)
+    This information can then be used to label plots automatically
+    '''
+    if unit is not None:
+        set_dict_kv(data, 'longnames', colname, longname)
+    if longname is not None:
+        set_dict_kv(data, 'units', colname, unit)
 
 # These are not needed for pandas types obviously
 # Just trying to get some of that functionality into list of dicts
