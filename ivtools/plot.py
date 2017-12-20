@@ -332,13 +332,14 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', **kwargs):
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    plt.colorbar(sm, **kwargs)
+    cb = plt.colorbar(sm, **kwargs)
+    return cb
 
-def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0, title=None):
+def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0, title=None, axfunc=None, **kwargs):
     '''
     Write set of ivloops to disk to make a movie which shows their evolution nicely
-    I rewrote this ten times before decided to make it a function
-    probably there's a better version in ipython history
+    axfunc gets called on the axis every frame -- if you want to modify it in some way
+    kwargs get passed through to plotiv, which can get passed through to plt.plot
     '''
     if not os.path.isdir(directory):
         os.makedirs(directory)
@@ -361,12 +362,12 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             # Split branches
             colorup = 'Red'
             colordown = 'DarkBlue'
-            plotiv(increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$')
-            plotiv(decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$')
+            plotiv(increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
+            plotiv(decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
             ax.legend(title='Sweep Direction')
         else:
             # Colors will mess up if you pass a dataframe with non range(0, ..) index
-            plotiv(l, ax=ax, color=colors[i])
+            plotiv(l, ax=ax, color=colors[i], **kwargs)
         if title is None:
             ax.set_title('Loop {}'.format(i+startloopnum))
         else:
@@ -374,6 +375,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             # Could make it a function and then call the function on the data
             # Yeah let's do that
             ax.set_title(title(l))
+        if axfunc is not None:
+            axfunc(ax)
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
         del ax.lines[-1]
         del ax.lines[-1]
@@ -484,7 +487,7 @@ def plot_log_reference_lines(ax, slope=-2):
     ax.set_ylim(*ylims)
 
 
-def plot_power_lines(pvals=(1e-9, 1e-8, 1e-7), ax=None):
+def plot_power_lines(pvals=None, ax=None):
     '''
     Plot lines of constant power on the indicated axis  (should be I vs V)
     TODO: Label power values
@@ -492,7 +495,23 @@ def plot_power_lines(pvals=(1e-9, 1e-8, 1e-7), ax=None):
     '''
     if ax is None:
         ax = plt.gca()
+
     x0, x1 = ax.get_xlim()
+    y0, y1 = ax.get_ylim()
+
+    if pvals is None:
+        # Determine power range from axis limits
+        minp = x0 * y0
+        maxp = x1 * y1
+        if (ax.get_yscale() == 'log') or (ax.get_xscale() == 'log'):
+            if minp < 0:
+                # Sometimes scale of axis includes negative powers.  Data shouldn't.
+                # Assuming here the voltage axis is the problem.  Might need to fix it later.
+                minp = y0 * (x0 + 0.1 * (x1 - x0))
+            pvals = np.logspace(np.log10(minp), np.log10(maxp), 10)[1:-1]
+        else:
+            pvals = np.linspace(minp, maxp, 10)[1:-1]
+
     # Easiest to space equally in x.  Could change this later so that high slope areas get enough data points.
     x = linspace(x0, x1, 1000)
     #pvals = linspace(pmin, pmax, nlines)
