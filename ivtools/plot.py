@@ -347,7 +347,7 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
     fig.set_tight_layout(True)
     if shadow:
         # Plot them all on top of each other transparently for reference
-        plotiv(data, color='gray', linewidth=.5, alpha=.03, ax=ax)
+        plotiv(data, color='gray', linewidth=.5, alpha=.03, ax=ax, **kwargs)
     #colors = plt.cm.rainbow(arange(len(data))/len(data))
     colors = ['black'] * len(data)
     if extent is not None:
