@@ -295,15 +295,17 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
 # TODO: turn these into a class, since the code will not change very often
 # There is at least one python library for DG5000, but I could not get it to run.
 
+def rigol_shape(shape='SIN', ch=1):
+    '''
+    Change the waveform shape to a built-in value. Possible values are:
+    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
+    '''
+    rigol.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
+
 def rigol_outputstate(state=True, ch=1):
     ''' Turn output state on or off '''
     statestr = 'ON' if state else 'OFF'
     rigol.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
-
-def rigol_interp(interp=True):
-    ''' Set AWG datapoint interpolation mode '''
-    modestr = 'LIN' if interp else 'OFF'
-    rigol.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
 
 def rigol_frequency(freq, ch=1):
     ''' Set frequency of AWG waveform.  Not the sample rate! '''
@@ -316,6 +318,31 @@ def rigol_amplitude(amp, ch=1):
 def rigol_offset(offset, ch=1):
     ''' Set offset of AWG waveform '''
     rigol.write(':SOURCE{}:VOLT:OFFS {}'.format(ch, offset))
+
+def rigol_output_resistance(r=50, ch=1):
+    ''' Manual says you can change output resistance from 1 to 10k ''' 
+    rigol.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
+
+def rigol_sync(state=True):
+    ''' Can turn on/off the sync output (on rear) '''
+    statestr = 'ON' if state else 'OFF'
+    rigol.write('OUTPUT{}:SYNC ' + statestr)
+
+def rigol_screensaver(state=False):
+    ''' Turn the screensaver on or off.  Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
+    statestr = 'ON' if state else 'OFF'
+    rigol.write(':DISP:SAV ' + statestr)
+
+
+def rigol_ramp_symmetry(percent=50, ch=1):
+    ''' Change the symmetry of a ramp output. Refers to the sweep rates of increasing/decreasing ramps. '''
+    rigol.write('SOURCE{}:FUNC:RAMP:SYMM {}'.format(ch, percent))
+
+def rigol_dutycycle(percent=50, ch=1):
+    ''' Change the duty cycle of a square output. '''
+    rigol.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
+
+# <<<<< For burst mode
 
 def rigol_ncycles(n, ch=1):
     ''' Set number of cycles that will be output in burst mode '''
@@ -336,26 +363,12 @@ def rigol_burstmode(mode='TRIG', ch=1):
     '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
     rigol.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
 
-def rigol_waveform(shape='SIN', ch=1):
-    '''
-    Change the waveform shape to a built-in value. Possible values are:
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-    rigol.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
-
-def rigol_output_resistance(r=50, ch=1):
-    ''' Manual says you can change output resistance from 1 to 10k ''' 
-    rigol.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
-
-def rigol_sync(state=True):
-    ''' Can turn on/off the sync output (on rear) '''
+def rigol_burst(state=True, ch=1):
+    ''' Turn the burst mode on or off '''
     statestr = 'ON' if state else 'OFF'
-    rigol.write('OUTPUT{}:SYNC ' + statestr)
+    rigol.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
 
-def rigol_screensaver(state=False):
-    ''' Turn the screensaver on or off.  Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':DISP:SAV ' + statestr)
+# End for burst mode >>>>>
 
 def rigol_load_wfm(waveform):
     '''
@@ -377,10 +390,11 @@ def rigol_load_wfm(waveform):
     # This command switches out of burst mode for some stupid reason
     rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
 
-def rigol_burst(state=True, ch=1):
-    ''' Turn the burst mode on or off '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
+def rigol_interp(interp=True):
+    ''' Set AWG datapoint interpolation mode '''
+    modestr = 'LIN' if interp else 'OFF'
+    rigol.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
+
 
 def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
     '''
