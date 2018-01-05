@@ -166,13 +166,24 @@ def diffiv(data, stride=1, columns=None):
     return dataout
 
 
-### Determine switching thresholds ###
+### Determine "switching" thresholds ###
+# Basically use some criteria to identify a single point on the IV curve
+# having the data point index is useful, so there's a separate function for doing that
+# TODO: rename things (don't use the word threshold) for the general concept of choosing a datapoint
+# select?
+
+@ivfunc
+def select_by_maxdiff(data, column='I', stride=1):
+    ''' Find switching thresholds by finding the maximum differences. '''
+    diff = data[column][stride:] - data[column][:-stride]
+    argmaxdiff = np.argmax(diff)
+
+    return argmaxdiff
 
 @ivfunc
 def thresholds_bydiff(data, stride=1):
     ''' Find switching thresholds by finding the maximum differences. '''
-    diffI = data['I'][stride:] - data['I'][:-stride]
-    argmaxdiffI = np.argmax(diffI)
+    argmaxdiffI = select_by_maxdiff(data, column='I', stride=stride)
 
     #vset = data['V'][argmaxdiffI]
     #maxdiffI = diffI[argmaxdiffI]
@@ -185,13 +196,10 @@ def thresholds_bydiff(data, stride=1):
     return indexiv(data, argmaxdiffI)
 
 
-
-
-
 @ivfunc
-def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
+def select_by_crossing(data, column='I', thresh=0.5, direction=True):
     '''
-    Determine threshold datapoint by the first to cross a certain value
+    Determine threshold datapoint index the first to cross a certain value
     return the whole datastructure with the data arrays replaced by the value at the threshold point
     If data in column is decreasing, specify direction=False
     Return a new iv structure with the values at the threshold in place of data arrays
@@ -208,19 +216,29 @@ def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
     else:
         index = np.nan
 
+    return index
+
+
+@ivfunc
+def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
+    '''
+    Determine threshold datapoint by the first to cross a certain value
+    return the whole datastructure with the data arrays replaced by the value at the threshold point
+    If data in column is decreasing, specify direction=False
+    Return a new iv structure with the values at the threshold in place of data arrays
+    '''
+    index = select_by_crossing(data, column=column, thresh=thresh, direction=direction)
     return indexiv(data, index)
 
 
 @ivfunc
-def threshold_byderivative(data, threshold=None, interp=False, debug=False):
+def select_by_derivative(data, threshold=None, debug=False):
     '''
-    Find thresholds by derivative method
-    Selects the first point where the derivative crosses the threshold
+    Selects the first point where the derivative dI/dV crosses the threshold
     (Where the sign of dI/dV - threshold changes for the first time)
     normalizing the threshold value by resistance is a good idea. (e.g. pass threshold=100 / R)
-    If interp=False, will return the nearest point in the actual dataset
     '''
-    # I don't want the real dI/dV, because dV can be negative
+    # I don't want the real dI/dV, because dV can be close to zero, or negative on a transition due to source resistance.
     # I will assume the array is ~equally spaced in voltage and use the mean value for dV
     # slope will therefore be considered negative for decreasing voltages
     dV = np.mean(np.abs(np.diff(data['V'])))
@@ -231,32 +249,54 @@ def threshold_byderivative(data, threshold=None, interp=False, debug=False):
         # TODO: Or try a fit for resistance and use a standard value normalized by resistance
         raise Exception('Autothreshold not implemented!')
 
-    if interp:
-        raise Exception('Interpolation not implemented!')
+    sideofthresh = np.sign(dI/dV - threshold)
+    index = np.where(np.diff(sideofthresh))
+    if any(index[0]):
+        # If side of threshold ever changed, use the first time
+        # Do I need to add one?
+        index = index[0][0] + 1
     else:
-        sideofthresh = np.sign(dI/dV - threshold)
-        index = np.where(np.diff(sideofthresh))
-        if any(index[0]):
-            # If side of threshold ever changed, use the first time
-            # Do I need to add one?
-            index = index[0][0] + 1
-        else:
-            index = np.nan
+        index = np.nan
 
-        dataout = indexiv(data, index)
-
-    if debug:
+    ax = plt.gca()
+    if debug == 1:
+        # Don't make a figure because this function gets called for every row.  Need to make an empty figure manually
         #fig, ax = plt.subplots()
-        ax = plt.gca()
         ax.plot(dI/dV)
         xmin, xmax = ax.get_xlim()
         ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
         ax.set_xlim(xmin, xmax)
+    elif debug == 2:
+        plotiv(data, ax=ax)
+        ax.scatter(data['V'][index], data['I'][index])
 
-        #plotiv(data)
-        #scatter(dataout['V'], dataout['I'])
+    return index
+
+
+@ivfunc
+def threshold_byderivative(data, threshold=None, interp=False, debug=False):
+    '''
+    Find thresholds by derivative method
+    Selects the first point where the derivative crosses the threshold
+    (Where the sign of dI/dV - threshold changes for the first time)
+    normalizing the threshold value by resistance is a good idea. (e.g. pass threshold=100 / R)
+    If interp=False, will return the nearest point in the actual dataset
+    interp=True is not implemented yet.
+    '''
+    if interp:
+        raise Exception('Interpolation not implemented')
+    else:
+        index = select_by_derivative(data, threshold=threshold, debug=debug)
+
+    dataout = indexiv(data, index)
+
 
     return dataout
+
+@ivfunc
+def select_from_func():
+    ''' Select data index by function '''
+    pass
 
 
 ### End determine switching thresholds ###
@@ -844,8 +884,7 @@ def pindex(loop, column, index):
 '''
 
 # These are dumb names.  Supposed to be pindex for parallel index
-# just gets a single value of a single column determined by a function
-
+# What it is doing is indexing a single column of multiple dicts (dataframe) at the same time
 
 @ivfunc
 def pindex_fromfunc(loop, column, indexfunc):
