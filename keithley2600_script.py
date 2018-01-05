@@ -15,6 +15,9 @@ Python language interactively.
 Author: Tyler Hennen 2017
 '''
 
+#TODO: have liveplotter only receive chunks of data it hasn't already received.  Communication of arrays is ridiculously slow even over ethernet
+#TODO: find a nice way to share common code with other measurement setups
+
 import visa
 import matplotlib as mpl
 import pandas as pd
