@@ -291,15 +291,80 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
     ps.runBlock(pretrig)
     return freq
 
+### These directly wrap SCPI commands that can be sent to the rigol AWG
+# TODO: turn these into a class, since the code will not change very often
+# There is at least one python library for DG5000, but I could not get it to run.
 
-def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
-    '''
-    Load waveform into volatile memory, but don't trigger
-    '''
-    if len(waveform) > 512e3:
-        raise Exception('Too many samples requested for rigol AWG (probably?)')
+def rigol_outputstate(state=True, ch=1):
+    ''' Turn output state on or off '''
+    statestr = 'ON' if state else 'OFF'
+    rigol.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
 
-    # Rigol uses stupid SCPI commands.
+def rigol_interp(interp=True):
+    ''' Set AWG datapoint interpolation mode '''
+    modestr = 'LIN' if interp else 'OFF'
+    rigol.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
+
+def rigol_frequency(freq, ch=1):
+    ''' Set frequency of AWG waveform.  Not the sample rate! '''
+    rigol.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
+
+def rigol_amplitude(amp, ch=1):
+    ''' Set amplitude of AWG waveform '''
+    rigol.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, amp))
+
+def rigol_offset(offset, ch=1):
+    ''' Set offset of AWG waveform '''
+    rigol.write(':SOURCE{}:VOLT:OFFS {}'.format(ch, offset))
+
+def rigol_ncycles(n, ch=1):
+    ''' Set number of cycles that will be output in burst mode '''
+    rigol.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
+
+def rigol_trigsource(source='MAN', ch=1):
+    ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
+    rigol.write(':SOURCE{}:BURST:TRIG:SOURCE {}'.format(ch, source))
+
+def rigol_trigger(ch=1):
+    '''
+    Send signal to rigol to trigger immediately.  Make sure that trigsource is set to MAN:
+    rigol_trigsource('MAN')
+    '''
+    rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
+
+def rigol_burstmode(mode='TRIG', ch=1):
+    '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
+    rigol.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
+
+def rigol_waveform(shape='SIN', ch=1):
+    '''
+    Change the waveform shape to a built-in value. Possible values are:
+    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
+    '''
+    rigol.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
+
+def rigol_output_resistance(r=50, ch=1):
+    ''' Manual says you can change output resistance from 1 to 10k ''' 
+    rigol.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
+
+def rigol_sync(state=True):
+    ''' Can turn on/off the sync output (on rear) '''
+    statestr = 'ON' if state else 'OFF'
+    rigol.write('OUTPUT{}:SYNC ' + statestr)
+
+def rigol_screensaver(state=False):
+    ''' Turn the screensaver on or off.  Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
+    statestr = 'ON' if state else 'OFF'
+    rigol.write(':DISP:SAV ' + statestr)
+
+def rigol_load_wfm(waveform):
+    '''
+    Load some data as an arbitrary waveform to be output.
+    Data will be normalized.  Use rigol_amplitude to set the amplitude.
+    Make sure that the output is off, because the command switches out of burst mode and will start outputting immediately.
+    '''
+    # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
+    # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
     # Construct a string out of the waveform
     waveform = np.array(waveform, dtype=np.float32)
     maxamp = np.max(np.abs(waveform))
@@ -309,7 +374,20 @@ def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
         # Not a valid waveform anyway .. rigol will beep
         normwaveform = waveform
     wfm_str = ','.join([str(w) for w in normwaveform])
-    freq = 1 / duration
+    # This command switches out of burst mode for some stupid reason
+    rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
+
+def rigol_burst(state=True, ch=1):
+    ''' Turn the burst mode on or off '''
+    statestr = 'ON' if state else 'OFF'
+    rigol.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
+
+def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
+    '''
+    Load waveform into volatile memory, but don't trigger
+    '''
+    if len(waveform) > 512e3:
+        raise Exception('Too many samples requested for rigol AWG (probably?)')
 
     # toggling output state is slow, clunky, annoying, and should not be necessary.
     # it might also cause some spikes that could damage the device.
@@ -318,36 +396,25 @@ def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
     # out of burst mode automatically.  If the output is still enabled, you will get a
     # continuous pulse train until you can get back into burst mode.
     # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
-    rigol.write(':OUTPUT:STATE OFF')
+    rigol_outputstate(False, ch=ch)
     #
-    # Turn off screen saver.  It sends a premature pulse on SYNC if on..  Really dumb.
-    rigol.write(':DISP:SAV OFF')
-    time.sleep(.01)
-    # Manual says you can change output resistance from 1 to 10k
-    #rigol.write('OUTPUT{}:IMPEDANCE 50'.format(ch))
-    # Can turn on/off the sync output (on rear)
-    #rigol.write('OUTPUT{}:SYNC ON')
-    if interp==True:
-        # Turn on interpolation for IVs
-        rigol.write(':DATA:POIN:INT LIN')
-    elif interp==False:
-        # Turn off interpolation for steps
-        rigol.write(':DATA:POIN:INT OFF')
+    # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
+    # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
+    rigol_screensaver(False)
+    #time.sleep(.01)
+    # Turn on interpolation for IVs, off for steps
+    rigol_interp(interp)
     # This command switches out of burst mode for some stupid reason
-    rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
-    rigol.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
-    rigol.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, 2*maxamp))
-    rigol.write(':SOURCE{}:BURST:MODE TRIG'.format(ch))
-    rigol.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
-    rigol.write(':SOURCE{}:BURST:TRIG:SOURCE MAN'.format(ch))
-    rigol.write(':SOURCE{}:BURST:STATE ON'.format(ch))
-    rigol.write(':OUTPUT{}:STATE ON'.format(ch))
-    # Enable screensaver again because it makes me feel good
-    #rigol.write(':DISP:SAV ON')
-
-def trigger_rigol(ch=1):
-    ''' Send signal to rigol to trigger immediately'''
-    rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
+    rigol_load_wfm(waveform)
+    freq = 1. / duration
+    rigol_frequency(freq, ch=ch)
+    maxamp = np.max(np.abs(waveform))
+    rigol_amplitude(2*maxamp, ch=ch)
+    rigol_burstmode('TRIG', ch=ch)
+    rigol_ncycles(n, ch=ch)
+    rigol_trigsource('MAN', ch=ch)
+    rigol_burst(True, ch=ch)
+    rigol_outputstate(True, ch=ch)
 
 
 def pulse(waveform, duration, n=1, ch=1, interp=True):
@@ -360,7 +427,7 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     # Load waveform
     load_volatile_wfm(waveform, duration, n, ch, interp)
     # Trigger rigol
-    trigger_rigol(ch=1)
+    rigol_trigger(ch=1)
 
 
 def get_data(ch='A', raw=False, dtype=np.float32):
@@ -662,7 +729,7 @@ def measure_compliance():
     # Then current at compliance circuit input has to be ~zero
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
     ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol.write(':OUTPUT:STATE OFF')
+    rigol_outputstate(False)
     time.sleep(.1)
     # Immediately capture some samples on channels A and B
     pico_capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1)
@@ -877,4 +944,3 @@ def digital_out(ch, val):
     #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
     ul.d_config_bit(0, DigitalPortType.AUXPORT, 8, DigitalIODirection.OUT)
     ul.d_bit_out(0, DigitalPortType.AUXPORT, ch, val)
-
