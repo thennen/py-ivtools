@@ -6,8 +6,11 @@ from dotdict import dotdict
 import pandas as pd
 from matplotlib.widgets import SpanSelector
 
-def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
-    ''' Plot an array vs another array contained in iv object '''
+def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
+    '''
+    Plot an array vs another array contained in iv object
+    if None is passed for x, then plots vs range(len(x))
+    '''
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -23,6 +26,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
         X = iv[x]
     else:
         X = x
+
     if maxsamples is not None and maxsamples < l:
         # Down sample data
         step = int(l/maxsamples)
@@ -52,20 +56,38 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, **kwargs):
         if y in iv['units'].keys():
             unity = iv['units'][y]
 
-    ax.set_xlabel('{} [{}]'.format(longnamex, unitx))
-    ax.set_ylabel('{} [{}]'.format(longnamey, unity))
+    xlabel = '{} [{}]'.format(longnamex, unitx)
+    ylabel = '{} [{}]'.format(longnamey, unity)
+
+    if xfunc is not None:
+        # Apply a function to x array
+        X = xfunc(X)
+        xlabel = '{}({})'.format(xfunc.__name__, xlabel)
+    if yfunc is not None:
+        # Apply a function to y array
+        Y = yfunc(Y)
+        ylabel = '{}({})'.format(yfunc.__name__, ylabel)
+
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
 
     return ax.plot(X, Y, **kwargs)[0]
 
 
-def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', **kwargs):
+def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfunc=None, yfunc=None, plotfunc=_plot_single_iv, **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
+    Can plot any column vs any other column
+    Can assign a colormap to the lines, or use all one color using e.g. color='black'
+    Can transform the x and y data by passing functions to xfunc and/or yfunc arguments
+    if x and y specify a scalar values, then just one scatter plot is made
+    if x is None, then y is plotted vs range(len(y))
     maxsamples : downsample to this number of data points if necessary
-    kwargs passed through to ax.plot
+    kwargs passed through to ax.plot (can customize line properties this way)
     New figure is created if ax=None
 
-    Maybe pass an arbitrary plotting function
+    Can pass an arbitrary plotting function, which defaults to _plot_single_iv, haven't tested it yet
+    Could then define some other plots that take IV data and reuse plotiv functionality.
     '''
     if ax is None:
         fig, ax = plt.subplots()
@@ -101,7 +123,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', **kw
                 line = []
                 for (row, iv), c in zip(data.iterrows(), colors):
                     kwargs.update(c=c)
-                    line.append(_plot_single_iv(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, **kwargs))
+                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs))
             else:
                 line = plot(data[x], data[y], **kwargs)
                 ax.set_xlabel(x)
@@ -111,18 +133,19 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', **kw
                 line = []
                 for iv, c in zip(data, colors):
                     kwargs.update(c=c)
-                    line.append(_plot_single_iv(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, **kwargs))
+                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs))
             else:
                 # Probably referencing scalar values.
                 # No tests to make sure both x and y scalar values for all loops.
+                # Will break for dataframes right now.
                 X = [d[x] for d in data]
                 Y = [d[y] for d in data]
-                line = ax.plot(X, Y, **kwargs)
+                line = ax.scatter(X, Y, **kwargs)
                 ax.set_xlabel(x)
                 ax.set_ylabel(y)
     elif dtype in (dict, dotdict, pd.Series):
         # Just one IV
-        line = _plot_single_iv(data, ax, x=x, y=y, maxsamples=maxsamples, **kwargs)
+        line = plotfunc(data, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs)
     else:
         print('plotiv did not understand the input datatype {}'.format(dtype))
         return
