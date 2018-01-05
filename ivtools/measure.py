@@ -246,15 +246,28 @@ def connect_instruments():
     connect_picoscope()
     connect_rigolawg()
 
-def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
+def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
                  trigsource='TriggerAux', triglevel=0.5, timeout_ms=30000, pretrig=0.0):
     '''
     Set up picoscope to capture from specified channel(s).
-    Won't actually do it until it receives the specified trigger event.
-    Datasheet says it will trigger automatically after a timeout.
+
+    pass exactly two of: freq(sampling frequency), duration, nsamples
+    sampling frequency has limited possible values, so actual number of samples will vary
+    will try to sample for the intended duration, either the value of the duration argument or nsamples/freq
+
+    Won't actually start capture until picoscope receives the specified trigger event.
+
+    It will trigger automatically after a timeout.
+
     ch can be a list of characters, i.e. ch=['A','B'].
+
     # TODO: provide a way to override the global variable channel settings
     '''
+
+    # Check that two of freq, duration, nsamples was passed
+    if not sum([x is None for x in (freq, duration, nsamples)]) == 1:
+        raise Exception('Must give exactly two of the arguments freq, duration, and nsamples.  These are needed to determine sampling conditions.')
+
 
     # If ch not iterable, just put it in a list by itself
     if not hasattr(ch, '__iter__'):
@@ -270,13 +283,20 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
         else:
             ps.setChannel(c, enabled=False)
 
+    # If freq and duration are passed, take as many samples as it takes to actually sample for duration
+    # If duration and nsamples are passed, sample with frequency as near as possible to nsamples/duration (nsamples will vary)
+    # If freq and nsamples are passed, sample at closest possible frequency for nsamples (duration will vary)
+    if freq is None:
+        freq = nsamples / duration
     # This will return actual sample frequency, then we can determine
     # the number of samples needed.
-    freq, _ = ps.setSamplingFrequency(freq, 0)
-    if nsamples is None:
-        nsamples = duration * freq
-    freq, max_samples = ps.setSamplingFrequency(freq, nsamples)
-    print('Actual picoscope sampling frequency: {:,}'.format(freq))
+    actualfreq, _ = ps.setSamplingFrequency(freq, 0)
+
+    if duration is not None:
+        nsamples = duration * actualfreq
+
+    actualfreq, max_samples = ps.setSamplingFrequency(actualfreq, nsamples)
+    print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
     if nsamples > max_samples:
         raise(Exception('Trying to sample more than picoscope memory capacity'))
     # Set up the channels
@@ -289,7 +309,7 @@ def pico_capture(ch='A', freq=1e6, duration=0.04, nsamples=None,
     # Set up the trigger.  Will timeout in 30s
     ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
     ps.runBlock(pretrig)
-    return freq
+    return actualfreq
 
 ### These directly wrap SCPI commands that can be sent to the rigol AWG
 # TODO: turn these into a class, since the code will not change very often
@@ -333,7 +353,6 @@ def rigol_screensaver(state=False):
     statestr = 'ON' if state else 'OFF'
     rigol.write(':DISP:SAV ' + statestr)
 
-
 def rigol_ramp_symmetry(percent=50, ch=1):
     ''' Change the symmetry of a ramp output. Refers to the sweep rates of increasing/decreasing ramps. '''
     rigol.write('SOURCE{}:FUNC:RAMP:SYMM {}'.format(ch, percent))
@@ -343,7 +362,6 @@ def rigol_dutycycle(percent=50, ch=1):
     rigol.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
 
 # <<<<< For burst mode
-
 def rigol_ncycles(n, ch=1):
     ''' Set number of cycles that will be output in burst mode '''
     rigol.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
@@ -369,7 +387,6 @@ def rigol_burst(state=True, ch=1):
     rigol.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
 
 # End for burst mode >>>>>
-
 def rigol_load_wfm(waveform):
     '''
     Load some data as an arbitrary waveform to be output.
@@ -431,6 +448,42 @@ def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
     rigol_outputstate(True, ch=ch)
 
 
+def load_builtin_wfm(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
+    '''
+    Set up a built-in waveform to pulse n times
+    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
+    '''
+
+    if not (bool(duration) ^ bool(freq)):
+        raise Exception('Must give either duration or frequency, and not both')
+
+    if freq is None:
+        freq = 1. / duration
+
+    # Set up waveform
+    rigol_burst(True, ch=ch)
+    rigol_burstmode('TRIG', ch=ch)
+    rigol_shape(shape, ch=ch)
+    # Rigol's definition of amp is peak-to-peak, which is unusual.
+    rigol_amplitude(2*amp, ch=ch)
+    rigol_offset(offset, ch=ch)
+    rigol_ncycles(n, ch=ch)
+    rigol_frequency(freq, ch=ch)
+
+    return locals()
+
+
+def pulse_builtin(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
+    '''
+    Pulse a built-in waveform n times
+    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
+    '''
+    load_builtin_wfm(**locals())
+
+    # Trigger rigol
+    rigol_trigger(ch=ch)
+
+
 def pulse(waveform, duration, n=1, ch=1, interp=True):
     '''
     Generate n pulses of the input waveform on Rigol AWG.
@@ -439,7 +492,7 @@ def pulse(waveform, duration, n=1, ch=1, interp=True):
     Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
     '''
     # Load waveform
-    load_volatile_wfm(waveform, duration, n, ch, interp)
+    load_volatile_wfm(**locals())
     # Trigger rigol
     rigol_trigger(ch=1)
 
@@ -499,6 +552,27 @@ def close():
     rigol = None
 
 
+def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, duration=None, ncycles=10, samplespercycle=1000, fs=None):
+    ''' Use a sine wave to characterize response at one single frequency. '''
+
+    if not (bool(samplespercycle) ^ bool(fs)):
+        raise Exception('Must give either samplespercycle, or sampling frequency (fs), and not both')
+    if not (bool(freq) ^ bool(duration)):
+        raise Exception('Must give either freq or duration, and not both')
+
+    if fs is None:
+        fs = freq * samplespercycle
+    if freq is None:
+        freq = 1. / duration
+
+    pico_capture(ch=ch, freq=fs, duration=ncycles/freq)
+
+    pulse_builtin(freq=freq, amp=amp, shape=shape, n=ncycles)
+
+    data = get_data(ch)
+
+    return data
+
 def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
@@ -506,6 +580,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     '''
 
     # Set up to capture for n times the duration of the pulse
+    # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
     pico_capture(ch, freq=fs, duration=n*duration)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     pulse(waveform, duration, n=n, interp=interpwfm)
@@ -910,6 +985,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     plot_channels(data)
 
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
+
 
 def analog_out(ch, dacval=None, volts=None):
     '''
