@@ -5,6 +5,7 @@ import numpy as np
 from dotdict import dotdict
 import pandas as pd
 from matplotlib.widgets import SpanSelector
+from inspect import signature
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
     '''
@@ -297,17 +298,24 @@ def plot_channels(chdata, ax=None):
     for c in channels:
         if c in chdata.keys():
             if chdata[c].dtype == np.int8:
-                # Convert to voltage for plot
+               # Convert to voltage for plot
                 chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
             else:
                 chplotdata = chdata[c]
-            ax.plot(chplotdata, color=colors[c], label=c)
+            if 'sample_rate' in chdata:
+                # If sample rate is available, plot vs time
+                x = maketimearray(chdata)
+                ax.set_xlabel('Time [s]')
+                ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+            else:
+                x = range(len(chdata[c]))
+                ax.set_xlabel('Data Point')
+            ax.plot(x, chplotdata, color=colors[c], label=c)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
-            ax.fill_between((0, len(chdata[c])), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+            ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
     ax.legend(title='Channel')
-    ax.set_xlabel('Data Point')
     ax.set_ylabel('Voltage [V]')
 
 
@@ -350,12 +358,15 @@ def interactive_figures(n=2):
 
     return (fig1, ax1), (fig2, ax2)
 
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', **kwargs):
-    ''' Usually you need a "mappable" to create a colormap on a plot.  This function lets you create one manually. '''
+
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
+    ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
+    if ax is None:
+        ax = plt.gca()
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cb = plt.colorbar(sm, **kwargs)
+    cb = plt.colorbar(sm, ax=ax, **kwargs)
     return cb
 
 def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0, title=None, axfunc=None, **kwargs):
@@ -370,14 +381,21 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
     fig.set_tight_layout(True)
     if shadow:
         # Plot them all on top of each other transparently for reference
-        plotiv(data, color='gray', linewidth=.5, alpha=.03, ax=ax, **kwargs)
+        x = 'V'
+        y = 'I'
+        if 'x' in kwargs:
+            x = kwargs['x']
+        if 'y' in kwargs:
+            y = kwargs['y']
+        plotiv(data, color='gray', linewidth=.5, alpha=.03, x=x, y=y, ax=ax)
     #colors = plt.cm.rainbow(arange(len(data))/len(data))
     colors = ['black'] * len(data)
     if extent is not None:
         ax.set_xlim(extent[0], extent[1])
         ax.set_ylim(extent[2], extent[3])
     if type(data) is pd.DataFrame:
-        thingtoloop = data.iterrows()
+        # reset index so that we don't skip file names
+        thingtoloop = data.reset_index().iterrows()
     else:
         thingtoloop = enumerate(data)
     for i,l in thingtoloop:
@@ -399,7 +417,14 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             # Yeah let's do that
             ax.set_title(title(l))
         if axfunc is not None:
-            axfunc(ax)
+            # Can do an operation on the axis, or on whatever you want.
+            # First argument will be the axis, second argument the loop being plotted
+            sig = signature(axfunc)
+            nparams = len(sig.parameters)
+            if nparams > 1:
+                axfunc(ax, l)
+            elif len(sig) == 1:
+                axfunc(ax)
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
         del ax.lines[-1]
         del ax.lines[-1]
@@ -471,10 +496,26 @@ def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
     # Don't know difference between -framerate and -r options, but it
     # seems both need to be set to the desired fps.  Even the order matters.  Don't change it.
 
-    cmd = (r'cd "{0}" & ffmpeg -framerate {1} -i {3}_%03d.png -c:v libx264 '
-            '-r {2} -pix_fmt yuv420p -crf 18 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
-            '{4}.mp4').format(directory, fps, fps+5, prefix, outname)
     os.system(cmd)
+
+def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
+    ''' Send command to create video with ffmpeg
+    crf controls quality. 1 is the best. 18 is not that bad...
+    '''
+    #cmd = (r'cd "{}" & ffmpeg -framerate 10 -i {}%03d.png -c:v libx264 '
+    #        '-r 15 -pix_fmt yuv420p -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
+    #        '{}.mp4').format(directory, prefix, outname)
+    # Should be higher quality still compatible with outdated media players
+    # And ppt....
+    cmd = (r'cd "{0}" & ffmpeg -framerate {1} -i {3}_%03d.png -c:v libx264 '
+            '-r {2} -pix_fmt yuv420p -crf {5} -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
+            '{4}.mp4').format(directory, fps, fps+5, prefix, outname, crf)
+    # Need elite player to see this one, but it should be better in all ways
+    #cmd = (r'cd "{}" & ffmpeg -framerate 10 -i {}%03d.png -c:v libx264 '
+            #' -crf 17 -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" '
+            #'{}.mp4').format(directory, prefix, outname)
+    os.system(cmd)
+
 
 
 def mpfunc(x, pos):
@@ -509,8 +550,49 @@ def plot_log_reference_lines(ax, slope=-2):
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
 
+def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
+    '''
+    Put some reference lines indicating load lines for a particular series resistance.
+    Assumes V is in volts and I is in amps.  Use I=1e-6 to scale to microamps
+    '''
 
-def plot_power_lines(pvals=None, ax=None):
+    plotargs = dict(linestyle='--', alpha=.2, c='black')
+    plotargs.update(kwargs)
+
+    if ax is None:
+        ax = plt.gca()
+    ylims = ax.get_ylim()
+    ymin, ymax = ylims
+    xlims = ax.get_xlim()
+    xmin, xmax = xlims
+
+    # Fill the whole plot with lines.  Find points to go through
+    if ax.get_yscale() == 'linear':
+        yp = np.linspace(ymin, ymax , n)
+    else:
+        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
+        logymin, logymax = np.log10(ymin), np.log10(ymax)
+        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
+    if ax.get_xscale() == 'linear':
+        xp = np.linspace(xmin, xmax , n)
+    else:
+        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
+        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
+
+    # Load lines aren't lines on log scale, so plot many points
+    x = linspace(xmin, xmax, 500)
+    # Plot one at a time so you can just label one (for legend)
+    slope = 1 / R / Iscale
+    for xi,yi in zip(xp, yp):
+        ax.plot(x, yi - slope * (x - xi), **plotargs)
+    # Label the last one
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
+    # Put the limits back
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
+
+
+def plot_power_lines(pvals=None, ax=None, xmin=None):
     '''
     Plot lines of constant power on the indicated axis  (should be I vs V)
     TODO: Label power values
@@ -520,6 +602,8 @@ def plot_power_lines(pvals=None, ax=None):
         ax = plt.gca()
 
     x0, x1 = ax.get_xlim()
+    if xmin is not None:
+        x0 = xmin
     y0, y1 = ax.get_ylim()
 
     if pvals is None:
