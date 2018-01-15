@@ -6,6 +6,7 @@ from itertools import groupby
 from dotdict import dotdict
 from scipy import signal
 from numbers import Number
+from scipy.optimize import curve_fit
 
 def ivfunc(func):
     '''
@@ -15,14 +16,17 @@ def ivfunc(func):
     Decorated function should take a single loop and return anything
     Then this function will also take multiple loops, and return a list/dataframe of the outputs
 
-    Handles dicts and pd.Series as IV data, and "list of dict" and DataFrames for multiple IV data
+    Handles dicts and pd.Series for singular input data, as well as "list of dict" and DataFrames for multiple input data
     An attempt is made to return the most reasonable type, given the input and output types
 
+    Some preliminary testing indicates that operating on dataframes can be much slower (~100x) than list of dicts.
+
     If any of the arguments instances of "paramlist", this tells ivfunc to also index into this list when
-    calling the wrapped function, so that you can pass a list of parameters to use for each iv loop.
+    calling the wrapped function, so that you can pass a list of parameters to use for each data row.
 
     If you pass a function wrapped with the paramfunc function, that function will get called on the data to
     determine the argument.
+
     '''
     def paramtransform(param, i, data):
         if type(param) == paramlist:
@@ -37,11 +41,16 @@ def ivfunc(func):
     @wraps(func)
     def func_wrapper(data, *args, **kwargs):
         dtype = type(data)
-        ###  If a DataFrame is passed
+        ###################################
+        ###  IF A DATAFRAME IS PASSED   ###
+        ###################################
         if dtype == pd.DataFrame:
             # Apply the function to the columns of the dataframe
-            # Sadly, the line below will error if your function returns an array
+            # Sadly, the line below will error if your function returns an array, because pandas.
+            # Although it can be significantly faster if your function does not return an array..
             # return data.apply(func, axis=1, args=args, **kwargs)
+            # Since we don't already know what type the wrapped function will return,
+            # we need to explicitly loop through the dataframe rows, and store the results in an intermediate list
             resultlist = []
             for i, (rownum, row) in enumerate(data.iterrows()):
                 #resultlist.append(func(row, *args, **kwargs))
@@ -50,8 +59,16 @@ def ivfunc(func):
                 resultlist.append(result)
             ### Decide how to return the values based on the datatype that the wrapped function returned
             if type(resultlist[0]) in (pd.Series, dict):
-                df_out = pd.DataFrame(resultlist)
-                df_out.index = data.index
+                # Each row returns a dict or series
+                if type(resultlist[0][list(resultlist[0].keys())[0]]) is dict:
+                    # Each dict probably just contains another dict.
+                    # Return a dataframe with multiindex columns
+                    # It hurts my brain to think about how to accomplish this, so for now it does the same
+                    df_out = pd.DataFrame(resultlist)
+                    df_out.index = data.index
+                else:
+                    df_out = pd.DataFrame(resultlist)
+                    df_out.index = data.index
                 return df_out
             elif (type(resultlist[0]) is list):
                 if (type(resultlist[0][0]) is dict):
@@ -76,7 +93,9 @@ def ivfunc(func):
             series_out = pd.Series(resultlist)
             series_out.index = data.index
             return series_out
-        ### If a list (of dicts) is passed
+        #######################################
+        ### IF A LIST (OF DICTS) IS PASSED  ###
+        #######################################
         elif dtype == list:
             # Assuming it's a list of iv dicts
             #resultlist = [func(d, *args, **kwargs) for d in data]
@@ -174,7 +193,10 @@ def diffiv(data, stride=1, columns=None):
 
 @ivfunc
 def select_by_maxdiff(data, column='I', stride=1):
-    ''' Find switching thresholds by finding the maximum differences. '''
+    '''
+    Find switching thresholds by finding the maximum differences.
+    Return index of the threshold datapoint
+    '''
     diff = data[column][stride:] - data[column][:-stride]
     argmaxdiff = np.argmax(diff)
 
@@ -184,14 +206,6 @@ def select_by_maxdiff(data, column='I', stride=1):
 def thresholds_bydiff(data, stride=1):
     ''' Find switching thresholds by finding the maximum differences. '''
     argmaxdiffI = select_by_maxdiff(data, column='I', stride=stride)
-
-    #vset = data['V'][argmaxdiffI]
-    #maxdiffI = diffI[argmaxdiffI]
-    #argmindiffI = np.argmin(diffI)
-    #vreset = data['V'][argmindiffI]
-    #mindiffI = diffI[argmindiffI]
-    # TODO: This is breaking the pattern of other ivfuncs -- list of dict will return list of series...
-    #return pd.Series({'Vset':vset, 'Vreset':vreset, 'Idiffmax':maxdiffI, 'Idiffmin':mindiffI})
 
     return indexiv(data, argmaxdiffI)
 
@@ -258,9 +272,14 @@ def select_by_derivative(data, threshold=None, debug=False):
     else:
         index = np.nan
 
+    # Using values of debug to show different figures, because I couldn't think of a nice way to make both figures
+    # The problem is that this function gets called separately for each row,
+    # and the function doesn't know if it has already been called on previous rows
+    # So it doesn't know to add the lines to the appropriate figure.
+
+    # Don't make a figure because this function gets called for every row.  Need to make an empty figure manually before calling.
     ax = plt.gca()
     if debug == 1:
-        # Don't make a figure because this function gets called for every row.  Need to make an empty figure manually
         #fig, ax = plt.subplots()
         ax.plot(dI/dV)
         xmin, xmax = ax.get_xlim()
@@ -409,7 +428,9 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
 @ivfunc
 def maketimearray(data):
     # TODO: need to account for any possible downsampling!
-    return np.arange(len(data['V'])) * 1/data['sample_rate']
+    # Don't know what data columns exist
+    columns = find_data_arrays(data)
+    return np.arange(len(data[columns[0]])) * 1/data['sample_rate']
 
 
 @ivfunc
@@ -424,9 +445,15 @@ def indexiv(data, index):
     if hasattr(index, '__call__'):
         # If index is a function, call it on the data
         index = index(data)
-    if not hasattr(index, '__iter__') and np.isnan(index):
+
+    isarray = hasattr(index, '__iter__')
+    if not isarray and np.isnan(index):
+        # If it's just a plain old nan
         dataout = {c:np.nan for c in colnames}
     else:
+        if not isarray and type(index) is not int:
+            # Maybe you passed a float, which will error.
+            index = int(index)
         dataout = {c:data[c][index] for c in colnames}
 
     add_missing_keys(data, dataout)
@@ -472,19 +499,43 @@ def slicefraction(data, stop=1/2, start=0, step=1):
 
 
 @ivfunc
-def split_by_crossing(data, V=0, increasing=True, hyspts=50):
+def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
     '''
     Split loops into multiple loops, by threshold crossing
     Only implemented V threshold crossing
     return list of input type
     Noisy data is hard to split this way
-    hyspts will require that on a crossing, the value of V was above/below threshold hyspts ago
+    hyspts will require that on a crossing, the value of column was above/below threshold hyspts ago
     set it to less than half of the minimum loop length
+
+    Hitting the threshold value and turning around counts as crossing.
+
+    If direction is None, will trigger on either rising or falling edge
+    If direction is True, will trigger on the rising edge
+    If direction is False, will trigger on the falling edge
+
+    # TODO: find the indices in a separate function.  Could be useful.
     '''
     # V threshold crossing
-    side = data['V'] >= V
+    side = data[column] >= thresh
     crossings = np.diff(np.int8(side))
-    if increasing:
+    if direction is None:
+        # Trigger at either rising or falling edege
+        # Determined by the first datapoint which is on one side of the threshold,
+        # and hyspts ago was on the other side of the threshold
+
+        # There's a flaw in the logic here.  Right now:
+        # trigger point needs to be one which JUST crossed the threshold 1 pt ago
+        # AND was on the other side hyspts ago
+        # What we need is the first point which is on side A and was on side B hyspts ago
+        # but this is hard because it can result in triggers that are clustered
+        # we need the first point of each cluster, so need to define cluster length..
+
+        # Probably there's a nice single line way to do this but I'm in a hurry!
+        trigger1 = np.where((crossings[hyspts-1:] == 1) & (side[:-hyspts] == False))[0] + hyspts
+        trigger2 = np.where((crossings[hyspts-1:] == -1) & (side[:-hyspts] == True))[0] + hyspts
+        trigger = np.sort(np.concatenate((trigger1, trigger2)))
+    elif direction:
         trigger = np.where((crossings[hyspts-1:] == 1) & (side[:-hyspts] == False))[0] + hyspts
     else:
         trigger = np.where((crossings[hyspts-1:] == -1) & (side[:-hyspts] == True))[0] + hyspts
@@ -561,25 +612,35 @@ def split_updown():
 
 
 @ivfunc
-def splitiv(data, nloops=None, nsamples=None):
+def splitiv(data, nloops=None, nsamples=None, indices=None):
     '''
     Split data into individual loops, specifying somehow the length of each loop
     if you pass nloops, it splits evenly into n loops.
     if you pass nsamples, it makes each loop have that many samples (except possibly the last one)
     pass nsamples = PulseDuration * SampleFrequency if you don't know nsamples
     '''
-    l = len(data['V'])
-    if nloops is not None:
-        nsamples = float(l / int(nloops))
-    if nsamples is None:
-        raise Exception('You must pass nloops or nsamples')
-    # nsamples need not be an integer.  Will correct for extra time.
-    trigger = [int(n) for n in np.arange(0, l, nsamples)]
-    # If array is not evenly split, return the last fragment as well
-    if trigger[-1] != l - 1:
-        trigger.append(l - 1)
-
     splitkeys = find_data_arrays(data)
+
+    if indices is None:
+        l = len(data['V'])
+        if nloops is not None:
+            nsamples = float(l / int(nloops))
+        if nsamples is None:
+            raise Exception('You must pass nloops, nsamples, or indices')
+        # nsamples need not be an integer.  Will correct for extra time.
+        trigger = [int(n) for n in np.arange(0, l, nsamples)]
+        # If array is not evenly split, return the last fragment as well
+        if trigger[-1] != l - 1:
+            trigger.append(l - 1)
+    else:
+        # Trigger was passed directly as a list of indices
+        trigger = indices
+        # Put in endpoints
+        if trigger[0] != 0:
+            trigger = np.append([0], trigger)
+        if trigger[-1] not in [-1, len(data[splitkeys[0]]) - 1]:
+            trigger = np.append(trigger, [-1])
+
     outlist = []
     for i, j in zip(trigger[:-1], trigger[1:]):
         splitloop = {}
@@ -1066,7 +1127,7 @@ def downsample_dumb(data, nsamples, columns=None):
 
 
 def df_to_listofdicts(df):
-    return df.to_dict('records')
+    return df.to_dict(orient='records')
 
 
 @ivfunc
@@ -1179,3 +1240,142 @@ def drop_arrays(data):
     return {sk:data[sk] for sk in savekeys}
     # In pandas you can do df.drop(arrays, 1), which is much much faster
 
+def fit_sine_array(array, dt=1, guess_freq=1, debug=False):
+    ''' Fit a sine function to array.  Assumes equal spacing in time.  Guess has to be pretty close.'''
+    #guess_amplitude = 3*np.std(array)/(2**0.5)
+    guess_amplitude = (np.max(array) - np.min(array)) / 2
+    guess_offset = np.mean(array)
+    guess_phase = np.arcsin((array[0] - guess_offset) / guess_amplitude)
+    if array[1] < array[0]:
+        # Probably there is a big phase shift, because curve is decreasing at first
+        # But np.arcsin will always return between +- pi/2, which is where sine is increasing.
+        # Need the other solution.
+        guess_phase = sign(guess_phase) * (np.pi - abs(guess_phase))
+
+    # Could guess freq by fft, but that would probably take longer than the fit itself.
+
+    p0=[guess_freq, guess_amplitude, guess_phase, guess_offset]
+
+    # Define the function we want to fit
+    def my_sin(x, freq, amplitude, phase, offset):
+        return np.sin(x * 2 * np.pi * freq + phase) * amplitude + offset
+
+    # Now do the fit
+    t = linspace(0, dt, len(array))
+    fit, cov = curve_fit(my_sin, t, array, p0=p0)
+
+    if debug:
+        data_first_guess = my_sin(t, *p0)
+        data_fit = my_sin(t, *fit)
+        plt.figure()
+        plt.plot(array, '.')
+        plt.plot(data_fit, label='after fitting', linewidth=2)
+        plt.plot(data_first_guess, label='first guess')
+        plt.legend()
+        plt.show()
+
+    return {'freq':fit[0],
+            'amp':fit[1],
+            'phase':fit[2],
+            'offset':fit[3]}
+
+@ivfunc
+def fft_iv(data, columns=None):
+    ''' Calculate fft of arrays.  Return with same name as original arrays. '''
+    if columns is None:
+        columns = find_data_arrays(data)
+
+    if 'sample_rate' in data:
+        # Use sample rate to scale frequencies
+        pass
+    else:
+        pass
+
+    # Make dict of dicts
+    dataout = {}
+    for c in columns:
+        dataout[c] = np.fft.fft(data[c])
+    add_missing_keys(data, dataout)
+
+    # TODO: Units change due to fft...
+
+    return dataout
+
+@ivfunc
+def largest_fft_component(data):
+    ''' Find the amplitude and phase of the largest single frequency component'''
+    # Calculate fft
+    fftdata = fft_iv(data)
+    columns = find_data_arrays(fftdata)
+
+    dataout = {}
+    for c in columns:
+        l = len(fftdata[c])
+        halfl = int(l/2)
+        # I still don't understand what the other half of the fft array is.
+        mag = np.abs(fftdata[c][:halfl])
+        phase = np.angle(fftdata[c][:halfl])
+        # Find which harmonic is the largest
+        fundi = np.argmax(mag)
+        #Want a single index dataframe.  Name the columns like this:
+        dataout[c + '_freq'] = fundi
+        if 'sample_rate' in data:
+            dataout[c + '_freq'] *= data['sample_rate'] / l
+        dataout[c + '_amp'] = mag[fundi] * 2 / l
+        # fft gives phase of cos, but we apply signals starting from zero, so phase of sine is clearer
+        dataout[c + '_phase'] = phase[fundi] + pi/2
+        dataout[c + '_offset'] = mag[0]
+
+    return dataout
+
+@ivfunc
+def fit_sine(data, columns=None, guess_ncycles=None, debug=False):
+    ''' Fit a sine function to some data.  Return phase and amplitude of the fit. '''
+    if columns is None:
+        columns = find_data_arrays(data)
+
+    if 'sample_rate' in data:
+        dt = len(data[columns[0]]) / data['sample_rate']
+    else:
+        # Output frequency will be number of cycles in the input waveform
+        dt = 1
+
+    if 'ncycles' in data:
+        # freq_response function adds this key so we don't need to guess
+        guess_ncycles = data['ncycles']
+    elif guess_ncycles is None:
+        raise Exception('If data does not contain ncycles key, then guess_ncycles must be passed!')
+
+    guess_freq = guess_ncycles / dt
+
+    # Make dict of dicts
+    dataout = {}
+    for c in columns:
+        sinefit = fit_sine_array(data[c], dt=dt, guess_freq=guess_freq, debug=debug)
+
+        # Don't want negative amplitudes.  But constraining fit function always has bad consequences.
+        if sinefit['amp'] < 0:
+            sinefit['amp'] *= -1
+            # Keep phase in range of (-pi:pi]
+            if sinefit['phase'] > 0:
+                sinefit['phase'] -= pi
+            else:
+                sinefit['phase'] += pi
+
+
+        #Want a single index dataframe.  Name the columns like this:
+        dataout[c + '_freq'] = sinefit['freq']
+        dataout[c + '_amp'] = sinefit['amp']
+        dataout[c + '_phase'] = sinefit['phase']
+        dataout[c + '_offset'] = sinefit['offset']
+        # This returns something a little weird - nested dicts or dicts as dataframe elements ..
+        # dataout[c] = fit_sine_array(data[c], dt=dt, guess_freq=guess_freq, debug=debug)
+
+    return dataout
+
+@ivfunc
+def freq_analysis(data):
+    '''
+    Input data (e.g. collected by freq_response function) containing sinusoid arrays.
+    This will use curve fitting and fft methods to determine amplitude and phase.
+    '''
