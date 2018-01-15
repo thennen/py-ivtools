@@ -247,7 +247,7 @@ def connect_instruments():
     connect_rigolawg()
 
 def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
-                 trigsource='TriggerAux', triglevel=0.5, timeout_ms=30000, pretrig=0.0):
+                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0):
     '''
     Set up picoscope to capture from specified channel(s).
 
@@ -412,6 +412,13 @@ def rigol_interp(interp=True):
     modestr = 'LIN' if interp else 'OFF'
     rigol.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
 
+def rigol_color(c='RED'):
+    '''
+    Change the highlighting color on rigol screen for some reason
+    'RED', 'DEEPRED', 'YELLOW', 'GREEN', 'AZURE', 'NAVYBLUE', 'BLUE', 'LILAC', 'PURPLE', 'ARGENT'
+    '''
+    rigol.write(':DISP:WIND:HLIG:COL {}'.format(c))
+
 
 def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
     '''
@@ -553,7 +560,6 @@ def close():
 
 
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, duration=None, ncycles=10, samplespercycle=1000, fs=None):
-    ''' Use a sine wave to characterize response at one single frequency. '''
 
     if not (bool(samplespercycle) ^ bool(fs)):
         raise Exception('Must give either samplespercycle, or sampling frequency (fs), and not both')
@@ -586,6 +592,93 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     pulse(waveform, duration, n=n, interp=interpwfm)
 
     data = get_data(ch)
+
+    return data
+
+def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0):
+    ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
+    if fend > 1e8:
+        raise Exception('Rigol can only output up to 100MHz')
+
+    freqs = np.logspace(np.log10(fstart), np.log10(fend), n)
+    data = []
+    for freq in freqs:
+        # Figure out how many cycles to sample and at which sample rate.
+        # In my tests with FFT:
+        # Number of cycles did not matter much, as long as there was exactly an integer number of cycles
+        # Higher sampling helps a lot, with diminishing returns after 10^5 total data points.
+
+        # I don't know what the optimum sampling conditions for the sine curve fitting method.
+        # Probably takes longer for big datasets.  And you need a good guess for the number of cycles contained in the dataset.
+
+        # How many cycles you want to have per frequency
+        target_cycles = 100
+        # How many data points you want to have
+        target_datapoints = 1e5
+        # Max amount of time (s) you are willing to wait for a measurement of a single frequency
+        max_time_per_freq = 10
+        # Capture at least this many cycles
+        minimum_cycles = 1
+
+
+        # Can sample 5 MS/s, divided among the channels
+        # ** To achieve 2.5 GS/s sampling rate in 2-channel mode, use channel A or B and channel C or D.
+        if len(ch) == 1:
+            maxrate = 5e9 / len(ch)
+        elif len(ch) == 2:
+            # 4 channel combinations allow 2.5 GS/s sampling rate
+            if set(ch) in (set(('A', 'B')), set(('C', 'D'))):
+                maxrate = 1.25e9
+            else:
+                maxrate = 2.5e9
+        else:
+            maxrate = 1.25e9
+
+        cycles_per_maxtime = freq * max_time_per_freq
+        time_for_target_cycles = target_cycles / freq
+
+        # TODO: use hardware oversampling to increase resolution
+        if cycles_per_maxtime < minimum_cycles:
+            # We still need to capture at least certain number of whole cycles, so it will take longer.  Sorry.
+            ncycles = minimum_cycles
+            fs = target_datapoints * freq / ncycles
+        elif cycles_per_maxtime < target_cycles:
+            # Cycle a reduced number of (integer) times in order to keep measurement time down
+            ncycles = int(cycles_per_maxtime)
+            fs = target_datapoints * freq / ncycles
+        elif target_datapoints / time_for_target_cycles < maxrate:
+            # Excluding the possibility that someone set a really dumb max_time_per_freq,
+            # this means that we acquire our target number of cycles, and our target number of samples.
+            ncycles = target_cycles
+            fs = target_datapoints * freq / ncycles
+        else:
+            # We are limited by the sampling rate of picoscope.
+            # Capture the target number of cycles but with a reduced number of samples
+            ncycles = target_cycles
+            fs = maxrate
+            # Or would it be better to capture an increased number of cycles?  To be determined..
+
+        # Pico triggering appears to have about 6 ns of jitter.
+        # To avoid capturing zeros at the end of the pulses, we will do an extra pulse at higher frequencies
+        # Don't do it at low frequencies because it could lock up the AWG for an extra 1/freq
+        if freq > 1e4:
+            npulses = ncycles + 1
+        else:
+            npulses = ncycles
+
+        duration = ncycles / freq
+
+
+        # TODO: Should I apply the signal for a while before sampling?  Here I am sampling immediately from the first cycle.
+        pico_capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=.05)
+        pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
+        d = get_data(ch)
+        d['ncycles'] = ncycles
+        data.append(d)
+        # Probably not necessary but makes me feel good
+        time.sleep(.1)
+
+        # TODO: make some plots that show when debug=True is passed
 
     return data
 
