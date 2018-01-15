@@ -280,6 +280,8 @@ def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
         ax.xaxis.set_ticklabels(ux)
         ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
     ax.legend(loc=0, title=', '.join(parameters))
+    ax.set_xlabel(x)
+    ax.set_ylabel(y)
     return fig, ax
 
 
@@ -565,6 +567,14 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     ymin, ymax = ylims
     xlims = ax.get_xlim()
     xmin, xmax = xlims
+
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', **kwargs):
+    ''' Usually you need a "mappable" to create a colormap on a plot.  This function lets you create one manually. '''
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cb = plt.colorbar(sm, **kwargs)
+    return cb
 
     # Fill the whole plot with lines.  Find points to go through
     if ax.get_yscale() == 'linear':

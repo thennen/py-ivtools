@@ -38,31 +38,33 @@ function SweepVList(sweepList, rangeI, limitI, nplc, delay)
     smua.trigger.initiate()
 end
 
--- Didn't finish this, need to make it work
+
 function SweepIList(sweepList, rangeV, limitV, nplc, delay)
     reset()
 
     -- Configure the SMU
     smua.reset()
-    smua.source.func			= smua.OUTPUT_DCVOLTS
-    smua.source.limiti		= limitI
+    smua.source.func			= smua.OUTPUT_DCAMPS
+    smua.source.limitv		= limitV
     smua.measure.nplc			= nplc
     --smua.measure.delay		= smua.DELAY_AUTO
     smua.measure.delay = delay
-    smua.measure.rangei = rangeI
-    --smua.measure.rangev = 0
+    --smua.measure.rangei = rangeI
+    -- Maybe if you don't set this it defaults to autorange and blows up the sample
+    -- Don't know that for sure though
+    smua.measure.rangev = rangeV
 
     -- Prepare the Reading Buffers
     smua.nvbuffer1.clear()
     smua.nvbuffer1.collecttimestamps	= 1
-    --smua.nvbuffer1.collectsourcevalues  = 1
+    smua.nvbuffer1.collectsourcevalues  = 1
     smua.nvbuffer2.clear()
     smua.nvbuffer2.collecttimestamps	= 1
-    smua.nvbuffer2.collectsourcevalues  = 1
+    --smua.nvbuffer2.collectsourcevalues  = 1
 
     -- Configure SMU Trigger Model for Sweep
-    smua.trigger.source.listv(sweepList)
-    smua.trigger.source.limiti			= limitI
+    smua.trigger.source.listi(sweepList)
+    smua.trigger.source.limitv			= limitV
     smua.trigger.measure.action			= smua.ENABLE
     smua.trigger.measure.iv(smua.nvbuffer1, smua.nvbuffer2)
     smua.trigger.endpulse.action		= smua.SOURCE_HOLD
@@ -147,7 +149,8 @@ function constantVMeasI(sourceV,sourceVB, points, interval, rangeI, limitI, nplc
     -- Prepare the Reading Buffers
     smua.nvbuffer1.clear()
     smua.nvbuffer1.collecttimestamps    = 1
-    --smua.nvbuffer1.collectsourcevalues  = 1
+    -- What are the source values for voltage if we are sourcing current?
+    smua.nvbuffer1.collectsourcevalues  = 1
     smua.nvbuffer2.clear()
     smua.nvbuffer2.collecttimestamps    = 1
     smua.nvbuffer2.collectsourcevalues  = 1

@@ -123,7 +123,7 @@ magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 ############# Keithley 2600 functions ###############
 
 # Connect to Keithley
-Keithley_ip = '10.10.50.10'
+Keithley_ip = '192.168.11.11'
 Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
 rm = visa.ResourceManager()
 try:
@@ -190,6 +190,36 @@ def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
     # liveplotter does this already
     #d = getdata()
 
+def vi(ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO'):
+    '''Wraps the SweepIList lua function defined on keithley''' 
+
+    # Send list of voltage values to keithley
+    send_list_to_keithley(ilist, varname='sweeplist')
+
+    # TODO: make sure the inputs are valid
+    k.write('SweepIList(sweeplist, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay))
+    liveplotter()
+    # liveplotter does this already
+    #d = getdata()
+
+
+def keithley_readbuffer(buffer='smua.nvbuffer1' , attr='readings', start=1, end=None):
+    ''' Read a data buffer and return an actual array. '''
+    if end is None:
+        # Read the whole length
+        end = int(float(k.ask('print({}.n)'.format(buffer))))
+    # makes keithley give numbers in ascii
+    # k.write('format.data = format.ASCII')
+    #readingstr = k.ask('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
+    #return np.float64(readingstr.split(', '))
+
+    # Makes keithley give numbers in binary float64
+    # Should be much faster?
+    k.write('format.data = format.REAL64')
+    k.write('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
+    # reply comes back with #0 or something in the beginning and a newline at the end
+    raw = k.read_raw()[2:-1]
+    return np.fromstring(raw, dtype=np.float64)
 
 def getdata(start=1, end=None, history=True):
     '''
@@ -205,30 +235,46 @@ def getdata(start=1, end=None, history=True):
     if end is None:
         end = numpts
     if numpts > 0:
-        Ireadingstr = k.ask('printbuffer({}, {}, smua.nvbuffer1.readings)'.format(start, end))
-        Vreadingstr = k.ask('printbuffer({}, {}, smua.nvbuffer2.readings)'.format(start, end))
-        Vsourcevalstr = k.ask('printbuffer({}, {}, smua.nvbuffer2.sourcevalues)'.format(start, end))
-        timestampstr = k.ask('printbuffer({}, {}, smua.nvbuffer1.timestamps)'.format(start, end))
+        # Output a dictionary with voltage/current arrays and other parameters
+        out = {}
 
-        # Dict version.  Downside is you can't use dot notation anymore..
-        t = np.float64(timestampstr.split(', '))
-        V = np.float64(Vsourcevalstr.split(', '))
-        I = np.float64(Ireadingstr.split(', '))
-        Vmeasured = np.float32(Vreadingstr.split(', '))
         # Keithley returns this special value when the measurement is out of range
         # replace it with a real nan so it doesn't mess up the plots
         nanvalue = 9.9100000000000005e+37
-        I[I == nanvalue] = np.nan
-        Vmeasured[Vmeasured == nanvalue] = np.nan
-        out = {'t':t,
-               'V':V,
-               'I':I,
-               'Vmeasured':Vmeasured}
-        # Collect measurement conditions
-        # TODO: What other information is available?
-        out['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
-        # This just reads the last value of compliance used.  Could be a situation where it doesn't apply to the data?
-        out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
+
+        ### Collect measurement conditions
+        # TODO: What other information is available from Keithley registers?
+
+        # Need to do something different if sourcing voltage vs sourcing current
+        source = float(k.ask('print(smua.source.func)'))
+        if source:
+            # Returns 1.0 for voltage source (smua.OUTPUT_DCVOLTS)
+            out['source'] = 'V'
+            out['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
+            out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
+            out['V'] = keithley_readbuffer('smua.nvbuffer2', 'sourcevalues', start, end)
+            Vmeasured = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
+            Vmeasured[Vmeasured == nanvalue] = np.nan
+            out['Vmeasured'] = Vmeasured
+            I = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
+            I[I == nanvalue] = np.nan
+            out['I'] = I
+        else:
+            # Current source
+            out['source'] = 'I'
+            out['Vrange'] =  float(k.ask('print(smua.nvbuffer2.measureranges[1])'))
+            out['Vcomp'] = float(k.ask('print(smua.source.limitv)'))
+
+            out['I'] = keithley_readbuffer('smua.nvbuffer1', 'sourcevalues', start, end)
+            Imeasured = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
+            Imeasured[Imeasured == nanvalue] = np.nan
+            out['Imeasured'] = Imeasured
+            V = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
+            V[V == nanvalue] = np.nan
+            out['V'] = V
+
+        out['t'] = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
+
     else:
         empty = np.array([])
         out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
@@ -588,7 +634,25 @@ def VoverIplotter(ax=None, **kwargs):
     ''' Plot V/I vs V, like GPIB control program'''
     if ax is None:
         ax = ax2
-    ax.plot(d['V'], d['Vmeasured'] / d['I'], '.-', **kwargs)
+    # Mask small currents, since V/I will blow up
+    # There's definitely a better way.
+    if len(d['I'] > 0):
+        max_current = np.max(np.abs(d['I']))
+        mask = np.abs(d['I']) > .01 * max_current
+    else:
+        mask = []
+    V = d['V'][mask]
+
+    if 'Vmeasured' in d:
+        VoverI = d['Vmeasured'] / d['I']
+    elif 'Imeasured' in d:
+        VoverI = d['V'] / d['Imeasured']
+    else:
+        VoverI = d['V'] / d['I']
+
+    VoverI = VoverI[mask]
+
+    ax.plot(V, VoverI, '.-', **kwargs)
     color = ax.lines[-1].get_color()
 
     ax.set_yscale('log')
