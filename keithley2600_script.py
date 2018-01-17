@@ -123,7 +123,10 @@ magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 ############# Keithley 2600 functions ###############
 
 # Connect to Keithley
-Keithley_ip = '192.168.11.11'
+# 2634B
+#Keithley_ip = '192.168.11.11'
+# 2636A
+Keithley_ip = '192.168.11.12'
 Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
 rm = visa.ResourceManager()
 try:
@@ -178,7 +181,7 @@ def send_list_to_keithley(list_in, varname='pythonlist'):
     run_lua_lines(cmdlist)
 
 
-def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
+def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO', plot=True, live=True):
     '''Wraps the SweepVList lua function defined on keithley''' 
 
     # Send list of voltage values to keithley
@@ -186,25 +189,66 @@ def iv(vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
 
     # TODO: make sure the inputs are valid
     k.write('SweepVList(sweeplist, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay))
-    liveplotter()
-    # liveplotter does this already
-    #d = getdata()
 
-def vi(ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO'):
+    # Plotting has the side effect of assigning data to the global d variable
+    # If you don't plot, function will just return and you will have to call getdata() manually
+    if plot:
+        if live:
+            liveplotter()
+        else:
+            # In case keithley doesn't like to read from its buffers during a sweep..
+            keithley_waitready()
+            # will just make the plot once
+            liveplotter()
+
+def vi(ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO', plot=True, live=True):
     '''Wraps the SweepIList lua function defined on keithley''' 
 
     # Send list of voltage values to keithley
     send_list_to_keithley(ilist, varname='sweeplist')
 
     # TODO: make sure the inputs are valid
-    k.write('SweepIList(sweeplist, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay))
-    liveplotter()
-    # liveplotter does this already
-    #d = getdata()
+    Irange = np.max(np.abs(ilist))
+    k.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
+
+    # Plotting has the side effect of assigning data to the global d variable
+    # If you don't plot, function will just return and you will have to call getdata() manually
+    if plot:
+        if live:
+            liveplotter()
+        else:
+            # In case keithley doesn't like to read from its buffers during a sweep..
+            keithley_waitready()
+            # will just make the plot once
+            liveplotter()
+
+def keithley_waitready():
+    ''' There's probably a better way to do this. '''
+    k.write('waitcomplete()')
+    k.write('print(\"Complete\")')
+    answer = None
+    while answer is None:
+        try:
+            # Keep trying to read until keithley says Complete
+            answer = k.read()
+        except:
+            pass
+
+    '''
+    # Another way ...
+    answer = 1
+    while answer != 0.0:
+        answer = float(k.ask('print(status.operation.sweeping.condition)'))
+        time.sleep(.3)
+    '''
 
 
 def keithley_readbuffer(buffer='smua.nvbuffer1' , attr='readings', start=1, end=None):
-    ''' Read a data buffer and return an actual array. '''
+    '''
+    Read a data buffer and return an actual array.
+    Keithley 2634B handles this just fine while still doing a sweep
+    Keithley 2636A throws error 5042 - cannot perform requested action while overlapped operation is in progress.
+    '''
     if end is None:
         # Read the whole length
         end = int(float(k.ask('print({}.n)'.format(buffer))))
@@ -246,12 +290,11 @@ def getdata(start=1, end=None, history=True):
         # TODO: What other information is available from Keithley registers?
 
         # Need to do something different if sourcing voltage vs sourcing current
-        source = float(k.ask('print(smua.source.func)'))
+        source = k.ask('print(smua.source.func)')
+        source = float(source)
         if source:
             # Returns 1.0 for voltage source (smua.OUTPUT_DCVOLTS)
             out['source'] = 'V'
-            out['Irange'] =  float(k.ask('print(smua.nvbuffer1.measureranges[1])'))
-            out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
             out['V'] = keithley_readbuffer('smua.nvbuffer2', 'sourcevalues', start, end)
             Vmeasured = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
             Vmeasured[Vmeasured == nanvalue] = np.nan
@@ -259,6 +302,7 @@ def getdata(start=1, end=None, history=True):
             I = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
             I[I == nanvalue] = np.nan
             out['I'] = I
+            out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
         else:
             # Current source
             out['source'] = 'I'
@@ -273,7 +317,9 @@ def getdata(start=1, end=None, history=True):
             V[V == nanvalue] = np.nan
             out['V'] = V
 
-        out['t'] = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
+        out['t'] = keithley_readbuffer('smua.nvbuffer2', 'timestamps', start, end)
+        out['Irange'] = keithley_readbuffer('smua.nvbuffer1', 'measureranges', start, end)
+        out['Vrange'] = keithley_readbuffer('smua.nvbuffer2', 'measureranges', start, end)
 
     else:
         empty = np.array([])
@@ -508,9 +554,12 @@ p = autocaller(previoussample)
 
 ### Functions that write to disk
 
-def savedata(filename=None):
-    global d
+def savedata(datadict=None, filename=None):
     ''' Write the current value of the d variable to places, attach metadata '''
+    if datadict is None:
+        global d
+    else:
+        d = datadict
     # Append all the data together
     # devicemeta might be a dict or a series
     print('Appending metadata to last iv loop measured:')
@@ -533,6 +582,7 @@ def savedata(filename=None):
     pd.Series(d).to_pickle(filepath)
     # Append series to data list
     print('Appending variable \'d\' to list \'data\'')
+    global data
     data.append(d)
 
 s = autocaller(savedata)

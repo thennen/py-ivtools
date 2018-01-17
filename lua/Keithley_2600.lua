@@ -39,7 +39,7 @@ function SweepVList(sweepList, rangeI, limitI, nplc, delay)
 end
 
 
-function SweepIList(sweepList, rangeV, limitV, nplc, delay)
+function SweepIList(sweepList, rangeV, limitV, nplc, delay, rangeI)
     reset()
 
     -- Configure the SMU
@@ -49,10 +49,14 @@ function SweepIList(sweepList, rangeV, limitV, nplc, delay)
     smua.measure.nplc			= nplc
     --smua.measure.delay		= smua.DELAY_AUTO
     smua.measure.delay = delay
-    --smua.measure.rangei = rangeI
-    -- Maybe if you don't set this it defaults to autorange and blows up the sample
-    -- Don't know that for sure though
+
+    -- Keithley programmers guide 7-226
+    -- "Explicitly setting a measure range will disable measure autoranging for that function."
     smua.measure.rangev = rangeV
+
+    smua.source.autorangei = smua.AUTORANGE_OFF
+    -- Need to specify or no data comes back..
+    smua.source.rangei = rangeI
 
     -- Prepare the Reading Buffers
     smua.nvbuffer1.clear()
@@ -67,7 +71,7 @@ function SweepIList(sweepList, rangeV, limitV, nplc, delay)
     smua.trigger.source.limitv			= limitV
     smua.trigger.measure.action			= smua.ENABLE
     smua.trigger.measure.iv(smua.nvbuffer1, smua.nvbuffer2)
-    smua.trigger.endpulse.action		= smua.SOURCE_HOLD
+    -- smua.trigger.endpulse.action		= smua.SOURCE_HOLD
     -- By setting the endsweep action to SOURCE_IDLE, the output will return
     -- to the bias level at the end of the sweep.
     smua.trigger.endsweep.action		= smua.SOURCE_IDLE
