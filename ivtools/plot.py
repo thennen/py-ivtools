@@ -7,6 +7,7 @@ import pandas as pd
 from matplotlib.widgets import SpanSelector
 from inspect import signature
 
+### 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
     '''
     Plot an array vs another array contained in iv object
@@ -197,42 +198,6 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_ylabel('Resistance / $\\Omega$')
 
 
-def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
-    '''
-    Select index range from plot of some parameter vs index.  Plot the loops there.
-    To use selector, just make sure you don't have any other gui widgets active
-    Will remain active as long as the return value is not garbage collected
-    Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
-    # TODO pass the plotting function (could be different than plotiv)
-    '''
-    if data is None:
-        # Check for global variables ...
-        # Sorry if this offends you ..
-        print('No data passed. Looking for global variable d')
-        try:
-            data = d
-        except:
-            print('No global variable d. Looking for global variable df')
-            try:
-                data = df
-            except:
-                raise Exception('No data can be found')
-
-    if ax is None:
-        ax = plt.gca()
-    def onselect(xmin, xmax):
-        # Plot max 1000 loops
-        xmin = int(xmin)
-        xmax = int(xmax)
-        n = xmax - xmin
-        step = max(1, int(n / 1000))
-        print('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
-        plotfunc(data[xmin:xmax+1:step], **kwargs)
-        plt.show()
-    rectprops = dict(facecolor='blue', alpha=0.3)
-    return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
-
-
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None, **kwargs):
     '''
@@ -345,20 +310,27 @@ def interactive_figures(n=2):
     #figwidth = 500
     figwidth = figheight * 1.3
     figsize = (figwidth / hdpi, figheight / vdpi)
-    fig1loc = (wpixels - figwidth - 2*borderleft, 0)
-    fig2loc = (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom)
+    figlocs = [(wpixels - figwidth - 2*borderleft, 0),
+               (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
+               (wpixels - 2*figwidth - 4*borderleft, 0),
+               (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
+               (wpixels - 3*figwidth - 6*borderleft, 0),
+               (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
 
-    fig1, ax1 = plt.subplots(figsize=figsize, dpi=hdpi)
-    fig1.canvas.manager.window.move(*fig1loc)
-    fig2, ax2 = plt.subplots(figsize=figsize, dpi=hdpi)
-    fig2.canvas.manager.window.move(*fig2loc)
-
-    fig1.set_tight_layout(True)
-    fig2.set_tight_layout(True)
+    figaxs = []
+    for i in range(n):
+        fig, ax = plt.subplots(figsize=figsize, dpi=hdpi)
+        fig.set_tight_layout(True)
+        fig.canvas.set_window_title('Interactive Plot {}'.format(i))
+        figaxs.append((fig, ax))
+        if i < len(figlocs):
+            # Move the figure to the predetermined location
+            fig.canvas.manager.window.move(*figlocs[i])
+        # Rest of the figures will just float around wherever I guess
 
     plt.show()
 
-    return (fig1, ax1), (fig2, ax2)
+    return figaxs
 
 
 def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
@@ -371,6 +343,71 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
     cb = plt.colorbar(sm, ax=ax, **kwargs)
     return cb
 
+
+    # Fill the whole plot with lines.  Find points to go through
+    if ax.get_yscale() == 'linear':
+        yp = np.linspace(ymin, ymax , n)
+    else:
+        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
+        logymin, logymax = np.log10(ymin), np.log10(ymax)
+        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
+    if ax.get_xscale() == 'linear':
+        xp = np.linspace(xmin, xmax , n)
+    else:
+        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
+        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
+
+    # Load lines aren't lines on log scale, so plot many points
+    x = linspace(xmin, xmax, 500)
+    # Plot one at a time so you can just label one (for legend)
+    slope = 1 / R / Iscale
+    for xi,yi in zip(xp, yp):
+        ax.plot(x, yi - slope * (x - xi), **plotargs)
+    # Label the last one
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
+    # Put the limits back
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
+
+
+### Widgets
+def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
+    '''
+    Select index range from plot of some parameter vs index.  Plot the loops there.
+    To use selector, just make sure you don't have any other gui widgets active
+    Will remain active as long as the return value is not garbage collected
+    Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
+    # TODO pass the plotting function (could be different than plotiv)
+    '''
+    if data is None:
+        # Check for global variables ...
+        # Sorry if this offends you ..
+        print('No data passed. Looking for global variable d')
+        try:
+            data = d
+        except:
+            print('No global variable d. Looking for global variable df')
+            try:
+                data = df
+            except:
+                raise Exception('No data can be found')
+
+    if ax is None:
+        ax = plt.gca()
+    def onselect(xmin, xmax):
+        # Plot max 1000 loops
+        xmin = int(xmin)
+        xmax = int(xmax)
+        n = xmax - xmin
+        step = max(1, int(n / 1000))
+        print('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
+        plotfunc(data[xmin:xmax+1:step], **kwargs)
+        plt.show()
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
+
+
+### Animation
 def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0, title=None, axfunc=None, **kwargs):
     '''
     Write set of ivloops to disk to make a movie which shows their evolution nicely
@@ -431,7 +468,6 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
         del ax.lines[-1]
         del ax.lines[-1]
 
-
 def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
     ''' Temporary name, make a movie showing iv loops as they are swept'''
     if not os.path.isdir(directory):
@@ -491,7 +527,6 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
             # Remove the oldest loop
             del ax.lines[0:3]
 
-
 def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
     # Send command to create video with ffmpeg
     # TODO: have it recognize the file prefix
@@ -534,6 +569,7 @@ def mpfunc(x, pos):
 metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)
 # Note I might be stupid and this could already be built in, using mpl.ticker.EngFormatter()
 
+# Reference marks
 def plot_log_reference_lines(ax, slope=-2):
     ''' Put some reference lines on a log-log plot indicating a certain power dependence'''
     ylims = ax.get_ylim()
@@ -567,40 +603,6 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     ymin, ymax = ylims
     xlims = ax.get_xlim()
     xmin, xmax = xlims
-
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', **kwargs):
-    ''' Usually you need a "mappable" to create a colormap on a plot.  This function lets you create one manually. '''
-    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cb = plt.colorbar(sm, **kwargs)
-    return cb
-
-    # Fill the whole plot with lines.  Find points to go through
-    if ax.get_yscale() == 'linear':
-        yp = np.linspace(ymin, ymax , n)
-    else:
-        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
-        logymin, logymax = np.log10(ymin), np.log10(ymax)
-        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
-    if ax.get_xscale() == 'linear':
-        xp = np.linspace(xmin, xmax , n)
-    else:
-        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
-        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
-
-    # Load lines aren't lines on log scale, so plot many points
-    x = linspace(xmin, xmax, 500)
-    # Plot one at a time so you can just label one (for legend)
-    slope = 1 / R / Iscale
-    for xi,yi in zip(xp, yp):
-        ax.plot(x, yi - slope * (x - xi), **plotargs)
-    # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
-    # Put the limits back
-    ax.set_xlim(*xlims)
-    ax.set_ylim(*ylims)
-
 
 def plot_power_lines(pvals=None, ax=None, xmin=None):
     '''

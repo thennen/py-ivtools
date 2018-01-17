@@ -1379,3 +1379,4 @@ def freq_analysis(data):
     Input data (e.g. collected by freq_response function) containing sinusoid arrays.
     This will use curve fitting and fft methods to determine amplitude and phase.
     '''
+    pass

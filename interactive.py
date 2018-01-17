@@ -11,13 +11,14 @@ Do not copy metadata to every single loop when it's all the same.  Maybe use a s
 Storing metadata in a separate file could be a better idea in general  -- then you can just load the metadata to find which loops you need, instead of loading ALL the information including data arrays when you aren't sure what it is.  Could even use a csv for this. Arrays could then be stored very efficiently especially if they are about the same length.
 
 TODO: Use some flag to determine if script has already been run, then avoid overwriting stuff.  Take out all the try, except blocks
-TODO: pulse using built in waveforms, then maybe don't need to toggle output relay
+DONE: pulse using built in waveforms, then maybe don't need to toggle output relay
 TODO: push some of the code into the main library. here we should only handle interactive plotting, logging, metadata, and exposure of data to global variables
 TODO: Think of a way to share this code while measuring with other instruments
 TODO: Store metadata in a separate txt file with the same name
 TODO: Maintain a database of all the metadata for all the data files created
 TODO: GUI for displaying and changing channel settings, other status information
 TODO: create a class for managing the automatic plotting.  make adding plots easy.
+TODO: create a class for managing the metadata, don't overwrite when script runs again
 '''
 import numpy
 np = numpy
