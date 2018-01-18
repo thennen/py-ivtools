@@ -24,6 +24,29 @@ except:
 # TODO make a container class for all the pico settings, so that they are aware of each other and enforce valid values.  Can build in some fancy methods.  Could split it to another file.  Could submit PR to pico-python.
 #class picosettings(dict):
 
+# NOT DONE
+class picosettings(ps6000.PS6000):
+    '''
+    Class for managing all the channel settings for picoscope
+    range, offset, couplings, attenuations
+    Makes sure the settings are valid, and provides some methods for convenience
+    don't know if this is a good idea
+
+    Why use a class?
+    don't like all the globals
+    want a better syntax for changing channel settings, since I have to do it a lot
+    code won't need to change much
+    want functions for doing things to the settings, without dumping them all over the interactive namespace
+
+    disadvantages:
+    loss of simplicity
+    wanted a banana but got a gorilla holding the banana and the whole jungle
+
+    '''
+    def __init__(self):
+        self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
+
+
 class picorange(dict):
     # Holds the values for picoscope channel ranges.  Enforces valid values.
     # TODO: add increment and decrement
@@ -247,7 +270,8 @@ def connect_instruments():
     connect_rigolawg()
 
 def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
-                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0):
+                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
+                 chrange=None, choffset=None, chcoupling=None, chatten=None):
     '''
     Set up picoscope to capture from specified channel(s).
 
@@ -262,12 +286,13 @@ def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
     ch can be a list of characters, i.e. ch=['A','B'].
 
     # TODO: provide a way to override the global variable channel settings
+    if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
+    the settings will be taken from the global variables
     '''
 
     # Check that two of freq, duration, nsamples was passed
     if not sum([x is None for x in (freq, duration, nsamples)]) == 1:
         raise Exception('Must give exactly two of the arguments freq, duration, and nsamples.  These are needed to determine sampling conditions.')
-
 
     # If ch not iterable, just put it in a list by itself
     if not hasattr(ch, '__iter__'):
@@ -276,11 +301,8 @@ def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
     # Maximum sample rate is different depending on the number of channels that are enabled.
     # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
     # Enable only the channels being used, disable the rest
-    existing_channels = COUPLINGS.keys()
-    for c in existing_channels:
-        if c in ch:
-            ps.setChannel(c, enabled=True)
-        else:
+    for c in ['A', 'B', 'C', 'D']:
+        if c not in ch:
             ps.setChannel(c, enabled=False)
 
     # If freq and duration are passed, take as many samples as it takes to actually sample for duration
@@ -295,17 +317,35 @@ def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
     if duration is not None:
         nsamples = duration * actualfreq
 
+    def global_replace(kwarg, globalarg):
+        if kwarg is None:
+            # No values passed, use the global values
+            return globalarg
+        else:
+            # Fill missing values with global values
+            kwargcopy = kwarg.copy()
+            for c in ch:
+                if c not in kwargcopy:
+                    kwargcopy[c] = globalarg[c]
+            return kwargcopy
+
+    chrange = global_replace(chrange, RANGE)
+    choffset = global_replace(choffset, OFFSET)
+    chcoupling = global_replace(chcoupling, COUPLINGS)
+    chatten = global_replace(chatten, ATTENUATION)
+
     actualfreq, max_samples = ps.setSamplingFrequency(actualfreq, nsamples)
     print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
     if nsamples > max_samples:
         raise(Exception('Trying to sample more than picoscope memory capacity'))
     # Set up the channels
     for c in ch:
-        ps.setChannel(c,
-                      COUPLINGS[c],
-                      RANGE[c],
-                      probeAttenuation=ATTENUATION[c],
-                      VOffset=OFFSET[c])
+        ps.setChannel(channel=c,
+                      coupling=chcoupling[c],
+                      VRange=chrange[c],
+                      probeAttenuation=chatten[c],
+                      VOffset=choffset[c],
+                      enabled=True)
     # Set up the trigger.  Will timeout in 30s
     ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
     ps.runBlock(pretrig)
@@ -360,6 +400,10 @@ def rigol_ramp_symmetry(percent=50, ch=1):
 def rigol_dutycycle(percent=50, ch=1):
     ''' Change the duty cycle of a square output. '''
     rigol.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
+
+def rigol_error():
+    ''' Get error message from rigol '''
+    return rigol.ask(':SYSTem:ERRor?')
 
 # <<<<< For burst mode
 def rigol_ncycles(n, ch=1):
@@ -474,7 +518,9 @@ def load_builtin_wfm(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1
     # Rigol's definition of amp is peak-to-peak, which is unusual.
     rigol_amplitude(2*amp, ch=ch)
     rigol_offset(offset, ch=ch)
+    rigol_burstmode('TRIG', ch=ch)
     rigol_ncycles(n, ch=ch)
+    rigol_trigsource('MAN', ch=ch)
     rigol_frequency(freq, ch=ch)
 
     return locals()
@@ -487,6 +533,7 @@ def pulse_builtin(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, c
     '''
     load_builtin_wfm(**locals())
 
+    rigol_outputstate(True)
     # Trigger rigol
     rigol_trigger(ch=ch)
 
@@ -536,14 +583,15 @@ def get_data(ch='A', raw=False, dtype=np.float32):
     Channels = ['A', 'B', 'C', 'D']
     data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
     data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
+    data['ATTENUATION'] = {ch:cho for ch, cha in zip(Channels, ps.probeAttenuation)}
     data['sample_rate'] = ps.sampleRate
-    # Specify captured, because this field will persist even after splitting for example
+    # Specify samples captured, because this field will persist even after splitting for example
     # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
     data['nsamples_capture'] = len(data[ch[0]])
     # Using the current state of the global variables to record what settings were used
     # I don't know a way to get couplings and attenuations from the picoscope instance
+    # TODO: pull request a change to setChannel
     data['COUPLINGS'] = COUPLINGS
-    data['ATTENUATION'] = ATTENUATION
     # Sample frequency?
     return data
 
@@ -997,8 +1045,9 @@ def rehan_to_iv(datain, dtype=np.float32):
     # Make I, V arrays and store the parameters used to make them
 
     # Volts per amp
-    gainC = 1050
-    gainD = 12867
+    gainC = 524
+    # I have no idea why this one is off by a factor of two.  I did exactly the same thing to measure it ..
+    gainD = 11151 / 2
     # 1 Meg, 33,000
 
     dataout = datain
