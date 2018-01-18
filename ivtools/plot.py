@@ -286,6 +286,165 @@ def plot_channels(chdata, ax=None):
     ax.set_ylabel('Voltage [V]')
 
 
+### NOT DONE!
+class interactive_figs(object):
+    ''' A class to manage the figures used for automatic plotting of IV data after it is measured. '''
+    def __init__(self, n=2):
+        figaxs = self.create(n=n)
+        self.figs = []
+        self.axs = []
+        for fa in enumerate(figaxs, 1):
+            # Give attribute names to each figure and ax: self.fig1 self.ax1 etc.
+            fig = fa[0]
+            ax = fa[1]
+            figs.append(fig)
+            axs.append(ax)
+            setattr(self, 'fig'+i, fig)
+            setattr(self, 'ax'+i, ax)
+        self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+        self.plotters = []
+
+    def create(self, n):
+        # Create n figures and move them to a nice location on the screen
+        # Need to get monitor information
+        # Only works in windows ...
+        import ctypes
+        user32 = ctypes.windll.user32
+        wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+        #aspect = hpixels / wpixels
+        dc = user32.GetDC(0)
+        LOGPIXELSX = 88
+        LOGPIXELSY = 90
+        hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
+        vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
+        ctypes.windll.user32.ReleaseDC(0, dc)
+        bordertop = 79
+        borderleft = 7
+        borderbottom = 28
+        taskbar = 40
+        figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+        # Nope
+        #figwidth = wpixels * .3
+        #figwidth = 500
+        figwidth = figheight * 1.3
+        figsize = (figwidth / hdpi, figheight / vdpi)
+        figlocs = [(wpixels - figwidth - 2*borderleft, 0),
+                (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
+                (wpixels - 2*figwidth - 4*borderleft, 0),
+                (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
+                (wpixels - 3*figwidth - 6*borderleft, 0),
+                (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
+
+        figaxs = []
+        for i in range(n):
+            fig, ax = plt.subplots(figsize=figsize, dpi=hdpi)
+            fig.set_tight_layout(True)
+            fig.canvas.set_window_title('Interactive Plot {}'.format(i))
+            figaxs.append((fig, ax))
+            if i < len(figlocs):
+                # Move the figure to the predetermined location
+                fig.canvas.manager.window.move(*figlocs[i])
+            # Rest of the figures will just float around wherever I guess
+
+        plt.show()
+
+        return figaxs
+
+    def add_plotter(plotfunc, axnum, **kwargs):
+        '''
+        Assign a function which creates a plot to an axis.
+        Function should take data (dictionary) as first argument and have an ax keyword
+        '''
+        self.plotters.append((axnum, plotfunc))
+
+    def update(self, data, newline=True):
+        ''' Update the plots with new data. '''
+        for axnum, plotter in self.plotters:
+            ax = self.axs[axnum]
+            plotter(data, ax=ax)
+            ax.get_figure().canvas.draw()
+        plt.pause(.05)
+
+    def clear(self):
+        ''' Clear all the figures '''
+        # Delete references
+
+    def write(self, directory):
+        ''' Write the figures to disk. '''
+
+    def close(self):
+        ''' Close all the figures and stop doing anything '''
+        for fig in self.figs:
+            plt.close(fig)
+
+
+# These are supposed to be for the live plotting
+def ivplotter(data, ax=None, maxloops=100, smooth=True, **kwargs):
+    # Smooth data a bit and give it to plotiv (from plot.py)
+    # Would be better to smooth before splitting ...
+    if ax is None:
+        fig, ax = plt.subplots()
+    if smooth:
+        data = moving_avg(data, window=10)
+    if type(data) is list:
+        nloops = len(data)
+    else:
+        nloops = 1
+    if nloops > maxloops:
+        print('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        loopstep = int(nloops / 99)
+        data = data[::loopstep]
+    plotiv(data, ax=ax, maxsamples=5000, **kwargs)
+
+def chplotter(data, ax=None, **kwargs):
+    # data might contain multiple loops because of splitting, but we want the unsplit arrays
+    # To avoid pasting them back together again, there is a global variable called chdata
+    if ax is None:
+        fig, ax = plt.subplots()
+    # Remove previous lines
+    for l in ax2.lines[::-1]: l.remove()
+    # Plot at most 100000 datapoints of the waveform
+    for ch in ['A', 'B', 'C', 'D']:
+        if ch in chdata:
+            lendata = len(chdata[ch])
+            break
+    if lendata > 100000:
+        print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
+        plotdata = sliceiv(chdata, stop=100000)
+    else:
+        plotdata = chdata
+    plot_channels(plotdata, ax=ax, **kwargs)
+
+def VoverIplotter(data, ax=None, **kwargs):
+    ''' Plot V/I vs V, like GPIB control program'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    mask = np.abs(d['V']) > .01
+    vmasked = d['V'][mask]
+    imasked = d['I'][mask]
+    ax.plot(vmasked, vmasked / imasked, '.-', **kwargs)
+    ax.set_yscale('log')
+    ax.set_xlabel('Voltage [V]')
+    ax.set_ylabel('V/I [$\Omega$]')
+    ax.yaxis.set_major_formatter(metricprefixformatter)
+
+def dVdIplotter(data, ax=None, **kwargs):
+    ''' Plot dV/dI vs V'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    mask = np.abs(d['V']) > .01
+    vmasked = d['V'][mask]
+    imasked = d['I'][mask]
+    dv = np.diff(vmasked)
+    di = np.diff(imasked)
+    ax.plot(vmasked[1:], dv/di, '.-', **kwargs)
+    ax.set_yscale('log')
+    ax.set_xlabel('Voltage [V]')
+    ax.set_ylabel('V/I [$\Omega$]')
+    ax.yaxis.set_major_formatter(metricprefixformatter)
+
+
+
 def interactive_figures(n=2):
     # Determine nice place to put some plots, and make the figures
     # Need to get monitor information
