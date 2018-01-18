@@ -126,9 +126,12 @@ class autocaller():
 # Try to connect the instruments
 connect_instruments()
 
-print('Channel settings:')
-print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
-                   index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
+def print_channel_settings():
+    print('Channel settings:')
+    print(pd.DataFrame([COUPLINGS, ATTENUATION, OFFSET, RANGE],
+                    index=['COUPLINGS', 'ATTENUATION', 'OFFSET', 'RANGE']))
+
+print_channel_settings()
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
         # Auto offset for current input
@@ -205,7 +208,7 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
     # This saves the annoying *click* of the output relay
     if refreshwfm:
         load_volatile_wfm(wfm, duration=duration, n=n, ch=1, interp=True)
-    trigger_rigol(ch=1)
+    rigol_trigger(ch=1)
 
     trainduration = n * duration
     print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
@@ -329,10 +332,10 @@ def load_lassen(**kwargs):
     # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
     global lassen_df, meta_df, prettykeys, filenamekeys, devicemetalist
     # Load information from files on disk
-    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+    deposition_df = pd.read_excel('sampledata/CeRAM_Depositions.xlsx', header=8, skiprows=[9])
     # Only use Lassen devices
     deposition_df = deposition_df[deposition_df['wafer_code'] == 'Lassen']
-    lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
+    lassen_df = pd.read_pickle(r"sampledata/all_lassen_device_info.pkl")
     # Merge data
     merge_deposition_data_on = ['coupon']
 

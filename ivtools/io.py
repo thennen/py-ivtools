@@ -15,14 +15,23 @@ from scipy.io import savemat
 pjoin = os.path.join
 splitext = os.path.splitext
 
-# Make valid variable name from string
 def validvarname(varStr):
+    # Make valid variable name from string
     sub_ = re.sub('\W|^(?=\d)','_', varStr)
     sub_strip = sub_.strip('_')
     if sub_strip[0].isdigit():
        # Can't start with a digit
        sub_strip = 'm_' + sub_strip
     return sub_strip
+
+
+def getGitRevision():
+    try:
+        return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
+    except:
+        # Either there is no git or you are not in the py-ivtools directory.
+        # Don't error because of this
+        return 'Dunno'
 
 def read_pickle(fp):
     ''' Read data from a pickle file '''
@@ -39,7 +48,6 @@ def read_pickle(fp):
     out = dotdict.dotdict(normaldict)
     out['iv'] = np.array([dotdict.dotdict(l) for l in normaldict['iv']])
     return out
-
 
 def write_pickle(data, fp):
     ''' Write data to a pickle file '''
@@ -142,8 +150,6 @@ def read_txt(filepath, **kwargs):
 
     return pd.Series(dataout)
 
-
-
 def read_txts(directory, pattern='*', exclude=None, **kwargs):
     ''' Load list of loops from separate text files. Specify files by glob
     pattern.  kwargs are passed to loadtxt'''
@@ -174,7 +180,7 @@ def read_txts(directory, pattern='*', exclude=None, **kwargs):
     return pd.DataFrame(datalist)
 
 
-def read_pandas_files(filepaths, concat=True):
+def read_pandas_files(filepaths, concat=True, dropcols=None):
     '''
     Load in dataframes and/or series in list of filepaths
     return concatenated dataframe
@@ -186,18 +192,26 @@ def read_pandas_files(filepaths, concat=True):
         try:
             # pdlist may have some combination of Series and DataFrames.  Series should be rows
             pdobject = pd.read_pickle(f)
-            if type(pdobject) is pd.DataFrame:
-                pdlist.append(pdobject)
-            elif type(pdobject) is pd.Series:
-                # Took me a while to figure out how to convert series into single row dataframe
-                pdlist.append(pd.DataFrame.from_records([pdobject]))
-                # This resets all the datatypes to object !!
-                #pdlist.append(pd.DataFrame(pdobject).transpose())
-            else:
-                print('Do not know wtf this file is:')
-            print('Loaded {}.'.format(f))
         except:
             print('Failed to interpret {} as a pandas pickle!'.format(f))
+            continue
+
+        if type(pdobject) is pd.DataFrame:
+            if dropcols is not None:
+                realdropcols = [dc for dc in dropcols if dc in pdobject]
+                pdobject = pdobject.drop(realdropcols, 1)
+            pdlist.append(pdobject)
+        elif type(pdobject) is pd.Series:
+            if dropcols is not None:
+                realdropcols = [dc for dc in dropcols if dc in pdobject]
+                pdobject = pdobject.drop(realdropcols)
+            # Took me a while to figure out how to convert series into single row dataframe
+            pdlist.append(pd.DataFrame.from_records([pdobject]))
+            # This resets all the datatypes to object !!
+            #pdlist.append(pd.DataFrame(pdobject).transpose())
+        else:
+            print('Do not know wtf this file is:')
+        print('Loaded {}.'.format(f))
     if concat:
         return pd.concat(pdlist)
     else:
@@ -249,12 +263,6 @@ def write_matlab(data, filepath, varname=None, compress=True):
       savemat(filepath, {varname:[dict(data)]}, do_compression=compress)
    elif dtype is pd.DataFrame:
       savemat(filepath, {varname: data.to_dict('records')}, do_compression=compress)
-
-
-def write_csv(data, filepath, columns=['I', 'V']):
-    # For true dinosaurs
-    pass
-
 
 def read_matlab(filepath):
    # Read matlab file into dataframe or series
@@ -334,6 +342,29 @@ def read_matlab(filepath):
          return pd.Series(var_in)
 
 
+def write_csv(data, filepath, columns=['I', 'V']):
+    # For true dinosaurs
+    pass
+
+def write_meta_csv(data, filepath):
+    ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
+    dtype = type(data)
+    if dtype is pd.Series:
+        s = pd.read_pickle(pjoin(root, f))
+    elif dtype is pd.Dataframe:
+        # Only save first row metadata -- Usually it's the same for all
+        df = pd.read_pickle(pjoin(root, f))
+        s = df.iloc[0]
+        s['nloops'] = len(df)
+    elif dtype is list:
+        s = pd.Series(data[0])
+    elif dtype is dict:
+        s = pd.Series(data)
+    # Drop all arrays from data
+    arrays = s[s.apply(type) == np.ndarray].index
+    s.drop(arrays).to_csv(filepath, sep='\t', encoding='utf-8')
+
+
 def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
@@ -375,24 +406,6 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       ax.cla()
 
    plt.close(fig)
-
-def write_meta_csv(data, filepath):
-    ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
-    dtype = type(data)
-    if dtype is pd.Series:
-        s = pd.read_pickle(pjoin(root, f))
-    elif dtype is pd.Dataframe:
-        # Only save first row metadata -- Usually it's the same for all
-        df = pd.read_pickle(pjoin(root, f))
-        s = df.iloc[0]
-        s['nloops'] = len(df)
-    elif dtype is list:
-        s = pd.Series(data[0])
-    elif dtype is dict:
-        s = pd.Series(data)
-    # Drop all arrays from data
-    arrays = s[s.apply(type) == np.ndarray].index
-    s.drop(arrays).to_csv(filepath, sep='\t', encoding='utf-8')
 
 def change_devicemeta(filepath, newmeta, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
