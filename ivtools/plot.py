@@ -763,6 +763,48 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     xlims = ax.get_xlim()
     xmin, xmax = xlims
 
+    # Fill the whole plot with lines.  Find points to go through
+    if ax.get_yscale() == 'linear':
+        yp = np.linspace(ymin, ymax , n)
+    else:
+        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
+        logymin, logymax = np.log10(ymin), np.log10(ymax)
+        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
+    if ax.get_xscale() == 'linear':
+        xp = np.linspace(xmin, xmax , n)
+    else:
+        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
+        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
+
+    # Load lines aren't lines on log scale, so plot many points
+    x = linspace(xmin, xmax, 500)
+    # Plot one at a time so you can just label one (for legend)
+    slope = 1 / R / Iscale
+    for xi,yi in zip(xp, yp):
+        ax.plot(x, yi - slope * (x - xi), **plotargs)
+    # Label the last one
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
+    # Put the limits back
+    ax.set_xlim(*xlims)
+
+    # Starting y points for the lines
+    if ax.get_yscale() == 'linear':
+        y = np.linspace(ymin, ymax , n)
+    else:
+        y = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
+
+    # Load lines aren't lines on log scale, so plot many points
+    x = linspace(xmin, xmax, 500)
+    # Plot one at a time so you can just label one (for legend)
+    for yi in y:
+        ax.plot(x, yi - (1/R * x) / Iscale, '--', alpha=.2, c='black', **kwargs)
+    # Label the last one
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
+    # Put the limits back
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
+
+
 def plot_power_lines(pvals=None, ax=None, xmin=None):
     '''
     Plot lines of constant power on the indicated axis  (should be I vs V)
