@@ -10,6 +10,8 @@ from dotdict import dotdict
 import pandas as pd
 import os
 
+visa_rm = visa.ResourceManager()
+
 # These are None until the instruments are connected
 # Don't clobber them though, in case this script is used with run -i
 try:
@@ -20,6 +22,10 @@ try:
     rigol
 except:
     rigol = None
+try:
+    keithley
+except:
+    keithley = None
 
 # TODO make a container class for all the pico settings, so that they are aware of each other and enforce valid values.  Can build in some fancy methods.  Could split it to another file.  Could submit PR to pico-python.
 #class picosettings(dict):
@@ -246,7 +252,7 @@ def connect_rigolawg():
     rigolstr = 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'
     if rigol is None:
         try:
-            rigol = visa.ResourceManager().open_resource(rigolstr)
+            rigol = visa_rm.open_resource(rigolstr)
             idn = rigol.query('*IDN?')
             print('Rigol connection succeeded.')
             print('*IDN?  {}'.format(idn))
@@ -262,12 +268,30 @@ def connect_rigolawg():
         except:
             print('rigol variable is not None.  Doing nothing.')
 
+def connect_keithley(ip='192.168.11.11'):
+    global keithley
+    # 2634B
+    #Keithley_ip = '192.168.11.11'
+    # 2636A
+    #Keithley_ip = '192.168.11.12'
+    Keithley_ip = ip
+    Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
+    try:
+        # Is keithley already connected?
+        idn = keithley.ask('*IDN?')
+    except:
+        # impatiently try to connect to keithley
+        keithley = visa_rm.get_instrument(Keithley_id, open_timeout=250)
+        idn = keithley.ask('*IDN?')
+    print('Keithley *IDN?: {}'.format(idn))
+
 
 def connect_instruments():
     ''' Connect all the necessary equipment '''
     print('Attempting to connect all instruments.')
     connect_picoscope()
     connect_rigolawg()
+    connect_keithley()
 
 def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
                  trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
@@ -583,7 +607,7 @@ def get_data(ch='A', raw=False, dtype=np.float32):
     Channels = ['A', 'B', 'C', 'D']
     data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
     data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
-    data['ATTENUATION'] = {ch:cho for ch, cha in zip(Channels, ps.probeAttenuation)}
+    data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, ps.ProbeAttenuation)}
     data['sample_rate'] = ps.sampleRate
     # Specify samples captured, because this field will persist even after splitting for example
     # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
@@ -852,7 +876,7 @@ def set_compliance(cc_value):
     COMPLIANCE_CURRENT = cc_value
     INPUT_OFFSET = 0
 
-def calibrate_compliance(iterations=3, startfromfile=True):
+def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     '''
     Set and measure some compliance values throughout the range, and save a calibration look up table
     Need picoscope channel B connected to circuit output
@@ -860,22 +884,13 @@ def calibrate_compliance(iterations=3, startfromfile=True):
     This takes some time..
     '''
     # Measure compliance currents and input offsets with static Vb
-    # Have to change the range.  I'll change it back ...
-    global RANGE
-    global OFFSET
-    oldrange = RANGE.copy()
-    oldoffset = OFFSET.copy()
-    RANGE['A'] = 1
-    OFFSET['A'] = 0
-    #RANGE['B'] = 5
-    RANGE['B'] = 2
-    OFFSET['B'] = -2
 
     fig1, ax1 = plt.subplots()
     fig2, ax2 = plt.subplots()
     ccurrent_list = []
     offsets_list = []
-    dacvals = range(0, 2**11, 40)
+    dacvals = np.int16(linspace(0, 2**11, ndacvals))
+
     for it in range(iterations):
         ccurrent = []
         offsets = []
@@ -885,8 +900,9 @@ def calibrate_compliance(iterations=3, startfromfile=True):
                 print('Reading calibration from file {}'.format(os.path.abspath(fn)))
                 with open(fn, 'rb') as f:
                     cc = pickle.load(f)
-                compensations = cc['compensationV']
+                compensations = np.interp(dacvals, cc['dacvals'], cc['compensationV'])
             else:
+                # Start with constant compensation
                 compensations = .55 /0.088 * np.ones(len(dacvals))
         else:
             compensations -= np.array(offsets_list[-1]) / .085
@@ -899,9 +915,9 @@ def calibrate_compliance(iterations=3, startfromfile=True):
             offsets.append(offs)
         ccurrent_list.append(ccurrent)
         offsets_list.append(offsets)
-        ax1.plot(dacvals, ccurrent, '.-')
+        ax1.plot(dacvals, np.array(ccurrent) * 1e6, '.-')
         ax1.set_xlabel('DAC0 value')
-        ax1.set_ylabel('Compliance Current')
+        ax1.set_ylabel('Compliance Current [$\mu$A]')
         ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
         ax2.set_xlabel('DAC0 value')
         ax2.set_ylabel('Input offset')
@@ -914,12 +930,6 @@ def calibrate_compliance(iterations=3, startfromfile=True):
         pickle.dump(output, f)
     print('Wrote calibration to ' + calibrationfile)
 
-    # Set scope settings back to old values
-    RANGE['A'] = oldrange['A']
-    OFFSET['A'] = oldoffset['A']
-    RANGE['B'] = oldrange['B']
-    OFFSET['B'] = oldoffset['B']
-
     return compensations
 
 def plot_compliance_calibration():
@@ -927,14 +937,14 @@ def plot_compliance_calibration():
     print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
-    ccurrent = cc['ccurrent']
+    ccurrent = 1e6 * np.array(cc['ccurrent'])
     dacvals = cc['dacvals']
     compensationV = cc['compensationV']
     fig, ax = plt.subplots()
     fig2, ax2 = plt.subplots()
     ax.plot(dacvals, ccurrent, '.-')
     ax.set_xlabel('DAC0 value')
-    ax.set_ylabel('Compliance Current')
+    ax.set_ylabel('Compliance Current [$\mu$A]')
     ax2.plot(dacvals, compensationV, '.-')
     ax2.set_xlabel('DAC0 value')
     ax2.set_ylabel('Compensation V (DAC1)')
@@ -962,7 +972,12 @@ def measure_compliance():
     rigol_outputstate(False)
     time.sleep(.1)
     # Immediately capture some samples on channels A and B
-    pico_capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1)
+    # Use these channel settings for the capture -- does not modify global settings
+    picosettings = {'chrange': {'A':.2, 'B':2},
+                    'choffset': {'A':0, 'B':-2},
+                    'chatten': {'A':.2, 'B':1},
+                    'chcoupling': {'A':'DC', 'B':'DC'}}
+    pico_capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
     picodata = get_data(['A', 'B'])
     #plot_channels(picodata)
     Amean = np.mean(picodata['A'])
