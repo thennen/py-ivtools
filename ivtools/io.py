@@ -15,6 +15,168 @@ from scipy.io import savemat
 pjoin = os.path.join
 splitext = os.path.splitext
 
+gitdir = os.path.split(__file__)[0]
+
+class MetaHandler(object):
+    '''
+    Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
+    for attaching sample information to data files
+
+    '''
+    def __init__(self):
+        # This stores the currently selected metadata.  It's a dict or a pd.Series
+        # Go ahead and overwrite it if you want
+        self.meta = {}
+        # This is the index of the selected data
+        self.i = None
+        # This is the dataframe holding all of the 
+        self.df = None
+        # These key:values are always appended
+        self.static = {}
+        # This controls which keys will be used to construct a filename
+        self.filenamekeys = []
+        # TODO: This will be called with str.format
+        #self.filenameformatter = None
+        # These keys get printed when you step through the list of metadata
+        self.prettykeys = []
+
+    def self_merge(self, columns=None):
+        ''' Merge meta df with itself, by default on columns which have no missing values '''
+        pass
+
+    def load_from_csv(self, xlspath):
+        pass
+
+    def load_lassen(self, **kwargs):
+        '''
+        Load wafer information for Lassen
+        Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
+        '''
+        deposition_file = 'sampledata/CeRAM_Depositions.xlsx'
+        lassen_file = 'sampledata/all_lassen_device_info.pkl'
+
+        deposition_df = pd.read_excel(deposition_file, header=8, skiprows=[9])
+        # Only use info for Lassen wafers
+        deposition_df = deposition_df[deposition_df['wafer_code'] == 'Lassen']
+        lassen_df = pd.read_pickle(lassen_file)
+        # Merge data
+        merge_deposition_data_on = ['coupon']
+
+        # If someone neglected to write the coupon number in the deposition sheet
+        # Merge the non-coupon specific portion of lassen_df
+        coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
+        non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
+        non_coupon_specific = lassen_df[lassen_df.coupon == 1][non_coupon_cols]
+        lassen_df = pd.concat((lassen_df, non_coupon_specific))
+
+        meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
+
+        # Check that function got valid arguments
+        for key, values in kwargs.items():
+            if key not in meta_df.columns:
+                raise Exception('Key must be in {}'.format(meta_df.columns))
+            if isinstance(values, str) or not hasattr(values, '__iter__'):
+                kwargs[key] = [values]
+
+        #### Filter kwargs ####
+        for key, values in kwargs.items():
+            meta_df = meta_df[meta_df[key].isin(values)]
+        #### Filter devices to be measured #####
+        devices001 = [2,3,4,5,6,7,8]
+        devices014 = [4,5,6,7,8,9]
+        meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
+        meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
+
+        meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+
+        # Try to convert data types
+        typedict = dict(wafer_number=np.uint8,
+                        coupon=np.uint8,
+                        sample_number=np.uint16,
+                        number_of_dies=np.uint8,
+                        cr=np.uint8,
+                        thickness_1=np.uint16,
+                        thickness_2=np.uint16,
+                        dep_temp=np.uint16,
+                        etch_time=np.float32,
+                        etch_depth=np.float32)
+        for k,v in typedict.items():
+            # int arrays don't support missing data, because python sucks and computers suck
+            if not any(meta_df[k].isnull()):
+                meta_df[k] = meta_df[k].astype(v)
+
+        self.df = meta_df
+        self.prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+        self.filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
+        print('Loaded metadata for {} devices'.format(len(self.df)))
+
+    def load_nanoxbar(self):
+        ''' Load '''
+        pass
+
+    def load_depositions():
+        ''' Load sample information from some deposition sheet '''
+        pass
+
+    def step(self, n):
+        ''' Select the next device '''
+        lastmeta = self.meta
+        if self.i is None:
+            self.i = 0
+        else:
+            self.i += n
+        if len(self.df) > self.i:
+            if type(self.df) == pd.DataFrame:
+                self.meta = self.df.iloc[self.i]
+            else:
+                self.meta = self.df[self.i]
+            # Put in the static metadata here.  Not sure if this is the best approach
+            self.meta.update(self.static)
+        else:
+            print('There is no more meta data to load')
+            return
+        # Highlight keys that have changed
+        hlkeys = []
+        for key in self.meta.keys():
+            if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
+                hlkeys.append(key)
+        print('You have selected this device (index {}):'.format(self.i))
+        # Print some information about the device
+        self.print(hlkeys=hlkeys)
+        pass
+
+    def next(self):
+        self.step(1)
+
+    def previous(self):
+        self.step(-1)
+
+    def print(self, keys=None, hlkeys=None):
+        ''' Print the selected metadata '''
+        # Print some information about the device
+        if self.prettykeys is None or len(self.prettykeys) == 0:
+            # Print all the information
+            prettykeys = devicemeta.keys()
+        else:
+            prettykeys = self.prettykeys
+        for key in prettykeys:
+            if key in self.meta.keys():
+                if hlkeys is not None and key in hlkeys:
+                    print('{:<18}\t{:<8} <----- Changed'.format(key[:18], self.meta[key]))
+                else:
+                    print('{:<18}\t{}'.format(key[:18], self.meta[key]))
+
+    def attach(self, data):
+        return None
+
+    def filename(self):
+        ''' Make a filename from selected metadata '''
+        filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+        for fnkey in self.filenamekeys:
+            if fnkey in data.keys():
+                filename += '_{}'.format(data[fnkey])
+        return filename
+
 def validvarname(varStr):
     # Make valid variable name from string
     sub_ = re.sub('\W|^(?=\d)','_', varStr)
@@ -24,14 +186,31 @@ def validvarname(varStr):
        sub_strip = 'm_' + sub_strip
     return sub_strip
 
+def valid_filename():
+    pass
+
 
 def getGitRevision():
-    try:
-        return subprocess.check_output(['git', 'rev-parse', 'HEAD']).decode().strip()
-    except:
-        # Either there is no git or you are not in the py-ivtools directory.
-        # Don't error because of this
+    rev = subprocess.getoutput('cd \"{}\" & git rev-parse --short HEAD'.format(gitdir))
+    #return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+    if 'not recognized' in rev:
+        # git not installed probably
         return 'Dunno'
+    else:
+        return rev
+
+def getGitStatus():
+    return subprocess.check_output(['git', 'status', '-z'])
+
+def log_ipy(filepath):
+    '''
+    Append ipython and std in/out to a text file
+    There are some strange bugs involved
+    spyder just crashes, for example
+    '''
+    pass
+    # TODO take this from interactive script and make it work as function
+
 
 def read_pickle(fp):
     ''' Read data from a pickle file '''
@@ -447,3 +626,13 @@ def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False
             with open(plotfp + '.plt', 'wb') as f:
                 pickle.dump(plt.gcf(), f)
             print('Wrote {}.plt'.format(plotfp))
+
+
+def makefolder(*args):
+    ''' Make a folder if it doesn't already exist. All args go to os.path.join'''
+    subfolder = os.path.join(*args)
+    if not os.path.isdir(subfolder):
+        print('Making folder: {}'.format(subfolder))
+        os.makedirs(subfolder)
+    else:
+        print('Folder already exists: {}'.format(subfolder))
