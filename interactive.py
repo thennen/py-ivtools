@@ -106,6 +106,11 @@ sys.stdout = logger
 ############# End of Logging ###########################
 
 # Rather than importing the modules and dealing with reload shenanigans that never actually work, use ipython run magic
+
+# Using ipython to "run" the scripts and dump all their names into the interactive namespace
+# This is because I don't want to deal with imports/reloading imports when the files get changed
+# Furthermore, I want to access/modify the global variables directly from the interactive console
+# Is there a better way to do this?
 magic('matplotlib')
 ivtoolsdir = 'C:/t/py-ivtools'
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/measure.py')))
@@ -113,8 +118,10 @@ magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/plot.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/io.py')))
 magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 
-# Because who wants to type?
 class autocaller():
+    '''
+    Ugly hack to make a function call itself without the parenthesis.
+    '''
     def __init__(self, function):
         self.function = function
     def __repr__(self):
@@ -172,7 +179,8 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
 
 def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
        autosave=True, autoplot=True, autosplit=True, into50ohm=False,
-       channels=['A', 'B'], autosmoothimate=True, splitbylevel=None, refreshwfm=True):
+       channels=['A', 'B'], autosmoothimate=True, splitbylevel=None, refreshwfm=True,
+       savewfm=False, **kwargs):
     '''
     Pulse a waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
@@ -222,6 +230,12 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
 
+    if savewfm:
+        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
+        # You will need to interpolate it, however..
+        # Or can we read it off the rigol??
+        ivdata['Vwfm'] = wfm
+
     if autosmoothimate:
         nsamples_shot = ivdata['nsamples_capture'] / n
         # Smooth by 0.3% of a shot
@@ -256,7 +270,7 @@ def iv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False,
         # Write to disk automatically
         # Can slow things down
         print('Writing data to disk')
-        savedata()
+        savedata(ivdata)
 
     if autoplot:
         # Plot the IV data
@@ -378,7 +392,7 @@ def load_lassen(**kwargs):
                     etch_time=np.float32,
                     etch_depth=np.float32)
     for k,v in typedict.items():
-        # int arrays don't support missing data, because python sucks
+        # int arrays don't support missing data, because python sucks and computers suck
         if not any(meta_df[k].isnull()):
             meta_df[k] = meta_df[k].astype(v)
 
@@ -595,8 +609,10 @@ def chplotter(data, ax=None):
             lendata = len(chdata[ch])
             break
     if lendata > 100000:
-        print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
-        plotdata = sliceiv(chdata, stop=100000)
+        #print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
+        #plotdata = sliceiv(chdata, stop=100000)
+        print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
+        plotdata = sliceiv(chdata, step=10)
     else:
         plotdata = chdata
     plot_channels(plotdata, ax=ax)

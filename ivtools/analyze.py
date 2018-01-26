@@ -410,7 +410,10 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
         # FIR filter seems more appropriate
         #decarrays = [signal.decimate(ar, factor, type='fir', n=30, zero_phase=True) for ar in smootharrays]
         # But I see no reason not to simply downsample the array
-        decarrays = [ar[::factor] for ar in smootharrays]
+        if factor > 1:
+            decarrays = [ar[::factor] for ar in smootharrays]
+        else:
+            decarrays = smootharrays
     for c, ar, dtype in zip(columns, decarrays, dtypes):
         if dtype is np.float64:
             # Datatype was already float64, don't convert float64 to float64
@@ -560,7 +563,7 @@ def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
 
 
 @ivfunc
-def splitbranch(data, columns=None):
+def splitbranch(data, columns=None, dupe_endpoints=True, make_increasing=False):
     '''
     Split a loop into two branches
     Assumptions are that loop starts at intermediate V (like zero), goes to one extremum, to another extremum, then back to zero.
@@ -593,12 +596,28 @@ def splitbranch(data, columns=None):
     if singleextreme is None:
         # Assume there are two extremes..
         for c in columns:
-            branch1[c] = np.concatenate((data[c][secondextreme:], data[c][:firstextreme]))
-            branch2[c] = data[c][firstextreme:secondextreme]
+            if dupe_endpoints:
+                branch1[c] = np.concatenate((data[c][secondextreme:], data[c][:firstextreme + 1]))
+                branch2[c] = data[c][firstextreme:secondextreme + 1]
+            else:
+                branch1[c] = np.concatenate((data[c][secondextreme:], data[c][:firstextreme]))
+                branch2[c] = data[c][firstextreme:secondextreme]
     else:
+        # Only one extreme
         for c in columns:
-            branch1[c] = data[c][:singleextreme]
-            branch2[c] = data[c][singleextreme:]
+            if dupe_endpoints:
+                branch1[c] = data[c][:singleextreme + 1]
+                branch2[c] = data[c][singleextreme:]
+            else:
+                branch1[c] = data[c][:singleextreme]
+                branch2[c] = data[c][singleextreme:]
+
+    if make_increasing:
+        for c in columns:
+            if firstextreme > start:
+                branch2[c] = branch2[c][::-1]
+            else:
+                branch1[c] = branch1[c][::-1]
 
     add_missing_keys(data, branch1)
     add_missing_keys(data, branch2)
@@ -612,7 +631,7 @@ def split_updown():
 
 
 @ivfunc
-def splitiv(data, nloops=None, nsamples=None, indices=None):
+def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
     '''
     Split data into individual loops, specifying somehow the length of each loop
     if you pass nloops, it splits evenly into n loops.
@@ -621,8 +640,10 @@ def splitiv(data, nloops=None, nsamples=None, indices=None):
     '''
     splitkeys = find_data_arrays(data)
 
+
+    l = len(data[splitkeys[0]])
+
     if indices is None:
-        l = len(data['V'])
         if nloops is not None:
             nsamples = float(l / int(nloops))
         if nsamples is None:
@@ -638,14 +659,17 @@ def splitiv(data, nloops=None, nsamples=None, indices=None):
         # Put in endpoints
         if trigger[0] != 0:
             trigger = np.append([0], trigger)
-        if trigger[-1] not in [-1, len(data[splitkeys[0]]) - 1]:
-            trigger = np.append(trigger, [-1])
+        if trigger[-1] not in [-1, l - 1]:
+            trigger = np.append(trigger, [l - 1])
 
     outlist = []
     for i, j in zip(trigger[:-1], trigger[1:]):
         splitloop = {}
         for k in splitkeys:
-            splitloop[k] = data[k][i:j]
+            if dupe_endpts:
+                splitloop[k] = data[k][i:j+1]
+            else:
+                splitloop[k] = data[k][i:j]
         add_missing_keys(data, splitloop)
         outlist.append(splitloop)
 
@@ -1137,8 +1161,10 @@ def set_dict_kv(data, dictname, key, value):
     basically setting second level k:v for nested dicts
     i.e. set_dict_kv(df, 'longnames', 'T', 'Temperature')
     '''
-    # TODO: test if dict is in data or not
-    data[dictname][key] = value
+    if dictname in data:
+        data[dictname][key] = value
+    else:
+        data[dictname] = {key: value}
 
 def set_unit(data, name, unit):
     set_dict_kv(data, 'units', name, unit)
