@@ -124,9 +124,9 @@ magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 
 # Connect to Keithley
 # 2634B
-#Keithley_ip = '192.168.11.11'
+Keithley_ip = '192.168.11.11'
 # 2636A
-Keithley_ip = '192.168.11.12'
+#Keithley_ip = '192.168.11.12'
 Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
 rm = visa.ResourceManager()
 try:
@@ -281,6 +281,7 @@ def getdata(start=1, end=None, history=True):
     if numpts > 0:
         # Output a dictionary with voltage/current arrays and other parameters
         out = {}
+        out['units'] = {}
 
         # Keithley returns this special value when the measurement is out of range
         # replace it with a real nan so it doesn't mess up the plots
@@ -299,6 +300,7 @@ def getdata(start=1, end=None, history=True):
             Vmeasured = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
             Vmeasured[Vmeasured == nanvalue] = np.nan
             out['Vmeasured'] = Vmeasured
+            out['units']['Vmeasured'] = 'V'
             I = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
             I[I == nanvalue] = np.nan
             out['I'] = I
@@ -313,6 +315,7 @@ def getdata(start=1, end=None, history=True):
             Imeasured = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
             Imeasured[Imeasured == nanvalue] = np.nan
             out['Imeasured'] = Imeasured
+            out['units']['Imeasured'] = 'A'
             V = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
             V[V == nanvalue] = np.nan
             out['V'] = V
@@ -320,6 +323,9 @@ def getdata(start=1, end=None, history=True):
         out['t'] = keithley_readbuffer('smua.nvbuffer2', 'timestamps', start, end)
         out['Irange'] = keithley_readbuffer('smua.nvbuffer1', 'measureranges', start, end)
         out['Vrange'] = keithley_readbuffer('smua.nvbuffer2', 'measureranges', start, end)
+
+        out['units']['I'] = 'A'
+        out['units']['V'] = 'V'
 
     else:
         empty = np.array([])
@@ -425,10 +431,10 @@ def load_lassen(**kwargs):
     # Could of course specify devices by any other criteria (code name, deposition date, thickness ...)
     global lassen_df, meta_df, prettykeys, filenamekeys, devicemetalist, deposition_df
     # Load information from files on disk
-    deposition_df = pd.read_excel('CeRAM_Depositions.xlsx', header=8, skiprows=[9])
+    deposition_df = pd.read_excel('sampledata/CeRAM_Depositions.xlsx', header=8, skiprows=[9])
     # Only use Lassen devices
     deposition_df = deposition_df[deposition_df['wafer_code'] == 'Lassen']
-    lassen_df = pd.read_pickle(r"all_lassen_device_info.pickle")
+    lassen_df = pd.read_pickle(r"sampledata/all_lassen_device_info.pkl")
     # Merge data
     merge_deposition_data_on = ['coupon']
 
