@@ -276,14 +276,24 @@ def connect_keithley(ip='192.168.11.11'):
     #Keithley_ip = '192.168.11.12'
     Keithley_ip = ip
     Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
-    try:
-        # Is keithley already connected?
-        idn = keithley.ask('*IDN?')
-    except:
-        # impatiently try to connect to keithley
-        keithley = visa_rm.get_instrument(Keithley_id, open_timeout=250)
-        idn = keithley.ask('*IDN?')
-    print('Keithley *IDN?: {}'.format(idn))
+    if keithley is None:
+        try:
+            # Impatiently try to connect to keithley
+            # Because it runs even if keithley is not connected and I have no intention to use it
+            keithley = visa_rm.get_instrument(Keithley_id, open_timeout=250)
+            idn = keithley.ask('*IDN?')
+            print('Keithley *IDN?: {}'.format(idn))
+        except:
+            print('Connection to Keithley failed.')
+            keithley = None
+    else:
+        try:
+            # Is keithley already connected?
+            idn = keithley.ask('*IDN?')
+            print('Keithley already connected')
+            print('Keithley *IDN?: {}'.format(idn))
+        except:
+            print('Keithley not responding, and keithley variable is not None.')
 
 
 def connect_instruments():
