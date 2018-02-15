@@ -521,9 +521,33 @@ def read_matlab(filepath):
          return pd.Series(var_in)
 
 
-def write_csv(data, filepath, columns=['I', 'V']):
+def write_csv(data, filepath, columns=['V', 'I'], overwrite=False):
     # For true dinosaurs
-    pass
+    if type(data) in (dict, pd.Series):
+        if hasattr(filepath, '__call__'):
+            filepath = filepath(data)
+        # Write header of non-array data
+        nonarray = [k for k in data.keys() if type(data[k]) != np.ndarray]
+        if not overwrite and os.path.isfile(filepath):
+            raise Exception('File already exists!')
+        else:
+            header = '\n'.join(['# {}\t{}'.format(k, data[k]) for k in nonarray])
+            with open(filepath, 'w') as f:
+                f.write(header)
+                f.write('\n')
+                pd.DataFrame({k:data[k] for k in columns}).to_csv(f, sep='\t', index=False)
+                #np.savetxt(f, np.vstack([data[c] for c in columns]).T, delimiter='\t', header=header)
+    elif type(data) is list:
+        # Come up with unique filenames, and pass it back to write_csv one by one
+        filenames = [insert_file_num(filepath, n, 3) for n in range(len(data))]
+        for fn, d in zip(filenames, data):
+            write_csv(d, filepath=fn)
+        # Don't write thousands of files
+        # Don't write a 10 GB text file
+
+
+def insert_file_num(filepath, number, width=3):
+    return '_{{:0{}}}'.format(width).format(number).join(os.path.splitext(filepath))
 
 def write_meta_csv(data, filepath):
     ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
