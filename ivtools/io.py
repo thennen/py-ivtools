@@ -521,17 +521,20 @@ def read_matlab(filepath):
          return pd.Series(var_in)
 
 
-def write_csv(data, filepath, columns=['V', 'I'], overwrite=False):
+def write_csv(data, filepath, columns=None, overwrite=False):
     # For true dinosaurs
     if type(data) in (dict, pd.Series):
         if hasattr(filepath, '__call__'):
             filepath = filepath(data)
         # Write header of non-array data
-        nonarray = [k for k in data.keys() if type(data[k]) != np.ndarray]
+        isarray = [k for k in data.keys() if type(data[k]) == np.ndarray]
+        notarray = [k for k in data.keys() if k not in isarray]
         if not overwrite and os.path.isfile(filepath):
             raise Exception('File already exists!')
         else:
             header = '\n'.join(['# {}\t{}'.format(k, data[k]) for k in nonarray])
+            if columns is None:
+                columns = isarray
             with open(filepath, 'w') as f:
                 f.write(header)
                 f.write('\n')

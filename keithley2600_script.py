@@ -236,7 +236,6 @@ def ti(sourceVA, sourceVB, points, interval,rangeI, limitI, nplc):
     #k.write('smub.source.output = smub.OUTPUT_OFF')
 
 
-
 def keithley_waitready():
     ''' There's probably a better way to do this. '''
     k.write('waitcomplete()')
@@ -765,7 +764,14 @@ def liveplotter():
             lastiter = True
         else:
             lastiter = False
-        d = getdata(history=False)
+        # d = getdata(history=False)
+        # Try getting just the new chunk of data and appending it
+        arrays = [k for k in d.keys() if type(d[k]) == np.ndarray]
+        chunkstart = len(d['V']) + 1
+        dchunk = getdata(history=False, start=chunkstart)
+        for ar in arrays:
+            d[ar] = np.append(d[ar], dchunk[ar])
+
         # Assuming that the plotters only make one line
         # Will probably break horribly if they make more than one
         for ax, plotter in plotters.items():
