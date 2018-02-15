@@ -124,9 +124,9 @@ magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 
 # Connect to Keithley
 # 2634B
-Keithley_ip = '192.168.11.11'
+#Keithley_ip = '192.168.11.11'
 # 2636A
-#Keithley_ip = '192.168.11.12'
+Keithley_ip = '192.168.11.12'
 Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
 rm = visa.ResourceManager()
 try:
@@ -222,6 +222,21 @@ def vi(ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO', plot=True, live=T
             # will just make the plot once
             liveplotter()
 
+
+def ti(sourceVA, sourceVB, points, interval,rangeI, limitI, nplc):
+    '''Wraps the constantVoltageMeasI lua function defined on keithley''' 
+    # Call constantVoltageMeasI
+    # TODO: make sure the inputs are valid
+    print('constantVMeasI({}, {}, {}, {}, {}, {}, {})'.format(sourceV, sourceVB, points, interval, rangeI, limitI, nplc))
+    k.write('constantVMeasI({}, {}, {}, {}, {}, {}, {})'.format(sourceV, sourceVB, points, interval, rangeI, limitI, nplc))
+    liveplotter()
+    #k.write('smua.source.levelv = 0')
+    #k.write('smua.source.output = smub.OUTPUT_OFF')
+    #k.write('smub.source.levelv = 0')
+    #k.write('smub.source.output = smub.OUTPUT_OFF')
+
+
+
 def keithley_waitready():
     ''' There's probably a better way to do this. '''
     k.write('waitcomplete()')
@@ -282,6 +297,7 @@ def getdata(start=1, end=None, history=True):
         # Output a dictionary with voltage/current arrays and other parameters
         out = {}
         out['units'] = {}
+        out['longnames'] = {}
 
         # Keithley returns this special value when the measurement is out of range
         # replace it with a real nan so it doesn't mess up the plots
@@ -482,7 +498,7 @@ def load_lassen(**kwargs):
             meta_df[k] = meta_df[k].astype(v)
 
     devicemetalist = meta_df
-    prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+    prettykeys = ['dep_code', 'sample_number', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
     filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
     print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
 
@@ -590,6 +606,7 @@ def savedata(datadict=None, filename=None):
     print('Appending variable \'d\' to list \'data\'')
     global data
     data.append(d)
+    return filepath
 
 s = autocaller(savedata)
 
@@ -646,7 +663,6 @@ def ivplotter(ax=None, **kwargs):
 
 def Rfitplotter(ax=None, **kwargs):
     ''' Plot a line of resistance fit'''
-    global R
     if ax is None:
         ax = ax1
     mask = abs(d['V']) <= .1
@@ -715,6 +731,10 @@ def VoverIplotter(ax=None, **kwargs):
     ax.set_xlabel('Voltage [V]')
     ax.set_ylabel('V/I [$\Omega$]', color=color)
 
+def vcalcplotter(ax, R=8197, **kwargs):
+    d['Vcalc'] = d['V'] - R * d['I']
+    plotiv(d, ax=ax, x='Vcalc', **kwargs)
+    ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
 def updateplots(**kwargs):
     ''' Draw the standard plots for whatever data is in the d variable'''
     # dunno, it errored without this line
