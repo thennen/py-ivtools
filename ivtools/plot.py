@@ -805,22 +805,6 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
     # Put the limits back
     ax.set_xlim(*xlims)
-
-    # Starting y points for the lines
-    if ax.get_yscale() == 'linear':
-        y = np.linspace(ymin, ymax , n)
-    else:
-        y = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
-
-    # Load lines aren't lines on log scale, so plot many points
-    x = linspace(xmin, xmax, 500)
-    # Plot one at a time so you can just label one (for legend)
-    for yi in y:
-        ax.plot(x, yi - (1/R * x) / Iscale, '--', alpha=.2, c='black', **kwargs)
-    # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
-    # Put the limits back
-    ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
 
 
