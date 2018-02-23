@@ -34,6 +34,7 @@ from collections import defaultdict
 import sys
 import socket
 import subprocess
+import numpy as np
 
 def makedatafolder():
     datasubfolder = os.path.join(datafolder, subfolder)
@@ -238,6 +239,8 @@ def ti(sourceVA, sourceVB, points, interval,rangeI, limitI, nplc):
 
 def keithley_waitready():
     ''' There's probably a better way to do this. '''
+
+    '''
     k.write('waitcomplete()')
     k.write('print(\"Complete\")')
     answer = None
@@ -247,14 +250,13 @@ def keithley_waitready():
             answer = k.read()
         except:
             pass
-
     '''
+
     # Another way ...
     answer = 1
     while answer != 0.0:
         answer = float(k.ask('print(status.operation.sweeping.condition)'))
-        time.sleep(.3)
-    '''
+        plt.pause(.3)
 
 
 def keithley_readbuffer(buffer='smua.nvbuffer1' , attr='readings', start=1, end=None):
@@ -298,10 +300,6 @@ def getdata(start=1, end=None, history=True):
         out['units'] = {}
         out['longnames'] = {}
 
-        # Keithley returns this special value when the measurement is out of range
-        # replace it with a real nan so it doesn't mess up the plots
-        nanvalue = 9.9100000000000005e+37
-
         ### Collect measurement conditions
         # TODO: What other information is available from Keithley registers?
 
@@ -313,11 +311,11 @@ def getdata(start=1, end=None, history=True):
             out['source'] = 'V'
             out['V'] = keithley_readbuffer('smua.nvbuffer2', 'sourcevalues', start, end)
             Vmeasured = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
-            Vmeasured[Vmeasured == nanvalue] = np.nan
+            Vmeasured = replace_nanvals(Vmeasured)
             out['Vmeasured'] = Vmeasured
             out['units']['Vmeasured'] = 'V'
             I = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
-            I[I == nanvalue] = np.nan
+            I = replace_nanvals(I)
             out['I'] = I
             out['Icomp'] = float(k.ask('print(smua.source.limiti)'))
         else:
@@ -328,11 +326,11 @@ def getdata(start=1, end=None, history=True):
 
             out['I'] = keithley_readbuffer('smua.nvbuffer1', 'sourcevalues', start, end)
             Imeasured = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
-            Imeasured[Imeasured == nanvalue] = np.nan
+            Imeasured = replace_nanvals(Imeasured)
             out['Imeasured'] = Imeasured
             out['units']['Imeasured'] = 'A'
             V = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
-            V[V == nanvalue] = np.nan
+            V = replace_nanvals(V)
             out['V'] = V
 
         out['t'] = keithley_readbuffer('smua.nvbuffer2', 'timestamps', start, end)
@@ -348,6 +346,16 @@ def getdata(start=1, end=None, history=True):
     if history:
         dhistory.append(out)
     return out
+
+def replace_nanvals(array):
+    # Keithley returns this special value when the measurement is out of range
+    # replace it with a nan so it doesn't mess up the plots
+    #nanvalue = 9.9100000000000005e+37
+    # They aren't that smart at keithley, so different models return different special values.
+    nanvalues = (9.9100000000000005e+37, 9.9099995300309287e+37)
+    for nv in nanvalues:
+        array[array == nv] = np.nan
+    return array
 
 
 def triangle(v1, v2, n=None, step=None):
@@ -591,6 +599,7 @@ def savedata(datadict=None, filename=None):
     # Write series to disk.  Append the path to metadata
     if filename is None:
         filename = time.strftime('%Y-%m-%d_%H%M%S')
+        #filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
         for fnkey in filenamekeys:
             if fnkey in d.keys():
                 filename += '_{}'.format(d[fnkey])
@@ -764,13 +773,15 @@ def liveplotter():
             lastiter = True
         else:
             lastiter = False
-        # d = getdata(history=False)
-        # Try getting just the new chunk of data and appending it
-        arrays = [k for k in d.keys() if type(d[k]) == np.ndarray]
-        chunkstart = len(d['V']) + 1
-        dchunk = getdata(history=False, start=chunkstart)
-        for ar in arrays:
-            d[ar] = np.append(d[ar], dchunk[ar])
+        #if firstiter:
+        d = getdata(history=False)
+        #else:
+            # Try getting just the new chunk of data and appending it
+            #arrays = [k for k in d.keys() if type(d[k]) == np.ndarray]
+            #chunkstart = len(d['V']) + 1
+            #dchunk = getdata(history=False, start=chunkstart)
+            #for ar in arrays:
+                #d[ar] = np.append(d[ar], dchunk[ar])
 
         # Assuming that the plotters only make one line
         # Will probably break horribly if they make more than one
@@ -791,6 +802,7 @@ def liveplotter():
         plt.pause(.1)
         firstiter = False
     d = getdata(history=True)
+
 
 def make_figs():
     # Get monitor information so we can put the plots in the right spot.
