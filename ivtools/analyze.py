@@ -1101,26 +1101,68 @@ def resistance(data, v0=0.1, v1=None, x='V', y='I'):
 
 
 @ivfunc
-def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax=None):
+def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax=None, extendrange=False, mask=None):
     '''
     Fit a polynomial to IV data.  Can specify the value range of x and y to use
     xmin < xmax,  ymin < ymax
+    if extend == True, the range will be extended to include at least order+1 data points
     '''
     X = data[x]
     Y = data[y]
-    mask = np.ones(len(X), dtype=bool)
-    if xmin is not None:
-        mask &= X >= xmin
-    if xmax is not None:
-        mask &= X <= xmax
-    if ymin is not None:
-        mask &= Y >= ymin
-    if ymax is not None:
-        mask &= Y <= ymax
 
-    pf = polyfit(X[mask], Y[mask], order)
+    if mask is None:
+        mask = np.ones(len(X), dtype=bool)
+        if xmin is not None:
+            mask &= X >= xmin
+        if xmax is not None:
+            mask &= X <= xmax
+        if ymin is not None:
+            mask &= Y >= ymin
+        if ymax is not None:
+            mask &= Y <= ymax
+
+
+    if sum(mask) > order:
+        pf = polyfit(X[mask], Y[mask], order)
+    elif extendrange:
+        # There were not enough data points in the passed fit range
+        # so use the "nearest" datapoints outside the range.
+        # Can think of a few different ways to do it, all dumb
+        def find_center(vmin, vmax):
+            if (vmin is None) and (vmax is None):
+                return None
+            elif vmin is None:
+                return vmax
+            elif vmax is None:
+                return vmin
+            else:
+                return (vmin + vmax) / 2
+
+        xc = find_center(xmin, xmax)
+        yc = find_center(ymin, ymax)
+        mask = select_nclosest(data, x=xc, y=yc, n=order + 1, xarr=x, yarr=y)
+        return polyfitiv(data, order=order, mask=mask, x=x, y=y)
+    else:
+        # Don't fit if "poorly conditioned"
+        pf = [np.nan] * (order + 1)
 
     return pf
+
+@ivfunc
+def select_nclosest(data, n=2, x=None, y=None, xarr='V', yarr='I'):
+    # Return the indices of the n data points nearest to the indicated x, y value
+    X = data[xarr]
+    Y = data[yarr]
+    if x is None:
+        distance = (Y - y)**2
+    elif y is None:
+        distance = (X - x)**2
+    else:
+        distance = (X - x)**2 + (Y - y)**2
+
+    nclosest = np.argsort(distance)[:n]
+
+    return nclosest
 
 
 @ivfunc
@@ -1235,7 +1277,7 @@ def smooth(x, N):
             converted = True
             x = np.float64(x)
     # Do the smoothing
-    cumsum = numpy.cumsum(numpy.insert(x, 0, 0)) 
+    cumsum = np.cumsum(np.insert(x, 0, 0)) 
     movingavg = (cumsum[N:] - cumsum[:-N]) / N
     if converted:
         return dtypein(movingavg)

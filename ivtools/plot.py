@@ -76,7 +76,8 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yf
     return ax.plot(X, Y, **kwargs)[0]
 
 
-def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfunc=None, yfunc=None, plotfunc=_plot_single_iv, **kwargs):
+def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfunc=None, yfunc=None,
+           plotfunc=_plot_single_iv, autotitle=False, **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     Can plot any column vs any other column
@@ -152,6 +153,10 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
         print('plotiv did not understand the input datatype {}'.format(dtype))
         return
 
+    if autotitle:
+        auto_title(data, keys=None, ax=ax)
+
+    # should I really return this?  usually I don't assign the values and then they get cached by ipython forever
     return ax, line
 
 
@@ -162,18 +167,32 @@ def auto_title(data, keys=None, ax=None):
     '''
     if ax is None:
         ax = plt.gca()
-    if keys is None:
-        if type(data) is pd.DataFrame:
-            meta = data.iloc[0]
-        else:
-            meta = data
-        id = '{}_{}_{}_{}'.format(*list(meta[['dep_code','sample_number','module','device']]))
-        layer = meta['layer_1']
-        thickness = meta['thickness_1']
-        width = meta['width_nm']
-        title = '{}, {}, t={}nm, w={}nm'.format(id, layer, thickness, width)
+
+    if type(data) is pd.DataFrame:
+        meta = data.iloc[0]
     else:
-        title = ', '.join(['{}:{}'.format(k, data[k]) for k in keys if k in data])
+        meta = data
+
+    def safeindex(data, key):
+        if key in data:
+            return data[key]
+        else:
+            return '?'
+
+    if keys is None:
+        # Default behavior
+        idkeys = ['dep_code','sample_number','module','device']
+        id = '_'.join([format(safeindex(meta, idk)) for idk in idkeys])
+
+        otherkeys = ['layer_1', 'thickness_1', 'width_nm', 'R_series']
+        othervalues = [safeindex(meta, k) for k in otherkeys]
+        # use kohm if necessary
+        if othervalues[3] >= 1000:
+            othervalues[3] = str(int(othervalues[3]/1000)) + 'k'
+        formatstr = '{}, {}, t={}nm, w={}nm, Rs={}$\Omega$'
+        title = formatstr.format(id, *othervalues)
+    else:
+        title = ', '.join(['{}:{}'.format(k, safeindex(meta, k)) for k in keys])
 
     ax.set_title(title)
 
@@ -786,30 +805,14 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
     # Put the limits back
     ax.set_xlim(*xlims)
-
-    # Starting y points for the lines
-    if ax.get_yscale() == 'linear':
-        y = np.linspace(ymin, ymax , n)
-    else:
-        y = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
-
-    # Load lines aren't lines on log scale, so plot many points
-    x = linspace(xmin, xmax, 500)
-    # Plot one at a time so you can just label one (for legend)
-    for yi in y:
-        ax.plot(x, yi - (1/R * x) / Iscale, '--', alpha=.2, c='black', **kwargs)
-    # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
-    # Put the limits back
-    ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
 
 
-def plot_power_lines(pvals=None, ax=None, xmin=None):
+def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     '''
     Plot lines of constant power on the indicated axis  (should be I vs V)
+    pass either pvals (explicitly set the power levels) or npvals (set the number of power values to plot)
     TODO: Label power values
-    TODO: detect power range from axis range
     '''
     if ax is None:
         ax = plt.gca()
@@ -821,7 +824,10 @@ def plot_power_lines(pvals=None, ax=None, xmin=None):
 
     if pvals is None:
         # Determine power range from axis limits
-        minp = x0 * y0
+        if (x0 < 0) or (y0 < 0):
+            minp = 0
+        else:
+            minp = x0 * y0
         maxp = x1 * y1
         if (ax.get_yscale() == 'log') or (ax.get_xscale() == 'log'):
             if minp < 0:
@@ -830,7 +836,7 @@ def plot_power_lines(pvals=None, ax=None, xmin=None):
                 minp = y0 * (x0 + 0.1 * (x1 - x0))
             pvals = np.logspace(np.log10(minp), np.log10(maxp), 10)[1:-1]
         else:
-            pvals = np.linspace(minp, maxp, 10)[1:-1]
+            pvals = np.linspace(minp, maxp, npvals)[1:-1]
 
     # Easiest to space equally in x.  Could change this later so that high slope areas get enough data points.
     x = linspace(x0, x1, 1000)
@@ -838,3 +844,7 @@ def plot_power_lines(pvals=None, ax=None, xmin=None):
     ylist = [p/x for p in pvals]
     for y in ylist:
         ax.plot(x, y, '--', color='black', alpha=.3)
+
+    # Put the limits back
+    ax.set_xlim(x0, x1)
+    ax.set_ylim(y0, y1)

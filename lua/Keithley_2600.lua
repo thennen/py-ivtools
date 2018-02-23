@@ -140,7 +140,7 @@ function SweepVList2CH(sweepList1, VB, rangeI, limitI, nplc, delay)
     smua.trigger.initiate()
 end
 
-function constantVMeasI(sourceV,sourceVB, points, interval, rangeI, limitI, nplc)
+function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, nplc)
     reset()
 
     -- Configure the SMU
@@ -159,7 +159,7 @@ function constantVMeasI(sourceV,sourceVB, points, interval, rangeI, limitI, nplc
     smua.nvbuffer2.collecttimestamps    = 1
     smua.nvbuffer2.collectsourcevalues  = 1
 
-    smua.source.levelv          = sourceV
+    smua.source.levelv          = sourceVA
     smua.measure.count          = points
     smua.measure.interval       = interval
 
