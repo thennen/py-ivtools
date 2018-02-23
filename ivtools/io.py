@@ -252,8 +252,8 @@ def read_txt(filepath, **kwargs):
     # ...
 
     # Here is a dict which constructs a mapping between various column names I have seen and a standard column name
-    colnamemap = {'I': ['Current Probe (A)', 'Current [A]'],
-                  'V': ['Voltage Source (V)', 'Voltage [V]'],
+    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]'],
+                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
                   't': ['time', 'Time [S]'],
                   'Vmeasured': ['Voltage Probe (V)']}
