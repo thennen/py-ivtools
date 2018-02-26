@@ -218,13 +218,17 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
 
 
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
-              sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None, **kwargs):
+              sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
+              ax=None, **kwargs):
     '''
     Plot y vs x for any number of parameters
     Can choose a subset of the parameter values to plot, and the colors will be the same as if the
     subset was not passed.  does that make any sense? sorry.
     '''
-    fig, ax = plt.subplots()
+    if ax is None:
+        fig, ax = plt.subplots()
+    else:
+        fig = ax.get_figure()
     fig.set_tight_layout(True)
     if xlog:
         ax.set_xscale('log')
@@ -748,23 +752,36 @@ metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)
 # Note I might be stupid and this could already be built in, using mpl.ticker.EngFormatter()
 
 # Reference marks
-def plot_log_reference_lines(ax, slope=-2):
-    ''' Put some reference lines on a log-log plot indicating a certain power dependence'''
+
+# Used to be called 
+def plot_powerlaw_lines(ax, slope=-2, num=20, **kwargs):
+    '''
+    Put some reference lines on a log-log plot indicating a certain power law dependence
+    y = a * x^slope
+    values of a chosen to fill the plot
+    '''
     ylims = ax.get_ylim()
     ymin, ymax = ylims
     logymin, logymax = np.log10(ymin), np.log10(ymax)
     xlims = ax.get_xlim()
     xmin, xmax = xlims
-    # Starting y points for the lines
-    y = np.logspace(logymin, logymax + np.log10(ymax - ymin), 20)
-    # Plot one at a time so you can just label one (for legend)
-    for yi in y[:-1]:
-        ax.plot(xlims, (yi, yi + yi/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black')
-    # Label the last one
-    ax.plot(xlims, (y[-1], y[-1] + y[-1]/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black', label='Area scaling')
+    logxmin, logxmax = np.log10(xmin), np.log10(xmax)
+    # y and x points that the lines should pass through
+    y = np.logspace(logymin, logymax, num)
+    x = np.logspace(logxmin, logxmax, num)
+    xplot = np.logspace(logxmin, logxmax, 100)
+    plotargs = dict(linestyle='--', alpha=.2, color='black', label=None)
+    plotargs.update(kwargs)
+    for xi, yi in zip(x, y[::-1]):
+        #ax.plot(xlims, (yi, yi + yi/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black')
+        ax.plot(xplot, yi/xi**slope * xplot**slope, **plotargs)
+    ax.lines[-1].set_label('Area Scaling')
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
+
+# Used to be called this.  Leaving it here to not break old scripts
+plot_log_reference_lines = plot_powerlaw_lines
 
 def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     '''
