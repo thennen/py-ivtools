@@ -808,47 +808,59 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     pulse(wfm, duration, n=n)
 
 
-def tri(v1, v2):
+def tri(v1, v2, n=None, step=None):
     '''
-    Calculate a triangle pulse waveform.
+    Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
 
-    This is a slightly tricky because the AWG takes equally spaced samples,
-    so finding the shortest waveform that truly reaches v1 and v2 with
-    constant sweep rate involves finding the greatest common divisor of
-    v1 and v2.
+    Can optionally pass number of data points you want, or the voltage step between points.
+
+    If neither n or step is passed, return the shortest waveform which reaches v1 and v2.
     '''
-    # Don't think we need better than 1 mV resolution
-    v1 = round(v1, 3)
-    v2 = round(v2, 3)
-    f1 = Fraction(str(v1))
-    f2 = Fraction(str(v2))
-    # This is depreciated for some reason
-    #vstep = float(abs(fractions.gcd(fmax, fmin)))
-    # Doing it this other way.. Seems faster by a large factor.
-    a, b = f1.numerator, f1.denominator
-    c, d = f2.numerator, f2.denominator
-    # not a typo
-    commond = float(b * d)
-    vstep = gcd(a*d, b*c) / commond
-    dv = v1 - v2
-    # Using round because floating point errors suck
-    # e.g. int(0.3 / 0.1) = int(2.9999999999999996) = 2
-    n1 = round(abs(v1) / vstep + 1)
-    n2 = round(abs(dv) / vstep + 1)
-    n3 = round(abs(v2) / vstep + 1)
-    wfm = np.concatenate((np.linspace(0 , v1, n1),
-                          np.linspace(v1, v2, n2)[1:],
-                          np.linspace(v2, 0 , n3)[1:]))
+    if n is not None:
+        dv = abs(v1) + abs(v2 - v1) + abs(v2)
+        step = dv / n
+    if step is not None:
+        # I could choose here to either make sure the waveform surely contains v1 and v2
+        # or to make sure the waveform really has a constant sweep rate
+        # I choose the former..
+        wfm = np.concatenate((np.arange(0, v1, np.sign(v1) * step),
+                             np.arange(v1, v2, np.sign(v2 - v1) * step),
+                             np.arange(v2, 0, -np.sign(v2) * step),
+                             [0]))
+    else:
+        # Find the shortest waveform that truly reaches v1 and v2 with constant sweep rate
+        # Don't think we need better than 1 mV resolution
+        v1 = round(v1, 3)
+        v2 = round(v2, 3)
+        f1 = Fraction(str(v1))
+        f2 = Fraction(str(v2))
+        # This is depreciated for some reason
+        #vstep = float(abs(fractions.gcd(fmax, fmin)))
+        # Doing it this other way.. Seems faster by a large factor.
+        a, b = f1.numerator, f1.denominator
+        c, d = f2.numerator, f2.denominator
+        # not a typo
+        commond = float(b * d)
+        vstep = gcd(a*d, b*c) / commond
+        dv = v1 - v2
+        # Using round because floating point errors suck
+        # e.g. int(0.3 / 0.1) = int(2.9999999999999996) = 2
+        n1 = round(abs(v1) / vstep + 1)
+        n2 = round(abs(dv) / vstep + 1)
+        n3 = round(abs(v2) / vstep + 1)
+        wfm = np.concatenate((np.linspace(0 , v1, n1),
+                            np.linspace(v1, v2, n2)[1:],
+                            np.linspace(v2, 0 , n3)[1:]))
 
-    # Filling the AWG record length with probably take more time than it's worth.
-    # Interpolate to a "Large enough" waveform size
-    #enough = 2**16
-    #x = np.linspace(0, 1, enough)
-    #xp = np.linspace(0, 1, len(wfm))
-    #wfm = np.interp(x, xp, wfm)
+        # Filling the AWG record length with probably take more time than it's worth.
+        # Interpolate to a "Large enough" waveform size
+        #enough = 2**16
+        #x = np.linspace(0, 1, enough)
+        #xp = np.linspace(0, 1, len(wfm))
+        #wfm = np.interp(x, xp, wfm)
 
-    # Let AWG do the interpolation
-    return wfm
+        # Let AWG do the interpolation
+        return wfm
 
 def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
     '''
