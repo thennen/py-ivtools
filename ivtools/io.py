@@ -532,7 +532,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
         if not overwrite and os.path.isfile(filepath):
             raise Exception('File already exists!')
         else:
-            header = '\n'.join(['# {}\t{}'.format(k, data[k]) for k in nonarray])
+            header = '\n'.join(['# {}\t{}'.format(k, data[k]) for k in notarray])
             if columns is None:
                 columns = isarray
             with open(filepath, 'w') as f:

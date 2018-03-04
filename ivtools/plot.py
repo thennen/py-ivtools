@@ -44,7 +44,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yf
         longnamex = x
     if y == 'I': longnamey = 'Current'
     else: longnamey = y
-    if 'longnames' in iv.keys():
+    if ('longnames' in iv.keys()) and (type(iv['longnames']) == dict):
         if x in iv['longnames'].keys():
             longnamex = iv['longnames'][x]
         if y in iv['longnames'].keys():
@@ -753,8 +753,7 @@ metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)
 
 # Reference marks
 
-# Used to be called 
-def plot_powerlaw_lines(ax, slope=-2, num=20, **kwargs):
+def plot_powerlaw_lines(ax, slope=-2, num=20, label='Area Scaling', **kwargs):
     '''
     Put some reference lines on a log-log plot indicating a certain power law dependence
     y = a * x^slope
@@ -775,7 +774,7 @@ def plot_powerlaw_lines(ax, slope=-2, num=20, **kwargs):
     for xi, yi in zip(x, y[::-1]):
         #ax.plot(xlims, (yi, yi + yi/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black')
         ax.plot(xplot, yi/xi**slope * xplot**slope, **plotargs)
-    ax.lines[-1].set_label('Area Scaling')
+    ax.lines[-1].set_label(label)
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)

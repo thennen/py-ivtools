@@ -702,6 +702,7 @@ def concativ(data):
 def meaniv(data, columns=None):
     '''
     Return the average of all iv columns.
+    No interpolation at the moment
     not an ivfunc -- takes multiple loops and returns one
     '''
     if type(data) is pd.DataFrame:
