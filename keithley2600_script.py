@@ -35,6 +35,7 @@ import sys
 import socket
 import subprocess
 import numpy as np
+from datetime import datetime
 
 def makedatafolder():
     datasubfolder = os.path.join(datafolder, subfolder)
@@ -127,7 +128,9 @@ magic('run -i {}'.format(os.path.join(ivtoolsdir, 'ivtools/analyze.py')))
 # 2634B
 #Keithley_ip = '192.168.11.11'
 # 2636A
-Keithley_ip = '192.168.11.12'
+#Keithley_ip = '192.168.11.12'
+# 2636B
+Keithley_ip = '192.168.11.13'
 Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
 rm = visa.ResourceManager()
 try:
@@ -135,7 +138,7 @@ try:
 except:
     k = rm.get_instrument(Keithley_id)
 print('Keithley *IDN?')
-idn = k.ask('*IDN?')
+idn = k.ask('*IDN?').replace('\n', '')
 print(idn)
 
 # Sadly, Keithley decided to embed a lua interpreter into its source meters instead of providing a proper programming interface.
@@ -433,7 +436,7 @@ meta_i = None
 d = None
 
 # Add keys to this and they will be appended as metadata to all subsequent measurements
-staticmeta = {'keithley':idn, 'script':'keithley2600_script.py', 'gitrev':gitrev, 'scriptruntime':timestr}
+staticmeta = {'keithley':idn, 'gitrev':gitrev, 'scriptruntime':timestr}
 
 # Metadata about the device currently being probed.  Controlled by a few of the following functions
 devicemeta = {}
@@ -509,6 +512,32 @@ def load_lassen(**kwargs):
     filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
     print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
 
+def load_nanoxbar(**kwargs):
+    '''
+    Load nanoxbar metadata
+    use keys X, Y, width_nm, device
+    Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
+    all kwargs will just be added to all metadata
+    '''
+    global nanoxbar, prettykeys, filenamekeys, devicemetalist, deposition_df, meta_i, devicemeta
+    nanoxbar = pd.read_pickle('sampledata/nanoxbar.pkl')
+    devicemetalist = nanoxbar
+    for name, value in kwargs.items():
+        if name in nanoxbar:
+            if not hasattr(value, '__iter__'):
+                value = [value]
+            devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
+        else:
+            devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
+            filenamekeys = ['X', 'Y', 'width_nm', 'device']
+    if 'sample_name' in kwargs:
+        filenamekeys = ['sample_name'] + filenamekeys
+        prettykeys = filenamekeys
+        meta_i = 0
+        devicemeta = devicemetalist.iloc[0]
+        print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
+        prettyprint_meta()
+
 
 # Dumb hack to call a function without using ()
 # Because who wants to type?
@@ -547,8 +576,11 @@ def nextsample():
             devicemeta = devicemetalist.iloc[meta_i]
         else:
             devicemeta = devicemetalist[meta_i]
+    elif meta_i < 0:
+        print('You are already at the beginning of devicemetalist')
+        return
     else:
-        print('There is no more data in devicemetalist')
+        print('You are already at the end of devicemetalist')
         return
     # Highlight keys that have changed
     hlkeys = []
@@ -598,8 +630,8 @@ def savedata(datadict=None, filename=None):
     d.update(staticmeta)
     # Write series to disk.  Append the path to metadata
     if filename is None:
-        filename = time.strftime('%Y-%m-%d_%H%M%S')
-        #filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+        #filename = time.strftime('%Y-%m-%d_%H%M%S')
+        filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
         for fnkey in filenamekeys:
             if fnkey in d.keys():
                 filename += '_{}'.format(d[fnkey])
