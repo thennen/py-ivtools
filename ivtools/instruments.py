@@ -1,5 +1,8 @@
 '''
-These classes contain functionality specific to only one instrument
+These classes contain functionality specific to only one instrument.
+Don't put code in an instrument class that has anything to do with a different instrument,
+or any particular application!
+
 They are grouped into classes because there may be some overlapping functionality which should be contained
 Should only put instruments here that have an actual data connection to the computer
 '''
@@ -12,18 +15,216 @@ visa_rm = visa.ResourceManager()
 #########################################################
 # Picoscope 6000 ########################################
 #########################################################
-class Picoscope():
-    def __init__(self):
+class Picoscope(object):
+    '''
+    This class will basically extend the colinoflynn picoscope module
+    Has some higher level functionality, and it stores/manipulates the channel settings.
+    '''
+    def __init__(self, connect=True):
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I might have subclassed PS6000, but then I would have to import it before the class definition...
-        self.ps = ps6000.PS6000(connect=True)
+        self.ps = ps6000.PS6000(connect=connect)
         # Not sure at the moment how to take over an old connection when reinstantiating
+        # self.get_data will return data as well as 
+        self.data = None
         # Store channel settings in this class
-        self.range = dict(A='DC', B='DC', C='DC', D='DC')
-        self.offset = dict
-        self.attenuation = 
-        self.coupling =
+        # TODO find a way to make these persist when this module gets reloaded!
+        # This might be really bad programming ..
+        self.range = self._PicoRange(self)
+        self.offset = self._PicoOffset(self)
+        self.atten= self._PicoAttenuation(self)
+        self.coupling = self._PicoCouping(self)
+        # TODO: methods of PS6000 to expose?
+        self.close = self.ps.close
+
+    def print_settings():
+        print('Channel settings:')
+        print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
+                        index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
+
+    class _PicoSetting(dict):
+        def __init__(self, parent):
+            self._parent = parent
+
+        def set(self, channel, value):
+            self[channel] = value
+
+        @property
+        def a(self):
+            print(self['A'])
+        @a.setter
+        def a(self, value):
+            self.set('A', value)
+        @property
+        def b(self):
+            print(self['B'])
+        @b.setter
+        def b(self, value):
+            self.set('B', value)
+        @property
+        def c(self):
+            print(self['C'])
+        @c.setter
+        def c(self, value):
+            self.set('C', value)
+        @property
+        def d(self):
+            print(self['D'])
+        @d.setter
+        def d(self, value):
+            self.set('D', value)
+
+    class _PicoRange(_PicoSetting):
+        # Holds the values for picoscope channel ranges.  Enforces valid values.
+        # TODO: add increment and decrement
+        def __init__(self, parent):
+            parent._PicoSetting.__init__(self, parent)
+            self.possible= np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+            self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+            self['A'] = 1.0
+            self['B'] = 1.0
+            self['C'] = 1.0
+            self['D'] = 1.0
+            #self.setall(1.0)
+
+        def set(self, channel, value):
+            offset = self._parent.offset[channel]
+            atten = self._parent.atten[channel]
+            newvalue = self[channel]
+
+            if value in self.possible * atten:
+                newvalue = value
+            else:
+                argclosest = argmin(np.abs(self.possible * atten - value))
+                closest = self.possible[argclosest] * atten
+                print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
+                newvalue = closest
+
+            # Forgive me
+            diffs = self.max_offsets - offset/atten
+            leastabove = self.max_offsets[diffs > 0][0]
+            firstleastabove = np.where(self.max_offsets == leastabove)[0][0]
+            min_range = self.possible[firstleastabove] * atten
+            if newvalue < min_range:
+                print('Range {} is too low for current offset {}. Using closest valid range setting {}.'.format(newvalue, offset, min_range))
+                newvalue = min_range
+
+            self[channel] = newvalue
+
+        def setall(self, value=1.0):
+            # Set all the channel ranges to this value
+            self.set('A', value)
+            self.set('B', value)
+            self.set('C', value)
+            self.set('D', value)
+
+    class _PicoOffset(_PicoSetting):
+        # _PicoOffset needs to be aware of the range setting in order to determine valid values
+        def __init__(self, parent):
+            parent._PicoSetting.__init__(self, parent)
+            self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
+            self.max_offsets = (.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)
+            self['A'] = 0.0
+            self['B'] = 0.0
+            self['C'] = 0.0
+            self['D'] = 0.0
+
+        def set(self, channel, value):
+            channelrange = self._parent.range[channel]
+            channelatten = self._parent.atten[channel]
+            maxoffset = self.max_offsets[self.possible_ranges.index(channelrange / channelatten)] * channelatten
+            if abs(value) < maxoffset:
+                self[channel] = value
+            else:
+                clippedvalue = np.sign(value) * maxoffset
+                print(('{} is above the maximum offset for channel {} with range {} V. '
+                    'Setting offset to {}.').format(value, channel, channelrange, clippedvalue))
+                self[channel] = clippedvalue
+
+        def setall(self, value=0.0):
+            # Set all the channel ranges to this value
+            self.set('A', value)
+            self.set('B', value)
+            self.set('C', value)
+            self.set('D', value)
+
+    class _PicoAttenuation(_PicoSetting):
+        def __init__(self, parent):
+            parent._PicoSetting.__init__(self, parent)
+            self['A'] = 1.0
+            self['B'] = 1.0
+            self['C'] = 1.0
+            self['D'] = 1.0
+            # I am not sure what the possible values of this setting are ..
+            #self.possible = 
+
+    class _PicoCouping(_PicoSetting):
+        def __init__(self, parent):
+            parent._PicoSetting.__init__(self, parent)
+            self['A'] = 'DC'
+            self['B'] = 'DC'
+            self['C'] = 'DC'
+            self['D'] = 'DC'
+            self.possible = ('DC', 'AC', 'DC50') # I think?
+
+        def set(self, channel, value):
+            if value in self.possible:
+                self[channel] = value
+            else:
+                print('{} is not a valid coupling setting.'.format(value))
+
+
+    def squeeze_range(self, data, ch=['A', 'B', 'C', 'D']):
+        '''
+        Find the best range for given input data (can be any number of channels)
+        Set the range and offset to the lowest required to fit the data
+        '''
+        for c in ch:
+            if c in data:
+                if type(data[c][0]) is np.int8:
+                    # Need to convert to float
+                    usedrange = data['RANGE'][c]
+                    usedoffset = data['OFFSET'][c]
+                    maximum = np.max(data[c])  / 2**8 * usedrange * 2 - usedoffset
+                    minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
+                    rang, offs = self.best_range((minimum, maximum))
+                else:
+                    rang, offs = self.best_range(data[c])
+                print('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
+                self.range[c] = rang
+                self.offset[c] = offs
+
+    def best_range(self, data):
+        '''
+        Return the best RANGE and OFFSET values to use for a particular input signal (array)
+        Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
+        Don't pass int8 signals, would then need channel information to convert to V
+        '''
+        # TODO: consider the attenuation!
+        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        # Sadly, each range has a different maximum possible offset
+        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+        minimum = np.min(data)
+        maximum = np.max(data)
+        amplitude = abs(maximum - minimum) / 2
+        middle = round((maximum + minimum) / 2, 3)
+        # Mask of possible ranges that fit the signal
+        mask = possible_ranges >= amplitude
+        for selectedrange, max_offset in zip(possible_ranges[mask], max_offsets[mask]):
+            # Is middle an acceptable offset?
+            if middle < max_offset:
+                return (selectedrange, -middle)
+                break
+            # Can we reduce the offset without the signal going out of range?
+            elif (max_offset + selectedrange >= maximum) and (-max_offset - selectedrange <= minimum):
+                return(selectedrange, np.clip(-middle, -max_offset, max_offset))
+                break
+            # Neither worked, try increasing the range ...
+        # If no range was enough to fit the signal
+        print('Signal out of pico range!')
+        return (max(possible_ranges), 0)
+
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
@@ -33,7 +234,8 @@ class Picoscope():
 
         pass exactly two of: freq(sampling frequency), duration, nsamples
         sampling frequency has limited possible values, so actual number of samples will vary
-        will try to sample for the intended duration, either the value of the duration argument or nsamples/freq
+        will try to sample for the intended duration, either the value of the duration argument
+        or nsamples/freq
 
         Won't actually start capture until picoscope receives the specified trigger event.
 
@@ -41,7 +243,6 @@ class Picoscope():
 
         ch can be a list of characters, i.e. ch=['A','B'].
 
-        # TODO: provide a way to override the global variable channel settings
         if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
         the settings will be taken from the global variables
         '''
@@ -59,58 +260,56 @@ class Picoscope():
         # Enable only the channels being used, disable the rest
         for c in ['A', 'B', 'C', 'D']:
             if c not in ch:
-                ps.setChannel(c, enabled=False)
+                self.ps.setChannel(c, enabled=False)
 
-        # If freq and duration are passed, take as many samples as it takes to actually sample for duration
+        # If freq and duration are passed, take as many samples as it takes to sample for duration
         # If duration and nsamples are passed, sample with frequency as near as possible to nsamples/duration (nsamples will vary)
         # If freq and nsamples are passed, sample at closest possible frequency for nsamples (duration will vary)
         if freq is None:
             freq = nsamples / duration
         # This will return actual sample frequency, then we can determine
         # the number of samples needed.
-        actualfreq, _ = ps.setSamplingFrequency(freq, 0)
+        actualfreq, _ = self.ps.setSamplingFrequency(freq, 0)
 
         if duration is not None:
             nsamples = duration * actualfreq
 
-        def global_replace(kwarg, globalarg):
+        def global_replace(kwarg, instancearg):
             if kwarg is None:
-                # No values passed, use the global values
-                return globalarg
+                # No values passed, use the instance values
+                return instancearg
             else:
-                # Fill missing values with global values
+                # Fill missing values with instance values
                 kwargcopy = kwarg.copy()
                 for c in ch:
                     if c not in kwargcopy:
-                        kwargcopy[c] = globalarg[c]
+                        kwargcopy[c] = instancearg[c]
                 return kwargcopy
 
-        chrange = global_replace(chrange, RANGE)
-        choffset = global_replace(choffset, OFFSET)
-        chcoupling = global_replace(chcoupling, COUPLINGS)
-        chatten = global_replace(chatten, ATTENUATION)
+        chrange = global_replace(chrange, self.range)
+        choffset = global_replace(choffset, self.offset)
+        chcoupling = global_replace(chcoupling, self.coupling)
+        chatten = global_replace(chatten, self.atten)
 
-        actualfreq, max_samples = ps.setSamplingFrequency(actualfreq, nsamples)
+        actualfreq, max_samples = self.ps.setSamplingFrequency(actualfreq, nsamples)
         print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
         if nsamples > max_samples:
             raise(Exception('Trying to sample more than picoscope memory capacity'))
         # Set up the channels
         for c in ch:
-            ps.setChannel(channel=c,
+            self.ps.setChannel(channel=c,
                         coupling=chcoupling[c],
                         VRange=chrange[c],
                         probeAttenuation=chatten[c],
                         VOffset=choffset[c],
                         enabled=True)
         # Set up the trigger.  Will timeout in 30s
-        ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
-        ps.runBlock(pretrig)
+        self.ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
+        self.ps.runBlock(pretrig)
         return actualfreq
 
 
-
-
-    def get_data(ch='A', raw=False, dtype=np.float32):
+    def get_data(self, ch='A', raw=False, dtype=np.float32):
         '''
         Wait for data and transfer it from pico memory.
         ch can be a list of channels
@@ -123,7 +322,7 @@ class Picoscope():
         '''
         data = dict()
         # Wait for data
-        while(not ps.isReady()):
+        while(not self.ps.isReady()):
             time.sleep(0.01)
 
         if not hasattr(ch, '__iter__'):
@@ -133,25 +332,26 @@ class Picoscope():
                 # For some reason pico-python gives the values as int16
                 # Probably because some scopes have 16 bit resolution
                 # The 6403c is only 8 bit, and I'm looking to save memory here
-                rawint16, _, _ = ps.getDataRaw(c)
+                rawint16, _, _ = self.ps.getDataRaw(c)
                 data[c] = np.int8(rawint16 / 2**8)
             else:
                 # I added dtype argument to pico-python
-                data[c] = ps.getDataV(c, dtype=dtype)
+                data[c] = self.ps.getDataV(c, dtype=dtype)
 
         Channels = ['A', 'B', 'C', 'D']
-        data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
-        data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
-        data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, ps.ProbeAttenuation)}
-        data['sample_rate'] = ps.sampleRate
+        data['RANGE'] = {ch:chr for ch, chr in zip(Channels, self.ps.CHRange)}
+        data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, self.ps.CHOffset)}
+        data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, self.ps.ProbeAttenuation)}
+        data['sample_rate'] = self.ps.sampleRate
         # Specify samples captured, because this field will persist even after splitting for example
         # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
         data['nsamples_capture'] = len(data[ch[0]])
         # Using the current state of the global variables to record what settings were used
-        # I don't know a way to get couplings and attenuations from the picoscope instance
-        # TODO: pull request a change to setChannel
-        data['COUPLINGS'] = COUPLINGS
+        # I don't know a way to get couplings from the picoscope instance
+        # TODO: pull request a change to setChannel to fix this
+        data['COUPLINGS'] = dict(self.coupling)
         # Sample frequency?
+        self.data = data
         return data
 
 

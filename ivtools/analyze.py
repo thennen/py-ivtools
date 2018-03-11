@@ -1451,3 +1451,12 @@ def freq_analysis(data):
     This will use curve fitting and fft methods to determine amplitude and phase.
     '''
     pass
+
+def replace_nanvals(array):
+    # Keithley returns this special value when the measurement is out of range
+    # replace it with a nan so it doesn't mess up the plots
+    # They aren't that smart at Keithley, so different models return different special values.
+    nanvalues = (9.9100000000000005e+37, 9.9099995300309287e+37)
+    for nv in nanvalues:
+        array[array == nv] = np.nan
+    return array
