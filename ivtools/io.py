@@ -1,5 +1,10 @@
 """ Functions for saving and loading data """
+
+# Local imports
 from dotdict import dotdict
+
+import analyze
+import plot
 import os
 import re
 import fnmatch
@@ -593,7 +598,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       s.I *= 1e6
       s.units['I'] = '$\mu$A'
       smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-      plotiv(moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
+      plot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       if 'thickness_1' in s:
@@ -608,7 +613,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
       step = int(ceil(len(df) / maxloops))
       smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-      plotiv(moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+      plot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       s = df.iloc[0]

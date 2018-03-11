@@ -1,5 +1,8 @@
 """ Functions for doing data analysis on IV data """
 
+# Local imports
+import plot
+
 from functools import wraps
 import numpy as np
 from itertools import groupby
@@ -286,7 +289,7 @@ def select_by_derivative(data, threshold=None, debug=False):
         ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
         ax.set_xlim(xmin, xmax)
     elif debug == 2:
-        plotiv(data, ax=ax)
+        plot.plotiv(data, ax=ax)
         ax.scatter(data['V'][index], data['I'][index])
 
     return index

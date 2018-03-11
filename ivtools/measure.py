@@ -1,12 +1,15 @@
 """ Functions for measuring IV data with picoscope 6403C and Rigol AWG """
 
+# Local imports
+from dotdict import dotdict
+import plot
+
 from picoscope import ps6000
 import visa
 from fractions import Fraction
 from math import gcd
 import numpy as np
 import time
-from dotdict import dotdict
 import pandas as pd
 import os
 
@@ -1122,7 +1125,7 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
     pico_capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
     time.sleep(.1)
     chdata = get_data(measurechannels)
-    plot_channels(chdata)
+    plot.plot_channels(chdata)
     chvalue = np.mean(chdata[ch])
     print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
 
@@ -1148,7 +1151,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     chs = ['A', ch]
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1)
     data = get_data(chs)
-    plot_channels(data)
+    plot.plot_channels(data)
 
     squeeze_range(data, [ch])
 
@@ -1161,7 +1164,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     RANGE[ch] = oldrange[ch]
     OFFSET[ch] = oldoffset[ch]
 
-    plot_channels(data)
+    plot.plot_channels(data)
 
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 

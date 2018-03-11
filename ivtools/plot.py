@@ -1,13 +1,16 @@
 """ Functions for making plots with IV data """
 
+# Local imports
+import analyze
+from dotdict import dotdict
+
 import matplotlib.pyplot as plt
 import numpy as np
-from dotdict import dotdict
 import pandas as pd
 from matplotlib.widgets import SpanSelector
 from inspect import signature
 
-### 
+###
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
     '''
     Plot an array vs another array contained in iv object
@@ -198,7 +201,7 @@ def auto_title(data, keys=None, ax=None):
 
 
 def plot_R_states(data, v0=.1, v1=None, **kwargs):
-    resist_states = resistance_states(data, v0, v1)
+    resist_states = analyze.resistance_states(data, v0, v1)
     resist1 = resist_states[0]
     resist2 = resist_states[1]
     if type(resist1) is pd.Series:
@@ -294,7 +297,7 @@ def plot_channels(chdata, ax=None):
                 chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
-                x = maketimearray(chdata)
+                x = analyze.maketimearray(chdata)
                 ax.set_xlabel('Time [s]')
                 ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
             else:
@@ -408,7 +411,7 @@ def ivplotter(data, ax=None, maxloops=100, smooth=True, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     if smooth:
-        data = moving_avg(data, window=10)
+        data = analyze.moving_avg(data, window=10)
     if type(data) is list:
         nloops = len(data)
     else:
@@ -433,7 +436,7 @@ def chplotter(data, ax=None, **kwargs):
             break
     if lendata > 100000:
         print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
-        plotdata = sliceiv(chdata, stop=100000)
+        plotdata = analyze.sliceiv(chdata, stop=100000)
     else:
         plotdata = chdata
     plot_channels(plotdata, ax=ax, **kwargs)
@@ -624,8 +627,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             # Split branches
             colorup = 'Red'
             colordown = 'DarkBlue'
-            plotiv(increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
-            plotiv(decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
+            plotiv(analyze.increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
+            plotiv(analyze.decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
             ax.legend(title='Sweep Direction')
         else:
             # Colors will mess up if you pass a dataframe with non range(0, ..) index
