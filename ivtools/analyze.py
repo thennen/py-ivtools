@@ -6,7 +6,6 @@ import plot
 from functools import wraps
 import numpy as np
 from itertools import groupby
-from dotdict import dotdict
 from scipy import signal
 from numbers import Number
 from scipy.optimize import curve_fit
@@ -128,7 +127,7 @@ def ivfunc(func):
                 return(pd.Series(result))
             else:
                 return result
-        elif dtype in (dotdict, dict):
+        elif dtype in (dict):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:

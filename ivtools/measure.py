@@ -1,7 +1,6 @@
 """ Functions for measuring IV data with picoscope 6403C and Rigol AWG """
 
 # Local imports
-from dotdict import dotdict
 import plot
 
 from picoscope import ps6000
@@ -1050,8 +1049,6 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     global COMPLIANCE_CURRENT
     global INPUT_OFFSET
 
-    # dotdict was nice, but caused too many problems ...
-    #dataout = dotdict(datain)
     dataout = datain
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:

@@ -1,10 +1,9 @@
 """ Functions for saving and loading data """
 
 # Local imports
-from dotdict import dotdict
-
 import analyze
 import plot
+
 import os
 import re
 import fnmatch
@@ -215,32 +214,6 @@ def log_ipy(filepath):
     '''
     pass
     # TODO take this from interactive script and make it work as function
-
-
-def read_pickle(fp):
-    ''' Read data from a pickle file '''
-    import dotdict
-    # Current datatype uses a small subclass of dict "dotdict"
-    # This class lives in ivtools, and is not installed to normal package directory
-    # Need to do this fancy thing so that pickle recognizes it
-    sys.modules['dotdict'] = dotdict
-    # It's better, though, to just convert all the dotdicts back to normal dicts so that
-    # loading the data does not depend on having this module at all.
-    with open(fp, 'rb') as f:
-        normaldict = pickle.load(f)
-    # Convert all the normal dicts to dotdicts
-    out = dotdict.dotdict(normaldict)
-    out['iv'] = np.array([dotdict.dotdict(l) for l in normaldict['iv']])
-    return out
-
-def write_pickle(data, fp):
-    ''' Write data to a pickle file '''
-    # Convert all dotdicts into normal dicts
-    # Hopefully this does not take a huge amount of time
-    normaldict = dict(data)
-    normaldict['iv'] = np.array([dict(dd) for dd in data.iv])
-    with open(fp, 'wb') as f:
-        pickle.dump(normaldict, f)
 
 
 def read_txt(filepath, **kwargs):

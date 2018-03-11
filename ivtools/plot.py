@@ -2,7 +2,6 @@
 
 # Local imports
 import analyze
-from dotdict import dotdict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -149,7 +148,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
                 line = ax.scatter(X, Y, **kwargs)
                 ax.set_xlabel(x)
                 ax.set_ylabel(y)
-    elif dtype in (dict, dotdict, pd.Series):
+    elif dtype in (dict, pd.Series):
         # Just one IV
         line = plotfunc(data, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs)
     else:
