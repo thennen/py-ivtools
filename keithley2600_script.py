@@ -112,7 +112,7 @@ sys.stdout = logger
 magic('matplotlib')
 if hostname == 'pciwe46':
     ivtoolsdir = 'C:/t/py-ivtools/'
-elif hostname == 'fenster': # Just guessed craptop hostname ..
+elif hostname == 'fenster':
     ivtoolsdir = 'c:/Users/t/Desktop/py-ivtools'
 else:
     # Hope you are already running in the py-ivtools directory

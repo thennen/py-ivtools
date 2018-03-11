@@ -552,6 +552,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
 def insert_file_num(filepath, number, width=3):
     return '_{{:0{}}}'.format(width).format(number).join(os.path.splitext(filepath))
 
+
 def write_meta_csv(data, filepath):
     ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
     dtype = type(data)
@@ -570,6 +571,12 @@ def write_meta_csv(data, filepath):
     arrays = s[s.apply(type) == np.ndarray].index
     s.drop(arrays).to_csv(filepath, sep='\t', encoding='utf-8')
 
+
+def write_sql(data, db):
+    ''' Append some data to sql table.  Didn't actually write the function yet.'''
+    con = 'wtf'
+    data.to_sql(db, con, if_exists='append')
+    # TODO: figure out what to do if data has columns that aren't already in the database.
 
 def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
