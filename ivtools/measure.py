@@ -3,8 +3,6 @@
 # Local imports
 from . import plot
 
-from picoscope import ps6000
-import visa
 from fractions import Fraction
 from math import gcd
 import numpy as np
@@ -12,7 +10,7 @@ import time
 import pandas as pd
 import os
 
-visa_rm = visa.ResourceManager()
+# TODO: try to connect to all known instruments
 
 # These are None until the instruments are connected
 # Don't clobber them though, in case this script is used with run -i
@@ -33,6 +31,7 @@ except:
 #class picosettings(dict):
 
 # NOT DONE
+"""
 class picosettings(ps6000.PS6000):
     '''
     Class for managing all the channel settings for picoscope
@@ -53,6 +52,7 @@ class picosettings(ps6000.PS6000):
     '''
     def __init__(self):
         self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
+"""
 
 
 class picorange(dict):
@@ -304,332 +304,6 @@ def connect_instruments():
     connect_picoscope()
     connect_rigolawg()
     connect_keithley()
-
-def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
-                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
-                 chrange=None, choffset=None, chcoupling=None, chatten=None):
-    '''
-    Set up picoscope to capture from specified channel(s).
-
-    pass exactly two of: freq(sampling frequency), duration, nsamples
-    sampling frequency has limited possible values, so actual number of samples will vary
-    will try to sample for the intended duration, either the value of the duration argument or nsamples/freq
-
-    Won't actually start capture until picoscope receives the specified trigger event.
-
-    It will trigger automatically after a timeout.
-
-    ch can be a list of characters, i.e. ch=['A','B'].
-
-    # TODO: provide a way to override the global variable channel settings
-    if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
-    the settings will be taken from the global variables
-    '''
-
-    # Check that two of freq, duration, nsamples was passed
-    if not sum([x is None for x in (freq, duration, nsamples)]) == 1:
-        raise Exception('Must give exactly two of the arguments freq, duration, and nsamples.  These are needed to determine sampling conditions.')
-
-    # If ch not iterable, just put it in a list by itself
-    if not hasattr(ch, '__iter__'):
-        ch = [ch]
-
-    # Maximum sample rate is different depending on the number of channels that are enabled.
-    # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
-    # Enable only the channels being used, disable the rest
-    for c in ['A', 'B', 'C', 'D']:
-        if c not in ch:
-            ps.setChannel(c, enabled=False)
-
-    # If freq and duration are passed, take as many samples as it takes to actually sample for duration
-    # If duration and nsamples are passed, sample with frequency as near as possible to nsamples/duration (nsamples will vary)
-    # If freq and nsamples are passed, sample at closest possible frequency for nsamples (duration will vary)
-    if freq is None:
-        freq = nsamples / duration
-    # This will return actual sample frequency, then we can determine
-    # the number of samples needed.
-    actualfreq, _ = ps.setSamplingFrequency(freq, 0)
-
-    if duration is not None:
-        nsamples = duration * actualfreq
-
-    def global_replace(kwarg, globalarg):
-        if kwarg is None:
-            # No values passed, use the global values
-            return globalarg
-        else:
-            # Fill missing values with global values
-            kwargcopy = kwarg.copy()
-            for c in ch:
-                if c not in kwargcopy:
-                    kwargcopy[c] = globalarg[c]
-            return kwargcopy
-
-    chrange = global_replace(chrange, RANGE)
-    choffset = global_replace(choffset, OFFSET)
-    chcoupling = global_replace(chcoupling, COUPLINGS)
-    chatten = global_replace(chatten, ATTENUATION)
-
-    actualfreq, max_samples = ps.setSamplingFrequency(actualfreq, nsamples)
-    print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
-    if nsamples > max_samples:
-        raise(Exception('Trying to sample more than picoscope memory capacity'))
-    # Set up the channels
-    for c in ch:
-        ps.setChannel(channel=c,
-                      coupling=chcoupling[c],
-                      VRange=chrange[c],
-                      probeAttenuation=chatten[c],
-                      VOffset=choffset[c],
-                      enabled=True)
-    # Set up the trigger.  Will timeout in 30s
-    ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
-    ps.runBlock(pretrig)
-    return actualfreq
-
-### These directly wrap SCPI commands that can be sent to the rigol AWG
-# TODO: turn these into a class, since the code will not change very often
-# There is at least one python library for DG5000, but I could not get it to run.
-
-def rigol_shape(shape='SIN', ch=1):
-    '''
-    Change the waveform shape to a built-in value. Possible values are:
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-    rigol.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
-
-def rigol_outputstate(state=True, ch=1):
-    ''' Turn output state on or off '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
-
-def rigol_frequency(freq, ch=1):
-    ''' Set frequency of AWG waveform.  Not the sample rate! '''
-    rigol.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
-
-def rigol_amplitude(amp, ch=1):
-    ''' Set amplitude of AWG waveform '''
-    rigol.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, amp))
-
-def rigol_offset(offset, ch=1):
-    ''' Set offset of AWG waveform '''
-    rigol.write(':SOURCE{}:VOLT:OFFS {}'.format(ch, offset))
-
-def rigol_output_resistance(r=50, ch=1):
-    ''' Manual says you can change output resistance from 1 to 10k ''' 
-    rigol.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
-
-def rigol_sync(state=True):
-    ''' Can turn on/off the sync output (on rear) '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write('OUTPUT{}:SYNC ' + statestr)
-
-def rigol_screensaver(state=False):
-    ''' Turn the screensaver on or off.  Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':DISP:SAV ' + statestr)
-
-def rigol_ramp_symmetry(percent=50, ch=1):
-    ''' Change the symmetry of a ramp output. Refers to the sweep rates of increasing/decreasing ramps. '''
-    rigol.write('SOURCE{}:FUNC:RAMP:SYMM {}'.format(ch, percent))
-
-def rigol_dutycycle(percent=50, ch=1):
-    ''' Change the duty cycle of a square output. '''
-    rigol.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
-
-def rigol_error():
-    ''' Get error message from rigol '''
-    return rigol.ask(':SYSTem:ERRor?')
-
-# <<<<< For burst mode
-def rigol_ncycles(n, ch=1):
-    ''' Set number of cycles that will be output in burst mode '''
-    rigol.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
-
-def rigol_trigsource(source='MAN', ch=1):
-    ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
-    rigol.write(':SOURCE{}:BURST:TRIG:SOURCE {}'.format(ch, source))
-
-def rigol_trigger(ch=1):
-    '''
-    Send signal to rigol to trigger immediately.  Make sure that trigsource is set to MAN:
-    rigol_trigsource('MAN')
-    '''
-    rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
-
-def rigol_burstmode(mode='TRIG', ch=1):
-    '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
-    rigol.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
-
-def rigol_burst(state=True, ch=1):
-    ''' Turn the burst mode on or off '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
-
-# End for burst mode >>>>>
-def rigol_load_wfm(waveform):
-    '''
-    Load some data as an arbitrary waveform to be output.
-    Data will be normalized.  Use rigol_amplitude to set the amplitude.
-    Make sure that the output is off, because the command switches out of burst mode and will start outputting immediately.
-    '''
-    # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
-    # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
-    # Construct a string out of the waveform
-    waveform = np.array(waveform, dtype=np.float32)
-    maxamp = np.max(np.abs(waveform))
-    if maxamp != 0:
-        normwaveform = waveform/maxamp
-    else:
-        # Not a valid waveform anyway .. rigol will beep
-        normwaveform = waveform
-    wfm_str = ','.join([str(w) for w in normwaveform])
-    # This command switches out of burst mode for some stupid reason
-    rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
-
-def rigol_interp(interp=True):
-    ''' Set AWG datapoint interpolation mode '''
-    modestr = 'LIN' if interp else 'OFF'
-    rigol.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
-
-def rigol_color(c='RED'):
-    '''
-    Change the highlighting color on rigol screen for some reason
-    'RED', 'DEEPRED', 'YELLOW', 'GREEN', 'AZURE', 'NAVYBLUE', 'BLUE', 'LILAC', 'PURPLE', 'ARGENT'
-    '''
-    rigol.write(':DISP:WIND:HLIG:COL {}'.format(c))
-
-
-def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
-    '''
-    Load waveform into volatile memory, but don't trigger
-    '''
-    if len(waveform) > 512e3:
-        raise Exception('Too many samples requested for rigol AWG (probably?)')
-
-    # toggling output state is slow, clunky, annoying, and should not be necessary.
-    # it might also cause some spikes that could damage the device.
-    # Also goes into high impedance output which could have some undesirable consequences.
-    # Problem is that the command which loads in a volatile waveform switches rigol
-    # out of burst mode automatically.  If the output is still enabled, you will get a
-    # continuous pulse train until you can get back into burst mode.
-    # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
-    rigol_outputstate(False, ch=ch)
-    #
-    # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
-    # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
-    rigol_screensaver(False)
-    #time.sleep(.01)
-    # Turn on interpolation for IVs, off for steps
-    rigol_interp(interp)
-    # This command switches out of burst mode for some stupid reason
-    rigol_load_wfm(waveform)
-    freq = 1. / duration
-    rigol_frequency(freq, ch=ch)
-    maxamp = np.max(np.abs(waveform))
-    rigol_amplitude(2*maxamp, ch=ch)
-    rigol_burstmode('TRIG', ch=ch)
-    rigol_ncycles(n, ch=ch)
-    rigol_trigsource('MAN', ch=ch)
-    rigol_burst(True, ch=ch)
-    rigol_outputstate(True, ch=ch)
-
-
-def load_builtin_wfm(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
-    '''
-    Set up a built-in waveform to pulse n times
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-
-    if not (bool(duration) ^ bool(freq)):
-        raise Exception('Must give either duration or frequency, and not both')
-
-    if freq is None:
-        freq = 1. / duration
-
-    # Set up waveform
-    rigol_burst(True, ch=ch)
-    rigol_burstmode('TRIG', ch=ch)
-    rigol_shape(shape, ch=ch)
-    # Rigol's definition of amp is peak-to-peak, which is unusual.
-    rigol_amplitude(2*amp, ch=ch)
-    rigol_offset(offset, ch=ch)
-    rigol_burstmode('TRIG', ch=ch)
-    rigol_ncycles(n, ch=ch)
-    rigol_trigsource('MAN', ch=ch)
-    rigol_frequency(freq, ch=ch)
-
-    return locals()
-
-
-def pulse_builtin(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
-    '''
-    Pulse a built-in waveform n times
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-    load_builtin_wfm(**locals())
-
-    rigol_outputstate(True)
-    # Trigger rigol
-    rigol_trigger(ch=ch)
-
-
-def pulse(waveform, duration, n=1, ch=1, interp=True):
-    '''
-    Generate n pulses of the input waveform on Rigol AWG.
-    Trigger immediately.
-    Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
-    Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
-    '''
-    # Load waveform
-    load_volatile_wfm(**locals())
-    # Trigger rigol
-    rigol_trigger(ch=1)
-
-
-def get_data(ch='A', raw=False, dtype=np.float32):
-    '''
-    Wait for data and transfer it from pico memory.
-    ch can be a list of channels
-    This function returns a simple dict of the arrays and metadata.
-    Use pico_to_iv to convert to current, voltage, different data structure.
-
-    if raw is True, do not convert from ADC value - this saves a lot of memory
-    return dict of arrays and metadata (sample rate, channel settings, time...)
-
-    '''
-    data = dict()
-    # Wait for data
-    while(not ps.isReady()):
-        time.sleep(0.01)
-
-    if not hasattr(ch, '__iter__'):
-        ch = [ch]
-    for c in ch:
-        if raw:
-            # For some reason pico-python gives the values as int16
-            # Probably because some scopes have 16 bit resolution
-            # The 6403c is only 8 bit, and I'm looking to save memory here
-            rawint16, _, _ = ps.getDataRaw(c)
-            data[c] = np.int8(rawint16 / 2**8)
-        else:
-            # I added dtype argument to pico-python
-            data[c] = ps.getDataV(c, dtype=dtype)
-
-    Channels = ['A', 'B', 'C', 'D']
-    data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
-    data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
-    data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, ps.ProbeAttenuation)}
-    data['sample_rate'] = ps.sampleRate
-    # Specify samples captured, because this field will persist even after splitting for example
-    # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
-    data['nsamples_capture'] = len(data[ch[0]])
-    # Using the current state of the global variables to record what settings were used
-    # I don't know a way to get couplings and attenuations from the picoscope instance
-    # TODO: pull request a change to setChannel
-    data['COUPLINGS'] = COUPLINGS
-    # Sample frequency?
-    return data
 
 
 def close():
@@ -1165,51 +839,3 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
-
-def analog_out(ch, dacval=None, volts=None):
-    '''
-    I found a USB-1208HS so this is how you use it I guess.
-    Pass a digital value between 0 and 2**12 - 1
-    0 is -10V, 2**12 - 1 is 10V
-    Voltage values that don't make sense for my current set up are disallowed.
-    '''
-    # Import here because I don't want the entire module to error if you don't have mcculw installed
-    from mcculw import ul
-    from mcculw.enums import ULRange
-    from mcculw.ul import ULError
-    board_num = 0
-    ao_range = ULRange.BIP10VOLTS
-
-    # Can pass dacval or volts.  Prefer dacval.
-    if dacval is None:
-        # Better have passed volts...
-        dacval = ul.from_eng_units(board_num, ao_range, volts)
-    else:
-        volts = ul.to_eng_units(board_num, ao_range, dacval)
-
-    # Just protect against doing something that doesn't make sense
-    if ch == 0 and volts > 0:
-        print('I disallow voltage value {} for analog output {}'.format(volts, ch))
-        return
-    elif ch == 1 and volts < 0:
-        print('I disallow voltage value {} for analog output {}'.format(volts, ch))
-        return
-    else:
-        print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
-
-    try:
-        ul.a_out(board_num, ch, ao_range, dacval)
-    except ULError as e:
-        # Display the error
-        print("A UL error occurred. Code: " + str(e.errorcode)
-            + " Message: " + e.message)
-
-
-def digital_out(ch, val):
-    # Import here because I don't want the entire module to error if you don't have mcculw installed
-    from mcculw import ul
-    from mcculw.enums import DigitalPortType, DigitalIODirection
-    from mcculw.ul import ULError
-    #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
-    ul.d_config_bit(0, DigitalPortType.AUXPORT, 8, DigitalIODirection.OUT)
-    ul.d_bit_out(0, DigitalPortType.AUXPORT, ch, val)
