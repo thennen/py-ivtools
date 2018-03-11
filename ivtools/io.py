@@ -1,8 +1,8 @@
 """ Functions for saving and loading data """
 
 # Local imports
-import analyze
-import plot
+from . import analyze
+from . import plot
 
 import os
 import re

@@ -1,8 +1,9 @@
 """ Functions for making plots with IV data """
 
 # Local imports
-import analyze
+from . import analyze
 
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd

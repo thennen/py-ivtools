@@ -1,7 +1,7 @@
 """ Functions for measuring IV data with picoscope 6403C and Rigol AWG """
 
 # Local imports
-import plot
+from . import plot
 
 from picoscope import ps6000
 import visa

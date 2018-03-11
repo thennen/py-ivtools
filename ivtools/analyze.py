@@ -1,7 +1,7 @@
 """ Functions for doing data analysis on IV data """
 
 # Local imports
-import plot
+from . import plot
 
 from functools import wraps
 import numpy as np
