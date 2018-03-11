@@ -1,14 +1,20 @@
 # Here are some test functions not conforming to any software engineering conventions
 
-# Interactive script imports all names into the same namespace
+# I would need to write instrument emulators in order to write actual tests?
+
+import sys
+import os
+ivtoolsdir = os.path.join(os.path.split(sys.path[0])[0], 'ivtools')
+
 def name_collisions():
+    # Interactive script imports all names into the same namespace
+    # So make sure there are no name collisions
     import ast
 
-    folder = 'ivtools'
     filenames = ['measure.py', 'io.py', 'plot.py', 'analyze.py']
     names = []
     for fn in filenames:
-        with open(os.path.join(folder, fn)) as file:
+        with open(os.path.join(ivtoolsdir, fn)) as file:
             node = ast.parse(file.read())
 
         functions = [n for n in node.body if isinstance(n, ast.FunctionDef)]
@@ -29,3 +35,6 @@ def name_collisions():
             fail = True
 
     return fail
+
+if __name__ == '__main__':
+    name_collisions()
