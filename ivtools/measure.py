@@ -9,6 +9,7 @@ Keithley 2636B, 2634B, 2636A
 # Local imports
 from . import plot
 from . import analyze
+from . import instruments
 
 from fractions import Fraction
 from math import gcd
@@ -22,7 +23,7 @@ visa_rm = visa.ResourceManager()
 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR',
 'TCPIP0::192.168.11.12::inst0::INSTR'
 
-# These are the instrument handles.  They are None until connected.
+# These are the instrument instances.  They are None until connected.
 # Picoscope
 ps = None
 # Rigol DG5000 AWG
@@ -40,16 +41,16 @@ INPUT_OFFSET = 0
 def detect_instruments():
     ''' find which instruments are available to connect to '''
     pass
+
 def connect_picoscope():
     global ps
     if ps is None:
         try:
-            ps = ps6000.PS6000()
+            ps = instruments.Picoscope()
             model = ps.getUnitInfo('VariantInfo')
             print('Picoscope {} connection succeeded.'.format(model))
-            #print(ps.getAllUnitInfo())
         except:
-            print('Connection to picoscope failed.  Could be an unclosed session.')
+            print('Connection to picoscope failed. There could be an unclosed session.')
             ps = None
     else:
         try:
@@ -60,53 +61,51 @@ def connect_picoscope():
         except:
             print('ps variable is not None, and not an active picoscope connection.')
 
-def connect_rigolawg():
+def connect_rigolawg(rigolstr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
     global rigol
-    rigolstr = 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'
     if rigol is None:
         try:
-            rigol = visa_rm.open_resource(rigolstr)
-            idn = rigol.query('*IDN?')
-            print('Rigol connection succeeded.')
-            print('*IDN?  {}'.format(idn))
+            rigol = instruments.RigolDG5000(rigolstr)
+            idn = rigol.ask('*IDN?').replace('\n', '')
+            print('Rigol *IDN?: {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
             rigol = None
     else:
         try:
             # Check if rigol is already defined and connected
-            idn = rigol.query('*IDN?')
+            idn = rigol.ask('*IDN?')
             print('Rigol AWG already connected')
             print(idn)
         except:
             print('rigol variable is not None.  Doing nothing.')
 
-def connect_keithley(ip='192.168.11.11'):
+def connect_keithley(addr=None):
+    # TODO: This is a total disaster ..
     global k
-    # 2634B
-    #Keithley_ip = '192.168.11.11'
-    # 2636A
-    #Keithley_ip = '192.168.11.12'
-    Keithley_ip = ip
-    Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
+    # 2634B : 192.168.11.11
+    # 2636A : 192.168.11.12
+    # 2636B : 192.168.11.13
+    ips = ['192.168.11.11', '192.168.11.12', '192.168.11.13']
+    for ip in ips:
+        Keithley_id = 'TCPIP::' + ip + '::inst0::INSTR'
+        if k is None:
+            try:
+                k = instruments.Keithley2600(Keithley_id)
+                idn = k.ask('*IDN?').replace('\n', '')
+                print('Keithley *IDN?: {}'.format(idn))
+            except:
+                k = None
+        else:
+            try:
+                # Is keithley already connected?
+                idn = k.ask('*IDN?')
+                print('Keithley already connected')
+                print('Keithley *IDN?: {}'.format(idn))
+            except:
+                print('Keithley not responding, and keithley variable is not None.')
     if k is None:
-        try:
-            # Impatiently try to connect to keithley
-            # Because it runs even if keithley is not connected and I have no intention to use it
-            k = visa_rm.get_instrument(Keithley_id, open_timeout=250)
-            idn = k.ask('*IDN?')
-            print('Keithley *IDN?: {}'.format(idn))
-        except:
-            print('Connection to Keithley failed.')
-            keithley = None
-    else:
-        try:
-            # Is keithley already connected?
-            idn = k.ask('*IDN?')
-            print('Keithley already connected')
-            print('Keithley *IDN?: {}'.format(idn))
-        except:
-            print('Keithley not responding, and keithley variable is not None.')
+        print('Connection to Keithley failed.')
 
 def connect_instruments():
     ''' Connect all the necessary equipment '''

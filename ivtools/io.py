@@ -10,6 +10,7 @@ import fnmatch
 import pandas as pd
 from datetime import datetime
 import sys
+import subprocess
 import numpy as np
 try:
     import cPickle as pickle
@@ -22,28 +23,41 @@ splitext = os.path.splitext
 
 gitdir = os.path.split(__file__)[0]
 
+logger = None
+
 class MetaHandler(object):
     '''
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files
 
     '''
-    def __init__(self):
-        # This stores the currently selected metadata.  It's a dict or a pd.Series
-        # Go ahead and overwrite it if you want
-        self.meta = {}
-        # This is the index of the selected data
-        self.i = None
-        # This is the dataframe holding all of the metadata -- one row per device
-        self.df = None
-        # These key:values are always appended
-        self.static = {}
-        # This controls which keys will be used to construct a filename
-        self.filenamekeys = []
-        # TODO: This will be called with str.format
-        #self.filenameformatter = None
-        # These keys get printed when you step through the list of metadata
-        self.prettykeys = []
+    def __init__(self, oldinstance=None):
+        if oldinstance is None:
+            # This stores the currently selected metadata.  It's a dict or a pd.Series
+            # Go ahead and overwrite it if you want
+            self.meta = {}
+            # This is the index of the selected data
+            self.i = None
+            # This is the dataframe holding all of the metadata -- one row per device
+            self.df = None
+            # These key:values are always appended
+            self.static = {}
+            # This controls which keys will be used to construct a filename
+            self.filenamekeys = []
+            # TODO: This will be called with str.format
+            #self.filenameformatter = None
+            # These keys get printed when you step through the list of metadata
+            self.prettykeys = []
+        else:
+            # In case you redefine the class but want to keep the same data inside
+            self.meta = oldinstance.meta
+            self.i = oldinstance.i
+            self.df = oldinstance.df
+            self.static = oldinstance.static
+            self.filenamekeys = oldinstance.filenamekeys
+            self.prettykeys = oldinstance.prettykeys
+
+        self.moduledir = os.path.split(__file__)[0]
 
     def self_merge(self, columns=None):
         '''
@@ -66,7 +80,8 @@ class MetaHandler(object):
         all kwargs will just be added to all metadata
         '''
         #global nanoxbar, prettykeys, filenamekeys, devicemetalist, deposition_df, meta_i, devicemeta
-        nanoxbar = pd.read_pickle('../sampledata/nanoxbar.pkl')
+        nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar.pkl')
+        nanoxbar = pd.read_pickle()
         devicemetalist = nanoxbar
         for name, value in kwargs.items():
             if name in nanoxbar:
@@ -91,8 +106,8 @@ class MetaHandler(object):
         Load wafer information for Lassen
         Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
         '''
-        deposition_file = '../sampledata/CeRAM_Depositions.xlsx'
-        lassen_file = '../sampledata/all_lassen_device_info.pkl'
+        deposition_file = os.path.join(self.moduledir, 'sampledata/CeRAM_Depositions.xlsx')
+        lassen_file = os.path.join(self.moduledir, 'sampledata/all_lassen_device_info.pkl')
 
         deposition_df = pd.read_excel(deposition_file, header=8, skiprows=[9])
         # Only use info for Lassen wafers
@@ -144,11 +159,13 @@ class MetaHandler(object):
             if not any(meta_df[k].isnull()):
                 meta_df[k] = meta_df[k].astype(v)
 
+        self.i = 0
         self.df = meta_df
+        self.meta = meta_df.iloc[0]
         self.prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
-        self.print_meta()
+        self.print()
 
     def load_depositions():
         ''' Load sample information from some deposition sheet '''
@@ -167,7 +184,8 @@ class MetaHandler(object):
             else:
                 self.meta = self.df[self.i]
             # Put in the static metadata here.  Not sure if this is the best approach
-            self.meta.update(self.static)
+            for k,v in self.static:
+                self.meta[k] = v
         else:
             print('There is no more meta data to load')
             return
@@ -257,14 +275,52 @@ def getGitRevision():
 def getGitStatus():
     return subprocess.check_output(['git', 'status', '-z'])
 
-def log_ipy(filepath):
+def log_ipy(start=True, logfilepath=None):
     '''
     Append ipython and std in/out to a text file
     There are some strange bugs involved
     spyder just crashes, for example
+    don't be surprised if it messes something up
     '''
-    pass
-    # TODO take this from interactive script and make it work as function
+    global logger
+    magic = get_ipython().magic
+    magic('logstop')
+
+    # Sorry, I just don't know a better way to do this.
+    # I want to store the normal standard out somewhere it's safe
+    # But this can only run ONCE
+    try:
+        sys.stdstdout
+    except:
+        sys.stdstdout = sys.stdout
+
+    class Logger(object):
+        ''' Something to replace stdout '''
+        def __init__(self):
+            self.terminal = sys.stdstdout
+            self.log = open(logfilepath, 'a')
+
+        def write(self, message):
+            self.terminal.write(message)
+            # Comment the lines and append them to ipython log file
+            self.log.writelines(['#[Stdout]# {}\n'.format(line) for line in message.split('\n') if line != ''])
+
+        def flush(self):
+            self.log.flush()
+            # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
+            self.terminal.flush()
+
+    if logger is not None:
+        logger.log.close()
+
+    if start:
+        #logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
+        magic('logstart -o {} append'.format(logfilepath))
+        logger = Logger()
+        sys.stdout = logger
+    else:
+        sys.stdout = sys.stdstdout
+
 
 
 def read_txt(filepath, **kwargs):

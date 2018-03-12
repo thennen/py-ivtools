@@ -11,6 +11,7 @@ import numpy as np
 import visa
 import time
 import os
+import pandas as pd
 from collections import deque
 
 visa_rm = visa.ResourceManager()
@@ -22,12 +23,13 @@ class Picoscope(object):
     '''
     This class will basically extend the colinoflynn picoscope module
     Has some higher level functionality, and it stores/manipulates the channel settings.
+
+    If you pass a previous connected instance to init, it will take over the existing connection
     '''
-    def __init__(self, connect=True):
+    def __init__(self, previous_instance=None):
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I might have subclassed PS6000, but then I would have to import it before the class definition...
-        self.ps = ps6000.PS6000(connect=connect)
         # Not sure at the moment how to take over an old connection when reinstantiating
         # self.get_data will return data as well as 
         self.data = None
@@ -38,10 +40,22 @@ class Picoscope(object):
         self.offset = self._PicoOffset(self)
         self.atten= self._PicoAttenuation(self)
         self.coupling = self._PicoCouping(self)
-        # TODO: methods of PS6000 to expose?
+        if previous_instance is None:
+            self.ps = ps6000.PS6000(connect=True)
+        else:
+            self.ps = ps6000.PS6000(connect=False)
+            self.ps.handle = previous_instance.handle
+            self.range.update(previous_instance.range)
+            self.offset.update(previous_instance.offset)
+            self.atten.update(previous_instance.atten)
+            self.coupling.update(previous_instance.coupling)
         self.close = self.ps.close
+        self.handle = self.ps.handle
+        # TODO: methods of PS6000 to expose?
+        self.getAllUnitInfo = self.ps.getAllUnitInfo
+        self.getUnitInfo = self.ps.getUnitInfo
 
-    def print_settings():
+    def print_settings(self):
         print('Channel settings:')
         print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
                         index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
@@ -363,9 +377,6 @@ class RigolDG5000(object):
         self.ask = self.conn.ask
         self.close = self.conn.close
 
-    def testing123():
-        pass
-
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 
     def shape(self, shape='SIN', ch=1):
@@ -605,9 +616,6 @@ class Keithley2600(object):
         # Store up to 100 loops in memory in case you forget to save them to disk
         self.data= deque(maxlen=100)
 
-    def __del__(self):
-        print('Closing connection ...')
-        self.close()
 
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
