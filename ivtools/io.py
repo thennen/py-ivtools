@@ -8,6 +8,7 @@ import os
 import re
 import fnmatch
 import pandas as pd
+from datetime import datetime
 import sys
 import numpy as np
 try:
@@ -33,7 +34,7 @@ class MetaHandler(object):
         self.meta = {}
         # This is the index of the selected data
         self.i = None
-        # This is the dataframe holding all of the 
+        # This is the dataframe holding all of the metadata -- one row per device
         self.df = None
         # These key:values are always appended
         self.static = {}
@@ -45,19 +46,53 @@ class MetaHandler(object):
         self.prettykeys = []
 
     def self_merge(self, columns=None):
-        ''' Merge meta df with itself, by default on columns which have no missing values '''
+        '''
+        Not implemented
+        Merge meta df with itself, by default on columns which have no missing values
+        '''
         pass
 
     def load_from_csv(self, xlspath):
+        ''' Not implemented. '''
         pass
+
+    # TODO: Unified metadata loader that just loads every possible sample
+
+    def load_nanoxbar(self, **kwargs):
+        '''
+        Load nanoxbar metadata
+        use keys X, Y, width_nm, device
+        Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
+        all kwargs will just be added to all metadata
+        '''
+        #global nanoxbar, prettykeys, filenamekeys, devicemetalist, deposition_df, meta_i, devicemeta
+        nanoxbar = pd.read_pickle('../sampledata/nanoxbar.pkl')
+        devicemetalist = nanoxbar
+        for name, value in kwargs.items():
+            if name in nanoxbar:
+                if not hasattr(value, '__iter__'):
+                    value = [value]
+                devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
+            else:
+                devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
+                filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        if 'sample_name' in kwargs:
+            filenamekeys = ['sample_name'] + filenamekeys
+        meta_i = 0
+        self.df = devicemetalist
+        self.meta = devicemetalist.iloc[0]
+        self.prettykeys = filenamekeys
+        self.filenamekeys = filenamekeys
+        print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
+        self.print_meta()
 
     def load_lassen(self, **kwargs):
         '''
         Load wafer information for Lassen
         Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
         '''
-        deposition_file = 'sampledata/CeRAM_Depositions.xlsx'
-        lassen_file = 'sampledata/all_lassen_device_info.pkl'
+        deposition_file = '../sampledata/CeRAM_Depositions.xlsx'
+        lassen_file = '../sampledata/all_lassen_device_info.pkl'
 
         deposition_df = pd.read_excel(deposition_file, header=8, skiprows=[9])
         # Only use info for Lassen wafers
@@ -113,17 +148,14 @@ class MetaHandler(object):
         self.prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
-
-    def load_nanoxbar(self):
-        ''' Load '''
-        pass
+        self.print_meta()
 
     def load_depositions():
         ''' Load sample information from some deposition sheet '''
         pass
 
     def step(self, n):
-        ''' Select the next device '''
+        ''' Select the another device by taking a step through meta df '''
         lastmeta = self.meta
         if self.i is None:
             self.i = 0
@@ -171,6 +203,7 @@ class MetaHandler(object):
                     print('{:<18}\t{}'.format(key[:18], self.meta[key]))
 
     def attach(self, data):
+        ''' TODO: Attach the currently selected metadata to input data '''
         return None
 
     def filename(self):
@@ -193,6 +226,24 @@ def validvarname(varStr):
 def valid_filename():
     pass
 
+
+def timestamp(date=True, time=True, ms=True, us=False):
+    now = datetime.now()
+    datestr = now.strftime('%Y-%m-%d')
+    timestr = now.strftime('%H%M%S')
+    msstr = now.strftime('%f')[:-3]
+    usstr = now.strftime('%f')[-3:]
+    parts = []
+    if date:
+        parts.append(datestr)
+    if time:
+        parts.append(timestr)
+    if ms:
+        parts.append(msstr)
+    if us:
+        parts[-1] += usstr
+
+    return '_'.join(parts)
 
 def getGitRevision():
     rev = subprocess.getoutput('cd \"{}\" & git rev-parse --short HEAD'.format(gitdir))

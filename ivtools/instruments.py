@@ -350,7 +350,6 @@ class Picoscope(object):
         return data
 
 
-
 #########################################################
 # Rigol DG5000 AWG ######################################
 #########################################################
@@ -363,6 +362,9 @@ class RigolDG5000(object):
         self.write = self.conn.write
         self.ask = self.conn.ask
         self.close = self.conn.close
+
+    def testing123():
+        pass
 
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 

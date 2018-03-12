@@ -9,6 +9,7 @@ from itertools import groupby
 from scipy import signal
 from numbers import Number
 from scipy.optimize import curve_fit
+import pandas as pd
 
 def ivfunc(func):
     '''
@@ -127,7 +128,7 @@ def ivfunc(func):
                 return(pd.Series(result))
             else:
                 return result
-        elif dtype in (dict):
+        elif dtype in (dict,):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
