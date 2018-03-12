@@ -9,6 +9,11 @@ import numpy as np
 import time
 import pandas as pd
 import os
+import visa
+
+visa_rm = visa.ResourceManager()
+'USB0::0x1AB1::0x0640::DG5T155000186::INSTR',
+'TCPIP0::192.168.11.12::inst0::INSTR'
 
 # TODO: try to connect to all known instruments
 
@@ -147,7 +152,7 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, durat
 
     return data
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True):
+def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, **kwargs):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
     Duration determines the length of one repetition of waveform.
@@ -155,7 +160,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
-    pico_capture(ch, freq=fs, duration=n*duration)
+    pico_capture(ch, freq=fs, duration=n*duration, **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     pulse(waveform, duration, n=n, interp=interpwfm)
 
@@ -309,10 +314,14 @@ def tri(v1, v2, n=None, step=None):
         # I could choose here to either make sure the waveform surely contains v1 and v2
         # or to make sure the waveform really has a constant sweep rate
         # I choose the former..
-        wfm = np.concatenate((np.arange(0, v1, np.sign(v1) * step),
-                             np.arange(v1, v2, np.sign(v2 - v1) * step),
-                             np.arange(v2, 0, -np.sign(v2) * step),
+        def sign(num):
+            npsign = np.sign(num)
+            return npsign if npsign !=0 else 1
+        wfm = np.concatenate((np.arange(0, v1, sign(v1) * step),
+                             np.arange(v1, v2, sign(v2 - v1) * step),
+                             np.arange(v2, 0, -sign(v2) * step),
                              [0]))
+        return wfm
     else:
         # Find the shortest waveform that truly reaches v1 and v2 with constant sweep rate
         # Don't think we need better than 1 mV resolution
@@ -616,13 +625,11 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
     return gain
 
 def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
-    global RANGE
-    global OFFSET
-    oldrange = RANGE.copy()
-    oldoffset = OFFSET.copy()
-
+    # Probably an obsolete function
     # Send a test pulse to determine better range to use
     arange, aoffset = best_range([outamp, -outamp])
+    RANGE = {}
+    OFFSET = {}
     RANGE['A'] = arange
     OFFSET['A'] = aoffset
     # Power supply is 5V, so this should cover the whole range
@@ -630,20 +637,15 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     OFFSET[ch] = 0
     sinwave = outamp * sin(linspace(0, 1, 2**12)*2*pi)
     chs = ['A', ch]
-    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1)
+    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
     data = get_data(chs)
     plot.plot_channels(data)
 
+    # will change the range and offset after all
     squeeze_range(data, [ch])
 
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
     data = get_data(chs)
-
-    # Set scope settings back to old values
-    RANGE['A'] = oldrange['A']
-    OFFSET['A'] = oldoffset['A']
-    RANGE[ch] = oldrange[ch]
-    OFFSET[ch] = oldoffset[ch]
 
     plot.plot_channels(data)
 

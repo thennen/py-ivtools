@@ -3,12 +3,15 @@ These classes contain functionality specific to only one instrument.
 Don't put code in an instrument class that has anything to do with a different instrument,
 or any particular application!
 
-They are grouped into classes because there may be some overlapping functionality which should be contained
+They are grouped into classes because there may be some overlapping functions/names which should be contained
 Should only put instruments here that have an actual data connection to the computer
 '''
 
 import numpy as np
 import visa
+import time
+import os
+from collections import deque
 
 visa_rm = visa.ResourceManager()
 
@@ -50,6 +53,13 @@ class Picoscope(object):
         def set(self, channel, value):
             self[channel] = value
 
+        def setall(self, value):
+            # Set all the channel ranges to this value
+            self.set('A', value)
+            self.set('B', value)
+            self.set('C', value)
+            self.set('D', value)
+
         @property
         def a(self):
             print(self['A'])
@@ -86,7 +96,6 @@ class Picoscope(object):
             self['B'] = 1.0
             self['C'] = 1.0
             self['D'] = 1.0
-            #self.setall(1.0)
 
         def set(self, channel, value):
             offset = self._parent.offset[channel]
@@ -112,13 +121,6 @@ class Picoscope(object):
 
             self[channel] = newvalue
 
-        def setall(self, value=1.0):
-            # Set all the channel ranges to this value
-            self.set('A', value)
-            self.set('B', value)
-            self.set('C', value)
-            self.set('D', value)
-
     class _PicoOffset(_PicoSetting):
         # _PicoOffset needs to be aware of the range setting in order to determine valid values
         def __init__(self, parent):
@@ -141,13 +143,6 @@ class Picoscope(object):
                 print(('{} is above the maximum offset for channel {} with range {} V. '
                     'Setting offset to {}.').format(value, channel, channelrange, clippedvalue))
                 self[channel] = clippedvalue
-
-        def setall(self, value=0.0):
-            # Set all the channel ranges to this value
-            self.set('A', value)
-            self.set('B', value)
-            self.set('C', value)
-            self.set('D', value)
 
     class _PicoAttenuation(_PicoSetting):
         def __init__(self, parent):
@@ -588,24 +583,32 @@ class Keithley2600(object):
     This means we have to communicate with Keithley via sending and receiving
     strings in the lua programming language.
 
-    One could decide to wrap every useful lua command in a python function
-    which writes the lua string, and parses the response, but this would be
-    quite an undertaking.
+    One could wrap every useful lua command in a python function which writes
+    the lua string, and parses the response, but this would be quite an
+    undertaking.
 
     Here we maintain a separate lua file "Keithley_2600.lua" which defines lua
     functions on the keithley, then we wrap those in python.
     '''
-    def __init__(self, addr='TCPIP::192.168.11.11::inst0:INSTR'):
-        self.conn = visa_rm.get_instrument(addr, open_timeout=1000)
+    def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
+        self.conn = visa_rm.get_instrument(addr, open_timeout=0)
         # Expose a few methods directly to self
         self.write = self.conn.write
         self.ask = self.conn.ask
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
-        self.run_lua_file('Keithley_2600.lua')
+        moduledir = os.path.split(__file__)[0]
+        self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
         # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data_history = deque(maxlen=100)
+        self.data= deque(maxlen=100)
+
+    def __del__(self):
+        print('Closing connection ...')
+        self.close()
+
+    def idn(self):
+        return self.ask('*IDN?').replace('\n', '')
 
     def run_lua_lines(self, lines):
         ''' Send some lines (list of strings) to Keithley lua interpreter '''
@@ -617,7 +620,7 @@ class Keithley2600(object):
     def run_lua_file(self, filepath):
         ''' Send the contents of a file to Keithley lua interpreter '''
         with open(filepath, 'r') as kfile:
-            run_lua_lines(kfile.readlines())
+            self.run_lua_lines(kfile.readlines())
 
     def send_list(self, list_in, varname='pythonlist'):
         '''
@@ -639,7 +642,7 @@ class Keithley2600(object):
             cmdlist.append(',')
         cmdlist.append('}')
 
-        run_lua_lines(cmdlist)
+        self.run_lua_lines(cmdlist)
 
     def iv(self, vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
         '''Wraps the SweepVList lua function defined on keithley'''
@@ -674,7 +677,7 @@ class Keithley2600(object):
         #self.write('smub.source.output = smub.OUTPUT_OFF')
 
 
-    def keithley_waitready(self):
+    def waitready(self):
         ''' There's probably a better way to do this. '''
 
         self.write('waitcomplete()')
@@ -683,7 +686,7 @@ class Keithley2600(object):
         while answer is None:
             try:
                 # Keep trying to read until keithley says Complete
-                answer = k.read()
+                answer = self.read()
             except:
                 pass
 
@@ -696,7 +699,7 @@ class Keithley2600(object):
         '''
 
 
-    def keithley_readbuffer(self, buffer='smua.nvbuffer1' , attr='readings', start=1, end=None):
+    def read_buffer(self, buffer='smua.nvbuffer1' , attr='readings', start=1, end=None):
         '''
         Read a data buffer and return an actual array.
         Keithley 2634B handles this just fine while still doing a sweep
@@ -715,7 +718,7 @@ class Keithley2600(object):
         self.write('format.data = format.REAL64')
         self.write('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
         # reply comes back with #0 or something in the beginning and a newline at the end
-        raw = k.read_raw()[2:-1]
+        raw = self.read_raw()[2:-1]
         return np.fromstring(raw, dtype=np.float64)
 
     def get_data(self, start=1, end=None, history=True):
@@ -745,13 +748,13 @@ class Keithley2600(object):
             if source:
                 # Returns 1.0 for voltage source (smua.OUTPUT_DCVOLTS)
                 out['source'] = 'V'
-                out['V'] = keithley_readbuffer('smua.nvbuffer2', 'sourcevalues', start, end)
-                Vmeasured = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
-                Vmeasured = replace_nanvals(Vmeasured)
+                out['V'] = self.read_buffer('smua.nvbuffer2', 'sourcevalues', start, end)
+                Vmeasured = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
+                Vmeasured = Keithley2600.replace_nanvals(Vmeasured)
                 out['Vmeasured'] = Vmeasured
                 out['units']['Vmeasured'] = 'V'
-                I = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
-                I = replace_nanvals(I)
+                I = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
+                I = Keithley2600.replace_nanvals(I)
                 out['I'] = I
                 out['Icomp'] = float(self.ask('print(smua.source.limiti)'))
             else:
@@ -760,18 +763,18 @@ class Keithley2600(object):
                 out['Vrange'] =  float(self.ask('print(smua.nvbuffer2.measureranges[1])'))
                 out['Vcomp'] = float(self.ask('print(smua.source.limitv)'))
 
-                out['I'] = keithley_readbuffer('smua.nvbuffer1', 'sourcevalues', start, end)
-                Imeasured = keithley_readbuffer('smua.nvbuffer1', 'readings', start, end)
-                Imeasured = replace_nanvals(Imeasured)
+                out['I'] = self.read_buffer('smua.nvbuffer1', 'sourcevalues', start, end)
+                Imeasured = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
+                Imeasured = Keithley2600.replace_nanvals(Imeasured)
                 out['Imeasured'] = Imeasured
                 out['units']['Imeasured'] = 'A'
-                V = keithley_readbuffer('smua.nvbuffer2', 'readings', start, end)
-                V = replace_nanvals(V)
+                V = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
+                V = Keithley2600.replace_nanvals(V)
                 out['V'] = V
 
-            out['t'] = keithley_readbuffer('smua.nvbuffer2', 'timestamps', start, end)
-            out['Irange'] = keithley_readbuffer('smua.nvbuffer1', 'measureranges', start, end)
-            out['Vrange'] = keithley_readbuffer('smua.nvbuffer2', 'measureranges', start, end)
+            out['t'] = self.read_buffer('smua.nvbuffer2', 'timestamps', start, end)
+            out['Irange'] = self.read_buffer('smua.nvbuffer1', 'measureranges', start, end)
+            out['Vrange'] = self.read_buffer('smua.nvbuffer2', 'measureranges', start, end)
 
             out['units']['I'] = 'A'
             out['units']['V'] = 'V'
@@ -780,8 +783,18 @@ class Keithley2600(object):
             empty = np.array([])
             out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
         if history:
-            self.data_history.append(out)
+            self.data.append(out)
         return out
+
+    @staticmethod
+    def replace_nanvals(array):
+        # Keithley returns this special value when the measurement is out of range
+        # replace it with a nan so it doesn't mess up the plots
+        # They aren't that smart at Keithley, so different models return different special values.
+        nanvalues = (9.9100000000000005e+37, 9.9099995300309287e+37)
+        for nv in nanvalues:
+            array[array == nv] = np.nan
+        return array
 
 
 #########################################################
