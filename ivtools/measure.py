@@ -81,17 +81,21 @@ def connect_rigolawg(rigolstr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
             print('rigol variable is not None.  Doing nothing.')
 
 def connect_keithley(addr=None):
-    # TODO: This is a total disaster ..
+    # TODO: This is a total disaster .. fix it
     global k
     # 2634B : 192.168.11.11
     # 2636A : 192.168.11.12
     # 2636B : 192.168.11.13
-    ips = ['192.168.11.11', '192.168.11.12', '192.168.11.13']
-    for ip in ips:
-        Keithley_id = 'TCPIP::' + ip + '::inst0::INSTR'
+    if addr is None:
+        addrs = ['TCPIP::192.168.11.11::inst0::INSTR',
+                 'TCPIP::192.168.11.12::inst0::INSTR',
+                 'TCPIP::192.168.11.13::inst0::INSTR']
+    else:
+        addrs = [addr]
+    for addr in addrs:
         if k is None:
             try:
-                k = instruments.Keithley2600(Keithley_id)
+                k = instruments.Keithley2600(addr)
                 idn = k.ask('*IDN?').replace('\n', '')
                 print('Keithley *IDN?: {}'.format(idn))
             except:

@@ -37,7 +37,7 @@ class MetaHandler(object):
             # Go ahead and overwrite it if you want
             self.meta = {}
             # This is the index of the selected data
-            self.i = None
+            self.i = 0
             # This is the dataframe holding all of the metadata -- one row per device
             self.df = None
             # These key:values are always appended
@@ -140,7 +140,7 @@ class MetaHandler(object):
         devices014 = [4,5,6,7,8,9]
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-
+        meta_df = meta_df.dropna(1, 'all')
         meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
 
         # Try to convert data types
@@ -155,9 +155,10 @@ class MetaHandler(object):
                         etch_time=np.float32,
                         etch_depth=np.float32)
         for k,v in typedict.items():
-            # int arrays don't support missing data, because python sucks and computers suck
-            if not any(meta_df[k].isnull()):
-                meta_df[k] = meta_df[k].astype(v)
+            if k in meta_df:
+                # int arrays don't support missing data, because python sucks and computers suck
+                if not any(meta_df[k].isnull()):
+                    meta_df[k] = meta_df[k].astype(v)
 
         self.i = 0
         self.df = meta_df
@@ -174,21 +175,20 @@ class MetaHandler(object):
     def step(self, n):
         ''' Select the another device by taking a step through meta df '''
         lastmeta = self.meta
-        if self.i is None:
-            self.i = 0
+        meta_i = self.i + n
+        if meta_i < 0:
+            print('You are already at the beginning of metadata list')
+            return
+        elif meta_i >= len(self.df):
+            print('You are already at the end of metadata list')
+            return
         else:
             self.i += n
-        if len(self.df) > self.i:
             if type(self.df) == pd.DataFrame:
                 self.meta = self.df.iloc[self.i]
             else:
                 self.meta = self.df[self.i]
-            # Put in the static metadata here.  Not sure if this is the best approach
-            for k,v in self.static:
-                self.meta[k] = v
-        else:
-            print('There is no more meta data to load')
-            return
+
         # Highlight keys that have changed
         hlkeys = []
         for key in self.meta.keys():
@@ -221,15 +221,43 @@ class MetaHandler(object):
                     print('{:<18}\t{}'.format(key[:18], self.meta[key]))
 
     def attach(self, data):
-        ''' TODO: Attach the currently selected metadata to input data '''
-        return None
+        '''
+        Attach the currently selected metadata to input data
+        Might overwrite existing keys!
+        May modify the input data in addition to returning it
+        '''
+        print('Attaching the following metadata:')
+        self.print()
+        dtype = type(data)
+        if dtype is dict:
+            # Make shallow copy
+            dataout = data.copy()
+            dataout.update(self.meta)
+            dataout.update(self.static)
+        elif dtype is list:
+            dataout = [d.copy() for d in data]
+            for d in dataout:
+                d.update(self.meta)
+                d.update(self.static)
+        elif dtype is pd.Series:
+            # Series can't be updated by dicts
+            dataout = data.append(pd.Series(self.meta)).append(pd.Series(self.static))
+        elif dtype is pd.DataFrame:
+            dupedmeta = pd.DataFrame([self.meta] * len(data), index=data.index)
+            dupedstatic = pd.DataFrame([self.static] * len(data), index=data.index)
+            allmeta = dupedmeta.join(dupedstatic)
+            dataout = data.join(allmeta)
+        else:
+            print('MetaHandler does not understand what kind of data you are trying to attach to.')
+            dataout = data.append(meta.meta).append(meta.static)
+        return dataout
 
     def filename(self):
-        ''' Make a filename from selected metadata '''
+        ''' Create a timestamped filename from selected metadata '''
         filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
         for fnkey in self.filenamekeys:
-            if fnkey in data.keys():
-                filename += '_{}'.format(data[fnkey])
+            if fnkey in self.meta.keys():
+                filename += '_{}'.format(self.meta[fnkey])
         return filename
 
 def validvarname(varStr):
@@ -507,6 +535,39 @@ def read_pandas_recent(directory='.', pastseconds=60, concat=True):
     return read_pandas_files(recentfps, concat=concat)
 
 
+def write_pandas_pickle(data, filepath=None, drop=None):
+    ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
+    if filepath is None:
+        filepath = timestamp()
+
+    filedir = os.path.split(filepath)[0]
+    if (filedir != '') and not os.path.isdir(filedir):
+        os.makedirs(filedir)
+
+    dtype = type(data)
+    if dtype in (dict, pd.Series):
+        filepath += '.s'
+        if dtype == dict:
+            print('Converting data to pd.Series for storage.')
+            data = pd.Series(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                print('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop)
+    elif dtype in (list, pd.DataFrame):
+        filepath += '.df'
+        if dtype == list:
+            print('Converting data to pd.DataFrame for storage.')
+            data = pd.DataFrame(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                print('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop, 1)
+    data.to_pickle(filepath)
+    print('Wrote {}'.format(os.path.abspath(filepath)))
+
 def write_matlab(data, filepath, varname=None, compress=True):
    # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
    # Haven't figured out what sucks less to work with in matlab
@@ -630,7 +691,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
         filenames = [insert_file_num(filepath, n, 3) for n in range(len(data))]
         for fn, d in zip(filenames, data):
             write_csv(d, filepath=fn)
-        # Don't write thousands of files
+        # TODO: Don't write thousands of files
         # Don't write a 10 GB text file
 
 

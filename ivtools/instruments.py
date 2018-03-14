@@ -49,6 +49,9 @@ class Picoscope(object):
             self.offset.update(previous_instance.offset)
             self.atten.update(previous_instance.atten)
             self.coupling.update(previous_instance.coupling)
+            # if you don't clear the handle on the old instance, the garbage collector
+            # can close the picoscope connection
+            previous_instance.handle = None
         self.close = self.ps.close
         self.handle = self.ps.handle
         # TODO: methods of PS6000 to expose?
@@ -370,7 +373,12 @@ class Picoscope(object):
 class RigolDG5000(object):
     # There is at least one python library for DG5000, but I could not get it to run.
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
-        # Make connection.  VISA doesn't care if you are already connected.
+        try:
+            self.connect(addr)
+        except:
+            print('Rigol connection failed.')
+
+    def connect(self, addr):
         self.conn = visa_rm.open_resource(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
@@ -604,6 +612,12 @@ class Keithley2600(object):
     functions on the keithley, then we wrap those in python.
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
+        try:
+            self.connect(addr)
+        except:
+            print('Keithley connection failed.')
+
+    def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         self.conn = visa_rm.get_instrument(addr, open_timeout=0)
         # Expose a few methods directly to self
         self.write = self.conn.write
@@ -615,7 +629,6 @@ class Keithley2600(object):
         self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
         # Store up to 100 loops in memory in case you forget to save them to disk
         self.data= deque(maxlen=100)
-
 
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
