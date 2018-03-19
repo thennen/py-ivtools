@@ -444,11 +444,15 @@ class interactive_figs(object):
             if data is None:
                 ax.plot([])
             else:
-                plotter(data, ax=ax)
-            ax.get_figure().canvas.draw()
-            color = ax.lines[-1].get_color()
-            ax.set_xlabel(ax.get_xlabel(), color=color)
-            ax.set_ylabel(ax.get_ylabel(), color=color)
+                try:
+                    plotter(data, ax=ax)
+                    color = ax.lines[-1].get_color()
+                    ax.set_xlabel(ax.get_xlabel(), color=color)
+                    ax.set_ylabel(ax.get_ylabel(), color=color)
+                except:
+                    ax.plot([])
+                    print('Plotter number {} failed!'.format(axnum))
+                ax.get_figure().canvas.draw()
         plt.pause(0.05)
 
     def updateline(self, data):
@@ -472,12 +476,18 @@ class interactive_figs(object):
             if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
                 # plotter won't error if we pass this keyword argument
                 # it might even work ..
-                plotter(data, ax, color=color)
+                try:
+                    plotter(data, ax, color=color)
+                except:
+                    print('Plotter number {} failed!'.format(axnum))
             else:
                 # Simply set the line color after plotting
                 # could mess up the color cycle.
-                plotter(data, ax)
-                ax.lines[-1].set_color(color)
+                try:
+                    plotter(data, ax)
+                    ax.lines[-1].set_color(color)
+                except:
+                    print('Plotter number {} failed!'.format(axnum))
             ax.get_figure().canvas.draw()
         plt.pause(0.05)
 
@@ -623,7 +633,7 @@ def dVdIplotter(data, ax=None, **kwargs):
     ax.set_yscale('log')
     ax.set_xlabel('Voltage [V]')
     ax.set_ylabel('V/I [$\Omega$]')
-    ax.yaxis.set_major_formatter(metricprefixformatter)
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 # Keithley ones
 def Rfitplotter(data, ax=None, **kwargs):
@@ -655,20 +665,31 @@ def vtplotter(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     ''' This defines what gets plotted on ax2'''
-    ax.plot(data['t'], data['V'], **kwargs)
+    if 't' not in data:
+        t = analyze.maketimearray(data)
+    else:
+        t = data['t']
+    ax.plot(t, data['V'], **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Voltage [V]', color=color)
     ax.set_ylabel('Voltage [V]')
     ax.set_xlabel('Time [S]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 def itplotter(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
-    ax.plot(data['t'], 1e6 * data['I'], **kwargs)
+    if 't' not in data:
+        t = analyze.maketimearray(data)
+    else:
+        t = data['t']
+    ax.plot(t, data['I'], **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Current [$\mu$A]', color=color)
-    ax.set_ylabel('Current [$\mu$A]')
+    ax.set_ylabel('Current [A]')
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     ax.set_xlabel('Time [S]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 def VoverIplotter(data, ax=None, **kwargs):
     ''' Plot V/I vs V, like GPIB control program'''
