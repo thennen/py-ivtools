@@ -1,241 +1,56 @@
-""" Functions for measuring IV data with picoscope 6403C and Rigol AWG """
+"""
+Functions for measuring IV data
+Knows about these instruments
+Picoscope 6403C
+Rigol DG5102 AWG
+Keithley 2636B, 2634B, 2636A
+"""
 
-from picoscope import ps6000
-import visa
+# Local imports
+from . import plot
+from . import analyze
+from . import instruments
+
 from fractions import Fraction
 from math import gcd
 import numpy as np
 import time
-from dotdict import dotdict
 import pandas as pd
 import os
+import visa
 
 visa_rm = visa.ResourceManager()
+'USB0::0x1AB1::0x0640::DG5T155000186::INSTR',
+'TCPIP0::192.168.11.12::inst0::INSTR'
+
+# These are the instrument instances.  They are None until connected.
+# Picoscope
+ps = None
+# Rigol DG5000 AWG
+rigol = None
+# Any Keithley found
+k = None
+
+# TODO: try to connect to all known instruments
 
 # These are None until the instruments are connected
-# Don't clobber them though, in case this script is used with run -i
-try:
-    ps
-except:
-    ps = None
-try:
-    rigol
-except:
-    rigol = None
-try:
-    keithley
-except:
-    keithley = None
 
-# TODO make a container class for all the pico settings, so that they are aware of each other and enforce valid values.  Can build in some fancy methods.  Could split it to another file.  Could submit PR to pico-python.
-#class picosettings(dict):
+COMPLIANCE_CURRENT = 0
+INPUT_OFFSET = 0
 
-# NOT DONE
-class picosettings(ps6000.PS6000):
-    '''
-    Class for managing all the channel settings for picoscope
-    range, offset, couplings, attenuations
-    Makes sure the settings are valid, and provides some methods for convenience
-    don't know if this is a good idea
-
-    Why use a class?
-    don't like all the globals
-    want a better syntax for changing channel settings, since I have to do it a lot
-    code won't need to change much
-    want functions for doing things to the settings, without dumping them all over the interactive namespace
-
-    disadvantages:
-    loss of simplicity
-    wanted a banana but got a gorilla holding the banana and the whole jungle
-
-    '''
-    def __init__(self):
-        self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
-
-
-class picorange(dict):
-    # Holds the values for picoscope channel ranges.  Enforces valid values.
-    # TODO: add increment and decrement
-    def __init__(self):
-        self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
-        self.setall(1.0)
-
-    def set(self, channel, value):
-        if value in self.possible_ranges:
-            self[channel] = value
-        else:
-            argclosest = argmin([abs(p - value) for p in self.possible_ranges])
-            closest = self.possible_ranges[argclosest]
-            print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
-            self[channel] = closest
-
-    def setall(self, value=1.0):
-        # Set all the channel ranges to this value
-        self.set('A', value)
-        self.set('B', value)
-        self.set('C', value)
-        self.set('D', value)
-
-    @property
-    def a(self):
-        print(self['A'])
-    @a.setter
-    def a(self, value):
-        self.set('A', value)
-    @property
-    def b(self):
-        print(self['B'])
-    @b.setter
-    def b(self, value):
-        self.set('B', value)
-    @property
-    def c(self):
-        print(self['C'])
-    @c.setter
-    def c(self, value):
-        self.set('C', value)
-    @property
-    def d(self):
-        print(self['D'])
-    @d.setter
-    def d(self, value):
-        self.set('D', value)
-
-class picooffset(dict):
-    # picooffset needs to be aware of the range setting in order to determine valid values
-    def __init__(self, picorange):
-        self._picorange = picorange
-        self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
-        self.max_offsets = (.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)
-        self.setall(0.0)
-
-    def set(self, channel, value):
-        # Assuming that _picorange has a valid range value for this channel
-        channelrange = self._picorange[channel]
-        maxoffset = self.max_offsets[self.possible_ranges.index(channelrange)]
-        if abs(value) < maxoffset:
-            self[channel] = value
-        else:
-            clippedvalue = np.sign(value) * maxoffset
-            print(('{} is above the maximum offset for channel {} with range {} V. '
-                   'Setting offset to {}.').format(value, channel, channelrange, clippedvalue))
-            self[channel] = clippedvalue
-
-    def setall(self, value=0.0):
-        # Set all the channel ranges to this value
-        self.set('A', value)
-        self.set('B', value)
-        self.set('C', value)
-        self.set('D', value)
-
-    @property
-    def a(self):
-        print(self['A'])
-    @a.setter
-    def a(self, value):
-        self.set('A', value)
-    @property
-    def b(self):
-        print(self['B'])
-    @b.setter
-    def b(self, value):
-        self.set('B', value)
-    @property
-    def c(self):
-        print(self['C'])
-    @c.setter
-    def c(self, value):
-        self.set('C', value)
-    @property
-    def d(self):
-        print(self['D'])
-    @d.setter
-    def d(self, value):
-        self.set('D', value)
-
-def best_range(data):
-    '''
-    Return the best RANGE and OFFSET values to use for a particular input signal (array)
-    Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
-    Don't pass int8 signals, would then need channel information to convert to V
-    '''
-    possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
-    # Sadly, each range has a different maximum possible offset
-    max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
-    minimum = np.min(data)
-    maximum = np.max(data)
-    amplitude = abs(maximum - minimum) / 2
-    middle = round((maximum + minimum) / 2, 3)
-    # Mask of possible ranges that fit the signal
-    mask = possible_ranges >= amplitude
-    for selectedrange, max_offset in zip(possible_ranges[mask], max_offsets[mask]):
-        # Is middle an acceptable offset?
-        if middle < max_offset:
-            return (selectedrange, -middle)
-            break
-        # Can we reduce the offset without the signal going out of range?
-        elif (max_offset + selectedrange >= maximum) and (-max_offset - selectedrange <= minimum):
-            return(selectedrange, np.clip(-middle, -max_offset, max_offset))
-            break
-        # Neither worked, try increasing the range ...
-    # If no range was enough to fit the signal
-    print('Signal out of pico range!')
-    return (max(possible_ranges), 0)
-
-def squeeze_range(data, ch=['A', 'B', 'C', 'D']):
-    '''
-    Find the best range for given input data (can be any number of channels)
-    Set the range and offset to the lowest required to fit the data
-    '''
-    global RANGE, OFFSET
-    for c in ch:
-        if c in data:
-            if type(data[c][0]) is np.int8:
-                # Need to convert to float
-                usedrange = data['RANGE'][c]
-                usedoffset = data['OFFSET'][c]
-                maximum = np.max(data[c])  / 2**8 * usedrange * 2 - usedoffset
-                minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
-                rang, offs = best_range((minimum, maximum))
-            else:
-                rang, offs = best_range(data[c])
-            RANGE[c] = rang
-            OFFSET[c] = offs
-
-# Settings for picoscope channels.
-# Also don't clobber them
-try:
-    COUPLINGS
-    ATTENUATION
-    OFFSET
-    RANGE
-    COMPLIANCE_CURRENT
-    INPUT_OFFSET
-except:
-    COUPLINGS = {'A': 'DC', 'B': 'DC', 'C': 'DC', 'D': 'DC'}
-    ATTENUATION = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
-    #RANGE = {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
-    #OFFSET = {'A': 0.0, 'B': 0.0, 'C': 0.0, 'D': 0.0}
-    RANGE = picorange()
-    OFFSET = picooffset(RANGE)
-    COMPLIANCE_CURRENT = 0
-    INPUT_OFFSET = 0
-
-
-# For reference
-possible_ranges = pd.DataFrame(dict(Range=(0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0),
-                                    Max_offset=(.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)))
+def detect_instruments():
+    ''' find which instruments are available to connect to '''
+    pass
 
 def connect_picoscope():
     global ps
     if ps is None:
         try:
-            ps = ps6000.PS6000()
+            ps = instruments.Picoscope()
             model = ps.getUnitInfo('VariantInfo')
             print('Picoscope {} connection succeeded.'.format(model))
-            #print(ps.getAllUnitInfo())
         except:
-            print('Connection to picoscope failed.  Could be an unclosed session.')
+            print('Connection to picoscope failed. There could be an unclosed session.')
             ps = None
     else:
         try:
@@ -246,55 +61,55 @@ def connect_picoscope():
         except:
             print('ps variable is not None, and not an active picoscope connection.')
 
-
-def connect_rigolawg():
+def connect_rigolawg(rigolstr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
     global rigol
-    rigolstr = 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'
     if rigol is None:
         try:
-            rigol = visa_rm.open_resource(rigolstr)
-            idn = rigol.query('*IDN?')
-            print('Rigol connection succeeded.')
-            print('*IDN?  {}'.format(idn))
+            rigol = instruments.RigolDG5000(rigolstr)
+            idn = rigol.ask('*IDN?').replace('\n', '')
+            print('Rigol *IDN?: {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
             rigol = None
     else:
         try:
             # Check if rigol is already defined and connected
-            idn = rigol.query('*IDN?')
+            idn = rigol.ask('*IDN?')
             print('Rigol AWG already connected')
             print(idn)
         except:
             print('rigol variable is not None.  Doing nothing.')
 
-def connect_keithley(ip='192.168.11.11'):
-    global keithley
-    # 2634B
-    #Keithley_ip = '192.168.11.11'
-    # 2636A
-    #Keithley_ip = '192.168.11.12'
-    Keithley_ip = ip
-    Keithley_id = 'TCPIP::' + Keithley_ip + '::inst0::INSTR'
-    if keithley is None:
-        try:
-            # Impatiently try to connect to keithley
-            # Because it runs even if keithley is not connected and I have no intention to use it
-            keithley = visa_rm.get_instrument(Keithley_id, open_timeout=250)
-            idn = keithley.ask('*IDN?')
-            print('Keithley *IDN?: {}'.format(idn))
-        except:
-            print('Connection to Keithley failed.')
-            keithley = None
+def connect_keithley(addr=None):
+    # TODO: This is a total disaster .. fix it
+    global k
+    # 2634B : 192.168.11.11
+    # 2636A : 192.168.11.12
+    # 2636B : 192.168.11.13
+    if addr is None:
+        addrs = ['TCPIP::192.168.11.11::inst0::INSTR',
+                 'TCPIP::192.168.11.12::inst0::INSTR',
+                 'TCPIP::192.168.11.13::inst0::INSTR']
     else:
-        try:
-            # Is keithley already connected?
-            idn = keithley.ask('*IDN?')
-            print('Keithley already connected')
-            print('Keithley *IDN?: {}'.format(idn))
-        except:
-            print('Keithley not responding, and keithley variable is not None.')
-
+        addrs = [addr]
+    for addr in addrs:
+        if k is None:
+            try:
+                k = instruments.Keithley2600(addr)
+                idn = k.ask('*IDN?').replace('\n', '')
+                print('Keithley *IDN?: {}'.format(idn))
+            except:
+                k = None
+        else:
+            try:
+                # Is keithley already connected?
+                idn = k.ask('*IDN?')
+                print('Keithley already connected')
+                print('Keithley *IDN?: {}'.format(idn))
+            except:
+                print('Keithley not responding, and keithley variable is not None.')
+    if k is None:
+        print('Connection to Keithley failed.')
 
 def connect_instruments():
     ''' Connect all the necessary equipment '''
@@ -303,334 +118,8 @@ def connect_instruments():
     connect_rigolawg()
     connect_keithley()
 
-def pico_capture(ch='A', freq=None, duration=None, nsamples=None,
-                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
-                 chrange=None, choffset=None, chcoupling=None, chatten=None):
-    '''
-    Set up picoscope to capture from specified channel(s).
 
-    pass exactly two of: freq(sampling frequency), duration, nsamples
-    sampling frequency has limited possible values, so actual number of samples will vary
-    will try to sample for the intended duration, either the value of the duration argument or nsamples/freq
-
-    Won't actually start capture until picoscope receives the specified trigger event.
-
-    It will trigger automatically after a timeout.
-
-    ch can be a list of characters, i.e. ch=['A','B'].
-
-    # TODO: provide a way to override the global variable channel settings
-    if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
-    the settings will be taken from the global variables
-    '''
-
-    # Check that two of freq, duration, nsamples was passed
-    if not sum([x is None for x in (freq, duration, nsamples)]) == 1:
-        raise Exception('Must give exactly two of the arguments freq, duration, and nsamples.  These are needed to determine sampling conditions.')
-
-    # If ch not iterable, just put it in a list by itself
-    if not hasattr(ch, '__iter__'):
-        ch = [ch]
-
-    # Maximum sample rate is different depending on the number of channels that are enabled.
-    # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
-    # Enable only the channels being used, disable the rest
-    for c in ['A', 'B', 'C', 'D']:
-        if c not in ch:
-            ps.setChannel(c, enabled=False)
-
-    # If freq and duration are passed, take as many samples as it takes to actually sample for duration
-    # If duration and nsamples are passed, sample with frequency as near as possible to nsamples/duration (nsamples will vary)
-    # If freq and nsamples are passed, sample at closest possible frequency for nsamples (duration will vary)
-    if freq is None:
-        freq = nsamples / duration
-    # This will return actual sample frequency, then we can determine
-    # the number of samples needed.
-    actualfreq, _ = ps.setSamplingFrequency(freq, 0)
-
-    if duration is not None:
-        nsamples = duration * actualfreq
-
-    def global_replace(kwarg, globalarg):
-        if kwarg is None:
-            # No values passed, use the global values
-            return globalarg
-        else:
-            # Fill missing values with global values
-            kwargcopy = kwarg.copy()
-            for c in ch:
-                if c not in kwargcopy:
-                    kwargcopy[c] = globalarg[c]
-            return kwargcopy
-
-    chrange = global_replace(chrange, RANGE)
-    choffset = global_replace(choffset, OFFSET)
-    chcoupling = global_replace(chcoupling, COUPLINGS)
-    chatten = global_replace(chatten, ATTENUATION)
-
-    actualfreq, max_samples = ps.setSamplingFrequency(actualfreq, nsamples)
-    print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
-    if nsamples > max_samples:
-        raise(Exception('Trying to sample more than picoscope memory capacity'))
-    # Set up the channels
-    for c in ch:
-        ps.setChannel(channel=c,
-                      coupling=chcoupling[c],
-                      VRange=chrange[c],
-                      probeAttenuation=chatten[c],
-                      VOffset=choffset[c],
-                      enabled=True)
-    # Set up the trigger.  Will timeout in 30s
-    ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
-    ps.runBlock(pretrig)
-    return actualfreq
-
-### These directly wrap SCPI commands that can be sent to the rigol AWG
-# TODO: turn these into a class, since the code will not change very often
-# There is at least one python library for DG5000, but I could not get it to run.
-
-def rigol_shape(shape='SIN', ch=1):
-    '''
-    Change the waveform shape to a built-in value. Possible values are:
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-    rigol.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
-
-def rigol_outputstate(state=True, ch=1):
-    ''' Turn output state on or off '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
-
-def rigol_frequency(freq, ch=1):
-    ''' Set frequency of AWG waveform.  Not the sample rate! '''
-    rigol.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
-
-def rigol_amplitude(amp, ch=1):
-    ''' Set amplitude of AWG waveform '''
-    rigol.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, amp))
-
-def rigol_offset(offset, ch=1):
-    ''' Set offset of AWG waveform '''
-    rigol.write(':SOURCE{}:VOLT:OFFS {}'.format(ch, offset))
-
-def rigol_output_resistance(r=50, ch=1):
-    ''' Manual says you can change output resistance from 1 to 10k ''' 
-    rigol.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
-
-def rigol_sync(state=True):
-    ''' Can turn on/off the sync output (on rear) '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write('OUTPUT{}:SYNC ' + statestr)
-
-def rigol_screensaver(state=False):
-    ''' Turn the screensaver on or off.  Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':DISP:SAV ' + statestr)
-
-def rigol_ramp_symmetry(percent=50, ch=1):
-    ''' Change the symmetry of a ramp output. Refers to the sweep rates of increasing/decreasing ramps. '''
-    rigol.write('SOURCE{}:FUNC:RAMP:SYMM {}'.format(ch, percent))
-
-def rigol_dutycycle(percent=50, ch=1):
-    ''' Change the duty cycle of a square output. '''
-    rigol.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
-
-def rigol_error():
-    ''' Get error message from rigol '''
-    return rigol.ask(':SYSTem:ERRor?')
-
-# <<<<< For burst mode
-def rigol_ncycles(n, ch=1):
-    ''' Set number of cycles that will be output in burst mode '''
-    rigol.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
-
-def rigol_trigsource(source='MAN', ch=1):
-    ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
-    rigol.write(':SOURCE{}:BURST:TRIG:SOURCE {}'.format(ch, source))
-
-def rigol_trigger(ch=1):
-    '''
-    Send signal to rigol to trigger immediately.  Make sure that trigsource is set to MAN:
-    rigol_trigsource('MAN')
-    '''
-    rigol.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
-
-def rigol_burstmode(mode='TRIG', ch=1):
-    '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
-    rigol.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
-
-def rigol_burst(state=True, ch=1):
-    ''' Turn the burst mode on or off '''
-    statestr = 'ON' if state else 'OFF'
-    rigol.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
-
-# End for burst mode >>>>>
-def rigol_load_wfm(waveform):
-    '''
-    Load some data as an arbitrary waveform to be output.
-    Data will be normalized.  Use rigol_amplitude to set the amplitude.
-    Make sure that the output is off, because the command switches out of burst mode and will start outputting immediately.
-    '''
-    # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
-    # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
-    # Construct a string out of the waveform
-    waveform = np.array(waveform, dtype=np.float32)
-    maxamp = np.max(np.abs(waveform))
-    if maxamp != 0:
-        normwaveform = waveform/maxamp
-    else:
-        # Not a valid waveform anyway .. rigol will beep
-        normwaveform = waveform
-    wfm_str = ','.join([str(w) for w in normwaveform])
-    # This command switches out of burst mode for some stupid reason
-    rigol.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
-
-def rigol_interp(interp=True):
-    ''' Set AWG datapoint interpolation mode '''
-    modestr = 'LIN' if interp else 'OFF'
-    rigol.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
-
-def rigol_color(c='RED'):
-    '''
-    Change the highlighting color on rigol screen for some reason
-    'RED', 'DEEPRED', 'YELLOW', 'GREEN', 'AZURE', 'NAVYBLUE', 'BLUE', 'LILAC', 'PURPLE', 'ARGENT'
-    '''
-    rigol.write(':DISP:WIND:HLIG:COL {}'.format(c))
-
-
-def load_volatile_wfm(waveform, duration, n=1, ch=1, interp=True):
-    '''
-    Load waveform into volatile memory, but don't trigger
-    '''
-    if len(waveform) > 512e3:
-        raise Exception('Too many samples requested for rigol AWG (probably?)')
-
-    # toggling output state is slow, clunky, annoying, and should not be necessary.
-    # it might also cause some spikes that could damage the device.
-    # Also goes into high impedance output which could have some undesirable consequences.
-    # Problem is that the command which loads in a volatile waveform switches rigol
-    # out of burst mode automatically.  If the output is still enabled, you will get a
-    # continuous pulse train until you can get back into burst mode.
-    # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
-    rigol_outputstate(False, ch=ch)
-    #
-    # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
-    # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
-    rigol_screensaver(False)
-    #time.sleep(.01)
-    # Turn on interpolation for IVs, off for steps
-    rigol_interp(interp)
-    # This command switches out of burst mode for some stupid reason
-    rigol_load_wfm(waveform)
-    freq = 1. / duration
-    rigol_frequency(freq, ch=ch)
-    maxamp = np.max(np.abs(waveform))
-    rigol_amplitude(2*maxamp, ch=ch)
-    rigol_burstmode('TRIG', ch=ch)
-    rigol_ncycles(n, ch=ch)
-    rigol_trigsource('MAN', ch=ch)
-    rigol_burst(True, ch=ch)
-    rigol_outputstate(True, ch=ch)
-
-
-def load_builtin_wfm(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
-    '''
-    Set up a built-in waveform to pulse n times
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-
-    if not (bool(duration) ^ bool(freq)):
-        raise Exception('Must give either duration or frequency, and not both')
-
-    if freq is None:
-        freq = 1. / duration
-
-    # Set up waveform
-    rigol_burst(True, ch=ch)
-    rigol_burstmode('TRIG', ch=ch)
-    rigol_shape(shape, ch=ch)
-    # Rigol's definition of amp is peak-to-peak, which is unusual.
-    rigol_amplitude(2*amp, ch=ch)
-    rigol_offset(offset, ch=ch)
-    rigol_burstmode('TRIG', ch=ch)
-    rigol_ncycles(n, ch=ch)
-    rigol_trigsource('MAN', ch=ch)
-    rigol_frequency(freq, ch=ch)
-
-    return locals()
-
-
-def pulse_builtin(shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
-    '''
-    Pulse a built-in waveform n times
-    SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
-    '''
-    load_builtin_wfm(**locals())
-
-    rigol_outputstate(True)
-    # Trigger rigol
-    rigol_trigger(ch=ch)
-
-
-def pulse(waveform, duration, n=1, ch=1, interp=True):
-    '''
-    Generate n pulses of the input waveform on Rigol AWG.
-    Trigger immediately.
-    Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
-    Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
-    '''
-    # Load waveform
-    load_volatile_wfm(**locals())
-    # Trigger rigol
-    rigol_trigger(ch=1)
-
-
-def get_data(ch='A', raw=False, dtype=np.float32):
-    '''
-    Wait for data and transfer it from pico memory.
-    ch can be a list of channels
-    This function returns a simple dict of the arrays and metadata.
-    Use pico_to_iv to convert to current, voltage, different data structure.
-
-    if raw is True, do not convert from ADC value - this saves a lot of memory
-    return dict of arrays and metadata (sample rate, channel settings, time...)
-
-    '''
-    data = dict()
-    # Wait for data
-    while(not ps.isReady()):
-        time.sleep(0.01)
-
-    if not hasattr(ch, '__iter__'):
-        ch = [ch]
-    for c in ch:
-        if raw:
-            # For some reason pico-python gives the values as int16
-            # Probably because some scopes have 16 bit resolution
-            # The 6403c is only 8 bit, and I'm looking to save memory here
-            rawint16, _, _ = ps.getDataRaw(c)
-            data[c] = np.int8(rawint16 / 2**8)
-        else:
-            # I added dtype argument to pico-python
-            data[c] = ps.getDataV(c, dtype=dtype)
-
-    Channels = ['A', 'B', 'C', 'D']
-    data['RANGE'] = {ch:chr for ch, chr in zip(Channels, ps.CHRange)}
-    data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, ps.CHOffset)}
-    data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, ps.ProbeAttenuation)}
-    data['sample_rate'] = ps.sampleRate
-    # Specify samples captured, because this field will persist even after splitting for example
-    # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
-    data['nsamples_capture'] = len(data[ch[0]])
-    # Using the current state of the global variables to record what settings were used
-    # I don't know a way to get couplings and attenuations from the picoscope instance
-    # TODO: pull request a change to setChannel
-    data['COUPLINGS'] = COUPLINGS
-    # Sample frequency?
-    return data
-
-
-def close():
+def close_instruments():
     global ps
     global rigol
     # Close connection to pico
@@ -641,7 +130,10 @@ def close():
     rigol = None
 
 
-def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, duration=None, ncycles=10, samplespercycle=1000, fs=None):
+########### Picoscope - Rigol AWG testing #############
+
+def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, duration=None,
+                              ncycles=10, samplespercycle=1000, fs=None):
 
     if not (bool(samplespercycle) ^ bool(fs)):
         raise Exception('Must give either samplespercycle, or sampling frequency (fs), and not both')
@@ -653,15 +145,16 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, durat
     if freq is None:
         freq = 1. / duration
 
-    pico_capture(ch=ch, freq=fs, duration=ncycles/freq)
+    ps.capture(ch=ch, freq=fs, duration=ncycles/freq)
 
-    pulse_builtin(freq=freq, amp=amp, shape=shape, n=ncycles)
+    rigol.pulse_builtin(freq=freq, amp=amp, shape=shape, n=ncycles)
 
     data = get_data(ch)
 
     return data
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True):
+def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True,
+                      **kwargs):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
     Duration determines the length of one repetition of waveform.
@@ -669,13 +162,96 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
-    pico_capture(ch, freq=fs, duration=n*duration)
+    ps.capture(ch, freq=fs, duration=n*duration, **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
-    pulse(waveform, duration, n=n, interp=interpwfm)
+    rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
 
     data = get_data(ch)
 
     return data
+
+def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
+           into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
+           refreshwfm=True, savewfm=False, **kwargs):
+    '''
+    Pulse a waveform, plot pico channels, IV, and save to d variable
+    Provide either fs or nsamples
+    '''
+
+
+    if not (bool(fs) ^ bool(nsamples)):
+        raise Exception('Must pass either fs or nsamples, and not both')
+    if fs is None:
+        fs = nsamples / duration
+
+    if smartrange:
+        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
+    else:
+        # Always smart range channel A
+        smart_range(np.min(wfm), np.max(wfm), ch=['A'])
+
+    # Set picoscope to capture
+    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+    actual_fs = ps.capture(ch=channels,
+                             freq=fs,
+                             duration=n*duration)
+    if into50ohm:
+        # Multiply voltages by 2 to account for 50 ohm input
+        wfm = 2 * wfm
+
+    # Send a pulse
+    # if no refresh, Rigol will just pulse whatever is already in the volatile buffer
+    # This saves the annoying *click* of the output relay
+    if refreshwfm:
+        rigol.load_volatile_wfm(wfm, duration=duration, n=n, ch=1, interp=True)
+    rigol.trigger(ch=1)
+
+    trainduration = n * duration
+    print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    time.sleep(n * duration * 1.05)
+    #ps.waitReady()
+    print('Getting data from picoscope.')
+    # Get the picoscope data
+    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
+    chdata = ps.get_data(channels, raw=True)
+    print('Got data from picoscope.')
+    # Convert to IV data (keeps channel data)
+    ivdata = pico_to_iv(chdata)
+
+    if savewfm:
+        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
+        # You will need to interpolate it, however..
+        # Or can we read it off the rigol??
+        ivdata['Vwfm'] = wfm
+
+    if autosmoothimate:
+        nsamples_shot = ivdata['nsamples_capture'] / n
+        # Smooth by 0.3% of a shot
+        window = max(int(nsamples_shot * 0.003), 1)
+        # End up with about 1000 data points per shot
+        # This will be bad if you send in a single shot waveform with multiple cycles
+        # In that case, you shouldn't be using autosmoothimate or autosplit
+        # TODO: make a separate function for IV trains?
+        factor = max(int(nsamples_shot / 1000), 1)
+        print('Smoothimating data with window {}, factor {}'.format(window, factor))
+        ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+
+    if autosplit:
+        print('Splitting data into individual pulses')
+        if n > 1 and (splitbylevel is None):
+            nsamples = duration * actual_fs
+            if 'downsampling' in ivdata:
+                # Not exactly correct but I hope it's close enough
+                nsamples /= ivdata['downsampling']
+            ivdata = analyze.splitiv(ivdata, nsamples=nsamples)
+        elif splitbylevel is not None:
+            # splitbylevel can split loops even if they are not the same length
+            # Could take more time though?
+            # This is not a genius way to determine to split at + or - dV/dt
+            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
+            ivdata = analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+
+    return ivdata
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -752,8 +328,8 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0):
 
 
         # TODO: Should I apply the signal for a while before sampling?  Here I am sampling immediately from the first cycle.
-        pico_capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=.05)
-        pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
+        ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=.05)
+        rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
         d = get_data(ch)
         d['ncycles'] = ncycles
         data.append(d)
@@ -764,6 +340,79 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0):
 
     return data
 
+def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
+    '''
+    Generate n bipolar triangle pulses.
+    Voltage sweep rate will  be constant.
+    Trigger immediately
+    '''
+
+    rate, duration = _rate_duration(v1, v2, rate, duration)
+
+    wfm = tri(v1, v2)
+
+    rigol.pulse_arbitrary(wfm, duration, n=n)
+
+def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
+    '''
+    Generate n sine pulses.
+    Trigger immediately
+    If you pass vmin != -vmax, will not start at zero!
+    '''
+
+    wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
+
+    rigol.pulse_arbitrary(wfm, duration, n=n)
+
+def smart_range(v1, v2, R=None, ch=['A', 'B']):
+        # Auto offset for current input
+        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        # Each range has a maximum possible offset
+        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+
+        if 'A' in ch:
+            # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
+            arange, aoffs = ps.best_range((v1, v2))
+            ps.range['A'] = arange
+            ps.offset['A'] = aoffs
+
+        if 'B' in ch:
+            # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
+            # Center the measurement range on zero current
+            #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
+            # channelb should never go below zero, except for potentially op amp overshoot
+            # I have seen it reach -0.1V
+            if R is None:
+                # Hypothetical resistance method
+                # Signal should never go below 0V (compliance)
+                b_min = 0
+                b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
+                # Compliance current sets the voltage offset at zero input.
+                # Add 10% to be safe.
+                b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3 * 1.1
+            else:
+                # R was passed, assume device has constant resistance with this value
+                b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
+                b_max = (COMPLIANCE_CURRENT - min(v1, v2) / R) * 2e3
+            brange, boffs = ps.best_range((b_min, b_max))
+            ps.range['B'] = brange
+            ps.offset['B'] = boffs
+
+def raw_to_V(datain, dtype=np.float32):
+    '''
+    Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
+    arrays and the RANGE and OFFSET values.
+    return a new dict with updated channel arrays
+    '''
+    channels = ['A', 'B', 'C', 'D']
+    dataout = {}
+    for c in channels:
+        if (c in datain.keys()) and (datain[c].dtype == np.int8):
+            dataout[c] = datain[c] / dtype(2**8) * dtype(datain['RANGE'][c] * 2) - dtype(datain['OFFSET'][c])
+    for k in datain.keys():
+        if k not in dataout.keys():
+            dataout[k] = datain[k]
+    return dataout
 
 def _rate_duration(v1, v2, rate=None, duration=None):
     '''
@@ -782,102 +431,7 @@ def _rate_duration(v1, v2, rate=None, duration=None):
     return rate, duration
 
 
-def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
-    '''
-    Generate n bipolar triangle pulses.
-    Voltage sweep rate will  be constant.
-    Trigger immediately
-    '''
-
-    rate, duration = _rate_duration(v1, v2, rate, duration)
-
-    wfm = tri(v1, v2)
-
-    pulse(wfm, duration, n=n)
-
-
-def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
-    '''
-    Generate n sine pulses.
-    Trigger immediately
-    If you pass vmin != -vmax, will not start at zero!
-    '''
-
-    wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
-
-    pulse(wfm, duration, n=n)
-
-
-def tri(v1, v2, n=None, step=None):
-    '''
-    Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
-
-    Can optionally pass number of data points you want, or the voltage step between points.
-
-    If neither n or step is passed, return the shortest waveform which reaches v1 and v2.
-    '''
-    if n is not None:
-        dv = abs(v1) + abs(v2 - v1) + abs(v2)
-        step = dv / n
-    if step is not None:
-        # I could choose here to either make sure the waveform surely contains v1 and v2
-        # or to make sure the waveform really has a constant sweep rate
-        # I choose the former..
-        wfm = np.concatenate((np.arange(0, v1, np.sign(v1) * step),
-                             np.arange(v1, v2, np.sign(v2 - v1) * step),
-                             np.arange(v2, 0, -np.sign(v2) * step),
-                             [0]))
-    else:
-        # Find the shortest waveform that truly reaches v1 and v2 with constant sweep rate
-        # Don't think we need better than 1 mV resolution
-        v1 = round(v1, 3)
-        v2 = round(v2, 3)
-        f1 = Fraction(str(v1))
-        f2 = Fraction(str(v2))
-        # This is depreciated for some reason
-        #vstep = float(abs(fractions.gcd(fmax, fmin)))
-        # Doing it this other way.. Seems faster by a large factor.
-        a, b = f1.numerator, f1.denominator
-        c, d = f2.numerator, f2.denominator
-        # not a typo
-        commond = float(b * d)
-        vstep = gcd(a*d, b*c) / commond
-        dv = v1 - v2
-        # Using round because floating point errors suck
-        # e.g. int(0.3 / 0.1) = int(2.9999999999999996) = 2
-        n1 = round(abs(v1) / vstep + 1)
-        n2 = round(abs(dv) / vstep + 1)
-        n3 = round(abs(v2) / vstep + 1)
-        wfm = np.concatenate((np.linspace(0 , v1, n1),
-                            np.linspace(v1, v2, n2)[1:],
-                            np.linspace(v2, 0 , n3)[1:]))
-
-        # Filling the AWG record length with probably take more time than it's worth.
-        # Interpolate to a "Large enough" waveform size
-        #enough = 2**16
-        #x = np.linspace(0, 1, enough)
-        #xp = np.linspace(0, 1, len(wfm))
-        #wfm = np.interp(x, xp, wfm)
-
-        # Let AWG do the interpolation
-        return wfm
-
-def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
-    '''
-    Calculate a square pulse waveform.
-    '''
-    ontime = int(duty * length)
-    remainingtime = length - ontime
-    pretime = int(startendratio * remainingtime / (startendratio + 1))
-    pretime = max(1, pretime)
-    posttime = remainingtime - pretime
-    posttime = max(1, posttime)
-    prearray = np.ones(pretime) * startval
-    pulsearray = np.ones(ontime) * vpulse
-    postarray = np.ones(posttime) * endval
-    return np.concatenate((prearray, pulsearray, postarray))
-
-
+########### Compliance circuit ###################
 def set_compliance(cc_value):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
@@ -973,7 +527,6 @@ def plot_compliance_calibration():
     plt.tight_layout()
     return cc
 
-
 def measure_compliance():
     '''
     Our circuit does not yet compensate the output for different current compliance levels
@@ -999,7 +552,7 @@ def measure_compliance():
                     'choffset': {'A':0, 'B':-2},
                     'chatten': {'A':.2, 'B':1},
                     'chcoupling': {'A':'DC', 'B':'DC'}}
-    pico_capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
+    ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
     picodata = get_data(['A', 'B'])
     #plot_channels(picodata)
     Amean = np.mean(picodata['A'])
@@ -1022,23 +575,6 @@ def measure_compliance():
 
     return (ccurrent, Amean)
 
-def raw_to_V(datain, dtype=np.float32):
-    '''
-    Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
-    arrays and the RANGE and OFFSET values.
-    return a new dict with updated channel arrays
-    '''
-    channels = ['A', 'B', 'C', 'D']
-    dataout = {}
-    for c in channels:
-        if (c in datain.keys()) and (datain[c].dtype == np.int8):
-            dataout[c] = datain[c] / dtype(2**8) * dtype(datain['RANGE'][c] * 2) - dtype(datain['OFFSET'][c])
-    for k in datain.keys():
-        if k not in dataout.keys():
-            dataout[k] = datain[k]
-    return dataout
-
-# For compliance amp
 def ccircuit_to_iv(datain, dtype=np.float32):
     ''' Convert picoscope channel data to IV dict'''
     # Keep all original data from picoscope
@@ -1047,8 +583,6 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     global COMPLIANCE_CURRENT
     global INPUT_OFFSET
 
-    # dotdict was nice, but caused too many problems ...
-    #dataout = dotdict(datain)
     dataout = datain
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:
@@ -1075,7 +609,8 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain * R
     return dataout
 
-# For Rehan current amp
+
+########### Rehan Current Amplifier ###################
 def rehan_to_iv(datain, dtype=np.float32):
     ''' Convert picoscope channel data to IV dict'''
     # Keep all original data from picoscope
@@ -1107,38 +642,32 @@ def rehan_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-# Change this when you change probing circuits
-#pico_to_iv = rehan_to_iv
-pico_to_iv = ccircuit_to_iv
-
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier
     # Apply voltage
     print('Outputting {} volts on Rigol CH1'.format(Vin))
-    pulse(np.repeat(Vin, 100), 1e-3)
+    rigol.pulse_arbitrary(np.repeat(Vin, 100), 1e-3)
     time.sleep(1)
     # Measure output
     measurechannels = ['A', ch]
-    pico_capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
+    ps.capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
     time.sleep(.1)
     chdata = get_data(measurechannels)
-    plot_channels(chdata)
+    plot.plot_channels(chdata)
     chvalue = np.mean(chdata[ch])
     print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
 
     gain = R * chvalue / Vin
     # Set output back to zero
-    pulse([Vin, 0,0,0,0], 1e-3)
+    rigol.pulse_arbitrary([Vin, 0,0,0,0], 1e-3)
     return gain
 
 def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
-    global RANGE
-    global OFFSET
-    oldrange = RANGE.copy()
-    oldoffset = OFFSET.copy()
-
+    # Probably an obsolete function
     # Send a test pulse to determine better range to use
     arange, aoffset = best_range([outamp, -outamp])
+    RANGE = {}
+    OFFSET = {}
     RANGE['A'] = arange
     OFFSET['A'] = aoffset
     # Power supply is 5V, so this should cover the whole range
@@ -1146,70 +675,96 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     OFFSET[ch] = 0
     sinwave = outamp * sin(linspace(0, 1, 2**12)*2*pi)
     chs = ['A', ch]
-    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1)
+    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
     data = get_data(chs)
-    plot_channels(data)
+    plot.plot_channels(data)
 
+    # will change the range and offset after all
     squeeze_range(data, [ch])
 
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
     data = get_data(chs)
 
-    # Set scope settings back to old values
-    RANGE['A'] = oldrange['A']
-    OFFSET['A'] = oldoffset['A']
-    RANGE[ch] = oldrange[ch]
-    OFFSET[ch] = oldoffset[ch]
-
-    plot_channels(data)
+    plot.plot_channels(data)
 
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 
-def analog_out(ch, dacval=None, volts=None):
+# Change this when you change probing circuits
+#pico_to_iv = rehan_to_iv
+pico_to_iv = ccircuit_to_iv
+
+def tri(v1, v2, n=None, step=None):
     '''
-    I found a USB-1208HS so this is how you use it I guess.
-    Pass a digital value between 0 and 2**12 - 1
-    0 is -10V, 2**12 - 1 is 10V
-    Voltage values that don't make sense for my current set up are disallowed.
+    Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
+
+    Can optionally pass number of data points you want, or the voltage step between points.
+
+    If neither n or step is passed, return the shortest waveform which reaches v1 and v2.
     '''
-    # Import here because I don't want the entire module to error if you don't have mcculw installed
-    from mcculw import ul
-    from mcculw.enums import ULRange
-    from mcculw.ul import ULError
-    board_num = 0
-    ao_range = ULRange.BIP10VOLTS
-
-    # Can pass dacval or volts.  Prefer dacval.
-    if dacval is None:
-        # Better have passed volts...
-        dacval = ul.from_eng_units(board_num, ao_range, volts)
+    if n is not None:
+        dv = abs(v1) + abs(v2 - v1) + abs(v2)
+        step = dv / n
+    if step is not None:
+        # I could choose here to either make sure the waveform surely contains v1 and v2
+        # or to make sure the waveform really has a constant sweep rate
+        # I choose the former..
+        def sign(num):
+            npsign = np.sign(num)
+            return npsign if npsign !=0 else 1
+        wfm = np.concatenate((np.arange(0, v1, sign(v1) * step),
+                             np.arange(v1, v2, sign(v2 - v1) * step),
+                             np.arange(v2, 0, -sign(v2) * step),
+                             [0]))
+        return wfm
     else:
-        volts = ul.to_eng_units(board_num, ao_range, dacval)
+        # Find the shortest waveform that truly reaches v1 and v2 with constant sweep rate
+        # Don't think we need better than 1 mV resolution
+        v1 = round(v1, 3)
+        v2 = round(v2, 3)
+        f1 = Fraction(str(v1))
+        f2 = Fraction(str(v2))
+        # This is depreciated for some reason
+        #vstep = float(abs(fractions.gcd(fmax, fmin)))
+        # Doing it this other way.. Seems faster by a large factor.
+        a, b = f1.numerator, f1.denominator
+        c, d = f2.numerator, f2.denominator
+        # not a typo
+        commond = float(b * d)
+        vstep = gcd(a*d, b*c) / commond
+        dv = v1 - v2
+        # Using round because floating point errors suck
+        # e.g. int(0.3 / 0.1) = int(2.9999999999999996) = 2
+        n1 = round(abs(v1) / vstep + 1)
+        n2 = round(abs(dv) / vstep + 1)
+        n3 = round(abs(v2) / vstep + 1)
+        wfm = np.concatenate((np.linspace(0 , v1, n1),
+                            np.linspace(v1, v2, n2)[1:],
+                            np.linspace(v2, 0 , n3)[1:]))
 
-    # Just protect against doing something that doesn't make sense
-    if ch == 0 and volts > 0:
-        print('I disallow voltage value {} for analog output {}'.format(volts, ch))
-        return
-    elif ch == 1 and volts < 0:
-        print('I disallow voltage value {} for analog output {}'.format(volts, ch))
-        return
-    else:
-        print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
+        # Filling the AWG record length with probably take more time than it's worth.
+        # Interpolate to a "Large enough" waveform size
+        #enough = 2**16
+        #x = np.linspace(0, 1, enough)
+        #xp = np.linspace(0, 1, len(wfm))
+        #wfm = np.interp(x, xp, wfm)
 
-    try:
-        ul.a_out(board_num, ch, ao_range, dacval)
-    except ULError as e:
-        # Display the error
-        print("A UL error occurred. Code: " + str(e.errorcode)
-            + " Message: " + e.message)
+        # Let AWG do the interpolation
+        return wfm
+
+def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
+    '''
+    Calculate a square pulse waveform.
+    '''
+    ontime = int(duty * length)
+    remainingtime = length - ontime
+    pretime = int(startendratio * remainingtime / (startendratio + 1))
+    pretime = max(1, pretime)
+    posttime = remainingtime - pretime
+    posttime = max(1, posttime)
+    prearray = np.ones(pretime) * startval
+    pulsearray = np.ones(ontime) * vpulse
+    postarray = np.ones(posttime) * endval
+    return np.concatenate((prearray, pulsearray, postarray))
 
 
-def digital_out(ch, val):
-    # Import here because I don't want the entire module to error if you don't have mcculw installed
-    from mcculw import ul
-    from mcculw.enums import DigitalPortType, DigitalIODirection
-    from mcculw.ul import ULError
-    #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
-    ul.d_config_bit(0, DigitalPortType.AUXPORT, 8, DigitalIODirection.OUT)
-    ul.d_bit_out(0, DigitalPortType.AUXPORT, ch, val)

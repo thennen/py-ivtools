@@ -1,10 +1,16 @@
 """ Functions for saving and loading data """
-from dotdict import dotdict
+
+# Local imports
+from . import analyze
+from . import plot
+
 import os
 import re
 import fnmatch
 import pandas as pd
+from datetime import datetime
 import sys
+import subprocess
 import numpy as np
 try:
     import cPickle as pickle
@@ -17,43 +23,85 @@ splitext = os.path.splitext
 
 gitdir = os.path.split(__file__)[0]
 
+logger = None
+
 class MetaHandler(object):
     '''
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files
 
     '''
-    def __init__(self):
-        # This stores the currently selected metadata.  It's a dict or a pd.Series
-        # Go ahead and overwrite it if you want
-        self.meta = {}
-        # This is the index of the selected data
-        self.i = None
-        # This is the dataframe holding all of the 
-        self.df = None
-        # These key:values are always appended
-        self.static = {}
-        # This controls which keys will be used to construct a filename
-        self.filenamekeys = []
-        # TODO: This will be called with str.format
-        #self.filenameformatter = None
-        # These keys get printed when you step through the list of metadata
-        self.prettykeys = []
+    def __init__(self, oldinstance=None):
+        if oldinstance is None:
+            # This stores the currently selected metadata.  It's a dict or a pd.Series
+            # Go ahead and overwrite it if you want
+            self.meta = {}
+            # This is the index of the selected data
+            self.i = 0
+            # This is the dataframe holding all of the metadata -- one row per device
+            self.df = None
+            # These key:values are always appended
+            self.static = {}
+            # This controls which keys will be used to construct a filename
+            self.filenamekeys = []
+            # TODO: This will be called with str.format
+            #self.filenameformatter = None
+            # These keys get printed when you step through the list of metadata
+            self.prettykeys = []
+            self.moduledir = os.path.split(__file__)[0]
+        else:
+            # In case you redefine the class but want to keep the same data inside
+            self.__dict__ = oldinstance.__dict__
+
 
     def self_merge(self, columns=None):
-        ''' Merge meta df with itself, by default on columns which have no missing values '''
+        '''
+        Not implemented
+        Merge meta df with itself, by default on columns which have no missing values
+        '''
         pass
 
     def load_from_csv(self, xlspath):
+        ''' Not implemented. '''
         pass
+
+    # TODO: Unified metadata loader that just loads every possible sample
+
+    def load_nanoxbar(self, **kwargs):
+        '''
+        Load nanoxbar metadata
+        use keys X, Y, width_nm, device
+        Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
+        all kwargs will just be added to all metadata
+        '''
+        nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar.pkl')
+        nanoxbar = pd.read_pickle()
+        devicemetalist = nanoxbar
+        for name, value in kwargs.items():
+            if name in nanoxbar:
+                if not hasattr(value, '__iter__'):
+                    value = [value]
+                devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
+            else:
+                devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
+                filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        if 'sample_name' in kwargs:
+            filenamekeys = ['sample_name'] + filenamekeys
+        meta_i = 0
+        self.df = devicemetalist
+        self.meta = devicemetalist.iloc[0]
+        self.prettykeys = filenamekeys
+        self.filenamekeys = filenamekeys
+        print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
+        self.print_meta()
 
     def load_lassen(self, **kwargs):
         '''
         Load wafer information for Lassen
         Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
         '''
-        deposition_file = 'sampledata/CeRAM_Depositions.xlsx'
-        lassen_file = 'sampledata/all_lassen_device_info.pkl'
+        deposition_file = os.path.join(self.moduledir, 'sampledata/CeRAM_Depositions.xlsx')
+        lassen_file = os.path.join(self.moduledir, 'sampledata/all_lassen_device_info.pkl')
 
         deposition_df = pd.read_excel(deposition_file, header=8, skiprows=[9])
         # Only use info for Lassen wafers
@@ -86,7 +134,7 @@ class MetaHandler(object):
         devices014 = [4,5,6,7,8,9]
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-
+        meta_df = meta_df.dropna(1, 'all')
         meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
 
         # Try to convert data types
@@ -101,40 +149,40 @@ class MetaHandler(object):
                         etch_time=np.float32,
                         etch_depth=np.float32)
         for k,v in typedict.items():
-            # int arrays don't support missing data, because python sucks and computers suck
-            if not any(meta_df[k].isnull()):
-                meta_df[k] = meta_df[k].astype(v)
+            if k in meta_df:
+                # int arrays don't support missing data, because python sucks and computers suck
+                if not any(meta_df[k].isnull()):
+                    meta_df[k] = meta_df[k].astype(v)
 
+        self.i = 0
         self.df = meta_df
+        self.meta = meta_df.iloc[0]
         self.prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
-
-    def load_nanoxbar(self):
-        ''' Load '''
-        pass
+        self.print()
 
     def load_depositions():
         ''' Load sample information from some deposition sheet '''
         pass
 
     def step(self, n):
-        ''' Select the next device '''
+        ''' Select the another device by taking a step through meta df '''
         lastmeta = self.meta
-        if self.i is None:
-            self.i = 0
+        meta_i = self.i + n
+        if meta_i < 0:
+            print('You are already at the beginning of metadata list')
+            return
+        elif meta_i >= len(self.df):
+            print('You are already at the end of metadata list')
+            return
         else:
             self.i += n
-        if len(self.df) > self.i:
             if type(self.df) == pd.DataFrame:
                 self.meta = self.df.iloc[self.i]
             else:
                 self.meta = self.df[self.i]
-            # Put in the static metadata here.  Not sure if this is the best approach
-            self.meta.update(self.static)
-        else:
-            print('There is no more meta data to load')
-            return
+
         # Highlight keys that have changed
         hlkeys = []
         for key in self.meta.keys():
@@ -156,7 +204,7 @@ class MetaHandler(object):
         # Print some information about the device
         if self.prettykeys is None or len(self.prettykeys) == 0:
             # Print all the information
-            prettykeys = devicemeta.keys()
+            prettykeys = self.meta.keys()
         else:
             prettykeys = self.prettykeys
         for key in prettykeys:
@@ -167,14 +215,44 @@ class MetaHandler(object):
                     print('{:<18}\t{}'.format(key[:18], self.meta[key]))
 
     def attach(self, data):
-        return None
+        '''
+        Attach the currently selected metadata to input data
+        Might overwrite existing keys!
+        May modify the input data in addition to returning it
+        '''
+        if len(self.meta) > 0:
+            print('Attaching the following metadata:')
+            self.print()
+        dtype = type(data)
+        if dtype is dict:
+            # Make shallow copy
+            dataout = data.copy()
+            dataout.update(self.meta)
+            dataout.update(self.static)
+        elif dtype is list:
+            dataout = [d.copy() for d in data]
+            for d in dataout:
+                d.update(self.meta)
+                d.update(self.static)
+        elif dtype is pd.Series:
+            # Series can't be updated by dicts
+            dataout = data.append(pd.Series(self.meta)).append(pd.Series(self.static))
+        elif dtype is pd.DataFrame:
+            dupedmeta = pd.DataFrame([self.meta] * len(data), index=data.index)
+            dupedstatic = pd.DataFrame([self.static] * len(data), index=data.index)
+            allmeta = dupedmeta.join(dupedstatic)
+            dataout = data.join(allmeta)
+        else:
+            print('MetaHandler does not understand what kind of data you are trying to attach to.')
+            dataout = data.append(meta.meta).append(meta.static)
+        return dataout
 
     def filename(self):
-        ''' Make a filename from selected metadata '''
+        ''' Create a timestamped filename from selected metadata '''
         filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
         for fnkey in self.filenamekeys:
-            if fnkey in data.keys():
-                filename += '_{}'.format(data[fnkey])
+            if fnkey in self.meta.keys():
+                filename += '_{}'.format(self.meta[fnkey])
         return filename
 
 def validvarname(varStr):
@@ -190,6 +268,24 @@ def valid_filename():
     pass
 
 
+def timestamp(date=True, time=True, ms=True, us=False):
+    now = datetime.now()
+    datestr = now.strftime('%Y-%m-%d')
+    timestr = now.strftime('%H%M%S')
+    msstr = now.strftime('%f')[:-3]
+    usstr = now.strftime('%f')[-3:]
+    parts = []
+    if date:
+        parts.append(datestr)
+    if time:
+        parts.append(timestr)
+    if ms:
+        parts.append(msstr)
+    if us:
+        parts[-1] += usstr
+
+    return '_'.join(parts)
+
 def getGitRevision():
     rev = subprocess.getoutput('cd \"{}\" & git rev-parse --short HEAD'.format(gitdir))
     #return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
@@ -202,40 +298,52 @@ def getGitRevision():
 def getGitStatus():
     return subprocess.check_output(['git', 'status', '-z'])
 
-def log_ipy(filepath):
+def log_ipy(start=True, logfilepath=None):
     '''
     Append ipython and std in/out to a text file
     There are some strange bugs involved
     spyder just crashes, for example
+    don't be surprised if it messes something up
     '''
-    pass
-    # TODO take this from interactive script and make it work as function
+    global logger
+    magic = get_ipython().magic
+    magic('logstop')
 
+    # Sorry, I just don't know a better way to do this.
+    # I want to store the normal standard out somewhere it's safe
+    # But this can only run ONCE
+    try:
+        sys.stdstdout
+    except:
+        sys.stdstdout = sys.stdout
 
-def read_pickle(fp):
-    ''' Read data from a pickle file '''
-    import dotdict
-    # Current datatype uses a small subclass of dict "dotdict"
-    # This class lives in ivtools, and is not installed to normal package directory
-    # Need to do this fancy thing so that pickle recognizes it
-    sys.modules['dotdict'] = dotdict
-    # It's better, though, to just convert all the dotdicts back to normal dicts so that
-    # loading the data does not depend on having this module at all.
-    with open(fp, 'rb') as f:
-        normaldict = pickle.load(f)
-    # Convert all the normal dicts to dotdicts
-    out = dotdict.dotdict(normaldict)
-    out['iv'] = np.array([dotdict.dotdict(l) for l in normaldict['iv']])
-    return out
+    class Logger(object):
+        ''' Something to replace stdout '''
+        def __init__(self):
+            self.terminal = sys.stdstdout
+            self.log = open(logfilepath, 'a')
 
-def write_pickle(data, fp):
-    ''' Write data to a pickle file '''
-    # Convert all dotdicts into normal dicts
-    # Hopefully this does not take a huge amount of time
-    normaldict = dict(data)
-    normaldict['iv'] = np.array([dict(dd) for dd in data.iv])
-    with open(fp, 'wb') as f:
-        pickle.dump(normaldict, f)
+        def write(self, message):
+            self.terminal.write(message)
+            # Comment the lines and append them to ipython log file
+            self.log.writelines(['#[Stdout]# {}\n'.format(line) for line in message.split('\n') if line != ''])
+
+        def flush(self):
+            self.log.flush()
+            # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
+            self.terminal.flush()
+
+    if logger is not None:
+        logger.log.close()
+
+    if start:
+        #logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
+        magic('logstart -o {} append'.format(logfilepath))
+        logger = Logger()
+        sys.stdout = logger
+    else:
+        sys.stdout = sys.stdstdout
+
 
 
 def read_txt(filepath, **kwargs):
@@ -422,6 +530,39 @@ def read_pandas_recent(directory='.', pastseconds=60, concat=True):
     return read_pandas_files(recentfps, concat=concat)
 
 
+def write_pandas_pickle(data, filepath=None, drop=None):
+    ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
+    if filepath is None:
+        filepath = timestamp()
+
+    filedir = os.path.split(filepath)[0]
+    if (filedir != '') and not os.path.isdir(filedir):
+        os.makedirs(filedir)
+
+    dtype = type(data)
+    if dtype in (dict, pd.Series):
+        filepath += '.s'
+        if dtype == dict:
+            print('Converting data to pd.Series for storage.')
+            data = pd.Series(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                print('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop)
+    elif dtype in (list, pd.DataFrame):
+        filepath += '.df'
+        if dtype == list:
+            print('Converting data to pd.DataFrame for storage.')
+            data = pd.DataFrame(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                print('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop, 1)
+    data.to_pickle(filepath)
+    print('Wrote {}'.format(os.path.abspath(filepath)))
+
 def write_matlab(data, filepath, varname=None, compress=True):
    # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
    # Haven't figured out what sucks less to work with in matlab
@@ -545,7 +686,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
         filenames = [insert_file_num(filepath, n, 3) for n in range(len(data))]
         for fn, d in zip(filenames, data):
             write_csv(d, filepath=fn)
-        # Don't write thousands of files
+        # TODO: Don't write thousands of files
         # Don't write a 10 GB text file
 
 
@@ -593,7 +734,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       s.I *= 1e6
       s.units['I'] = '$\mu$A'
       smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-      plotiv(moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
+      plot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       if 'thickness_1' in s:
@@ -608,7 +749,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
       step = int(ceil(len(df) / maxloops))
       smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-      plotiv(moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+      plot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       s = df.iloc[0]

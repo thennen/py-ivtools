@@ -1,13 +1,16 @@
 """ Functions for making plots with IV data """
 
+# Local imports
+from . import analyze
+
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
-from dotdict import dotdict
 import pandas as pd
+import inspect
 from matplotlib.widgets import SpanSelector
 from inspect import signature
 
-### 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
     '''
     Plot an array vs another array contained in iv object
@@ -74,7 +77,6 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yf
     ax.set_ylabel(ylabel)
 
     return ax.plot(X, Y, **kwargs)[0]
-
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=_plot_single_iv, autotitle=False, **kwargs):
@@ -146,7 +148,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
                 line = ax.scatter(X, Y, **kwargs)
                 ax.set_xlabel(x)
                 ax.set_ylabel(y)
-    elif dtype in (dict, dotdict, pd.Series):
+    elif dtype in (dict, pd.Series):
         # Just one IV
         line = plotfunc(data, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs)
     else:
@@ -158,7 +160,6 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
 
     # should I really return this?  usually I don't assign the values and then they get cached by ipython forever
     return ax, line
-
 
 def auto_title(data, keys=None, ax=None):
     '''
@@ -196,9 +197,8 @@ def auto_title(data, keys=None, ax=None):
 
     ax.set_title(title)
 
-
 def plot_R_states(data, v0=.1, v1=None, **kwargs):
-    resist_states = resistance_states(data, v0, v1)
+    resist_states = analyze.resistance_states(data, v0, v1)
     resist1 = resist_states[0]
     resist2 = resist_states[1]
     if type(resist1) is pd.Series:
@@ -215,7 +215,6 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     #ax.legend(['HRS', 'LRS'], loc=0)
     ax.set_xlabel('Cycle #')
     ax.set_ylabel('Resistance / $\\Omega$')
-
 
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
@@ -272,10 +271,10 @@ def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
     ax.set_ylabel(y)
     return fig, ax
 
-
 def plot_channels(chdata, ax=None):
     '''
     Plot the channel data of picoscope
+    Includes an indication of the measurement range used
     '''
     if ax is None:
         fig, ax = plt.subplots()
@@ -294,7 +293,7 @@ def plot_channels(chdata, ax=None):
                 chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
-                x = maketimearray(chdata)
+                x = analyze.maketimearray(chdata)
                 ax.set_xlabel('Time [s]')
                 ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
             else:
@@ -308,167 +307,225 @@ def plot_channels(chdata, ax=None):
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
+    ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
+    if ax is None:
+        ax = plt.gca()
+    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
+    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
+    sm.set_array([])
+    cb = plt.colorbar(sm, ax=ax, **kwargs)
+    return cb
 
-### NOT DONE!
+
+    # Fill the whole plot with lines.  Find points to go through
+    if ax.get_yscale() == 'linear':
+        yp = np.linspace(ymin, ymax , n)
+    else:
+        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
+        logymin, logymax = np.log10(ymin), np.log10(ymax)
+        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
+    if ax.get_xscale() == 'linear':
+        xp = np.linspace(xmin, xmax , n)
+    else:
+        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
+        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
+
+    # Load lines aren't lines on log scale, so plot many points
+    x = np.linspace(xmin, xmax, 500)
+    # Plot one at a time so you can just label one (for legend)
+    slope = 1 / R / Iscale
+    for xi,yi in zip(xp, yp):
+        ax.plot(x, yi - slope * (x - xi), **plotargs)
+    # Label the last one
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
+    # Put the limits back
+    ax.set_xlim(*xlims)
+    ax.set_ylim(*ylims)
+
+
+# Could be a module, but I want it to keep its state when the code is reloaded
 class interactive_figs(object):
-    ''' A class to manage the figures used for automatic plotting of IV data after it is measured. '''
-    def __init__(self, n=2):
-        figaxs = self.create(n=n)
-        self.figs = []
-        self.axs = []
-        for fa in enumerate(figaxs, 1):
-            # Give attribute names to each figure and ax: self.fig1 self.ax1 etc.
-            fig = fa[0]
-            ax = fa[1]
-            figs.append(fig)
-            axs.append(ax)
-            setattr(self, 'fig'+i, fig)
-            setattr(self, 'ax'+i, ax)
-        self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
-        self.plotters = []
+    '''
+    A class to manage the figures used for automatic plotting of IV data while it is measured.
+    Right now we are limited to one axis per figure ...  could be extended.
+    can have several plotting functions per axis though ..
+    '''
+    # TODO: save/load configurations to disk?
+    def __init__(self, n=4, oldinstance=None):
+        if oldinstance is None:
+            # Find nice sizes and locations for the figures
+            # Need to get monitor information. Only works in windows ...
+            import ctypes
+            user32 = ctypes.windll.user32
+            wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
+            dc = user32.GetDC(0)
+            LOGPIXELSX = 88
+            LOGPIXELSY = 90
+            hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
+            vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
+            ctypes.windll.user32.ReleaseDC(0, dc)
+            bordertop = 79
+            borderleft = 7
+            borderbottom = 28
+            taskbar = 40
+            figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+            figwidth = figheight * 1.3
+            self.hdpi = hdpi
+            self.vdpi = vdpi
+            self.figsize = (figwidth / hdpi, figheight / vdpi)
+            self.figlocs = [(wpixels - figwidth - 2*borderleft, 0),
+                    (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
+                    (wpixels - 2*figwidth - 4*borderleft, 0),
+                    (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
+                    (wpixels - 3*figwidth - 6*borderleft, 0),
+                    (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
+            # Make four figures
 
-    def create(self, n):
-        # Create n figures and move them to a nice location on the screen
-        # Need to get monitor information
-        # Only works in windows ...
-        import ctypes
-        user32 = ctypes.windll.user32
-        wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-        #aspect = hpixels / wpixels
-        dc = user32.GetDC(0)
-        LOGPIXELSX = 88
-        LOGPIXELSY = 90
-        hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
-        vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
-        ctypes.windll.user32.ReleaseDC(0, dc)
-        bordertop = 79
-        borderleft = 7
-        borderbottom = 28
-        taskbar = 40
-        figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
-        # Nope
-        #figwidth = wpixels * .3
-        #figwidth = 500
-        figwidth = figheight * 1.3
-        figsize = (figwidth / hdpi, figheight / vdpi)
-        figlocs = [(wpixels - figwidth - 2*borderleft, 0),
-                (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
-                (wpixels - 2*figwidth - 4*borderleft, 0),
-                (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
-                (wpixels - 3*figwidth - 6*borderleft, 0),
-                (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
+            self.figs = []
+            self.axs = []
+            for i in range(n):
+                self.createfig(n=i)
+            # To be implemented..
+            #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
+            self.plotters = []
+        else:
+            # This is to completely reload the class code but keep the same state
+            self.__dict__ = oldinstance.__dict__
+            self.show()
 
-        figaxs = []
-        for i in range(n):
-            fig, ax = plt.subplots(figsize=figsize, dpi=hdpi)
-            fig.set_tight_layout(True)
-            fig.canvas.set_window_title('Interactive Plot {}'.format(i))
-            figaxs.append((fig, ax))
-            if i < len(figlocs):
-                # Move the figure to the predetermined location
-                fig.canvas.manager.window.move(*figlocs[i])
-            # Rest of the figures will just float around wherever I guess
 
+    def createfig(self, n):
+        '''
+        Create the nth figure and move it into position.
+        Store the fig, ax objects in self.figs, self.axs
+        '''
+        fig, ax = plt.subplots(figsize=self.figsize, dpi=self.hdpi)
+        fig.set_tight_layout(True)
+        fig.canvas.set_window_title('Interactive Plot {}'.format(n))
+        if len(self.figs) <= n:
+            self.figs.extend([None] * (n - len(self.figs) + 1))
+        if len(self.axs) <= n:
+            self.axs.extend([None] * (n - len(self.axs) + 1))
+        self.figs[n] = fig
+        self.axs[n] = ax
+        # Give attribute names to each figure and ax: self.fig1 self.ax1 etc.
+        setattr(self, 'fig'+str(n), fig)
+        setattr(self, 'ax'+str(n), ax)
+        self.tile(n)
         plt.show()
 
-        return figaxs
+    def tile(self, n=None):
+        '''
+        Move figures to their default positions
+        '''
+        if n is None:
+            for fig, loc in zip(self.figs, self.figlocs):
+                fig.canvas.manager.window.move(*loc)
+        else:
+            if (len(self.figs) > n) and (len(self.figlocs) > n):
+                self.figs[n].canvas.manager.window.move(*self.figlocs[n])
 
-    def add_plotter(plotfunc, axnum, **kwargs):
+    def delete(self, axnum):
+        ''' Delete the plotters for the specified axis '''
+        self.plotters = [p for p in self.plotters if p[0] != axnum]
+
+    def add_plotter(self, plotfunc, axnum, **kwargs):
         '''
         Assign a function which creates a plot to an axis.
-        Function should take data (dictionary) as first argument and have an ax keyword
+        Function should take data (dictionary-like) as first argument and have an ax keyword
         '''
         self.plotters.append((axnum, plotfunc))
 
-    def update(self, data, newline=True):
+    def newline(self, data=None):
         ''' Update the plots with new data. '''
         for axnum, plotter in self.plotters:
             ax = self.axs[axnum]
-            plotter(data, ax=ax)
+            if data is None:
+                ax.plot([])
+            else:
+                try:
+                    plotter(data, ax=ax)
+                    color = ax.lines[-1].get_color()
+                    ax.set_xlabel(ax.get_xlabel(), color=color)
+                    ax.set_ylabel(ax.get_ylabel(), color=color)
+                except:
+                    ax.plot([])
+                    print('Plotter number {} failed!'.format(axnum))
+                ax.get_figure().canvas.draw()
+        plt.pause(0.05)
+
+    def updateline(self, data):
+        '''
+        Update the data in the previous plots.
+        '''
+        # Since I can't know how to get to the actual plotted data without calling the plot
+        # function again, this works by deleting the last line and plotting a new one with
+        # the same colors
+        # I am assuming for now that the plot functions each produce one line.
+        for axnum, plotter in self.plotters:
+            ax = self.axs[axnum]
+            prevline = ax.lines[-1]
+            color = prevline.get_color()
+            # Mostly interested in keeping the same color, but copy all these properties
+            #lineprops = prevline.properties()
+            #savekeys = ['color', 'alpha', 'markersize', 'linestyle', 'linewidth', 'marker']
+            #plotargs = {k:lineprops[k] for k in savekeys}
+            del ax.lines[-1]
+            argspec = inspect.getfullargspec(plotter)
+            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
+                # plotter won't error if we pass this keyword argument
+                # it might even work ..
+                try:
+                    plotter(data, ax, color=color)
+                except:
+                    print('Plotter number {} failed!'.format(axnum))
+            else:
+                # Simply set the line color after plotting
+                # could mess up the color cycle.
+                try:
+                    plotter(data, ax)
+                    ax.lines[-1].set_color(color)
+                except:
+                    print('Plotter number {} failed!'.format(axnum))
             ax.get_figure().canvas.draw()
-        plt.pause(.05)
+        plt.pause(0.05)
 
     def clear(self):
-        ''' Clear all the figures '''
-        # Delete references
+        ''' Clear all the axes '''
+        for fig in self.figs:
+            for ax in fig.axes:
+                xlabel = ax.get_xlabel()
+                ylabel = ax.get_ylabel()
+                title = ax.get_title()
+                ax.cla()
+                ax.set_ylabel(ylabel)
+                ax.set_xlabel(xlabel)
+                ax.set_title(title)
 
     def write(self, directory):
         ''' Write the figures to disk. '''
+        pass
+
+    def bringtofront(self):
+        ''' Bring all the interactive plots to the foreground. '''
+        # I still haven't figured out how to do this in windows..
+        pass
+
+    def show(self):
+        ''' Show figures in case you closed them. '''
+        for fig in self.figs:
+            fig.show()
 
     def close(self):
         ''' Close all the figures and stop doing anything '''
         for fig in self.figs:
             plt.close(fig)
+        # Delete references
+        self.figs = []
+        self.axs = []
 
-
-# These are supposed to be for the live plotting
-def ivplotter(data, ax=None, maxloops=100, smooth=True, **kwargs):
-    # Smooth data a bit and give it to plotiv (from plot.py)
-    # Would be better to smooth before splitting ...
-    if ax is None:
-        fig, ax = plt.subplots()
-    if smooth:
-        data = moving_avg(data, window=10)
-    if type(data) is list:
-        nloops = len(data)
-    else:
-        nloops = 1
-    if nloops > maxloops:
-        print('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
-        loopstep = int(nloops / 99)
-        data = data[::loopstep]
-    plotiv(data, ax=ax, maxsamples=5000, **kwargs)
-
-def chplotter(data, ax=None, **kwargs):
-    # data might contain multiple loops because of splitting, but we want the unsplit arrays
-    # To avoid pasting them back together again, there is a global variable called chdata
-    if ax is None:
-        fig, ax = plt.subplots()
-    # Remove previous lines
-    for l in ax2.lines[::-1]: l.remove()
-    # Plot at most 100000 datapoints of the waveform
-    for ch in ['A', 'B', 'C', 'D']:
-        if ch in chdata:
-            lendata = len(chdata[ch])
-            break
-    if lendata > 100000:
-        print('Captured waveform has {} pts.  Plotting channel data for only the first 100,000 pts.'.format(lendata))
-        plotdata = sliceiv(chdata, stop=100000)
-    else:
-        plotdata = chdata
-    plot_channels(plotdata, ax=ax, **kwargs)
-
-def VoverIplotter(data, ax=None, **kwargs):
-    ''' Plot V/I vs V, like GPIB control program'''
-    if ax is None:
-        fig, ax = plt.subplots()
-    mask = np.abs(d['V']) > .01
-    vmasked = d['V'][mask]
-    imasked = d['I'][mask]
-    ax.plot(vmasked, vmasked / imasked, '.-', **kwargs)
-    ax.set_yscale('log')
-    ax.set_xlabel('Voltage [V]')
-    ax.set_ylabel('V/I [$\Omega$]')
-    ax.yaxis.set_major_formatter(metricprefixformatter)
-
-def dVdIplotter(data, ax=None, **kwargs):
-    ''' Plot dV/dI vs V'''
-    if ax is None:
-        fig, ax = plt.subplots()
-    mask = np.abs(d['V']) > .01
-    vmasked = d['V'][mask]
-    imasked = d['I'][mask]
-    dv = np.diff(vmasked)
-    di = np.diff(imasked)
-    ax.plot(vmasked[1:], dv/di, '.-', **kwargs)
-    ax.set_yscale('log')
-    ax.set_xlabel('Voltage [V]')
-    ax.set_ylabel('V/I [$\Omega$]')
-    ax.yaxis.set_major_formatter(metricprefixformatter)
-
-
-
-def interactive_figures(n=2):
+def make_tiled_figures(n=2):
     # Determine nice place to put some plots, and make the figures
     # Need to get monitor information
     # Only works in windows ...
@@ -515,41 +572,162 @@ def interactive_figures(n=2):
     return figaxs
 
 
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
-    ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
+### These are supposed to be for the live plotting
+def plottertemplate(data, ax, **kwargs):
+    '''
+    Minimal template for defining a new plotter.
+    Needs kwargs if you want live updating.
+    '''
+    ax.plot(data['x'], data['y'], **kwargs)
+    ax.set_xlabel('x')
+    ax.set_ylabel('y')
+
+def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
+    # Smooth data a bit and give it to plotiv
+    # Make sure not too much data gets plotted, or it slows down the program a lot.
+    # Would be better to smooth before splitting ...
+    # kwargs gets passed through to plotiv, which passes them through to plt.plot
     if ax is None:
-        ax = plt.gca()
-    norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
-    sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cb = plt.colorbar(sm, ax=ax, **kwargs)
-    return cb
-
-
-    # Fill the whole plot with lines.  Find points to go through
-    if ax.get_yscale() == 'linear':
-        yp = np.linspace(ymin, ymax , n)
+        fig, ax = plt.subplots()
+    if smooth:
+        data = analyze.moving_avg(data, window=10)
+    if type(data) is list:
+        nloops = len(data)
     else:
-        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
-        logymin, logymax = np.log10(ymin), np.log10(ymax)
-        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
-    if ax.get_xscale() == 'linear':
-        xp = np.linspace(xmin, xmax , n)
-    else:
-        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
-        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
+        nloops = 1
+    if nloops > maxloops:
+        print('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        loopstep = int(nloops / 99)
+        data = data[::loopstep]
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    plotiv(data, ax=ax, maxsamples=5000, **kwargs)
 
-    # Load lines aren't lines on log scale, so plot many points
-    x = linspace(xmin, xmax, 500)
-    # Plot one at a time so you can just label one (for legend)
-    slope = 1 / R / Iscale
-    for xi,yi in zip(xp, yp):
-        ax.plot(x, yi - slope * (x - xi), **plotargs)
-    # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
-    # Put the limits back
-    ax.set_xlim(*xlims)
-    ax.set_ylim(*ylims)
+def chplotter(data, ax=None, **kwargs):
+    # data might contain multiple loops because of splitting, but we want the unsplit arrays
+    # To avoid pasting them back together again, there is a global variable called chdata
+    if ax is None:
+        fig, ax = plt.subplots()
+    # Remove previous lines
+    for l in ax.lines[::-1]: l.remove()
+    # Plot at most 100000 datapoints of the waveform
+    channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in data]
+    if any(channels):
+        lendata = len(data[channels[0]])
+        if lendata > 100000:
+            print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
+            plotdata = analyze.sliceiv(data, step=10)
+        else:
+            plotdata = data
+        plot_channels(plotdata, ax=ax)
+
+def dVdIplotter(data, ax=None, **kwargs):
+    ''' Plot dV/dI vs V'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    mask = np.abs(d['V']) > .01
+    vmasked = d['V'][mask]
+    imasked = d['I'][mask]
+    dv = np.diff(vmasked)
+    di = np.diff(imasked)
+    ax.plot(vmasked[1:], dv/di, **kwargs)
+    ax.set_yscale('log')
+    ax.set_xlabel('Voltage [V]')
+    ax.set_ylabel('V/I [$\Omega$]')
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+# Keithley ones
+def Rfitplotter(data, ax=None, **kwargs):
+    ''' Plot a line of resistance fit'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    mask = abs(data['V']) <= .1
+    if sum(mask) > 1:
+        line = np.polyfit(data['V'][mask], data['I'][mask], 1)
+    else:
+        line = [np.nan, np.nan]
+    # Plot line only to max V or max I
+    R = 1 / line[0]
+    vmin = max(min(data['V']), min(data['I'] * R))
+    vmax = min(max(data['V']), max(data['I'] * R))
+    # Do some points in case you put it on a log scale later
+    fitv = np.linspace(1.1 * vmin, 1.1 * vmax, 10)
+    fiti = np.polyval(line, fitv)
+    plotkwargs = dict(color='black', alpha=.3, linestyle='--')
+    plotkwargs.update(kwargs)
+    ax.plot(fitv, 1e6 * fiti, **plotkwargs)
+    return R
+
+def complianceplotter(data, ax=None, **kwargs):
+    # Plot a dotted line indicating compliance current
+    pass
+
+def vtplotter(data, ax=None, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    ''' This defines what gets plotted on ax2'''
+    if 't' not in data:
+        t = analyze.maketimearray(data)
+    else:
+        t = data['t']
+    ax.plot(t, data['V'], **kwargs)
+    #color = ax.lines[-1].get_color()
+    #ax.set_ylabel('Voltage [V]', color=color)
+    ax.set_ylabel('Voltage [V]')
+    ax.set_xlabel('Time [S]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+def itplotter(data, ax=None, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    if 't' not in data:
+        t = analyze.maketimearray(data)
+    else:
+        t = data['t']
+    ax.plot(t, data['I'], **kwargs)
+    #color = ax.lines[-1].get_color()
+    #ax.set_ylabel('Current [$\mu$A]', color=color)
+    ax.set_ylabel('Current [A]')
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    ax.set_xlabel('Time [S]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+def VoverIplotter(data, ax=None, **kwargs):
+    ''' Plot V/I vs V, like GPIB control program'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    # Mask small currents, since V/I will blow up
+    # There's definitely a better way.
+    if len(data['I'] > 0):
+        max_current = np.max(np.abs(data['I']))
+        mask = np.abs(data['I']) > .01 * max_current
+    else:
+        mask = []
+    V = data['V'][mask]
+
+    if 'Vmeasured' in data:
+        VoverI = data['Vmeasured'] / data['I']
+    elif 'Imeasured' in data:
+        VoverI = data['V'] / data['Imeasured']
+    else:
+        VoverI = data['V'] / data['I']
+
+    VoverI = VoverI[mask]
+
+    ax.plot(V, VoverI, **kwargs)
+    #color = ax.lines[-1].get_color()
+
+    ax.set_yscale('log')
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    ax.set_xlabel('Voltage [V]')
+    #ax.set_ylabel('V/I [$\Omega$]', color=color)
+    ax.set_ylabel('V/I [$\Omega$]')
+
+def vcalcplotter(data, ax=None, R=8197, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    data['Vcalc'] = data['V'] - R * data['I']
+    plotiv(d, ax=ax, x='Vcalc', **kwargs)
+    ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
 
 
 ### Widgets
@@ -624,8 +802,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             # Split branches
             colorup = 'Red'
             colordown = 'DarkBlue'
-            plotiv(increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
-            plotiv(decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
+            plotiv(analyze.increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
+            plotiv(analyze.decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
             ax.legend(title='Sweep Direction')
         else:
             # Colors will mess up if you pass a dataframe with non range(0, ..) index
@@ -736,23 +914,7 @@ def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
     os.system(cmd)
 
 
-
-def mpfunc(x, pos):
-    #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
-    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
-    if abs(x) < min(values):
-        return '{:1.1f}'.format(x)
-    for v, p in zip(values, prefix):
-        if abs(x) >= v:
-            return '{:1.1f}{}'.format(x/v, p)
-
-# Use it like this: ax.yaxis.set_major_formatter(metricprefixformatter)
-metricprefixformatter = mpl.ticker.FuncFormatter(mpfunc)
-# Note I might be stupid and this could already be built in, using mpl.ticker.EngFormatter()
-
-# Reference marks
-
+### Reference marks
 def plot_powerlaw_lines(ax, slope=-2, num=20, label='Area Scaling', **kwargs):
     '''
     Put some reference lines on a log-log plot indicating a certain power law dependence
@@ -781,7 +943,6 @@ def plot_powerlaw_lines(ax, slope=-2, num=20, label='Area Scaling', **kwargs):
 
 # Used to be called this.  Leaving it here to not break old scripts
 plot_log_reference_lines = plot_powerlaw_lines
-
 def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     '''
     Put some reference lines indicating load lines for a particular series resistance.
@@ -812,7 +973,7 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
         xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
 
     # Load lines aren't lines on log scale, so plot many points
-    x = linspace(xmin, xmax, 500)
+    x = np.linspace(xmin, xmax, 500)
     # Plot one at a time so you can just label one (for legend)
     slope = 1 / R / Iscale
     for xi,yi in zip(xp, yp):
@@ -822,7 +983,6 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
-
 
 def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     '''
@@ -855,8 +1015,8 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
             pvals = np.linspace(minp, maxp, npvals)[1:-1]
 
     # Easiest to space equally in x.  Could change this later so that high slope areas get enough data points.
-    x = linspace(x0, x1, 1000)
-    #pvals = linspace(pmin, pmax, nlines)
+    x = np.linspace(x0, x1, 1000)
+    #pvals = np.linspace(pmin, pmax, nlines)
     ylist = [p/x for p in pvals]
     for y in ylist:
         ax.plot(x, y, '--', color='black', alpha=.3)

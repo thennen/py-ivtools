@@ -1,12 +1,16 @@
 """ Functions for doing data analysis on IV data """
 
+# Local imports
+from . import plot
+
 from functools import wraps
 import numpy as np
 from itertools import groupby
-from dotdict import dotdict
 from scipy import signal
 from numbers import Number
 from scipy.optimize import curve_fit
+import pandas as pd
+from matplotlib import pyplot as plt
 
 def ivfunc(func):
     '''
@@ -125,7 +129,7 @@ def ivfunc(func):
                 return(pd.Series(result))
             else:
                 return result
-        elif dtype in (dotdict, dict):
+        elif dtype in (dict,):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
@@ -286,7 +290,7 @@ def select_by_derivative(data, threshold=None, debug=False):
         ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
         ax.set_xlim(xmin, xmax)
     elif debug == 2:
-        plotiv(data, ax=ax)
+        plot.plotiv(data, ax=ax)
         ax.scatter(data['V'][index], data['I'][index])
 
     return index
@@ -1124,7 +1128,7 @@ def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax
 
 
     if sum(mask) > order:
-        pf = polyfit(X[mask], Y[mask], order)
+        pf = np.polyfit(X[mask], Y[mask], order)
     elif extendrange:
         # There were not enough data points in the passed fit range
         # so use the "nearest" datapoints outside the range.
@@ -1449,3 +1453,12 @@ def freq_analysis(data):
     This will use curve fitting and fft methods to determine amplitude and phase.
     '''
     pass
+
+def replace_nanvals(array):
+    # Keithley returns this special value when the measurement is out of range
+    # replace it with a nan so it doesn't mess up the plots
+    # They aren't that smart at Keithley, so different models return different special values.
+    nanvalues = (9.9100000000000005e+37, 9.9099995300309287e+37)
+    for nv in nanvalues:
+        array[array == nv] = np.nan
+    return array
