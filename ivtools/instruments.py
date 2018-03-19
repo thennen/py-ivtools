@@ -669,24 +669,19 @@ class Keithley2600(object):
 
     def iv(self, vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
         '''Wraps the SweepVList lua function defined on keithley'''
-
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
-
         # TODO: make sure the inputs are valid
         self.write('SweepVList(sweeplist, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay))
-
 
     def vi(self, ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO'):
         '''Wraps the SweepIList lua function defined on keithley'''
 
         # Send list of voltage values to keithley
         self.send_list(ilist, varname='sweeplist')
-
         # TODO: make sure the inputs are valid
         Irange = np.max(np.abs(ilist))
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
-
 
     def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1):
         '''Wraps the constantVoltageMeasI lua function defined on keithley'''
@@ -698,6 +693,13 @@ class Keithley2600(object):
         #self.write('smub.source.levelv = 0')
         #self.write('smub.source.output = smub.OUTPUT_OFF')
 
+    def done(self):
+        # works with smua.trigger.initiate()
+        donesweeping = not bool(float(self.ask('print(status.operation.sweeping.condition)')))
+        # works with smua.measure.overlappediv()
+        donemeasuring = not bool(float(self.ask('print(status.operation.measuring.condition)')))
+        # works with both
+        return donesweeping & donemeasuring
 
     def waitready(self):
         ''' There's probably a better way to do this. '''

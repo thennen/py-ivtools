@@ -380,8 +380,6 @@ class interactive_figs(object):
                     (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
                     (wpixels - 3*figwidth - 6*borderleft, 0),
                     (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
-            # Make four figures
-
             self.figs = []
             self.axs = []
             for i in range(n):
@@ -393,7 +391,6 @@ class interactive_figs(object):
             # This is to completely reload the class code but keep the same state
             self.__dict__ = oldinstance.__dict__
             self.show()
-
 
     def createfig(self, n):
         '''
@@ -426,7 +423,7 @@ class interactive_figs(object):
             if (len(self.figs) > n) and (len(self.figlocs) > n):
                 self.figs[n].canvas.manager.window.move(*self.figlocs[n])
 
-    def delete(self, axnum):
+    def del_plotters(self, axnum):
         ''' Delete the plotters for the specified axis '''
         self.plotters = [p for p in self.plotters if p[0] != axnum]
 
@@ -465,13 +462,11 @@ class interactive_figs(object):
         # I am assuming for now that the plot functions each produce one line.
         for axnum, plotter in self.plotters:
             ax = self.axs[axnum]
-            prevline = ax.lines[-1]
-            color = prevline.get_color()
-            # Mostly interested in keeping the same color, but copy all these properties
-            #lineprops = prevline.properties()
-            #savekeys = ['color', 'alpha', 'markersize', 'linestyle', 'linewidth', 'marker']
-            #plotargs = {k:lineprops[k] for k in savekeys}
-            del ax.lines[-1]
+            if any(ax.lines):
+                color = ax.lines[-1].get_color()
+                del ax.lines[-1]
+            else:
+                color = None
             argspec = inspect.getfullargspec(plotter)
             if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
                 # plotter won't error if we pass this keyword argument
@@ -524,52 +519,6 @@ class interactive_figs(object):
         # Delete references
         self.figs = []
         self.axs = []
-
-def make_tiled_figures(n=2):
-    # Determine nice place to put some plots, and make the figures
-    # Need to get monitor information
-    # Only works in windows ...
-    import ctypes
-    user32 = ctypes.windll.user32
-    wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-    #aspect = hpixels / wpixels
-    dc = user32.GetDC(0)
-    LOGPIXELSX = 88
-    LOGPIXELSY = 90
-    hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
-    vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
-    ctypes.windll.user32.ReleaseDC(0, dc)
-    bordertop = 79
-    borderleft = 7
-    borderbottom = 28
-    taskbar = 40
-    figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
-    # Nope
-    #figwidth = wpixels * .3
-    #figwidth = 500
-    figwidth = figheight * 1.3
-    figsize = (figwidth / hdpi, figheight / vdpi)
-    figlocs = [(wpixels - figwidth - 2*borderleft, 0),
-               (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
-               (wpixels - 2*figwidth - 4*borderleft, 0),
-               (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
-               (wpixels - 3*figwidth - 6*borderleft, 0),
-               (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
-
-    figaxs = []
-    for i in range(n):
-        fig, ax = plt.subplots(figsize=figsize, dpi=hdpi)
-        fig.set_tight_layout(True)
-        fig.canvas.set_window_title('Interactive Plot {}'.format(i))
-        figaxs.append((fig, ax))
-        if i < len(figlocs):
-            # Move the figure to the predetermined location
-            fig.canvas.manager.window.move(*figlocs[i])
-        # Rest of the figures will just float around wherever I guess
-
-    plt.show()
-
-    return figaxs
 
 
 ### These are supposed to be for the live plotting

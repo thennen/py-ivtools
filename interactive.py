@@ -8,12 +8,10 @@ This script can be rerun, and all of the code will be updated, with
 your settings not overwritten
 
 Therefore you can modify any part of the code while making measurements
-and without ever leaving the program.
+and without ever leaving the running program.
 
-TODO: push some of the code into the main library. here we should only handle interactive plotting, logging, metadata, and exposure of data to global variables
 TODO: Maintain a database of all the metadata for all the data files created
 TODO: GUI for displaying and changing channel settings, other status information
-TODO: create a class for managing the automatic plotting.  make adding plots easy.
 '''
 import numpy
 import numpy as np
@@ -63,7 +61,6 @@ if not firstrun:
     old['k'] = k
     old['COMPLIANCE_CURRENT'] = measure.COMPLIANCE_CURRENT
     old['INPUT_OFFSET'] = measure.INPUT_OFFSET
-    # Plotter settings -- maybe even the plots shouldn't be remade
 
 # Dump everything into interactive namespace for convenience
 # TODO: run test for overlapping names
@@ -97,6 +94,18 @@ def datadir():
 io.makefolder(datafolder, subfolder)
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 
+# Default plotter configuration
+# For picoscope + rigol
+pico_plotters = [[0, ivplot.ivplotter],
+                 [1, ivplot.chplotter],
+                 [2, ivplot.VoverIplotter]]
+# For keithley
+kargs = {'marker':'.'}
+keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
+                     [1, partial(ivplot.itplotter, **kargs)],
+                     [2, partial(ivplot.VoverIplotter, **kargs)],
+                     [3, partial(ivplot.vtplotter, **kargs)]]
+
 if firstrun:
     ### Runs only the first time
     magic('matplotlib')
@@ -108,6 +117,14 @@ if firstrun:
     measure.connect_rigolawg()
     measure.connect_keithley()
     firstrun = False
+    # Need to specify what the plots should do by default
+    # There are a few different ways one could handle this
+    if measure.k is None:
+        print('Setting up automatic plotting for picoscope')
+        iplots.plotters = pico_plotters
+    else:
+        print('Setting up automatic plotting for Keithley')
+        iplots.plotters = keithley_plotters
 else:
     # Transfer all the settings you want to keep into new instances/environment
     if old['ps'] is not None:
@@ -144,31 +161,7 @@ class autocaller():
 meta.static = {'gitrev':gitrev}
 
 
-# Default plotter configuration
-# For picoscope + rigol
-pico_plotters = [[0, ivplot.ivplotter],
-                 [1, ivplot.chplotter],
-                 [2, ivplot.VoverIplotter]]
-# For keithley
-kargs = {'marker':'.'}
-keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
-                     [1, partial(ivplot.itplotter, **kargs)],
-                     [2, partial(ivplot.VoverIplotter, **kargs)],
-                     [3, partial(ivplot.vtplotter, **kargs)]]
-
-# Need to specify what the plots should do
-# There are a few different ways one could handle this
-# For example, switch the plotters when certain measurement functions are used
-if k is None:
-    print('Setting up automatic plotting for picoscope')
-    iplots.plotters = pico_plotters
-else:
-    print('Setting up automatic plotting for Keithley')
-    iplots.plotters = keithley_plotters
-
-
-
-################ Bindings #################
+################ Bindings for convenience #################
 
 # Instruments
 ps = measure.ps
@@ -211,7 +204,6 @@ def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
 s = autocaller(savedata)
 
 # TODO: Would I ever want to turn off autosaving? autoplotting?  Could call the iv functions from measure.py directly..
-# TODO: what if I don't have a function for when data is done being collected?
 
 # Wrap any fuctions that you want to automatically make plots with this
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False):
@@ -248,19 +240,12 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False):
 
 picoiv = interactive_wrapper(measure.picoiv)
 
-# If keithley is connected
+# If keithley is connected ...
+# because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
 if k is not None:
-    def donesweeping():
-        # works with smua.trigger.initiate()
-        return not bool(float(k.ask('print(status.operation.sweeping.condition)')))
-    def donemeasuring():
-        # works with smua.measure.overlappediv()
-        return not bool(float(k.ask('print(status.operation.measuring.condition)')))
-
     live = True
     if '2636A' in k.idn():
         live = False
-    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=donesweeping, live=live)
-    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=donesweeping, live=live)
-    # TODO: this one has a different ending condition.  will not work as written
-    kit = interactive_wrapper(k.it, k.get_data, donefunc=donemeasuring, live=live)
+    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live)
+    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live)
+    kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live)
