@@ -10,6 +10,7 @@ from scipy import signal
 from numbers import Number
 from scipy.optimize import curve_fit
 import pandas as pd
+from matplotlib import pyplot as plt
 
 def ivfunc(func):
     '''
@@ -1127,7 +1128,7 @@ def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax
 
 
     if sum(mask) > order:
-        pf = polyfit(X[mask], Y[mask], order)
+        pf = np.polyfit(X[mask], Y[mask], order)
     elif extendrange:
         # There were not enough data points in the passed fit range
         # so use the "nearest" datapoints outside the range.

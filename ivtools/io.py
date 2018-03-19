@@ -48,16 +48,11 @@ class MetaHandler(object):
             #self.filenameformatter = None
             # These keys get printed when you step through the list of metadata
             self.prettykeys = []
+            self.moduledir = os.path.split(__file__)[0]
         else:
             # In case you redefine the class but want to keep the same data inside
-            self.meta = oldinstance.meta
-            self.i = oldinstance.i
-            self.df = oldinstance.df
-            self.static = oldinstance.static
-            self.filenamekeys = oldinstance.filenamekeys
-            self.prettykeys = oldinstance.prettykeys
+            self.__dict__ = oldinstance.__dict__
 
-        self.moduledir = os.path.split(__file__)[0]
 
     def self_merge(self, columns=None):
         '''
@@ -79,7 +74,6 @@ class MetaHandler(object):
         Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
         all kwargs will just be added to all metadata
         '''
-        #global nanoxbar, prettykeys, filenamekeys, devicemetalist, deposition_df, meta_i, devicemeta
         nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar.pkl')
         nanoxbar = pd.read_pickle()
         devicemetalist = nanoxbar
@@ -98,7 +92,7 @@ class MetaHandler(object):
         self.meta = devicemetalist.iloc[0]
         self.prettykeys = filenamekeys
         self.filenamekeys = filenamekeys
-        print('Loaded {} devices into devicemetalist'.format(len(devicemetalist)))
+        print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print_meta()
 
     def load_lassen(self, **kwargs):
@@ -210,7 +204,7 @@ class MetaHandler(object):
         # Print some information about the device
         if self.prettykeys is None or len(self.prettykeys) == 0:
             # Print all the information
-            prettykeys = devicemeta.keys()
+            prettykeys = self.meta.keys()
         else:
             prettykeys = self.prettykeys
         for key in prettykeys:
@@ -226,8 +220,9 @@ class MetaHandler(object):
         Might overwrite existing keys!
         May modify the input data in addition to returning it
         '''
-        print('Attaching the following metadata:')
-        self.print()
+        if len(self.meta) > 0:
+            print('Attaching the following metadata:')
+            self.print()
         dtype = type(data)
         if dtype is dict:
             # Make shallow copy

@@ -51,7 +51,7 @@ class Picoscope(object):
             self.coupling.update(previous_instance.coupling)
             # if you don't clear the handle on the old instance, the garbage collector
             # can close the picoscope connection
-            previous_instance.handle = None
+            previous_instance.ps.handle = None
         self.close = self.ps.close
         self.handle = self.ps.handle
         # TODO: methods of PS6000 to expose?
@@ -59,7 +59,7 @@ class Picoscope(object):
         self.getUnitInfo = self.ps.getUnitInfo
 
     def print_settings(self):
-        print('Channel settings:')
+        print('Picoscope channel settings:')
         print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
                         index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
 
@@ -615,7 +615,7 @@ class Keithley2600(object):
         try:
             self.connect(addr)
         except:
-            print('Keithley connection failed.')
+            print('Keithley connection failed at {}'.format(addr))
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         self.conn = visa_rm.get_instrument(addr, open_timeout=0)
@@ -688,7 +688,7 @@ class Keithley2600(object):
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
 
 
-    def ti(self, sourceVA, sourceVB, points, interval,rangeI, limitI, nplc):
+    def it(self, sourceVA, sourceVB, points, interval,rangeI, limitI, nplc):
         '''Wraps the constantVoltageMeasI lua function defined on keithley'''
         # Call constantVoltageMeasI
         # TODO: make sure the inputs are valid
