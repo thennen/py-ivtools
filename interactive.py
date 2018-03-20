@@ -78,6 +78,8 @@ datestr = time.strftime('%Y-%m-%d')
 
 if hostname == 'pciwe46':
     datafolder = r'D:\t\ivdata'
+elif hostname == 'pciwe38':
+    datafolder = 'C:/Messdaten/'    
 else:
     datafolder = r'C:\t\data'
 

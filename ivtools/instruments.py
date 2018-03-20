@@ -12,7 +12,9 @@ import visa
 import time
 import os
 import pandas as pd
+import socket
 from collections import deque
+
 
 visa_rm = visa.ResourceManager()
 
@@ -613,6 +615,9 @@ class Keithley2600(object):
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
+            # Two lines added so that Moritz can use the Keithleys also with an old dumb expensive GPIB cable.
+            if socket.gethostname() == 'pciwe38':
+                addr= 'GPIB0::26::INSTR'               
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
@@ -871,3 +876,5 @@ class USB2708HS():
         #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
         self.ul.d_config_bit(0, self.enums.DigitalPortType.AUXPORT, 8, self.enums.DigitalIODirection.OUT)
         self.ul.d_bit_out(0, self.enums.DigitalPortType.AUXPORT, ch, val)
+
+        
