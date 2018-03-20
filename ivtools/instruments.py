@@ -616,8 +616,8 @@ class Keithley2600(object):
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
             # Two lines added so that Moritz can use the Keithleys also with an old dumb expensive GPIB cable.
-            if socket.gethostname() == 'pciwe38':
-                addr= 'GPIB0::26::INSTR'               
+            # if socket.gethostname() == 'pciwe38':
+                # addr= 'GPIB0::26::INSTR'               
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
@@ -878,3 +878,28 @@ class USB2708HS():
         self.ul.d_bit_out(0, self.enums.DigitalPortType.AUXPORT, ch, val)
 
         
+#########################################################
+# TektronixDPO73304D ####################################
+#########################################################
+
+class TektronixDPO73304D(object):
+    def __init__(self, addr='GPIB0::1::INSTR'):
+        try:       
+            self.connect(addr)
+        except:
+            print('TektronixDPO73304D connection failed at {}'.format(addr))
+    def connect(self, addr='GPIB0::1::INSTR'):
+        self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+        # Expose a few methods directly to self
+        self.write = self.conn.write
+        self.ask = self.conn.ask
+        self.read = self.conn.read
+        self.read_raw = self.conn.read_raw
+        self.close = self.conn.close
+        moduledir = os.path.split(__file__)[0]
+        self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
+        # Store up to 100 loops in memory in case you forget to save them to disk
+        self.data= deque(maxlen=100)
+
+    def idn(self):
+        return self.ask('*IDN?').replace('\n', '')

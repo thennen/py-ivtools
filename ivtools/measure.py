@@ -89,7 +89,8 @@ def connect_keithley(addr=None):
     if addr is None:
         addrs = ['TCPIP::192.168.11.11::inst0::INSTR',
                  'TCPIP::192.168.11.12::inst0::INSTR',
-                 'TCPIP::192.168.11.13::inst0::INSTR']
+                 'TCPIP::192.168.11.13::inst0::INSTR',
+                 'GPIB0::26::INSTR']
     else:
         addrs = [addr]
     for addr in addrs:
