@@ -889,7 +889,7 @@ class TektronixDPO73304D(object):
         except:
             print('TektronixDPO73304D connection failed at {}'.format(addr))
     def connect(self, addr='GPIB0::1::INSTR'):
-        self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+        self.conn = visa_rm.get_instrument(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
         self.ask = self.conn.ask
@@ -897,9 +897,102 @@ class TektronixDPO73304D(object):
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
         moduledir = os.path.split(__file__)[0]
-        self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
         # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data= deque(maxlen=100)
-
+        self.data= deque(maxlen=100)     
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
+        
+    def BandwidthCH(self,channel = 1, bandwidth = 33e9):
+        self.write('CH'+str(channel) +':BAN '+str(bandwidth))
+        
+    def ScaleCH(self,channel = 1, scale = 0.0625):
+        self.write('CH'+str(channel)+':SCAle '+str(scale))
+        self.write('*WAI')
+ 
+    def PositionCH(self,channel = 1,position =0):
+        self.write('CH'+str(channel)+':POS '+str(position))
+
+    def set_CH_on_off(self,channel =1, mode=True):
+        if mode== True:
+            self.write('SELECT:CH'+str(channel)+' ON')
+        else:
+            self.write('SELECT:CH'+str(channel)+' OFF')
+        
+    def OffsetCH(self,channel = 1,offset =0):
+        self.write('CH'+str(channel) +':OFFSet ' + str(offset))
+        
+    def ChangeDivandSamplerate(self,division, samplerate):
+        self.write('HORIZONTAL:MODE AUTO')
+        self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
+        self.write('HOR:MODE:SCA ' +str(division))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT 10000')
+
+    def Recordlength(self,recordlength = 1e5):
+        self.write('HORIZONTAL:MODE MANUAL')
+        self.write('HORIZONTAL:MODE:RECORDLENGTH ' +str(recordlength))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
+
+    def ChangeSamplerateandRecodlength(self,samplerate = 100e9,recordlength=1e5):
+        self.write('HORIZONTAL:MODE MANUAL')
+        self.write('HORIZONTAL:MODE:SAMPLERATE '+ str(samplerate))
+        self.write('HORIZONTAL:MODE:RECORDLENGTH ' + str(recordlength))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
+        self.write('DATA:STOP ' + str(recordlength))
+
+    def ExtDBAttenuation(self,channel=1, attenuation = 0):
+        self.write('CH' +str(channel) + ':PROBEFUNC:EXTDBATTEN '+str(attenuation))
+        
+    def Trigger(self):
+        self.write('TRIGger FORCe')
+        
+    def Arm(self,source = 1, level = 0.1, edge='e'):
+        if source == 0: self.write('TRIG:A:EDGE:SOUrce AUX')
+        else: self.write('TRIG:A:EDGE:SOUrce CH'+str(source))
+        self.write('TRIG:A:LEVEL '+str(level))
+        self.write('ACQ:STOPA SEQUENCE')
+        self.write('ACQ:STATE 1')
+        if edge == 'r': self.write('TRIG:A:EDGE:SLO RIS')   
+        elif edge == 'f': self.write('TRIG:A:EDGE:SLO FALL') 
+        else: self.write('TRIG:A:EDGE:SLO EIT')            
+        triggerstate = self.ask('TRIG:STATE?')
+        while 'REA' not in triggerstate or 'SAVE' in triggerstate:
+            self.write('ACQ:STATE 1')
+            triggerstate = self.ask('TRIG:STATE?')
+
+    def ReadData(self,channel = 1):
+        self.write('HEAD 0')
+        self.write('WFMOUTPRE:BYT_NR 1')
+        self.write('WFMOUTPRE:BIT_NR 8')
+        self.write('DATA:ENC RPB')
+        self.write('DATA:SOURCE CH' + str(channel))
+        rl = int(self.ask('HOR:RECO?'))
+        
+        pre = self.ask('WFMOutpre?')
+        print(pre)
+        pre_split= pre.split(';')
+        if len(pre_split)== 5:
+            print('Channel ' +str(channel) + ' is not used.')
+            return None
+        
+        x_incr = float(pre_split[9])
+        x_offset = int(pre_split[11])
+        y_mult = float(pre_split[13])
+        y_off = float(pre_split[14]) 
+        
+        self.write('DATA:STOP '+str(rl))
+        self.write('CURVE?')
+        data_str = self.read_raw()
+        data=np.fromstring(data_str[6:-1], np.uint8)
+        
+        time = []
+        voltage = []
+        print(len(data))
+        for x in range(0,len(data),1):
+            time.append( x_incr * (x - x_offset))
+            voltage.append(y_mult * (data[x] - y_off))
+        plt.cla()
+        plt.plot(time,voltage)
+        return_array = {}
+        return_array['t'] = time
+        return_array['V'] = voltage
+        return return_array

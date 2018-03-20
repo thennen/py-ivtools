@@ -59,6 +59,7 @@ if not firstrun:
     old['ps'] = ps
     old['rigol'] = rigol
     old['k'] = k
+    old['t'] = t
     old['COMPLIANCE_CURRENT'] = measure.COMPLIANCE_CURRENT
     old['INPUT_OFFSET'] = measure.INPUT_OFFSET
 
@@ -118,6 +119,7 @@ if firstrun:
     measure.connect_picoscope()
     measure.connect_rigolawg()
     measure.connect_keithley()
+    measure.connect_tektronix()
     firstrun = False
     # Need to specify what the plots should do by default
     # There are a few different ways one could handle this
@@ -168,6 +170,7 @@ meta.static = {'gitrev':gitrev}
 # Instruments
 ps = measure.ps
 k = measure.k
+t = measure.t
 rigol = measure.rigol
 
 # Metadata selector
