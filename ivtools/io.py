@@ -529,7 +529,6 @@ def read_pandas_recent(directory='.', pastseconds=60, concat=True):
     recentfps = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
     return read_pandas_files(recentfps, concat=concat)
 
-
 def write_pandas_pickle(data, filepath=None, drop=None):
     ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
     if filepath is None:
@@ -699,7 +698,7 @@ def write_meta_csv(data, filepath):
     dtype = type(data)
     if dtype is pd.Series:
         s = pd.read_pickle(pjoin(root, f))
-    elif dtype is pd.Dataframe:
+    elif dtype is pd.DataFrame:
         # Only save first row metadata -- Usually it's the same for all
         df = pd.read_pickle(pjoin(root, f))
         s = df.iloc[0]
