@@ -906,23 +906,23 @@ class TektronixDPO73304D(object):
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
         
-    def BandwidthCH(self,channel = 1, bandwidth = 33e9):
+    def Bandwidth(self,channel = 1, bandwidth = 33e9):
         self.write('CH'+str(channel) +':BAN '+str(bandwidth))
         
-    def ScaleCH(self,channel = 1, scale = 0.0625):
+    def Scale(self,channel = 1, scale = 0.0625):
         self.write('CH'+str(channel)+':SCAle '+str(scale))
         self.write('*WAI')
  
-    def PositionCH(self,channel = 1,position =0):
+    def Position(self,channel = 1,position =0):
         self.write('CH'+str(channel)+':POS '+str(position))
 
-    def set_CH_on_off(self,channel =1, mode=True):
+    def CH(self,channel =1, mode=True):
         if mode== True:
             self.write('SELECT:CH'+str(channel)+' ON')
         else:
             self.write('SELECT:CH'+str(channel)+' OFF')
         
-    def OffsetCH(self,channel = 1,offset =0):
+    def Offset(self,channel = 1,offset =0):
         self.write('CH'+str(channel) +':OFFSet ' + str(offset))
         
     def ChangeDivandSamplerate(self,division, samplerate):
@@ -949,7 +949,7 @@ class TektronixDPO73304D(object):
     def Trigger(self):
         self.write('TRIGger FORCe')
         
-    def Arm(self,source = 1, level = 0.1, edge='e'):
+    def Arm(self,source = 1, level = -0.1, edge='e'):
         if source == 0: self.write('TRIG:A:EDGE:SOUrce AUX')
         else: self.write('TRIG:A:EDGE:SOUrce CH'+str(source))
         self.write('TRIG:A:LEVEL '+str(level))
@@ -963,7 +963,7 @@ class TektronixDPO73304D(object):
             self.write('ACQ:STATE 1')
             triggerstate = self.ask('TRIG:STATE?')
 
-    def ReadData(self,channel = 1):
+    def get_curve(self,channel = 1):
         self.write('HEAD 0')
         self.write('WFMOUTPRE:BYT_NR 1')
         self.write('WFMOUTPRE:BIT_NR 8')
@@ -972,7 +972,6 @@ class TektronixDPO73304D(object):
         rl = int(self.ask('HOR:RECO?'))
         
         pre = self.ask('WFMOutpre?')
-        print(pre)
         pre_split= pre.split(';')
         if len(pre_split)== 5:
             print('Channel ' +str(channel) + ' is not used.')
@@ -990,12 +989,10 @@ class TektronixDPO73304D(object):
         
         time = []
         voltage = []
-        print(len(data))
+
         for x in range(0,len(data),1):
             time.append( x_incr * (x - x_offset))
             voltage.append(y_mult * (data[x] - y_off))
-        plt.cla()
-        plt.plot(time,voltage)
         return_array = {}
         return_array['t'] = time
         return_array['V'] = voltage
