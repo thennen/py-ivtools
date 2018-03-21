@@ -825,6 +825,8 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
 
+    def channels_off(self,channelA = False, channelB= False):
+        self.write('channels_on_off({},{})'.format(channelA,channelB))
 
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################

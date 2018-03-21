@@ -463,8 +463,6 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 ####### Moritz's dumb stuff #######
 
 
-    
-
 
 ########### Compliance circuit ###################
 def set_compliance(cc_value):
