@@ -148,7 +148,12 @@ function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, np
     smua.source.func            = smua.OUTPUT_DCVOLTS
     smua.source.limiti          = limitI
     smua.measure.nplc           = nplc
-    smua.measure.rangei = rangeI
+    -- Autorange option added by Moritz
+	if rangeI == 0 then
+		smua.measure.autorangei = smua.AUTORANGE_ON
+	else
+		smua.measure.rangei = rangeI
+	end
 
     -- Prepare the Reading Buffers
     smua.nvbuffer1.clear()
