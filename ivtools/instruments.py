@@ -705,9 +705,7 @@ class Keithley2600(object):
         donemeasuring = not bool(float(self.ask('print(status.operation.measuring.condition)')))
         # works with both
         
-        #MW: turn channels off if measurements are done
-        if donesweeping & donemeasuring:
-            self.channels_off()
+
         return donesweeping & donemeasuring
 
     def waitready(self):
@@ -829,8 +827,8 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
     #MW: added function that allows to turn the channels of
-    def channels_off(self,channelA = False, channelB= False):
-        self.write('channels_on_off({},{})'.format(channelA,channelB))
+    def channels_off(self, channelA=False, channelB=False):
+        self.write('channels_on_off({}, {})'.format(channelA, channelB))
 
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################
