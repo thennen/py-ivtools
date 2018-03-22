@@ -32,14 +32,14 @@ class Picoscope(object):
         self.ps6000 = ps6000
         # I might have subclassed PS6000, but then I would have to import it before the class definition...
         # Not sure at the moment how to take over an old connection when reinstantiating
-        # self.get_data will return data as well as 
+        # self.get_data will return data as well as
         self.data = None
         # Store channel settings in this class
         # TODO find a way to make these persist when this module gets reloaded!
         # This might be really bad programming ..
         self.range = self._PicoRange(self)
         self.offset = self._PicoOffset(self)
-        self.atten= self._PicoAttenuation(self)
+        self.atten = self._PicoAttenuation(self)
         self.coupling = self._PicoCouping(self)
         if previous_instance is None:
             self.ps = ps6000.PS6000(connect=True)
@@ -62,7 +62,7 @@ class Picoscope(object):
     def print_settings(self):
         print('Picoscope channel settings:')
         print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
-                        index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
+                           index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
 
     class _PicoSetting(dict):
         def __init__(self, parent):
@@ -108,7 +108,7 @@ class Picoscope(object):
         # TODO: add increment and decrement
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
-            self.possible= np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+            self.possible = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
             self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
             self['A'] = 1.0
             self['B'] = 1.0
@@ -170,7 +170,7 @@ class Picoscope(object):
             self['C'] = 1.0
             self['D'] = 1.0
             # I am not sure what the possible values of this setting are ..
-            #self.possible = 
+            #self.possible =
 
     class _PicoCouping(_PicoSetting):
         def __init__(self, parent):
@@ -179,7 +179,7 @@ class Picoscope(object):
             self['B'] = 'DC'
             self['C'] = 'DC'
             self['D'] = 'DC'
-            self.possible = ('DC', 'AC', 'DC50') # I think?
+            self.possible = ('DC', 'AC', 'DC50')  # I think?
 
         def set(self, channel, value):
             if value in self.possible:
@@ -199,7 +199,7 @@ class Picoscope(object):
                     # Need to convert to float
                     usedrange = data['RANGE'][c]
                     usedoffset = data['OFFSET'][c]
-                    maximum = np.max(data[c])  / 2**8 * usedrange * 2 - usedoffset
+                    maximum = np.max(data[c]) / 2**8 * usedrange * 2 - usedoffset
                     minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
                     rang, offs = self.best_range((minimum, maximum))
                 else:
@@ -237,7 +237,6 @@ class Picoscope(object):
         # If no range was enough to fit the signal
         print('Signal out of pico range!')
         return (max(possible_ranges), 0)
-
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
@@ -311,16 +310,15 @@ class Picoscope(object):
         # Set up the channels
         for c in ch:
             self.ps.setChannel(channel=c,
-                        coupling=chcoupling[c],
-                        VRange=chrange[c],
-                        probeAttenuation=chatten[c],
-                        VOffset=choffset[c],
-                        enabled=True)
+                               coupling=chcoupling[c],
+                               VRange=chrange[c],
+                               probeAttenuation=chatten[c],
+                               VOffset=choffset[c],
+                               enabled=True)
         # Set up the trigger.  Will timeout in 30s
         self.ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
         self.ps.runBlock(pretrig)
         return actualfreq
-
 
     def get_data(self, ch='A', raw=False, dtype=np.float32):
         '''
@@ -588,7 +586,7 @@ class RigolDG5000(object):
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
         '''
         # Load waveform
-        passthrough = {k:v for k,v in locals().items() if k != 'self'}
+        passthrough = {k:v for k, v in locals().items() if k != 'self'}
         self.load_volatile_wfm(**passthrough)
         # Trigger rigol
         self.trigger(ch=1)
@@ -725,7 +723,7 @@ class Keithley2600(object):
         '''
 
 
-    def read_buffer(self, buffer='smua.nvbuffer1' , attr='readings', start=1, end=None):
+    def read_buffer(self, buffer='smua.nvbuffer1', attr='readings', start=1, end=None):
         '''
         Read a data buffer and return an actual array.
         Keithley 2634B handles this just fine while still doing a sweep
@@ -786,7 +784,7 @@ class Keithley2600(object):
             else:
                 # Current source
                 out['source'] = 'I'
-                out['Vrange'] =  float(self.ask('print(smua.nvbuffer2.measureranges[1])'))
+                out['Vrange'] = float(self.ask('print(smua.nvbuffer2.measureranges[1])'))
                 out['Vcomp'] = float(self.ask('print(smua.source.limitv)'))
 
                 out['I'] = self.read_buffer('smua.nvbuffer1', 'sourcevalues', start, end)
@@ -872,7 +870,7 @@ class USB2708HS():
         except ULError as e:
             # Display the error
             print("A UL error occurred. Code: " + str(e.errorcode)
-                + " Message: " + e.message)
+                  + " Message: " + e.message)
 
 
     def digital_out(self, ch, val):
@@ -880,14 +878,14 @@ class USB2708HS():
         self.ul.d_config_bit(0, self.enums.DigitalPortType.AUXPORT, 8, self.enums.DigitalIODirection.OUT)
         self.ul.d_bit_out(0, self.enums.DigitalPortType.AUXPORT, ch, val)
 
-        
+
 #########################################################
 # TektronixDPO73304D ####################################
 #########################################################
 
 class TektronixDPO73304D(object):
     def __init__(self, addr='GPIB0::1::INSTR'):
-        try:       
+        try:
             self.connect(addr)
         except:
             print('TektronixDPO73304D connection failed at {}'.format(addr))
@@ -901,96 +899,102 @@ class TektronixDPO73304D(object):
         self.close = self.conn.close
         moduledir = os.path.split(__file__)[0]
         # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data= deque(maxlen=100)     
+        self.data = deque(maxlen=100)
+
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
-        
-    def bandwidth(self,channel = 1, bandwidth = 33e9):
-        self.write('CH'+str(channel) +':BAN '+str(bandwidth))
-        
-    def scale(self,channel = 1, scale = 0.0625):
+
+    def bandwidth(self, channel=1, bandwidth=33e9):
+        self.write('CH' + str(channel) + ':BAN ' + str(bandwidth))
+
+    def scale(self, channel=1, scale=0.0625):
         self.write('CH'+str(channel)+':SCAle '+str(scale))
         self.write('*WAI')
- 
-    def position(self,channel = 1,position = 0):
+
+    def position(self, channel=1, position=0):
         self.write('CH'+str(channel)+':POS '+str(position))
 
-    def inputstate(self,channel =1, mode = True):
-        if mode== True:
+    def inputstate(self, channel=1, mode=True):
+        if mode:
             self.write('SELECT:CH'+str(channel)+' ON')
         else:
             self.write('SELECT:CH'+str(channel)+' OFF')
-        
-    def offset(self,channel = 1,offset = 0):
-        self.write('CH'+str(channel) +':OFFSet ' + str(offset))
-        
-    def change_div_and_samplerate(self,division, samplerate):
+
+    def offset(self, channel=1, offset=0):
+        self.write('CH' + str(channel) + ':OFFSet ' + str(offset))
+
+    def change_div_and_samplerate(self, division, samplerate):
         self.write('HORIZONTAL:MODE AUTO')
         self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
-        self.write('HOR:MODE:SCA ' +str(division))
+        self.write('HOR:MODE:SCA ' + str(division))
         self.write('HORIZONTAL:MODE:AUTO:LIMIT 10000')
 
-    def recordlength(self,recordlength = 1e5):
+    def recordlength(self, recordlength=1e5):
         self.write('HORIZONTAL:MODE MANUAL')
-        self.write('HORIZONTAL:MODE:RECORDLENGTH ' +str(recordlength))
-        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
-
-    def change_samplerate_and_recordlength(self,samplerate = 100e9,recordlength = 1e5):
-        self.write('HORIZONTAL:MODE MANUAL')
-        self.write('HORIZONTAL:MODE:SAMPLERATE '+ str(samplerate))
         self.write('HORIZONTAL:MODE:RECORDLENGTH ' + str(recordlength))
-        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' + str(recordlength))
+
+    def change_samplerate_and_recordlength(self, samplerate=100e9, recordlength=1e5):
+        self.write('HORIZONTAL:MODE MANUAL')
+        self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
+        self.write('HORIZONTAL:MODE:RECORDLENGTH ' + str(recordlength))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' + str(recordlength))
         self.write('DATA:STOP ' + str(recordlength))
 
-    def ext_db_attenuation(self, channel = 1, attenuation = 0):
-        self.write('CH' +str(channel) + ':PROBEFUNC:EXTDBATTEN '+str(attenuation))
-        
+    def ext_db_attenuation(self, channel=1, attenuation=0):
+        self.write('CH' + str(channel) + ':PROBEFUNC:EXTDBATTEN ' + str(attenuation))
+
     def trigger(self):
         self.write('TRIGger FORCe')
-        
-    def arm(self, source = 1, level = -0.1, edge = 'e'):
-        if source == 0: self.write('TRIG:A:EDGE:SOUrce AUX')
-        else: self.write('TRIG:A:EDGE:SOUrce CH'+str(source))
-        self.write('TRIG:A:LEVEL '+str(level))
+
+    def arm(self, source=1, level=-0.1, edge='e'):
+        if source == 0:
+            self.write('TRIG:A:EDGE:SOUrce AUX')
+        else:
+            self.write('TRIG:A:EDGE:SOUrce CH' + str(source))
+        self.write('TRIG:A:LEVEL ' + str(level))
         self.write('ACQ:STOPA SEQUENCE')
         self.write('ACQ:STATE 1')
-        if edge == 'r': self.write('TRIG:A:EDGE:SLO RIS')   
-        elif edge == 'f': self.write('TRIG:A:EDGE:SLO FALL') 
-        else: self.write('TRIG:A:EDGE:SLO EIT')            
+        if edge == 'r':
+            self.write('TRIG:A:EDGE:SLO RIS')
+        elif edge == 'f':
+            self.write('TRIG:A:EDGE:SLO FALL')
+        else:
+            self.write('TRIG:A:EDGE:SLO EIT')
         triggerstate = self.ask('TRIG:STATE?')
         while 'REA' not in triggerstate or 'SAVE' in triggerstate:
             self.write('ACQ:STATE 1')
             triggerstate = self.ask('TRIG:STATE?')
 
-    def get_curve(self, channel = 1):
+    def get_curve(self, channel=1):
         self.write('HEAD 0')
         self.write('WFMOUTPRE:BYT_NR 1')
         self.write('WFMOUTPRE:BIT_NR 8')
         self.write('DATA:ENC RPB')
         self.write('DATA:SOURCE CH' + str(channel))
         rl = int(self.ask('HOR:RECO?'))
-        
+
         pre = self.ask('WFMOutpre?')
-        pre_split= pre.split(';')
-        if len(pre_split)== 5:
-            print('Channel ' +str(channel) + ' is not used.')
+        pre_split = pre.split(';')
+        if len(pre_split) == 5:
+            print('Channel ' + str(channel) + ' is not used.')
             return None
-        
+
         x_incr = float(pre_split[9])
         x_offset = int(pre_split[11])
         y_mult = float(pre_split[13])
-        y_off = float(pre_split[14]) 
-        
-        self.write('DATA:STOP '+str(rl))
+        y_off = float(pre_split[14])
+
+        self.write('DATA:STOP ' + str(rl))
         self.write('CURVE?')
         data_str = self.read_raw()
-        data=np.fromstring(data_str[6:-1], np.uint8)
-        
+        data = np.fromstring(data_str[6:-1], np.uint8)
+
         time = []
         voltage = []
 
-        for x in range(0,len(data),1):
-            time.append( x_incr * (x - x_offset))
+        for x in range(0, len(data), 1):
+            time.append(x_incr * (x - x_offset))
             voltage.append(y_mult * (data[x] - y_off))
         return_array = {}
         return_array['t_ttx'] = time
