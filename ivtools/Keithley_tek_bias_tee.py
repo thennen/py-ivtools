@@ -71,14 +71,9 @@ while not k.done():
     iplots.updateline(data)
 data = k.get_data()
 iplots.updateline(data)
-<<<<<<< HEAD
 k.set_channel_state('A', False)
 k.set_channel_state('B', False)
-ttx.write('ACQ:STATE 0')     
-=======
-k.channels_off()   
-ttx.disarm()    
->>>>>>> Witzleben
+ttx.disarm()
 data.update(data_scope_all)
 savedata(data)
 
