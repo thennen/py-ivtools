@@ -12,7 +12,6 @@ import visa
 import time
 import os
 import pandas as pd
-import socket
 from collections import deque
 
 
@@ -615,9 +614,6 @@ class Keithley2600(object):
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
-            # Two lines added so that Moritz can use the Keithleys also with an old dumb expensive GPIB cable.
-            # if socket.gethostname() == 'pciwe38':
-                # addr= 'GPIB0::26::INSTR'               
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
@@ -704,7 +700,6 @@ class Keithley2600(object):
         # works with smua.measure.overlappediv()
         donemeasuring = not bool(float(self.ask('print(status.operation.measuring.condition)')))
         # works with both
-        
 
         return donesweeping & donemeasuring
 
@@ -826,9 +821,13 @@ class Keithley2600(object):
         for nv in nanvalues:
             array[array == nv] = np.nan
         return array
-    #MW: added function that allows to turn the channels of
-    def channels_off(self, channelA=False, channelB=False):
-        self.write('channels_on_off({}, {})'.format(channelA, channelB))
+
+    def set_channel_state(self, channel='A', state=True):
+        ch = ch.lower()
+        if state:
+            self.write('smu{}.source.output = smu{}.OUTPUT_ON'.format(ch))
+        else:
+            self.write('smu{}.source.output = smu{}.OUTPUT_OFF'.format(ch))
 
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################
