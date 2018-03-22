@@ -906,50 +906,50 @@ class TektronixDPO73304D(object):
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
         
-    def Bandwidth(self,channel = 1, bandwidth = 33e9):
+    def bandwidth(self,channel = 1, bandwidth = 33e9):
         self.write('CH'+str(channel) +':BAN '+str(bandwidth))
         
-    def Scale(self,channel = 1, scale = 0.0625):
+    def scale(self,channel = 1, scale = 0.0625):
         self.write('CH'+str(channel)+':SCAle '+str(scale))
         self.write('*WAI')
  
-    def Position(self,channel = 1,position =0):
+    def position(self,channel = 1,position = 0):
         self.write('CH'+str(channel)+':POS '+str(position))
 
-    def CH(self,channel =1, mode=True):
+    def inputstate(self,channel =1, mode = True):
         if mode== True:
             self.write('SELECT:CH'+str(channel)+' ON')
         else:
             self.write('SELECT:CH'+str(channel)+' OFF')
         
-    def Offset(self,channel = 1,offset =0):
+    def offset(self,channel = 1,offset = 0):
         self.write('CH'+str(channel) +':OFFSet ' + str(offset))
         
-    def ChangeDivandSamplerate(self,division, samplerate):
+    def change_div_and_samplerate(self,division, samplerate):
         self.write('HORIZONTAL:MODE AUTO')
         self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
         self.write('HOR:MODE:SCA ' +str(division))
         self.write('HORIZONTAL:MODE:AUTO:LIMIT 10000')
 
-    def Recordlength(self,recordlength = 1e5):
+    def recordlength(self,recordlength = 1e5):
         self.write('HORIZONTAL:MODE MANUAL')
         self.write('HORIZONTAL:MODE:RECORDLENGTH ' +str(recordlength))
         self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
 
-    def ChangeSamplerateandRecodlength(self,samplerate = 100e9,recordlength=1e5):
+    def change_samplerate_and_recordlength(self,samplerate = 100e9,recordlength = 1e5):
         self.write('HORIZONTAL:MODE MANUAL')
         self.write('HORIZONTAL:MODE:SAMPLERATE '+ str(samplerate))
         self.write('HORIZONTAL:MODE:RECORDLENGTH ' + str(recordlength))
         self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
         self.write('DATA:STOP ' + str(recordlength))
 
-    def ExtDBAttenuation(self,channel=1, attenuation = 0):
+    def ext_db_attenuation(self, channel = 1, attenuation = 0):
         self.write('CH' +str(channel) + ':PROBEFUNC:EXTDBATTEN '+str(attenuation))
         
-    def Trigger(self):
+    def trigger(self):
         self.write('TRIGger FORCe')
         
-    def Arm(self,source = 1, level = -0.1, edge='e'):
+    def arm(self, source = 1, level = -0.1, edge = 'e'):
         if source == 0: self.write('TRIG:A:EDGE:SOUrce AUX')
         else: self.write('TRIG:A:EDGE:SOUrce CH'+str(source))
         self.write('TRIG:A:LEVEL '+str(level))
@@ -963,7 +963,7 @@ class TektronixDPO73304D(object):
             self.write('ACQ:STATE 1')
             triggerstate = self.ask('TRIG:STATE?')
 
-    def get_curve(self,channel = 1):
+    def get_curve(self, channel = 1):
         self.write('HEAD 0')
         self.write('WFMOUTPRE:BYT_NR 1')
         self.write('WFMOUTPRE:BIT_NR 8')

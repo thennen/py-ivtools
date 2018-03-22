@@ -44,36 +44,36 @@ number_of_events =0
 data_scope = {}
 data_scope_all = {}
 
-k.it(0.1, 0, 100, 0.2, 0, 1, 1)
-t.CH(1, False)
-t.CH(2, True)
-t.CH(3, False)
-t.CH(4, True)
-t.Scale(2, 0.1)
-t.Scale(4, 0.1)
-t.Position(2, 4)
-t.Position(4, 4)
-t.ChangeSamplerateandRecodlength(100e9,5000)
-t.Arm(4,-0.1,'e')
+k.it(sourceVA = 0.1, sourceVB = 0, points = 10, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
+ttx.inputstate(1, False)
+ttx.inputstate(2, True)
+ttx.inputstate(3, False)
+ttx.inputstate(4, True)
+ttx.scale(2, 0.1)
+ttx.scale(4, 0.1)
+ttx.position(2, 4)
+ttx.position(4, 4)
+ttx.change_samplerate_and_recordlength(100e9,5000)
+ttx.arm(source = 4, level = -0.1, edge = 'e')
 while not k.done():
-    trigger_status = t.ask('TRIG:STATE?')
+    trigger_status = ttx.ask('TRIG:STATE?')
     data = k.get_data()
     if trigger_status == 'READY\n':
         plt.pause(0.1)
     else:
         number_of_events +=1
-        data_scope1 = t.get_curve(4)
-        data_scope2 = t.get_curve(2)
+        data_scope1 = ttx.get_curve(4)
+        data_scope2 = ttx.get_curve(2)
         print(number_of_events)
         data_scope_all['t_scope'+str(number_of_events)] = data_scope1['t']
         data_scope_all['v_pulse'+str(number_of_events)] = data_scope1['V']
         data_scope_all['v_answer'+str(number_of_events)] = data_scope2['V']
-        t.Arm(4,-0.1,'e')
+        ttx.arm(channel = 4, level = -0.1, edge = 'e')
     iplots.updateline(data)
 data = k.get_data()
 iplots.updateline(data)
 k.channels_off()   
-t.write('ACQ:STATE 0')     
+ttx.write('ACQ:STATE 0')     
 data.update(data_scope_all)
 savedata(data)
 
