@@ -56,9 +56,8 @@ ttx.position(4, 4)
 ttx.change_samplerate_and_recordlength(100e9,5000)
 ttx.arm(source = 4, level = -0.1, edge = 'e')
 while not k.done():
-    trigger_status = ttx.ask('TRIG:STATE?')
     data = k.get_data()
-    if trigger_status == 'READY\n':
+    if ttx.triggerstate():
         plt.pause(0.1)
     else:
         number_of_events +=1
@@ -72,9 +71,14 @@ while not k.done():
     iplots.updateline(data)
 data = k.get_data()
 iplots.updateline(data)
+<<<<<<< HEAD
 k.set_channel_state('A', False)
 k.set_channel_state('B', False)
 ttx.write('ACQ:STATE 0')     
+=======
+k.channels_off()   
+ttx.disarm()    
+>>>>>>> Witzleben
 data.update(data_scope_all)
 savedata(data)
 
