@@ -73,8 +73,9 @@ while not k.done():
 
 data = k.get_data()
 iplots.updateline(data)
-k.channels_off()   
-ttx.disarm()    
+k.set_channel_state('A', False)
+k.set_channel_state('B', False)
+ttx.disarm()
 data.update(data_scope_all)
 savedata(data,'C:/Messdaten/CPW6/x13y13')
 

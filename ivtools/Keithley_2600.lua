@@ -184,18 +184,3 @@ function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, np
     smua.measure.overlappediv(smua.nvbuffer1, smua.nvbuffer2)
 
 end
-
--- MW: Added function in order to be able to turn channels off and on
-
-function channels_on_off(channelA,channelB)
-    if channelA == true then
-        smua.source.output                  = smua.OUTPUT_ON
-    else
-        smua.source.output                  = smua.OUTPUT_OFF
-    end
-    if channelB == true then
-        smub.source.output                  = smub.OUTPUT_ON
-    else
-        smub.source.output                  = smub.OUTPUT_OFF
-    end
-end

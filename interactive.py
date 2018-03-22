@@ -190,7 +190,9 @@ axs = [None] * 6
 axs[:len(iplots.axs)] = iplots.axs
 ax0, ax1, ax2, ax3, ax4, ax5 = axs
 clearfigs = iplots.clear
+showfigs = iplots.show
 c = autocaller(clearfigs)
+sf = autocaller(iplots.show)
 
 def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
     '''
