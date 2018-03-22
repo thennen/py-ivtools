@@ -31,7 +31,7 @@ rigol = None
 # Any Keithley found
 k = None
 # Any TektronixDPO73304D found
-t = None
+ttx = None
 
 # TODO: try to connect to all known instruments
 
@@ -115,28 +115,28 @@ def connect_keithley(addr=None):
         print('Connection to Keithley failed.')
         
 def connect_tektronix(addr=None):
-    global t
+    global ttx
     if addr is None:
         addrs = ['GPIB0::1::INSTR']
     else:
         addrs = [addr]
     for addr in addrs:
-        if t is None:
+        if ttx is None:
             try:
-                t = instruments.TektronixDPO73304D(addr)
-                idn = t.ask('*IDN?').replace('\n', '')
+                ttx = instruments.TektronixDPO73304D(addr)
+                idn = ttx.ask('*IDN?').replace('\n', '')
                 print('TektronixDPO73304D *IDN?: {}'.format(idn))
             except:
-                t = None
+                ttx = None
         else:
             try:
                 # Is TektronixDPO73304D already connected?
-                idn = t.ask('*IDN?')
+                idn = ttx.ask('*IDN?')
                 print('TektronixDPO73304D already connected')
                 print('TektronixDPO73304D *IDN?: {}'.format(idn))
             except:
                 print('TektronixDPO73304D not responding, and keithley variable is not None.')
-    if t is None:
+    if ttx is None:
         print('Connection to TektronixDPO73304D failed.')
 
 def connect_instruments():

@@ -59,7 +59,7 @@ if not firstrun:
     old['ps'] = ps
     old['rigol'] = rigol
     old['k'] = k
-    old['t'] = t
+    old['ttx'] = ttx
     old['COMPLIANCE_CURRENT'] = measure.COMPLIANCE_CURRENT
     old['INPUT_OFFSET'] = measure.INPUT_OFFSET
 
@@ -142,9 +142,9 @@ else:
         rigolresource = old['rigol'].conn.resource_name
         old['rigol'].close()
         measure.connect_rigolawg(rigolresource)
-    if old['t'] is not None:
-        tresource = old['t'].conn.resource_name
-        old['t'].close()
+    if old['ttx'] is not None:
+        tresource = old['ttx'].conn.resource_name
+        old['ttx'].close()
         measure.connect_tektronix(tresource)
     measure.COMPLIANCE_CURRENT = old['COMPLIANCE_CURRENT']
     measure.INPUT_OFFSET = old['INPUT_OFFSET']
@@ -174,7 +174,7 @@ meta.static = {'gitrev':gitrev}
 # Instruments
 ps = measure.ps
 k = measure.k
-t = measure.t
+ttx = measure.ttx
 rigol = measure.rigol
 
 # Metadata selector
