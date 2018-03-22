@@ -142,6 +142,10 @@ else:
         rigolresource = old['rigol'].conn.resource_name
         old['rigol'].close()
         measure.connect_rigolawg(rigolresource)
+    if old['t'] is not None:
+        tresource = old['t'].conn.resource_name
+        old['t'].close()
+        measure.connect_tektronix(tresource)
     measure.COMPLIANCE_CURRENT = old['COMPLIANCE_CURRENT']
     measure.INPUT_OFFSET = old['INPUT_OFFSET']
     meta = io.MetaHandler(oldinstance=meta)
