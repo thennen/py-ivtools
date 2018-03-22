@@ -141,6 +141,7 @@ function SweepVList2CH(sweepList1, VB, rangeI, limitI, nplc, delay)
 end
 
 function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, nplc)
+
     reset()
 
     -- Configure the SMU
@@ -148,7 +149,12 @@ function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, np
     smua.source.func            = smua.OUTPUT_DCVOLTS
     smua.source.limiti          = limitI
     smua.measure.nplc           = nplc
-    smua.measure.rangei = rangeI
+    -- Autorange option added by Moritz
+	if rangeI == 0 then
+		smua.measure.autorangei = smua.AUTORANGE_ON
+	else
+		smua.measure.rangei = rangeI
+	end
 
     -- Prepare the Reading Buffers
     smua.nvbuffer1.clear()
@@ -177,4 +183,19 @@ function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, np
 
     smua.measure.overlappediv(smua.nvbuffer1, smua.nvbuffer2)
 
+end
+
+-- MW: Added function in order to be able to turn channels off and on
+
+function channels_on_off(channelA,channelB)
+    if channelA == true then
+        smua.source.output                  = smua.OUTPUT_ON
+    else
+        smua.source.output                  = smua.OUTPUT_OFF
+    end
+    if channelB == true then
+        smub.source.output                  = smub.OUTPUT_ON
+    else
+        smub.source.output                  = smub.OUTPUT_OFF
+    end
 end

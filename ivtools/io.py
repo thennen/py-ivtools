@@ -75,7 +75,7 @@ class MetaHandler(object):
         all kwargs will just be added to all metadata
         '''
         nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar.pkl')
-        nanoxbar = pd.read_pickle()
+        nanoxbar = pd.read_pickle(nanoxbarfile)
         devicemetalist = nanoxbar
         for name, value in kwargs.items():
             if name in nanoxbar:
@@ -84,7 +84,7 @@ class MetaHandler(object):
                 devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
             else:
                 devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
-                filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        filenamekeys = ['X', 'Y', 'width_nm', 'device']
         if 'sample_name' in kwargs:
             filenamekeys = ['sample_name'] + filenamekeys
         meta_i = 0
@@ -93,7 +93,7 @@ class MetaHandler(object):
         self.prettykeys = filenamekeys
         self.filenamekeys = filenamekeys
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
-        self.print_meta()
+        self.print()
 
     def load_lassen(self, **kwargs):
         '''

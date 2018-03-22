@@ -12,7 +12,9 @@ import visa
 import time
 import os
 import pandas as pd
+import socket
 from collections import deque
+
 
 visa_rm = visa.ResourceManager()
 
@@ -613,6 +615,9 @@ class Keithley2600(object):
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
+            # Two lines added so that Moritz can use the Keithleys also with an old dumb expensive GPIB cable.
+            # if socket.gethostname() == 'pciwe38':
+                # addr= 'GPIB0::26::INSTR'               
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
@@ -699,6 +704,8 @@ class Keithley2600(object):
         # works with smua.measure.overlappediv()
         donemeasuring = not bool(float(self.ask('print(status.operation.measuring.condition)')))
         # works with both
+        
+
         return donesweeping & donemeasuring
 
     def waitready(self):
@@ -819,7 +826,9 @@ class Keithley2600(object):
         for nv in nanvalues:
             array[array == nv] = np.nan
         return array
-
+    #MW: added function that allows to turn the channels of
+    def channels_off(self, channelA=False, channelB=False):
+        self.write('channels_on_off({}, {})'.format(channelA, channelB))
 
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################
@@ -871,3 +880,120 @@ class USB2708HS():
         #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
         self.ul.d_config_bit(0, self.enums.DigitalPortType.AUXPORT, 8, self.enums.DigitalIODirection.OUT)
         self.ul.d_bit_out(0, self.enums.DigitalPortType.AUXPORT, ch, val)
+
+        
+#########################################################
+# TektronixDPO73304D ####################################
+#########################################################
+
+class TektronixDPO73304D(object):
+    def __init__(self, addr='GPIB0::1::INSTR'):
+        try:       
+            self.connect(addr)
+        except:
+            print('TektronixDPO73304D connection failed at {}'.format(addr))
+    def connect(self, addr='GPIB0::1::INSTR'):
+        self.conn = visa_rm.get_instrument(addr)
+        # Expose a few methods directly to self
+        self.write = self.conn.write
+        self.ask = self.conn.ask
+        self.read = self.conn.read
+        self.read_raw = self.conn.read_raw
+        self.close = self.conn.close
+        moduledir = os.path.split(__file__)[0]
+        # Store up to 100 loops in memory in case you forget to save them to disk
+        self.data= deque(maxlen=100)     
+    def idn(self):
+        return self.ask('*IDN?').replace('\n', '')
+        
+    def bandwidth(self,channel = 1, bandwidth = 33e9):
+        self.write('CH'+str(channel) +':BAN '+str(bandwidth))
+        
+    def scale(self,channel = 1, scale = 0.0625):
+        self.write('CH'+str(channel)+':SCAle '+str(scale))
+        self.write('*WAI')
+ 
+    def position(self,channel = 1,position = 0):
+        self.write('CH'+str(channel)+':POS '+str(position))
+
+    def inputstate(self,channel =1, mode = True):
+        if mode== True:
+            self.write('SELECT:CH'+str(channel)+' ON')
+        else:
+            self.write('SELECT:CH'+str(channel)+' OFF')
+        
+    def offset(self,channel = 1,offset = 0):
+        self.write('CH'+str(channel) +':OFFSet ' + str(offset))
+        
+    def change_div_and_samplerate(self,division, samplerate):
+        self.write('HORIZONTAL:MODE AUTO')
+        self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
+        self.write('HOR:MODE:SCA ' +str(division))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT 10000')
+
+    def recordlength(self,recordlength = 1e5):
+        self.write('HORIZONTAL:MODE MANUAL')
+        self.write('HORIZONTAL:MODE:RECORDLENGTH ' +str(recordlength))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
+
+    def change_samplerate_and_recordlength(self,samplerate = 100e9,recordlength = 1e5):
+        self.write('HORIZONTAL:MODE MANUAL')
+        self.write('HORIZONTAL:MODE:SAMPLERATE '+ str(samplerate))
+        self.write('HORIZONTAL:MODE:RECORDLENGTH ' + str(recordlength))
+        self.write('HORIZONTAL:MODE:AUTO:LIMIT ' +str(recordlength))
+        self.write('DATA:STOP ' + str(recordlength))
+
+    def ext_db_attenuation(self, channel = 1, attenuation = 0):
+        self.write('CH' +str(channel) + ':PROBEFUNC:EXTDBATTEN '+str(attenuation))
+        
+    def trigger(self):
+        self.write('TRIGger FORCe')
+        
+    def arm(self, source = 1, level = -0.1, edge = 'e'):
+        if source == 0: self.write('TRIG:A:EDGE:SOUrce AUX')
+        else: self.write('TRIG:A:EDGE:SOUrce CH'+str(source))
+        self.write('TRIG:A:LEVEL '+str(level))
+        self.write('ACQ:STOPA SEQUENCE')
+        self.write('ACQ:STATE 1')
+        if edge == 'r': self.write('TRIG:A:EDGE:SLO RIS')   
+        elif edge == 'f': self.write('TRIG:A:EDGE:SLO FALL') 
+        else: self.write('TRIG:A:EDGE:SLO EIT')            
+        triggerstate = self.ask('TRIG:STATE?')
+        while 'REA' not in triggerstate or 'SAVE' in triggerstate:
+            self.write('ACQ:STATE 1')
+            triggerstate = self.ask('TRIG:STATE?')
+
+    def get_curve(self, channel = 1):
+        self.write('HEAD 0')
+        self.write('WFMOUTPRE:BYT_NR 1')
+        self.write('WFMOUTPRE:BIT_NR 8')
+        self.write('DATA:ENC RPB')
+        self.write('DATA:SOURCE CH' + str(channel))
+        rl = int(self.ask('HOR:RECO?'))
+        
+        pre = self.ask('WFMOutpre?')
+        pre_split= pre.split(';')
+        if len(pre_split)== 5:
+            print('Channel ' +str(channel) + ' is not used.')
+            return None
+        
+        x_incr = float(pre_split[9])
+        x_offset = int(pre_split[11])
+        y_mult = float(pre_split[13])
+        y_off = float(pre_split[14]) 
+        
+        self.write('DATA:STOP '+str(rl))
+        self.write('CURVE?')
+        data_str = self.read_raw()
+        data=np.fromstring(data_str[6:-1], np.uint8)
+        
+        time = []
+        voltage = []
+
+        for x in range(0,len(data),1):
+            time.append( x_incr * (x - x_offset))
+            voltage.append(y_mult * (data[x] - y_off))
+        return_array = {}
+        return_array['t'] = time
+        return_array['V'] = voltage
+        return return_array

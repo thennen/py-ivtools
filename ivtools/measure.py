@@ -30,6 +30,8 @@ ps = None
 rigol = None
 # Any Keithley found
 k = None
+# Any TektronixDPO73304D found
+ttx = None
 
 # TODO: try to connect to all known instruments
 
@@ -89,7 +91,8 @@ def connect_keithley(addr=None):
     if addr is None:
         addrs = ['TCPIP::192.168.11.11::inst0::INSTR',
                  'TCPIP::192.168.11.12::inst0::INSTR',
-                 'TCPIP::192.168.11.13::inst0::INSTR']
+                 'TCPIP::192.168.11.13::inst0::INSTR',
+                 'GPIB0::26::INSTR']
     else:
         addrs = [addr]
     for addr in addrs:
@@ -110,6 +113,31 @@ def connect_keithley(addr=None):
                 print('Keithley not responding, and keithley variable is not None.')
     if k is None:
         print('Connection to Keithley failed.')
+        
+def connect_tektronix(addr=None):
+    global ttx
+    if addr is None:
+        addrs = ['GPIB0::1::INSTR']
+    else:
+        addrs = [addr]
+    for addr in addrs:
+        if ttx is None:
+            try:
+                ttx = instruments.TektronixDPO73304D(addr)
+                idn = ttx.ask('*IDN?').replace('\n', '')
+                print('TektronixDPO73304D *IDN?: {}'.format(idn))
+            except:
+                ttx = None
+        else:
+            try:
+                # Is TektronixDPO73304D already connected?
+                idn = ttx.ask('*IDN?')
+                print('TektronixDPO73304D already connected')
+                print('TektronixDPO73304D *IDN?: {}'.format(idn))
+            except:
+                print('TektronixDPO73304D not responding, and keithley variable is not None.')
+    if ttx is None:
+        print('Connection to TektronixDPO73304D failed.')
 
 def connect_instruments():
     ''' Connect all the necessary equipment '''
@@ -117,6 +145,7 @@ def connect_instruments():
     connect_picoscope()
     connect_rigolawg()
     connect_keithley()
+    connect_tektronix()
 
 
 def close_instruments():
@@ -432,7 +461,6 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 
 
 ####### Moritz's dumb stuff #######
-
 
 
 
