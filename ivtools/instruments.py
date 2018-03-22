@@ -997,3 +997,13 @@ class TektronixDPO73304D(object):
         return_array['t'] = time
         return_array['V'] = voltage
         return return_array
+
+    def disarm(self):
+        self.write('ACQ:STATE 0')
+
+    def triggerstate(self):
+        trigger_str = self.ask('TRIG:STATE?')
+        if trigger_str == 'READY\n':
+            return True
+        else:
+            return False
