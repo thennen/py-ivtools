@@ -898,8 +898,6 @@ class TektronixDPO73304D(object):
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
         moduledir = os.path.split(__file__)[0]
-        # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data = deque(maxlen=100)
 
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
@@ -908,7 +906,7 @@ class TektronixDPO73304D(object):
         self.write('CH' + str(channel) + ':BAN ' + str(bandwidth))
 
     def scale(self, channel=1, scale=0.0625):
-        self.write('CH'+str(channel)+':SCAle '+str(scale))
+        self.write('CH' + str(channel) + ':SCAle ' + str(scale))
         self.write('*WAI')
 
     def position(self, channel=1, position=0):
@@ -916,13 +914,14 @@ class TektronixDPO73304D(object):
 
     def inputstate(self, channel=1, mode=True):
         if mode:
-            self.write('SELECT:CH'+str(channel)+' ON')
+            self.write('SELECT:CH' + str(channel) + ' ON')
         else:
-            self.write('SELECT:CH'+str(channel)+' OFF')
+            self.write('SELECT:CH' + str(channel) + ' OFF')
 
     def offset(self, channel=1, offset=0):
         self.write('CH' + str(channel) + ':OFFSet ' + str(offset))
 
+    # TODO: Should be two separate functions
     def change_div_and_samplerate(self, division, samplerate):
         self.write('HORIZONTAL:MODE AUTO')
         self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
@@ -934,6 +933,7 @@ class TektronixDPO73304D(object):
         self.write('HORIZONTAL:MODE:RECORDLENGTH ' + str(recordlength))
         self.write('HORIZONTAL:MODE:AUTO:LIMIT ' + str(recordlength))
 
+    # TODO: Should be two separate functions
     def change_samplerate_and_recordlength(self, samplerate=100e9, recordlength=1e5):
         self.write('HORIZONTAL:MODE MANUAL')
         self.write('HORIZONTAL:MODE:SAMPLERATE ' + str(samplerate))
@@ -990,23 +990,17 @@ class TektronixDPO73304D(object):
         data_str = self.read_raw()
         data = np.fromstring(data_str[6:-1], np.uint8)
 
-        time = []
-        voltage = []
+        time = x_incr * (x - x_offset)
+        voltage = y_mult * (data[x] - y_off)
 
-        for x in range(0, len(data), 1):
-            time.append(x_incr * (x - x_offset))
-            voltage.append(y_mult * (data[x] - y_off))
-        return_array = {}
-        return_array['t_ttx'] = time
-        return_array['V_ttx'] = voltage
-        return return_array
+        return_dict = {}
+        return_dict['t_ttx'] = time
+        return_dict['V_ttx'] = voltage
+        return return_dict
 
     def disarm(self):
         self.write('ACQ:STATE 0')
 
     def triggerstate(self):
         trigger_str = self.ask('TRIG:STATE?')
-        if trigger_str == 'READY\n':
-            return True
-        else:
-            return False
+        return trigger_str == 'READY\n'
