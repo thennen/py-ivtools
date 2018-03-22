@@ -44,7 +44,7 @@ number_of_events =0
 data_scope = {}
 data_scope_all = {}
 
-k.it(sourceVA = -0.1, sourceVB = 0, points = 1000, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
+k.it(sourceVA = -0.1, sourceVB = 0, points = 10, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
 ttx.inputstate(1, False)
 ttx.inputstate(2, True)
 ttx.inputstate(3, False)

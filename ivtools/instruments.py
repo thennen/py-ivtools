@@ -823,11 +823,11 @@ class Keithley2600(object):
         return array
 
     def set_channel_state(self, channel='A', state=True):
-        ch = ch.lower()
+        ch = channel.lower()
         if state:
-            self.write('smu{}.source.output = smu{}.OUTPUT_ON'.format(ch))
+            self.write('smu{0}.source.output = smu{0}.OUTPUT_ON'.format(ch))
         else:
-            self.write('smu{}.source.output = smu{}.OUTPUT_OFF'.format(ch))
+            self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
 
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################
