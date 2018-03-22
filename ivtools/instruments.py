@@ -990,8 +990,8 @@ class TektronixDPO73304D(object):
         data_str = self.read_raw()
         data = np.fromstring(data_str[6:-1], np.uint8)
 
-        time = x_incr * (x - x_offset)
-        voltage = y_mult * (data[x] - y_off)
+        time = x_incr * (np.arange(len(data)) - x_offset)
+        voltage = y_mult * (data - y_off)
 
         return_dict = {}
         return_dict['t_ttx'] = time
