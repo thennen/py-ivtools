@@ -994,8 +994,8 @@ class TektronixDPO73304D(object):
             time.append( x_incr * (x - x_offset))
             voltage.append(y_mult * (data[x] - y_off))
         return_array = {}
-        return_array['t'] = time
-        return_array['V'] = voltage
+        return_array['t_ttx'] = time
+        return_array['V_ttx'] = voltage
         return return_array
 
     def disarm(self):
