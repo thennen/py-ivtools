@@ -10,6 +10,8 @@ def plot0(data, ax=None, **kwargs):
 def plot1(data, ax=None, **kwargs):
     ax.cla()
     ax.semilogy(data['t'], data['V'] / data['I'], **kwargs)
+    if data['t_event']:
+        ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
     ax.set_ylabel('Resistance [V/A]')
     ax.set_xlabel('Time [S]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -18,7 +20,7 @@ def plot2(data, ax=None, **kwargs):
     ax.cla()
     ax.set_title('Pulse')
     if data['t_scope']:
-        ax.plot(data['t_scope'][-1], data['v_answer'][-1], **kwargs)     
+        ax.plot(data['t_scope'][-1], data['v_pulse'][-1], **kwargs)
     ax.set_ylabel('Voltage [V]')
     ax.set_xlabel('Time [S]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -26,6 +28,8 @@ def plot2(data, ax=None, **kwargs):
 def plot3(data, ax=None, **kwargs):
     ax.cla()
     ax.plot(data['t'], data['I'], **kwargs)
+    if data['t_event']:
+        ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
     ax.set_ylabel('Current [A]')
     ax.set_xlabel('Time [S]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -38,15 +42,16 @@ iplots.plotters = [[0, plot0],
 iplots.newline()
 
 number_of_events =0
+data = {}
 data['t_scope'] = []
 data['v_pulse'] = []
 data['v_answer'] = []
 data['t_event'] = []
-data = {}
+iplots.show()
 
-datafolder = 'C:/Messdaten/CPW6/x08y13/'
+datafolder = 'C:/Messdaten/CPW6/x06y13/'
 
-k.it(sourceVA = -0.1, sourceVB = 0, points = 20, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
+k.it(sourceVA = -0.2, sourceVB = 0, points = 1000, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
 
 ttx.inputstate(1, False)
 ttx.inputstate(2, True)
@@ -77,6 +82,7 @@ while not k.done():
         data['t_event'].append(time_array[len(time_array)-2])
         print(time_array[len(time_array)-2])
         ttx.arm(source = 4, level = -0.3, edge = 'e')
+
     iplots.updateline(data)
 
 data.update(k.get_data())
