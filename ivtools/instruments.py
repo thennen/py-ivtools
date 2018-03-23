@@ -12,6 +12,7 @@ import visa
 import time
 import os
 import pandas as pd
+import serial
 from collections import deque
 
 visa_rm = visa.ResourceManager()
@@ -819,6 +820,79 @@ class Keithley2600(object):
         for nv in nanvalues:
             array[array == nv] = np.nan
         return array
+
+
+#########################################################
+# Eurotherm 2408 -- #################
+#########################################################
+class Eurotherm2408():
+    '''
+    This uses some dumb proprietary EI-BISYNCH protocol
+    You can also use modbus
+    '''
+    _STX = '\x02'
+    _ETX = '\x03'
+    _EOT = '\x04'
+    _ENQ = '\x05'
+    _ACK = '\x06'
+    _NAK = '\x15'
+    def __init__(self, addr='COM1', gid=0, uid=1):
+        self.conn = serial.Serial(addr)
+        self._gid = gid
+        self._uid = uid
+    def write_data(self, mnemonic, data):
+        # Select
+        # C1 C2 are the two characters of the mnemonic
+        # [EOT] (GID) (GID) (UID) (UID) [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
+        from functools import reduce
+        from operator import xor
+        STX = '\x02'
+        ETX = '\x03'
+        EOT = '\x04'
+        ENQ = '\x05'
+        CHAN = '1'
+        gid = str(self.gid)
+        uid = str(self.uid)
+        data = format(data, '.2f')
+        bcc = str(reduce(xor, (mnemonic + data + ETX).encode()))
+        msg = EOT + gid + gid + uid + uid + STX + mnemonic + data + ETX + bcc
+        self.conn.write(msg.encode().decode())
+
+        # Wait?
+        time.sleep(.05)
+
+        # Should reply
+        # [NAK] - failed to write
+        # [ACK] - successful write
+        # (nothing) - oh shit
+        ACK = '\x06'
+        NAK = '\x15'
+        reply = self.conn.read_all()
+        return reply
+
+    def read_data(self, mnemonic):
+        EOT = '\x04'
+        ENQ = '\x05'
+        gid = str(self.gid)
+        uid = str(self.uid)
+        # Poll
+        # [EOT] (GID) (GID) (UID) (UID) (CHAN) (C1) (C2) [ENQ]
+        poll = EOT + gid + gid + uid + uid + mnemonic + ENQ
+        self.conn.write(poll)
+
+        # Wait?
+        time.sleep(.05)
+
+        # Reply
+        # [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
+        reply = self.conn.read_all()
+        return reply[4:-1]
+
+    def read_temp(self):
+        return self.read_data('PV')
+
+    def set_temp(self, value):
+        return self.write_data('SL', value)
 
 
 #########################################################
