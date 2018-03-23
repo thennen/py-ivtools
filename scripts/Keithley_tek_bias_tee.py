@@ -44,18 +44,18 @@ number_of_events =0
 data_scope = {}
 data_scope_all = {}
 
-
+datafolder = 'C:/Messdaten/CPW6/x08y13/'
 k.it(sourceVA = -0.1, sourceVB = 0, points = 1000, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
 ttx.inputstate(1, False)
 ttx.inputstate(2, True)
 ttx.inputstate(3, False)
 ttx.inputstate(4, True)
-ttx.scale(2, 0.03)
-ttx.scale(4, 0.1)
+ttx.scale(2, 0.05)
+ttx.scale(4, 0.4)
 ttx.position(1, 2)
 ttx.position(4, 4)
 ttx.change_samplerate_and_recordlength(100e9,5000)
-ttx.arm(source = 4, level = -0.1, edge = 'e')
+ttx.arm(source = 4, level = -0.3, edge = 'e')
 while not k.done():
     data = k.get_data()
     if ttx.triggerstate():
@@ -74,7 +74,7 @@ while not k.done():
         data_scope_all['t_event'+str(number_of_events)] = time_array[len(time_array)-2]
         print(time_array[len(time_array)-2])
         data.update(data_scope_all)
-        ttx.arm(source = 4, level = -0.1, edge = 'e')
+        ttx.arm(source = 4, level = -0.3, edge = 'e')
     iplots.updateline(data)
 
 data = k.get_data()
@@ -83,7 +83,7 @@ k.set_channel_state('A', False)
 k.set_channel_state('B', False)
 ttx.disarm()
 data.update(data_scope_all)
-savedata(data,'C:/Messdaten/CPW6/x10y13')
+savedata(data)
 
 
 
