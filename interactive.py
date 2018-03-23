@@ -78,11 +78,15 @@ gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
 
 if hostname == 'pciwe46':
-    datafolder = r'D:\t\ivdata'
+    datafolder = 'D:/t/ivdata'
 elif hostname == 'pciwe38':
-    datafolder = 'C:/Messdaten/'    
+    # Moritz computer
+    datafolder = 'C:/Messdaten/'
+elif hostname == 'pciwe34':
+    # Mark II
+    datafolder = 'F:/Messdaten/hennen'
 else:
-    datafolder = r'C:\t\data'
+    datafolder = 'C:/t/data'
 
 # Default data subfolder
 subfolder = datestr

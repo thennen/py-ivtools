@@ -836,16 +836,10 @@ class Eurotherm2408():
     This uses some dumb proprietary EI-BISYNCH protocol
     You can also use modbus
     '''
-    _STX = '\x02'
-    _ETX = '\x03'
-    _EOT = '\x04'
-    _ENQ = '\x05'
-    _ACK = '\x06'
-    _NAK = '\x15'
-    def __init__(self, addr='COM1', gid=0, uid=1):
-        self.conn = serial.Serial(addr)
-        self._gid = gid
-        self._uid = uid
+    def __init__(self, addr='COM32', gid=0, uid=1):
+        self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
+        self.gid = gid
+        self.uid = uid
     def write_data(self, mnemonic, data):
         # Select
         # C1 C2 are the two characters of the mnemonic
@@ -862,7 +856,7 @@ class Eurotherm2408():
         data = format(data, '.2f')
         bcc = str(reduce(xor, (mnemonic + data + ETX).encode()))
         msg = EOT + gid + gid + uid + uid + STX + mnemonic + data + ETX + bcc
-        self.conn.write(msg.encode().decode())
+        self.conn.write(msg.encode())
 
         # Wait?
         time.sleep(.05)
@@ -884,7 +878,7 @@ class Eurotherm2408():
         # Poll
         # [EOT] (GID) (GID) (UID) (UID) (CHAN) (C1) (C2) [ENQ]
         poll = EOT + gid + gid + uid + uid + mnemonic + ENQ
-        self.conn.write(poll)
+        self.conn.write(poll.encode())
 
         # Wait?
         time.sleep(.05)
@@ -892,7 +886,7 @@ class Eurotherm2408():
         # Reply
         # [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
         reply = self.conn.read_all()
-        return reply[4:-1]
+        return float(reply[3:-2])
 
     def read_temp(self):
         return self.read_data('PV')
