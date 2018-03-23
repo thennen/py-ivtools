@@ -390,7 +390,6 @@ class interactive_figs(object):
         else:
             # This is to completely reload the class code but keep the same state
             self.__dict__ = oldinstance.__dict__
-            self.show()
 
     def createfig(self, n):
         '''
@@ -502,15 +501,30 @@ class interactive_figs(object):
         ''' Write the figures to disk. '''
         pass
 
-    def bringtofront(self):
-        ''' Bring all the interactive plots to the foreground. '''
-        # I still haven't figured out how to do this in windows..
-        pass
-
     def show(self):
-        ''' Show figures in case you closed them. '''
+        ''' Bring all the interactive plots to the foreground. '''
+        import win32gui
+        import win32com.client
+        shell = win32com.client.Dispatch('WScript.Shell')
+        # This is really messed up, but if you don't send this key, windows will
+        # Refuse to bring another window to the foreground.
+        # Its effect is like pressing the alt key.
+        shell.SendKeys('%')
+        console_hwnd = win32gui.GetForegroundWindow()
+        # This alone doesn't work in windows with qt5 backend.  Don't know why.
         for fig in self.figs:
             fig.show()
+            fig.canvas.manager.window.activateWindow()
+            fig.canvas.manager.window.raise_()
+        windowtitles = [f.canvas.manager.get_window_title() for f in self.figs]
+        def enum_callback(hwnd, *args):
+            txt = win32gui.GetWindowText(hwnd)
+            if txt in windowtitles:
+                #win32gui.SetForegroundWindow(hwnd)
+                win32gui.ShowWindow(hwnd, True)
+        win32gui.EnumWindows(enum_callback, None)
+        # Put console back in foreground
+        win32gui.SetForegroundWindow(console_hwnd)
 
     def close(self):
         ''' Close all the figures and stop doing anything '''
