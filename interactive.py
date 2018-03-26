@@ -35,24 +35,6 @@ warnings.filterwarnings("ignore",".*GUI is implemented.*")
 import ivtools
 # Reload all the modules in case they changed
 import importlib
-
-def reload(amodule):
-    # Module reload that also updates registered class instances
-    objs = getattr(amodule, '_objs', None)
-    reload(amodule)
-    if not objs: return  # not an upgradable-module, or no objects
-    newobjs = getattr(amodule, '_objs', None)
-    for obj, classname in objs.values():
-        newclass = getattr(amodule, classname)
-        upgrade = getattr(newclass, '_upgrade', None)
-        if upgrade:
-            upgrade(obj)
-        else:
-            obj.__class__ = newclass
-        if newobjs: newobjs._register(obj)
-
-# TODO use above istead of below
-
 importlib.reload(ivtools)
 importlib.reload(ivtools.measure)
 importlib.reload(ivtools.analyze)
@@ -74,6 +56,10 @@ if not firstrun:
     # Store old settings/connections before they get clobbered by module reload
     # There's probably a super slick way to do this ....
     old = {}
+    old['ps'] = ps
+    old['rigol'] = rigol
+    old['k'] = k
+    old['ttx'] = ttx
     old['COMPLIANCE_CURRENT'] = measure.COMPLIANCE_CURRENT
     old['INPUT_OFFSET'] = measure.INPUT_OFFSET
 
@@ -90,8 +76,6 @@ magic = get_ipython().magic
 hostname = socket.gethostname()
 gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
-
-### PC specific settings ###
 
 if hostname == 'pciwe46':
     datafolder = 'D:/t/ivdata'
@@ -151,20 +135,20 @@ if firstrun:
         iplots.plotters = keithley_plotters
 else:
     # Transfer all the settings you want to keep into new instances/environment
-    if ps is not None:
-        measure.ps = instruments.Picoscope(previous_instance=ps)
+    if old['ps'] is not None:
+        measure.ps = instruments.Picoscope(previous_instance=old['ps'])
     # with visa I think it's best to just close the session and reconnect
-    if k is not None:
-        kresource = k.conn.resource_name
-        k.close()
+    if old['k'] is not None:
+        kresource = old['k'].conn.resource_name
+        old['k'].close()
         measure.connect_keithley(kresource)
-    if rigol is not None:
-        rigolresource = rigol.conn.resource_name
-        rigol.close()
+    if old['rigol'] is not None:
+        rigolresource = old['rigol'].conn.resource_name
+        old['rigol'].close()
         measure.connect_rigolawg(rigolresource)
-    if ttx is not None:
-        tresource = ttx.conn.resource_name
-        ttx.close()
+    if old['ttx'] is not None:
+        tresource = old['ttx'].conn.resource_name
+        old['ttx'].close()
         measure.connect_tektronix(tresource)
     measure.COMPLIANCE_CURRENT = old['COMPLIANCE_CURRENT']
     measure.INPUT_OFFSET = old['INPUT_OFFSET']
