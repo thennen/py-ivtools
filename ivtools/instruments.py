@@ -3,8 +3,16 @@ These classes contain functionality specific to only one instrument.
 Don't put code in an instrument class that has anything to do with a different instrument,
 or any particular application!
 
-They are grouped into classes because there may be some overlapping functions/names which should be contained
+They are grouped into classes because there may be some overlapping functions/names which
+should be contained.
 Should only put instruments here that have an actual data connection to the computer
+
+TODO:
+
+The module maintains weak references to instrument instances, so that they can be updated on reload in order to
+reuse existing connections
+
+Should also find existing connections if already available
 '''
 
 import numpy as np
@@ -14,9 +22,40 @@ import os
 import pandas as pd
 import serial
 from collections import deque
-
+import weakref
 
 visa_rm = visa.ResourceManager()
+
+#########################################################
+# Parent Class   ########################################
+#########################################################
+class Instrument(object):
+    ''' Writing default methods for visa type instruments.  Overload them for others '''
+    def __init__(self):
+        # TODO: look for already connected instance with same handle, if available, return it
+        try:
+            self.connect()
+        except:
+            # Say which instrument failed
+            print('failed')
+
+    def connect():
+        # Pass through some methods of the connection
+        self.conn = None
+        if hasattr(self.conn, 'close'):
+            setattr(self, 'close', self.conn.close)
+        if worked:
+            pass
+        else:
+            pass
+
+    def _reload(self):
+        # Some default reload behavior
+        pass
+
+    def isconnected():
+        pass
+
 
 #########################################################
 # Picoscope 6000 ########################################
@@ -744,7 +783,10 @@ class Keithley2600(object):
         self.write('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
         # reply comes back with #0 or something in the beginning and a newline at the end
         raw = self.read_raw()[2:-1]
-        return np.fromstring(raw, dtype=np.float64)
+        # TODO: replace nanvals here, not in get_data
+        data_array = np.fromstring(raw, dtype=np.float64)
+        data_array = self.replace_nanvals(data_array)
+        return data_array
 
     def get_data(self, start=1, end=None, history=True):
         '''
@@ -775,11 +817,9 @@ class Keithley2600(object):
                 out['source'] = 'V'
                 out['V'] = self.read_buffer('smua.nvbuffer2', 'sourcevalues', start, end)
                 Vmeasured = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
-                Vmeasured = Keithley2600.replace_nanvals(Vmeasured)
                 out['Vmeasured'] = Vmeasured
                 out['units']['Vmeasured'] = 'V'
                 I = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
-                I = Keithley2600.replace_nanvals(I)
                 out['I'] = I
                 out['Icomp'] = float(self.ask('print(smua.source.limiti)'))
             else:
@@ -790,11 +830,9 @@ class Keithley2600(object):
 
                 out['I'] = self.read_buffer('smua.nvbuffer1', 'sourcevalues', start, end)
                 Imeasured = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
-                Imeasured = Keithley2600.replace_nanvals(Imeasured)
                 out['Imeasured'] = Imeasured
                 out['units']['Imeasured'] = 'A'
                 V = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
-                V = Keithley2600.replace_nanvals(V)
                 out['V'] = V
 
             out['t'] = self.read_buffer('smua.nvbuffer2', 'timestamps', start, end)
@@ -828,13 +866,15 @@ class Keithley2600(object):
         else:
             self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
 
+
 #########################################################
 # Eurotherm 2408 -- #################
 #########################################################
-class Eurotherm2408():
+class Eurotherm2408(object):
     '''
-    This uses some dumb proprietary EI-BISYNCH protocol
-    You can also use modbus
+    This uses some dumb proprietary EI-BISYNCH protocol over serial.
+    Make the connections DB2 -> HF, DB3 -> HE, DB5 -> HD.
+    You can also use modbus.
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
         self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
@@ -886,7 +926,11 @@ class Eurotherm2408():
         # Reply
         # [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
         reply = self.conn.read_all()
-        return float(reply[3:-2])
+        try:
+            return float(reply[3:-2])
+        except:
+            print('Failed to read Eurotherm 2408 temperature.')
+            return np.nan
 
     def read_temp(self):
         return self.read_data('PV')
@@ -894,11 +938,22 @@ class Eurotherm2408():
     def set_temp(self, value):
         return self.write_data('SL', value)
 
+    def output_level(self):
+        return self.read_data('OP')
+
+    def status(self):
+        statusdict = {1: 'Reset',
+                      2: 'Run',
+                      3: 'Hold',
+                      4: 'Holdback',
+                      5: 'Complete'}
+        return self.read_data('PC')
+
 
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################
 #########################################################
-class USB2708HS():
+class USB2708HS(object):
     def __init__(self):
         # Import here because I don't want the entire module to error if you don't have mcculw installed
         from mcculw import ul
@@ -950,7 +1005,6 @@ class USB2708HS():
 #########################################################
 # TektronixDPO73304D ####################################
 #########################################################
-
 class TektronixDPO73304D(object):
     def __init__(self, addr='GPIB0::1::INSTR'):
         try:
