@@ -706,20 +706,30 @@ class Keithley2600(object):
 
         self.run_lua_lines(cmdlist)
 
-    def iv(self, vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
-        '''Wraps the SweepVList lua function defined on keithley'''
+    def iv(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+        '''
+        range = 0 enables autoranging
+        Wraps the SweepVList lua function defined on keithley
+        '''
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        self.write('SweepVList(sweeplist, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay))
+        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay, Vrange))
 
-    def vi(self, ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO'):
-        '''Wraps the SweepIList lua function defined on keithley'''
+    def vi(self, ilist, Vrange=0, Vlimit=0, nplc=1, delay='smua.DELAY_AUTO', Irange=None):
+        '''
+        range = 0 enables autoranging
+        if Irange not passed, it will be max(abs(ilist))
+        Wraps the SweepIList lua function defined on keithley
+        '''
 
         # Send list of voltage values to keithley
         self.send_list(ilist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        Irange = np.max(np.abs(ilist))
+        if Irange is None:
+            # Fix the current source range, as I have had instability problems that are different
+            # for different ranges
+            Irange = np.max(np.abs(ilist))
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
 
     def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1):

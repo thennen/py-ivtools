@@ -675,6 +675,7 @@ def VoverIplotter(data, ax=None, **kwargs):
         VoverI = data['V'] / data['I']
 
     VoverI = VoverI[mask]
+    VoverI[VoverI <= 0] = np.nan
 
     ax.plot(V, VoverI, **kwargs)
     #color = ax.lines[-1].get_color()
