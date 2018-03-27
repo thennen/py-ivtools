@@ -1,5 +1,5 @@
 """
-Functions for measuring IV data
+High level functions for measuring IV data
 Knows about these instruments
 Picoscope 6403C
 Rigol DG5102 AWG
@@ -19,23 +19,28 @@ import pandas as pd
 import os
 import visa
 
-visa_rm = visa.ResourceManager()
-'USB0::0x1AB1::0x0640::DG5T155000186::INSTR',
-'TCPIP0::192.168.11.12::inst0::INSTR'
+visa_rm = instruments.visa_rm
 
-# These are the instrument instances.  They are None until connected.
-# Picoscope
-ps = None
-# Rigol DG5000 AWG
-rigol = None
-# Any Keithley found
-k = None
-# Any TektronixDPO73304D found
-ttx = None
+resources = visa_rm.list_resources()
+# For some reason TCPIP instruments don't show up in list_resources()
 
-# TODO: try to connect to all known instruments
+# Visa instrument addresses and the classes used to connect to them
+visa_instruments = [(measure.RigolDG5000,        'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                    (measure.Keithley2600,       'TCPIP0::192.168.11.11::inst0::INSTR'),  # 2634B
+                    (measure.Keithley2600,       'TCPIP0::192.168.11.12::inst0::INSTR'),  # 2636A
+                    (measure.Keithley2600,       'TCPIP0::192.168.11.13::inst0::INSTR'),  # 2636B
+                    (measure.Keithley2600,       'GPIB0::26::INSTR'),                     # 2634B
+                    (measure.TektronixDP073304D, 'GPIB0::1::INSTR')]
 
-# These are None until the instruments are connected
+other_instruments = [(measure.Eurotherm2408, 'COM32'),]
+                     (measure.Picoscope, None),
+                     (measure.USB2708HS, None)]
+
+# How to manage connections to the instruments?
+# Don't want to connect to stuff automatically that I am not using
+# Don't want to waste time trying to connect to every possible thing automatically
+# Don't want to have to explicitly connect to stuff beforehand
+# Can I avoid trying to connect inside of every function?
 
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
@@ -138,25 +143,6 @@ def connect_tektronix(addr=None):
                 print('TektronixDPO73304D not responding, and keithley variable is not None.')
     if ttx is None:
         print('Connection to TektronixDPO73304D failed.')
-
-def connect_instruments():
-    ''' Connect all the necessary equipment '''
-    print('Attempting to connect all instruments.')
-    connect_picoscope()
-    connect_rigolawg()
-    connect_keithley()
-    connect_tektronix()
-
-
-def close_instruments():
-    global ps
-    global rigol
-    # Close connection to pico
-    ps.close()
-    ps = None
-    # Close connection to rigol
-    rigol.close()
-    rigol = None
 
 
 ########### Picoscope - Rigol AWG testing #############

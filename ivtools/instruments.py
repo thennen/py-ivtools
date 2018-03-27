@@ -7,9 +7,7 @@ They are grouped into classes because there may be some overlapping functions/na
 should be contained.
 Should only put instruments here that have an actual data connection to the computer
 
-TODO:
-
-The module maintains weak references to instrument instances, so that they can be updated on reload in order to
+The module maintains references to instrument instances, so that they can be updated on reload in order to
 reuse existing connections
 
 Should also find existing connections if already available
@@ -24,37 +22,71 @@ import serial
 from collections import deque
 import weakref
 
+_objs = weakref.WeakValueDictionary()
+#_objs = {}
+_nextkey = 0
+def _register(instance):
+    # Register an instance of a class
+    global _objs
+    global _nextkey
+    _objs[_nextkey] = instance
+    _nextkey += 1
+
 visa_rm = visa.ResourceManager()
 
 #########################################################
 # Parent Class   ########################################
 #########################################################
 class Instrument(object):
-    ''' Writing default methods for visa type instruments.  Overload them for others '''
-    def __init__(self):
-        # TODO: look for already connected instance with same handle, if available, return it
-        try:
-            self.connect()
-        except:
-            # Say which instrument failed
-            print('failed')
-
-    def connect():
-        # Pass through some methods of the connection
+    '''
+    Writing default methods for visa type instruments.  Overload them for others.
+    Inheriting from this class should make life easier.
+    '''
+    def __init__(self, addr=None):
         self.conn = None
-        if hasattr(self.conn, 'close'):
-            setattr(self, 'close', self.conn.close)
-        if worked:
-            pass
-        else:
-            pass
+        self.handle = addr
+        if addr is not None:
+            self.connect(addr)
+        _register(self)
 
-    def _reload(self):
+    def connect(self, addr):
+        # Look for an already connected instance with same handle
+        for obj in _objs.values():
+            # Has the same class name?
+            classname = type(self).__name__
+            if type(obj).__name__ == classname:
+                # corresponds to the right "address"?
+                if obj.handle == addr:
+                    if obj.isconnected():
+                        # Is still connected?
+                        print('{} instance already available. Reusing connection.'.format(classname))
+                        self.conn = obj.conn
+        if self.conn is None:
+            try:
+                self.conn = visa_rm.open_resource(addr)
+            except:
+                print('{} connection at {} failed'.format(type(self).__name__, addr))
+
+        # Pass through some methods of the connection
+        def passthru(attr):
+            if hasattr(self.conn, attr):
+                setattr(self, attr, getattr(self.conn, attr))
+        for attr in ['write', 'read', 'read_raw', 'ask', 'close']:
+            passthru(attr)
+
+    def _upgrade(self, old):
         # Some default reload behavior
-        pass
+        # Gets an old class instance, and this function's job is to modify it in place
+        old.__dict__ = self.__dict__
+        old.__class__ = self.__class__
 
-    def isconnected():
-        pass
+    def isconnected(self):
+        # Is there a better way ??
+        try:
+            reply = self.ask('*IDN?')
+            return True
+        except:
+            return False
 
 
 #########################################################
@@ -409,23 +441,12 @@ class Picoscope(object):
 #########################################################
 # Rigol DG5000 AWG ######################################
 #########################################################
-class RigolDG5000(object):
+class RigolDG5000(Instrument):
     # There is at least one python library for DG5000, but I could not get it to run.
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
-        try:
-            self.connect(addr)
-        except:
-            print('Rigol connection failed.')
-
-    def connect(self, addr):
-        self.conn = visa_rm.open_resource(addr)
-        # Expose a few methods directly to self
-        self.write = self.conn.write
-        self.ask = self.conn.ask
-        self.close = self.conn.close
+        super().__init__(addr)
 
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
-
     def shape(self, shape='SIN', ch=1):
         '''
         Change the waveform shape to a built-in value. Possible values are:
@@ -635,7 +656,7 @@ class RigolDG5000(object):
 #########################################################
 # Keithley 2600 #########################################
 #########################################################
-class Keithley2600(object):
+class Keithley2600(Instrument):
     '''
     Sadly, Keithley decided to embed a lua interpreter into its source meters
     instead of providing a proper programming interface.
@@ -651,23 +672,16 @@ class Keithley2600(object):
     functions on the keithley, then we wrap those in python.
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
-        try:
-            self.connect(addr)
-        except:
-            print('Keithley connection failed at {}'.format(addr))
+        super().__init__(addr)
+        # Store up to 100 loops in memory in case you forget to save them to disk
+        self.data = deque(maxlen=100)
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
-        self.conn = visa_rm.get_instrument(addr, open_timeout=0)
-        # Expose a few methods directly to self
-        self.write = self.conn.write
-        self.ask = self.conn.ask
-        self.read = self.conn.read
-        self.read_raw = self.conn.read_raw
-        self.close = self.conn.close
-        moduledir = os.path.split(__file__)[0]
-        self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
-        # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data= deque(maxlen=100)
+        super().connect(addr)
+        if self.conn is not None:
+            moduledir = os.path.split(__file__)[0]
+            self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
+            print('Executed {} on {}'.format('Keithley_2600.lua', self.idn()))
 
     def idn(self):
         return self.ask('*IDN?').replace('\n', '')
