@@ -33,7 +33,6 @@ import warnings
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
 
 import ivtools
-# Reload all the modules in case they changed
 import importlib
 
 def reload(amodule):
@@ -41,24 +40,24 @@ def reload(amodule):
     objs = getattr(amodule, '_objs', None)
     reload(amodule)
     if not objs: return  # not an upgradable-module, or no objects
-    newobjs = getattr(amodule, '_objs', None)
     for obj, classname in objs.values():
         newclass = getattr(amodule, classname)
         upgrade = getattr(newclass, '_upgrade', None)
         if upgrade:
+            # Run some custom upgrade code if it exists
             upgrade(obj)
         else:
             obj.__class__ = newclass
-        if newobjs: newobjs._register(obj)
 
 # TODO use above istead of below
 
-importlib.reload(ivtools)
-importlib.reload(ivtools.measure)
-importlib.reload(ivtools.analyze)
-importlib.reload(ivtools.plot)
-importlib.reload(ivtools.io)
-importlib.reload(ivtools.instruments)
+# Reload all the modules in case they changed
+reload(ivtools)
+reload(ivtools.measure)
+reload(ivtools.analyze)
+reload(ivtools.plot)
+reload(ivtools.io)
+reload(ivtools.instruments)
 from ivtools import measure
 from ivtools import analyze
 from ivtools import plot as ivplot
