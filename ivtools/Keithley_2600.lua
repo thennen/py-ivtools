@@ -7,19 +7,19 @@ function SweepVList(sweepList, rangeI, limitI, nplc, delay, rangeV)
     smua.measure.nplc	  = nplc
     --smua.measure.delay		= smua.DELAY_AUTO
     smua.measure.delay  = delay
-    if limitI != 0 then
+    if limitI ~= 0 then
       smua.source.limiti  = limitI
     end
     -- Autorange if you pass limitI = 0
     -- Keithley programmers guide 7-226
     -- "Explicitly setting a measure range will disable measure autoranging for that function."
-    if rangeI !=0 then
+    if rangeI ~= 0 then
       smua.measure.rangei = rangeI
     end
 
     -- In case you want to also fix the measurement range of the source
     -- Autoranging can sometimes cause problems
-    if rangeV !=0 then
+    if rangeV ~=0 then
       -- Not convinced that this really works ..
       smua.source.autorangev = smua.AUTORANGE_OFF
       -- Need to specify or no data comes back..
@@ -65,19 +65,19 @@ function SweepIList(sweepList, rangeV, limitV, nplc, delay, rangeI)
     --smua.measure.delay		= smua.DELAY_AUTO
     smua.measure.delay = delay
 
-    if limitV != 0 then
+    if limitV ~= 0 then
       smua.source.limitv		= limitV
     end
 
     -- Keithley programmers guide 7-226
     -- "Explicitly setting a measure range will disable measure autoranging for that function."
-    if rangeV !=0 then
+    if rangeV ~=0 then
       smua.measure.rangev = rangeV
     end
 
     -- In case you want to also fix the measurement range of the source
     -- Autoranging can always cause problems
-    if rangeI !=0 then
+    if rangeI ~=0 then
       smua.source.autorangei = smua.AUTORANGE_OFF
       -- Need to specify or no data comes back..
       smua.source.rangei = rangeI
