@@ -40,57 +40,58 @@ iplots.plotters = [[0, plot0],
                    [3, plot3]]
              
 iplots.newline()
+def pcm_measurement(voltage = -0.2, points = 1000 ,interval = 0.2):
+    number_of_events =0
+    data = {}
+    data['t_scope'] = []
+    data['v_pulse'] = []
+    data['v_answer'] = []
+    data['t_event'] = []
+    iplots.show()
 
-number_of_events =0
-data = {}
-data['t_scope'] = []
-data['v_pulse'] = []
-data['v_answer'] = []
-data['t_event'] = []
-iplots.show()
+    datafolder = 'C:/Messdaten/CPW6/x06y13/'
 
-datafolder = 'C:/Messdaten/CPW6/x06y13/'
+    k.it(sourceVA = voltage, sourceVB = 0, points = points, interval = interval, rangeI = 0, limitI = 1, nplc = 1)
 
-k.it(sourceVA = -0.2, sourceVB = 0, points = 1000, interval = 0.2, rangeI = 0, limitI = 1, nplc = 1)
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, True)
+    ttx.inputstate(3, False)
+    ttx.inputstate(4, True)
+    ttx.scale(2, 0.05)
+    ttx.scale(4, 0.4)
+    ttx.position(1, 2)
+    ttx.position(4, 4)
+    ttx.change_samplerate_and_recordlength(100e9, 5000)
+    ttx.arm(source = 4, level = -0.3, edge = 'e')
 
-ttx.inputstate(1, False)
-ttx.inputstate(2, True)
-ttx.inputstate(3, False)
-ttx.inputstate(4, True)
-ttx.scale(2, 0.05)
-ttx.scale(4, 0.4)
-ttx.position(1, 2)
-ttx.position(4, 4)
-ttx.change_samplerate_and_recordlength(100e9, 5000)
-ttx.arm(source = 4, level = -0.3, edge = 'e')
+    while not k.done():
+        data.update(k.get_data())
+        if ttx.triggerstate():
+            plt.pause(0.1)
+        else:
+            number_of_events +=1
+            data_scope1 = ttx.get_curve(4)
+            data_scope2 = ttx.get_curve(2)
+            
+            time_array = data['t']
+            data['t_scope'].append(data_scope1['t_ttx'])
+            data['v_pulse'].append(data_scope1['V_ttx'])
+            data['v_answer'].append(data_scope2['V_ttx'])
+            '''Moritz: last current data point measured after last trigger event so the entry one before
+             will be used as time reference (-2 instead of -1, which be the last entry)'''
+            data['t_event'].append(time_array[len(time_array)-2])
+            print(time_array[len(time_array)-2])
+            ttx.arm(source = 4, level = -0.3, edge = 'e')
 
-while not k.done():
+        iplots.updateline(data)
+
     data.update(k.get_data())
-    if ttx.triggerstate():
-        plt.pause(0.1)
-    else:
-        number_of_events +=1
-        data_scope1 = ttx.get_curve(4)
-        data_scope2 = ttx.get_curve(2)
-        
-        time_array = data['t']
-        data['t_scope'].append(data_scope1['t_ttx'])
-        data['v_pulse'].append(data_scope1['V_ttx'])
-        data['v_answer'].append(data_scope2['V_ttx'])
-        '''Moritz: last current data point measured after last trigger event so the entry one before
-         will be used as time reference (-2 instead of -1, which be the last entry)'''
-        data['t_event'].append(time_array[len(time_array)-2])
-        print(time_array[len(time_array)-2])
-        ttx.arm(source = 4, level = -0.3, edge = 'e')
-
     iplots.updateline(data)
+    k.set_channel_state('A', False)
+    k.set_channel_state('B', False)
+    ttx.disarm()
+    savedata(data)
 
-data.update(k.get_data())
-iplots.updateline(data)
-k.set_channel_state('A', False)
-k.set_channel_state('B', False)
-ttx.disarm()
-savedata(data)
-
-
-
+def eval_ultrafast(filename):
+    data = pd.read_pickle(filename)
+        
