@@ -135,7 +135,8 @@ class MetaHandler(object):
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
         meta_df = meta_df.dropna(1, 'all')
-        meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+        sortby = [k for k in ('coupon', 'module', 'device') if k in meta_df.columns]
+        meta_df = meta_df.sort_values(by=sortby)
 
         # Try to convert data types
         typedict = dict(wafer_number=np.uint8,

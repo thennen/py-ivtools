@@ -188,7 +188,7 @@ def auto_title(data, keys=None, ax=None):
         otherkeys = ['layer_1', 'thickness_1', 'width_nm', 'R_series']
         othervalues = [safeindex(meta, k) for k in otherkeys]
         # use kohm if necessary
-        if othervalues[3] >= 1000:
+        if othervalues[3] != '?' and othervalues[3] >= 1000:
             othervalues[3] = str(int(othervalues[3]/1000)) + 'k'
         formatstr = '{}, {}, t={}nm, w={}nm, Rs={}$\Omega$'
         title = formatstr.format(id, *othervalues)
@@ -687,10 +687,15 @@ def VoverIplotter(data, ax=None, **kwargs):
     ax.set_ylabel('V/I [$\Omega$]')
 
 def vcalcplotter(data, ax=None, R=8197, **kwargs):
+    '''
+    Subtract internal series resistance voltage drop
+    For Lassen R = 143, 2164, 8197, 12857
+    '''
     if ax is None:
         fig, ax = plt.subplots()
+    # wtf modifies the input data?  Shouldn't do that.
     data['Vcalc'] = data['V'] - R * data['I']
-    plotiv(d, ax=ax, x='Vcalc', **kwargs)
+    plotiv(data, ax=ax, x='Vcalc', **kwargs)
     ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
 
 

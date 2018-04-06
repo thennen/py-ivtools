@@ -18,6 +18,7 @@ import time
 import pandas as pd
 import os
 import visa
+from functools import partial
 
 visa_rm = visa.ResourceManager()
 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR',
@@ -178,7 +179,7 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, durat
 
     rigol.pulse_builtin(freq=freq, amp=amp, shape=shape, n=ncycles)
 
-    data = get_data(ch)
+    data = ps.get_data(ch)
 
     return data
 
@@ -195,7 +196,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     # Pulse the waveform n times, this will trigger the picoscope capture.
     rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
 
-    data = get_data(ch)
+    data = ps.get_data(ch)
 
     return data
 
@@ -282,7 +283,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
 
     return ivdata
 
-def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0):
+def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
     if fend > 1e8:
         raise Exception('Rigol can only output up to 100MHz')
@@ -357,13 +358,22 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0):
 
 
         # TODO: Should I apply the signal for a while before sampling?  Here I am sampling immediately from the first cycle.
-        ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=.05)
-        rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
-        d = get_data(ch)
+        # The aux trigger has a delay and jitter for some reason.  Maybe triggering directly on the channel is better?
+        # 
+        if trigsource == 'TriggerAux':
+            triglevel = 0.05
+        else:
+            triglevel = 0
+
+        # This one pulses exactly npulses and tries to capture them from the beginning
+        #ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=triglevel, trigsource=trigsource)
+        #rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
+        rigol.continuous_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', ch=1)
+        time.sleep(.1)
+        ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=triglevel, trigsource=trigsource)
+        d = ps.get_data(ch)
         d['ncycles'] = ncycles
         data.append(d)
-        # Probably not necessary but makes me feel good
-        time.sleep(.1)
 
         # TODO: make some plots that show when debug=True is passed
 
@@ -586,7 +596,7 @@ def measure_compliance():
                     'chatten': {'A':.2, 'B':1},
                     'chcoupling': {'A':'DC', 'B':'DC'}}
     ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
-    picodata = get_data(['A', 'B'])
+    picodata = ps.get_data(['A', 'B'])
     #plot_channels(picodata)
     Amean = np.mean(picodata['A'])
     Bmean = np.mean(picodata['B'])
@@ -608,8 +618,13 @@ def measure_compliance():
 
     return (ccurrent, Amean)
 
+########### Conversion from picoscope channel data to IV data ###################
+
 def ccircuit_to_iv(datain, dtype=np.float32):
-    ''' Convert picoscope channel data to IV dict'''
+    '''
+    Convert picoscope channel data to IV dict
+    For the early version of compliance circuit, which needs manual compensation
+    '''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
@@ -643,15 +658,18 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     return dataout
 
 
-########### Rehan Current Amplifier ###################
 def rehan_to_iv(datain, dtype=np.float32):
-    ''' Convert picoscope channel data to IV dict'''
+    '''
+    Convert picoscope channel data to IV dict
+    for Rehan amplifier
+    Careful! Scope input couplings will affect the gain!
+    if x10 channel has 50 ohm termination, then gain of x200 channel reduced by 2!
+    '''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
     # Volts per amp
     gainC = 524
-    # I have no idea why this one is off by a factor of two.  I did exactly the same thing to measure it ..
     gainD = 11151 / 2
     # 1 Meg, 33,000
 
@@ -675,6 +693,33 @@ def rehan_to_iv(datain, dtype=np.float32):
 
     return dataout
 
+
+def Rext_to_iv(datain, R=5100, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    This is for the configuration where you are using a series resistor
+    and probing the center junction
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+
+    # Use channel A and C as input, because simultaneous sampling is faster than using A and B
+    A = datain['A']
+    C = datain['C']
+
+    # V device
+    dataout['V'] = A - C
+    dataout['I'] = C / R
+    dataout['units'] = {'V':'V', 'I':'A'}
+    dataout['Rs_ext'] = R
+
+    return dataout
+
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier
     # Apply voltage
@@ -685,7 +730,7 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
     measurechannels = ['A', ch]
     ps.capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
     time.sleep(.1)
-    chdata = get_data(measurechannels)
+    chdata = ps.get_data(measurechannels)
     plot.plot_channels(chdata)
     chvalue = np.mean(chdata[ch])
     print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
@@ -709,14 +754,14 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     sinwave = outamp * sin(linspace(0, 1, 2**12)*2*pi)
     chs = ['A', ch]
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
-    data = get_data(chs)
+    data = ps.get_data(chs)
     plot.plot_channels(data)
 
     # will change the range and offset after all
     squeeze_range(data, [ch])
 
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
-    data = get_data(chs)
+    data = ps.get_data(chs)
 
     plot.plot_channels(data)
 
@@ -725,7 +770,8 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
 # Change this when you change probing circuits
 #pico_to_iv = rehan_to_iv
-pico_to_iv = ccircuit_to_iv
+#pico_to_iv = ccircuit_to_iv
+pico_to_iv = partial(Rext_to_iv, R=50)
 
 def tri(v1, v2, n=None, step=None):
     '''

@@ -170,7 +170,7 @@ class autocaller():
         return 'autocalled ' + self.function.__name__
 
 # Add items to this and they will be appended as metadata to all subsequent measurements
-meta.static = {'gitrev':gitrev}
+meta.static['gitrev'] = gitrev
 
 
 ################ Bindings for convenience #################

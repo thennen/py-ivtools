@@ -24,7 +24,12 @@ import serial
 from collections import deque
 import weakref
 
-visa_rm = visa.ResourceManager()
+# Store the resource manager instance in the visa module
+# Because this module (instruments.py) may be reloaded,
+# and I want to retain access to the same ResourceManager instance.
+if not hasattr(visa, 'rm'):
+    visa.rm = visa.ResourceManager()
+visa_rm = visa.rm
 
 #########################################################
 # Parent Class   ########################################
@@ -120,25 +125,25 @@ class Picoscope(object):
 
         @property
         def a(self):
-            print(self['A'])
+            return self['A']
         @a.setter
         def a(self, value):
             self.set('A', value)
         @property
         def b(self):
-            print(self['B'])
+            return self['B']
         @b.setter
         def b(self, value):
             self.set('B', value)
         @property
         def c(self):
-            print(self['C'])
+            return self['B']
         @c.setter
         def c(self, value):
             self.set('C', value)
         @property
         def d(self):
-            print(self['D'])
+            return self['B']
         @d.setter
         def d(self, value):
             self.set('D', value)
@@ -148,6 +153,7 @@ class Picoscope(object):
         # TODO: add increment and decrement
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
+            # TODO: I think the possible ranges also depends on the input coupling
             self.possible = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
             self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
             self['A'] = 1.0
@@ -163,7 +169,7 @@ class Picoscope(object):
             if value in self.possible * atten:
                 newvalue = value
             else:
-                argclosest = argmin(np.abs(self.possible * atten - value))
+                argclosest = np.argmin(np.abs(self.possible * atten - value))
                 closest = self.possible[argclosest] * atten
                 print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
                 newvalue = closest
@@ -453,6 +459,7 @@ class RigolDG5000(object):
 
     def output_resistance(self, r=50, ch=1):
         ''' Manual says you can change output resistance from 1 to 10k'''
+        # Default is infinity??
         self.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
 
     def sync(self, state=True):
@@ -501,7 +508,11 @@ class RigolDG5000(object):
 
     def burst(self, state=True, ch=1):
         ''' Turn the burst mode on or off '''
+        # I think rigol is retarded, so it doesn't always turn off the burst mode on the first command
+        # It switches something else off instead, but only if you set up a waveform after entering burstmode
+        # The fix is to just issue the command twice..
         statestr = 'ON' if state else 'OFF'
+        self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
         self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
 
     # End for burst mode >>>>>
@@ -571,14 +582,17 @@ class RigolDG5000(object):
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
         self.amplitude(2*maxamp, ch=ch)
-        self.burstmode('TRIG', ch=ch)
-        self.ncycles(n, ch=ch)
-        self.trigsource('MAN', ch=ch)
-        self.burst(True, ch=ch)
+        self.setup_burstmode(n=n, burstmode='Trig', trigsource='MAN', ch=ch)
         self.outputstate(True, ch=ch)
 
+    def setup_burstmode(self, n=1, burstmode='TRIG', trigsource='MAN', ch=1):
+        # Set up bursting
+        self.burstmode(burstmode, ch=ch)
+        self.trigsource(trigsource, ch=ch)
+        self.ncycles(n, ch=ch)
+        self.burst(True, ch=ch)
 
-    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
+    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
         '''
         Set up a built-in waveform to pulse n times
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
@@ -592,17 +606,18 @@ class RigolDG5000(object):
             freq = 1. / duration
 
         # Set up waveform
-        self.burst(True, ch=ch)
-        self.burstmode('TRIG', ch=ch)
         self.shape(shape, ch=ch)
-        # Rigol's definition of amp is peak-to-peak, which is unusual.
+        # Rigol's definition of amplitude is peak-to-peak, which is unusual.
         self.amplitude(2*amp, ch=ch)
         self.offset(offset, ch=ch)
-        self.burstmode('TRIG', ch=ch)
-        self.ncycles(n, ch=ch)
-        self.trigsource('MAN', ch=ch)
         self.frequency(freq, ch=ch)
 
+
+    def continuous_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
+        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
+        # Get out of burst mode
+        self.burst(False, ch=ch)
+        self.outputstate(True)
 
     def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
         '''
@@ -610,8 +625,8 @@ class RigolDG5000(object):
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
         HAVersine|LORentz|ARBPULSE|DUAltone
         '''
-        passthrough = {k:v for k,v in locals().items() if k != 'self'}
-        self.load_builtin_wfm(**passthrough)
+        self.setup_burstmode(n=n)
+        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
 
         self.outputstate(True)
         # Trigger rigol
