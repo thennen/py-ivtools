@@ -41,7 +41,10 @@ iplots.plotters = [[0, plot0],
              
 iplots.newline()
 
-def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, interval = 0.1, trigger = -0.3, two_channel = False):
+def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
+ interval = 0.1, trigger = -0.3, two_channel = False):
+    '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
+    Pulses applied during this measurement are also recorded. '''
     number_of_events =0
     data = {}
     data['t_scope'] = []
@@ -105,5 +108,18 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     savedata(data)
 
 def eval_ultrafast(filename):
+    '''evaluates saved data from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     data = pd.read_pickle(filename)
-        
+    iplots.show()    
+    iplots.updateline(data)
+    if data['v_pulse']:
+        data['pulse_width'] = []
+        data['pulse_amplitude'] = []
+        for i in range(0,len(data['v_pulse'])-1):
+            pulse_minimum =min(data['v_pulse'][i])
+            pulse_index = np.where(np.array(data['v_pulse'][i]) < 0.5* pulse_minimum)
+ 
+            data['pulse_width'].append(data['t_scope'][i][pulse_index[0][-1]]-data['t_scope'][i][pulse_index[0][0]])
+            data['pulse_amplitude'].append(np.mean(data['v_pulse'][i][pulse_index])*2)
+    return data
+
