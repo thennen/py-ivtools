@@ -112,8 +112,8 @@ def eval_ultrafast(filename):
     data = pd.read_pickle(filename)
     iplots.show()    
     iplots.updateline(data)
-    if data['v_pulse']:
-        data['pulse_width'] = []
+    data['pulse_width'] = []
+    if data['v_pulse']:       
         data['pulse_amplitude'] = []
         for i in range(0,len(data['v_pulse'])-1):
             pulse_minimum =min(data['v_pulse'][i])
@@ -121,5 +121,11 @@ def eval_ultrafast(filename):
  
             data['pulse_width'].append(data['t_scope'][i][pulse_index[0][-1]]-data['t_scope'][i][pulse_index[0][0]])
             data['pulse_amplitude'].append(np.mean(data['v_pulse'][i][pulse_index])*2)
+    else:
+        for i in range(0,len(data['v_answer'])-1):
+            pulse_minimum =min(data['v_answer'][i])
+            pulse_index = np.where(np.array(data['v_answer'][i]) < 0.5* pulse_minimum)
+
+            data['pulse_width'].append(data['t_scope'][i][pulse_index[0][-1]]-data['t_scope'][i][pulse_index[0][0]])
     return data
 
