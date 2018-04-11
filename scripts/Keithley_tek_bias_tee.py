@@ -107,9 +107,10 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def eval_ultrafast(filename):
-    '''evaluates saved data from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
-    data = pd.read_pickle(filename)
+def eval_ultrafast(data):
+    '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
+    if(type(data) == str):
+        data = pd.read_pickle(data)
     iplots.show()    
     iplots.updateline(data)
     data['pulse_width'] = []
