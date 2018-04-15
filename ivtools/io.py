@@ -12,6 +12,7 @@ from datetime import datetime
 import sys
 import subprocess
 import numpy as np
+import time
 try:
     import cPickle as pickle
 except:

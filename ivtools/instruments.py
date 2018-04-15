@@ -417,11 +417,19 @@ class Picoscope(object):
 #########################################################
 class RigolDG5000(object):
     # There is at least one python library for DG5000, but I could not get it to run.
+    # TODO: Remember the waveform loaded into rigol volatile memory, and don't overwrite it if it didn't change
+    #       This will save you from needing to toggle the output relay
+    # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
         try:
             self.connect(addr)
         except:
             print('Rigol connection failed.')
+            return
+        # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
+        # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
+        self.screensaver(False)
+        self.volatilewfm = []
 
     def connect(self, addr):
         self.conn = visa_rm.open_resource(addr)
@@ -440,10 +448,13 @@ class RigolDG5000(object):
         '''
         self.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
 
-    def outputstate(self, state=True, ch=1):
+    def outputstate(self, state=None, ch=1):
         ''' Turn output state on or off '''
-        statestr = 'ON' if state else 'OFF'
-        self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
+        if state is None:
+            return self.ask(':OUTPUT{}:STATE?'.format(ch)).strip() == 'ON'
+        else:
+            statestr = 'ON' if state else 'OFF'
+            self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
 
     def frequency(self, freq, ch=1):
         ''' Set frequency of AWG waveform.  Not the sample rate! '''
@@ -489,7 +500,10 @@ class RigolDG5000(object):
     # <<<<< For burst mode
     def ncycles(self, n, ch=1):
         ''' Set number of cycles that will be output in burst mode '''
-        self.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
+        if n > 1000000:
+            raise Exception('Rigol can only pulse maximum 1,000,000 cycles')
+        else:
+            self.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
 
     def trigsource(self, source='MAN', ch=1):
         ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
@@ -506,7 +520,7 @@ class RigolDG5000(object):
         '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
         self.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
 
-    def burst(self, state=True, ch=1):
+    def burst(self, state=None, ch=1):
         ''' Turn the burst mode on or off '''
         # I think rigol is retarded, so it doesn't always turn off the burst mode on the first command
         # It switches something else off instead, but only if you set up a waveform after entering burstmode
@@ -521,7 +535,7 @@ class RigolDG5000(object):
         Load some data as an arbitrary waveform to be output.
         Data will be normalized.  Use amplitude to set the amplitude.
         Make sure that the output is off, because the command switches out of burst mode
-        and will start outputting immediately.
+        and otherwise will start outputting immediately.
         '''
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
         # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
@@ -554,13 +568,11 @@ class RigolDG5000(object):
 
     ### These use the wrapped SCPI commands to accomplish something useful
 
-    def load_volatile_wfm(self, waveform, duration, n=1, ch=1, interp=True):
+    def load_volatile_wfm(self, waveform, duration, ch=1, interp=True):
         '''
         Load waveform into volatile memory, but don't trigger
+        NOTICE: This will leave burst mode as a side-effect!  Thank RIGOL.
         '''
-        if len(waveform) > 512e3:
-            raise Exception('Too many samples requested for rigol AWG (probably?)')
-
         # toggling output state is slow, clunky, annoying, and should not be necessary.
         # it might also cause some spikes that could damage the device.
         # Also goes into high impedance output which could have some undesirable consequences.
@@ -568,22 +580,34 @@ class RigolDG5000(object):
         # out of burst mode automatically.  If the output is still enabled, you will get a
         # continuous pulse train until you can get back into burst mode.
         # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
-        self.outputstate(False, ch=ch)
-        #
-        # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
-        # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
-        self.screensaver(False)
-        #time.sleep(.01)
+
+        if len(waveform) > 512e3:
+            raise Exception('Too many samples requested for rigol AWG (probably?)')
+
+        burst_state = self.ask(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
         # Turn on interpolation for IVs, off for steps
         self.interp(interp)
-        # This command switches out of burst mode for some stupid reason
-        self.load_wfm(waveform)
+        # Only update waveform if necessary
+        if np.any(waveform != self.volatilewfm):
+            if burst_state:
+                output_state = self.outputstate(None, ch=ch)
+                if output_state:
+                    self.outputstate(False, ch=ch)
+                # This command switches out of burst mode for some stupid reason
+                self.load_wfm(waveform)
+                self.burst(True, ch=ch)
+                if output_state:
+                    self.outputstate(True, ch=ch)
+            else:
+                self.load_wfm(waveform)
+            self.volatilewfm = waveform
+        else:
+            # Just switch to the arbitrary waveform that is already in memory
+            self.write(':SOURce{}:FUNC:SHAPe USER'.format(ch))
         freq = 1. / duration
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
         self.amplitude(2*maxamp, ch=ch)
-        self.setup_burstmode(n=n, burstmode='Trig', trigsource='MAN', ch=ch)
-        self.outputstate(True, ch=ch)
 
     def setup_burstmode(self, n=1, burstmode='TRIG', trigsource='MAN', ch=1):
         # Set up bursting
@@ -627,11 +651,15 @@ class RigolDG5000(object):
         '''
         self.setup_burstmode(n=n)
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
-
-        self.outputstate(True)
+        self.outputstate(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 
+    def continuous_arbitrary(self, waveform, duration=None, ch=1):
+        self.load_volatile_wfm(waveform, duration=duration, ch=ch)
+        # Get out of burst mode
+        self.burst(False, ch=ch)
+        self.outputstate(True)
 
     def pulse_arbitrary(self, waveform, duration, n=1, ch=1, interp=True):
         '''
@@ -641,11 +669,11 @@ class RigolDG5000(object):
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
         '''
         # Load waveform
-        passthrough = {k:v for k, v in locals().items() if k != 'self'}
-        self.load_volatile_wfm(**passthrough)
+        self.load_volatile_wfm(waveform=waveform, duration=duration, ch=ch, interp=interp)
+        self.setup_burstmode(n=n)
+        self.outputstate(True, ch=ch)
         # Trigger rigol
-        self.trigger(ch=1)
-
+        self.trigger(ch=ch)
 
 #########################################################
 # Keithley 2600 #########################################
