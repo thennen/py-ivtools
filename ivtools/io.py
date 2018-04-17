@@ -489,11 +489,15 @@ def read_pandas_files(filepaths, concat=True, dropcols=None):
             if dropcols is not None:
                 realdropcols = [dc for dc in dropcols if dc in pdobject]
                 pdobject = pdobject.drop(realdropcols, 1)
+            if 'filepath' not in pdobject:
+                pdobject['filepath'] = [f] * len(pdobject)
             pdlist.append(pdobject)
         elif type(pdobject) is pd.Series:
             if dropcols is not None:
                 realdropcols = [dc for dc in dropcols if dc in pdobject]
                 pdobject = pdobject.drop(realdropcols)
+            if 'filepath' not in pdobject:
+                pdobject['filepath'] = f
             # Took me a while to figure out how to convert series into single row dataframe
             pdlist.append(pd.DataFrame.from_records([pdobject]))
             # This resets all the datatypes to object !!
@@ -562,6 +566,7 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 print('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
+    set_readonly(filepath)
     print('Wrote {}'.format(os.path.abspath(filepath)))
 
 def write_matlab(data, filepath, varname=None, compress=True):
@@ -719,6 +724,10 @@ def write_sql(data, db):
     con = 'wtf'
     data.to_sql(db, con, if_exists='append')
     # TODO: figure out what to do if data has columns that aren't already in the database.
+
+def set_readonly(filepath):
+    from stat import S_IREAD, S_IRGRP, S_IROTH
+    os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
