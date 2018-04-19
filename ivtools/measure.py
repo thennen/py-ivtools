@@ -251,6 +251,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
 
+    ivdata['nshots'] = n
+
     if savewfm:
         # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
         # You will need to interpolate it, however..

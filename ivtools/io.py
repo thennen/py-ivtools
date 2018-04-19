@@ -13,6 +13,7 @@ import sys
 import subprocess
 import numpy as np
 import time
+from matplotlib import pyplot as plt
 try:
     import cPickle as pickle
 except:

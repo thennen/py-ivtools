@@ -130,7 +130,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
                     kwargs.update(c=c)
                     line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs))
             else:
-                line = plot(data[x], data[y], **kwargs)
+                line = plt.plot(data[x], data[y], **kwargs)
                 ax.set_xlabel(x)
                 ax.set_ylabel(y)
         else:
@@ -697,6 +697,7 @@ def vcalcplotter(data, ax=None, R=8197, **kwargs):
     data['Vcalc'] = data['V'] - R * data['I']
     plotiv(data, ax=ax, x='Vcalc', **kwargs)
     ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 
 ### Widgets

@@ -832,7 +832,7 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpolate(data, interpvalues, column='I', reverse=False, findmonotonic=False):
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"
