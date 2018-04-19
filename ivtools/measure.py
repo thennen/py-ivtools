@@ -202,10 +202,11 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
-           refreshwfm=True, savewfm=False, **kwargs):
+           savewfm=False, pretrig=0, interpwfm=True, **kwargs):
     '''
     Pulse a waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
+    kwargs go nowhere
     '''
 
 
@@ -220,21 +221,23 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
         # Always smart range channel A
         smart_range(np.min(wfm), np.max(wfm), ch=['A'])
 
+    # Let pretrig refer to the fraction of a single pulse, not the whole pulsetrain
+    pretrig /= n
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_fs = ps.capture(ch=channels,
                              freq=fs,
-                             duration=n*duration)
+                             duration=n*duration,
+                             pretrig=pretrig)
+
+    # This makes me feel good, but I don't think it's really necessary
+    time.sleep(.05)
     if into50ohm:
         # Multiply voltages by 2 to account for 50 ohm input
         wfm = 2 * wfm
 
     # Send a pulse
-    # if no refresh, Rigol will just pulse whatever is already in the volatile buffer
-    # This saves the annoying *click* of the output relay
-    if refreshwfm:
-        rigol.load_volatile_wfm(wfm, duration=duration, n=n, ch=1, interp=True)
-    rigol.trigger(ch=1)
+    rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
 
     trainduration = n * duration
     print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
