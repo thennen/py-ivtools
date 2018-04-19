@@ -9,6 +9,7 @@ import re
 import fnmatch
 import pandas as pd
 from datetime import datetime
+from matplotlib import pyplot as plt
 import sys
 import subprocess
 import numpy as np
