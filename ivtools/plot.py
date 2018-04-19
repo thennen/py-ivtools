@@ -993,3 +993,13 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     # Put the limits back
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
+
+
+def engformatter(axis='y', ax=None):
+    if ax is None:
+        ax = plt.gca()
+    if axis.lower() == 'x':
+        axis = ax.xaxis
+    else:
+        axis = ax.yaxis
+    axis.set_major_formatter(mpl.ticker.EngFormatter())
