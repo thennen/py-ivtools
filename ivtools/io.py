@@ -367,7 +367,7 @@ def read_txt(filepath, **kwargs):
     colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]'],
                   'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
-                  't': ['time', 'Time [S]'],
+                  't': ['time', 'Time [S]', 't[s]'],
                   'Vmeasured': ['Voltage Probe (V)']}
 
     # Default arguments for readcsv
@@ -388,6 +388,18 @@ def read_txt(filepath, **kwargs):
             header = [firstline]
             header.extend(more_header)
             # Save this line to parse later
+            colname_line = more_header[-1]
+            # Single string version
+            header = ''.join(header)
+        elif firstline.startswith('linestoskip:'):
+            # GPIB control monstrosity
+            skiprows = int(firstline[12:].strip()) + 1
+            readcsv_args['skiprows'] = skiprows
+            more_header = []
+            for _ in range(skiprows - 1):
+                more_header.append(f.readline())
+            header = [firstline]
+            header.extend(more_header)
             colname_line = more_header[-1]
             # Single string version
             header = ''.join(header)
@@ -436,8 +448,9 @@ def read_txt(filepath, **kwargs):
     dataout['header'] = header
 
     # Replace Keithley nan values with real nans
-    nanmask = dataout['I'] == 9.9100000000000005e+37
-    dataout['I'][nanmask] = np.nan
+    if 'I' in dataout:
+        nanmask = dataout['I'] == 9.9100000000000005e+37
+        dataout['I'][nanmask] = np.nan
 
     return pd.Series(dataout)
 
