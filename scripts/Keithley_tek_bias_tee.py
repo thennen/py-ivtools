@@ -1,48 +1,50 @@
-def plot0(data, ax=None, **kwargs):
-    ax.cla()
-    ax.set_title('Answer')
-    if data['t_scope']:
-        ax.plot(data['t_scope'][-1], data['v_answer'][-1], **kwargs)    
-    ax.set_ylabel('Voltage [V]')
-    ax.set_xlabel('Time [S]')
-    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    
-def plot1(data, ax=None, **kwargs):
-    ax.cla()
-    ax.semilogy(data['t'], data['V'] / data['I'], **kwargs)
-    if data['t_event']:
-        ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
-    ax.set_ylabel('Resistance [V/A]')
-    ax.set_xlabel('Time [S]')
-    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    
-def plot2(data, ax=None, **kwargs):
-    ax.cla()
-    ax.set_title('Pulse')
-    if data['t_scope']:
-        ax.plot(data['t_scope'][-1], data['v_pulse'][-1], **kwargs)
-    ax.set_ylabel('Voltage [V]')
-    ax.set_xlabel('Time [S]')
-    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    
-def plot3(data, ax=None, **kwargs):
-    ax.cla()
-    ax.plot(data['t'], data['I'], **kwargs)
-    if data['t_event']:
-        ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
-    ax.set_ylabel('Current [A]')
-    ax.set_xlabel('Time [S]')
-    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    
-iplots.plotters = [[0, plot0],
-                   [1, plot1],
-                   [2, plot2],
-                   [3, plot3]]
-             
-iplots.newline()
+def setup_plots():
+    def plot0(data, ax=None, **kwargs):
+        ax.cla()
+        ax.set_title('Answer')
+        if data['t_scope']:
+            ax.plot(data['t_scope'][-1], data['v_answer'][-1], **kwargs)    
+        ax.set_ylabel('Voltage [V]')
+        ax.set_xlabel('Time [S]')
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+    def plot1(data, ax=None, **kwargs):
+        ax.cla()
+        ax.semilogy(data['t'], data['V'] / data['I'], **kwargs)
+        if data['t_event']:
+            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
+        ax.set_ylabel('Resistance [V/A]')
+        ax.set_xlabel('Time [S]')
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+    def plot2(data, ax=None, **kwargs):
+        ax.cla()
+        ax.set_title('Pulse')
+        if data['t_scope']:
+            ax.plot(data['t_scope'][-1], data['v_pulse'][-1], **kwargs)
+        ax.set_ylabel('Voltage [V]')
+        ax.set_xlabel('Time [S]')
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+    def plot3(data, ax=None, **kwargs):
+        ax.cla()
+        ax.plot(data['t'], data['I'], **kwargs)
+        if data['t_event']:
+            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
+        ax.set_ylabel('Current [A]')
+        ax.set_xlabel('Time [S]')
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+    iplots.plotters = [[0, plot0],
+                       [1, plot1],
+                       [2, plot2],
+                       [3, plot3]]
+                 
+    iplots.newline()
 
 def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
  interval = 0.1, trigger = -0.3, two_channel = False):
+    setup_plots()
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
     number_of_events =0
@@ -107,7 +109,8 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def eval_ultrafast(data):
+def eval_pcm_measurement(data):
+    setup_plots()
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     if(type(data) == str):
         data = pd.read_pickle(data)
