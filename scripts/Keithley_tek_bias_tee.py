@@ -1,3 +1,10 @@
+from matplotlib.widgets import Button
+import tkinter as tk
+
+
+def list_files(directory, extension):
+    return (f for f in listdir(directory) if f.endswith('.' + extension))
+
 def setup_plots():
     def plot0(data, ax=None, **kwargs):
         ax.cla()
@@ -109,9 +116,40 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def eval_pcm_measurement(data):
-    setup_plots()
+def eval_pcm_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
+    setup_plots()
+    def agree(self):
+        waitVar1.set(True)
+    def trehsold_visible(self):
+        
+        ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
+        b_agree = Button(ax_agree,'Agree')
+        b_agree.on_clicked(agree)
+        cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
+        root.wait_variable(waitVar1)
+
+        waitVar.set(True)
+        print(threshold_class.threshold)
+        print(data['t_scope'][i][pulse_index[0][0]])
+        data['t_threshold'].append(threshold_class.threshold-data['t_scope'][i][pulse_index[0][0]])
+
+    def threshold_invisible(self):
+        data['t_threshold'].append(numpy.nan)
+        waitVar.set(True)
+
+    def write_threshold(self, threshold_value):
+        t_threshold = threshold_value
+
+    def onpick(event):
+        ind = event.ind
+        t_threshold = np.take(x_data, ind)
+        print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
+        threshold_class.set_threshold(t_threshold)
+        if len(ind) == 1:
+            ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
+            plt.pause(0.1)
+
     if(type(data) == str):
         data = pd.read_pickle(data)
     iplots.show()    
@@ -131,5 +169,48 @@ def eval_pcm_measurement(data):
             pulse_index = np.where(np.array(data['v_answer'][i]) < 0.5* pulse_minimum)
 
             data['pulse_width'].append(data['t_scope'][i][pulse_index[0][-1]]-data['t_scope'][i][pulse_index[0][0]])
+    if manual_evaluation:
+        threshold_class = tmp_threshold()
+        data['t_threshold'] = []
+        root = tk.Tk()
+        root.withdraw()
+        waitVar = tk.BooleanVar()
+        waitVar1 = tk.BooleanVar()
+        for i in range(0,len(data['v_answer'])-1):
+            x_data = data['t_scope'][i]
+            y_data = data['v_answer'][i]/max(abs(data['v_answer'][i]))
+            figure_handle, ax_dialog = plt.subplots()
+            plt.title('Is a threshold visible?')
+            plt.subplots_adjust(bottom=0.25)
+            ax_dialog.plot(x_data,y_data, picker = True)
+            ax_yes = plt.axes([0.7, 0.05, 0.1, 0.075])
+            ax_no = plt.axes([0.81, 0.05, 0.1, 0.075])
+            b_yes = Button(ax_yes, 'Yes')
+            b_yes_conn = b_yes.on_clicked(trehsold_visible)
+            b_no = Button(ax_no, 'No')
+            b_no_conn = b_no.on_clicked(threshold_invisible)
+            root.wait_variable(waitVar)
+            plt.close(figure_handle)
+    root.destroy()
     return data
 
+def eval_all_pcm_measurements(filepath):
+    files = os.listdir(filepath)
+    all_data = []
+    for f in files:
+        filename = filepath+f
+        print(filename)
+        all_data.append(eval_pcm_measurement(filename, manual_evaluation = True))
+    return all_data
+
+
+
+class tmp_threshold():
+    threshold = numpy.nan
+    def set_threshold(self, threshold_value):
+        if len(threshold_value) > 1:
+            print('More than one object selected')
+            self.threshold = numpy.nan
+        else:
+            self.threshold = threshold_value
+            print('in class ' + str(self.threshold))
