@@ -51,9 +51,36 @@ def setup_plots():
 
 def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
  interval = 0.1, trigger = -0.3, two_channel = False):
-    setup_plots()
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
+    setup_plots()
+
+    def agree(self):
+        waitVar1.set(True)
+    def trehsold_visible(self):
+        ax_dialog.set_title('Please indicate threshold')
+        ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
+        b_agree = Button(ax_agree,'Agree')
+        b_agree.on_clicked(agree)
+        cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
+        root.wait_variable(waitVar1)
+
+        waitVar.set(True)
+        data['t_threshold'].append(threshold_class.threshold-data['t_scope'][i][pulse_index[0][0]])
+
+    def threshold_invisible(self):
+        data['t_threshold'].append(numpy.nan)
+        waitVar.set(True)
+
+    def onpick(event):
+        ind = event.ind
+        t_threshold = np.take(x_data, ind)
+        print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
+        threshold_class.set_threshold(t_threshold)
+        if len(ind) == 1:
+            ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
+            ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
+            plt.pause(0.1)
     number_of_events =0
     data = {}
     data['t_scope'] = []
@@ -119,10 +146,12 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
 def eval_pcm_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_plots()
+
+    ########## declareation of buttons ###########
     def agree(self):
         waitVar1.set(True)
     def trehsold_visible(self):
-        
+        ax_dialog.set_title('Please indicate threshold')
         ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
         b_agree = Button(ax_agree,'Agree')
         b_agree.on_clicked(agree)
@@ -130,16 +159,11 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         root.wait_variable(waitVar1)
 
         waitVar.set(True)
-        print(threshold_class.threshold)
-        print(data['t_scope'][i][pulse_index[0][0]])
         data['t_threshold'].append(threshold_class.threshold-data['t_scope'][i][pulse_index[0][0]])
 
     def threshold_invisible(self):
         data['t_threshold'].append(numpy.nan)
         waitVar.set(True)
-
-    def write_threshold(self, threshold_value):
-        t_threshold = threshold_value
 
     def onpick(event):
         ind = event.ind
@@ -148,27 +172,41 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         threshold_class.set_threshold(t_threshold)
         if len(ind) == 1:
             ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
+            ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
             plt.pause(0.1)
 
+    ######## beginning of main evalution #############
     if(type(data) == str):
         data = pd.read_pickle(data)
     iplots.show()    
     iplots.updateline(data)
     data['pulse_width'] = []
+    data['pulse_amplitude'] = []
+    ########## if two channel experiment: ################
     if data['v_pulse']:       
-        data['pulse_amplitude'] = []
         for i in range(0,len(data['v_pulse'])-1):
             pulse_minimum =min(data['v_pulse'][i])
             pulse_index = np.where(np.array(data['v_pulse'][i]) < 0.5* pulse_minimum)
- 
-            data['pulse_width'].append(data['t_scope'][i][pulse_index[0][-1]]-data['t_scope'][i][pulse_index[0][0]])
+            pulse_end = data['t_scope'][i][pulse_index[0][-1]]
+            pulse_start = data['t_scope'][i][pulse_index[0][0]]
+            data['pulse_width'].append(pulse_end-pulse_start)
             data['pulse_amplitude'].append(np.mean(data['v_pulse'][i][pulse_index])*2)
+    ########## if one channel experiment: ################       
     else:
         for i in range(0,len(data['v_answer'])-1):
             pulse_minimum =min(data['v_answer'][i])
             pulse_index = np.where(np.array(data['v_answer'][i]) < 0.5* pulse_minimum)
-
-            data['pulse_width'].append(data['t_scope'][i][pulse_index[0][-1]]-data['t_scope'][i][pulse_index[0][0]])
+            pulse_start_index = pulse_index[0][0]
+            pulse_start = data['t_scope'][i][pulse_start_index]
+            pulse_end_index = pulse_start_index + np.where(np.array(data['v_answer'][i][pulse_start_index:-1]) >= 0)[0][0]
+            pulse_end = data['t_scope'][i][pulse_end_index]
+            '''for short pulses the width is determined as FWHM, otherwise from pulse start until 
+             the zero line is crossed for the first time '''
+            if pulse_end - pulse_start < 1e-9:
+                pulse_end = data['t_scope'][i][pulse_index[0][-1]]
+            data['pulse_width'].append(pulse_end-pulse_start)
+            data['pulse_amplitude'].append(get_pulse_amplitude(amplitude = data['amplitude'], bits = data['bits']))
+    ######## detection of threshold event by hand ###########
     if manual_evaluation:
         threshold_class = tmp_threshold()
         data['t_threshold'] = []
@@ -186,15 +224,16 @@ def eval_pcm_measurement(data, manual_evaluation = False):
             ax_yes = plt.axes([0.7, 0.05, 0.1, 0.075])
             ax_no = plt.axes([0.81, 0.05, 0.1, 0.075])
             b_yes = Button(ax_yes, 'Yes')
-            b_yes_conn = b_yes.on_clicked(trehsold_visible)
+            b_yes.on_clicked(trehsold_visible)
             b_no = Button(ax_no, 'No')
-            b_no_conn = b_no.on_clicked(threshold_invisible)
+            b_no.on_clicked(threshold_invisible)
             root.wait_variable(waitVar)
             plt.close(figure_handle)
-    root.destroy()
+        root.destroy()
     return data
 
 def eval_all_pcm_measurements(filepath):
+    ''' executes all eval_pcm_measurements in one directory and bundles the results'''
     files = os.listdir(filepath)
     all_data = []
     for f in files:
@@ -203,14 +242,19 @@ def eval_all_pcm_measurements(filepath):
         all_data.append(eval_pcm_measurement(filename, manual_evaluation = True))
     return all_data
 
+def get_pulse_amplitude(amplitude, bits):
+    pulse_amplitude = numpy.nan
+    if bits == 1:
+        if amplitude == 1:
+            pulse_amplitude =1
 
+    return pulse_amplitude
 
 class tmp_threshold():
     threshold = numpy.nan
     def set_threshold(self, threshold_value):
         if len(threshold_value) > 1:
-            print('More than one object selected')
+            print('More than one point selected. Zoom closer to treshold event')
             self.threshold = numpy.nan
         else:
             self.threshold = threshold_value
-            print('in class ' + str(self.threshold))
