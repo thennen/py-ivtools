@@ -55,32 +55,6 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     Pulses applied during this measurement are also recorded. '''
     setup_plots()
 
-    def agree(self):
-        waitVar1.set(True)
-    def trehsold_visible(self):
-        ax_dialog.set_title('Please indicate threshold')
-        ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
-        b_agree = Button(ax_agree,'Agree')
-        b_agree.on_clicked(agree)
-        cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
-        root.wait_variable(waitVar1)
-
-        waitVar.set(True)
-        data['t_threshold'].append(threshold_class.threshold-data['t_scope'][i][pulse_index[0][0]])
-
-    def threshold_invisible(self):
-        data['t_threshold'].append(numpy.nan)
-        waitVar.set(True)
-
-    def onpick(event):
-        ind = event.ind
-        t_threshold = np.take(x_data, ind)
-        print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
-        threshold_class.set_threshold(t_threshold)
-        if len(ind) == 1:
-            ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
-            ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
-            plt.pause(0.1)
     number_of_events =0
     data = {}
     data['t_scope'] = []
@@ -205,7 +179,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
             if pulse_end - pulse_start < 1e-9:
                 pulse_end = data['t_scope'][i][pulse_index[0][-1]]
             data['pulse_width'].append(pulse_end-pulse_start)
-            data['pulse_amplitude'].append(get_pulse_amplitude(amplitude = data['amplitude'], bits = data['bits']))
+            data['pulse_amplitude'].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'], bits = data['bits']))
     ######## detection of threshold event by hand ###########
     if manual_evaluation:
         threshold_class = tmp_threshold()
@@ -242,15 +216,73 @@ def eval_all_pcm_measurements(filepath):
         all_data.append(eval_pcm_measurement(filename, manual_evaluation = True))
     return all_data
 
-def get_pulse_amplitude(amplitude, bits):
+def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
+    '''returns pulse amplitude in Volts depending on the measured output of the PSPL12500'''
     pulse_amplitude = numpy.nan
     if bits == 1:
-        if amplitude == 1:
-            pulse_amplitude =1
+        if amplitude == 0.3:
+            pulse_amplitude = 2*0.728
+        elif amplitude == 0.4:
+            pulse_amplitude = 2*0.776
+        elif amplitude == 0.5:
+            pulse_amplitude = 2*0.8356
+        elif amplitude == 1:
+            pulse_amplitude = 2*1.1088
+        elif amplitude == 2:
+            pulse_amplitude = 2*1.5314
+        elif amplitude == 3:
+            pulse_amplitude = 2*2.0028
+        elif amplitude == 4:
+            pulse_amplitude = 2*2.306727
+        elif amplitude == 5:
+            pulse_amplitude = 2*2.622
+        elif amplitude == 6:
+            pulse_amplitude = 2*2.8624
+        elif amplitude == 7:
+            pulse_amplitude = 2*3.144727
+        elif amplitude == 8:
+            pulse_amplitude = 2*3.378
+        elif amplitude == 9:
+            pulse_amplitude = 2*3.652
+        elif amplitude == 10:
+            pulse_amplitude = 4.184
+        else: 
+            print('Unknown amplitude')
+
+    elif bits > 1:
+        if amplitude == 0.3:
+            pulse_amplitude = 2*0.7646
+        elif amplitude == 0.4:
+            pulse_amplitude = 2*0.8182
+        elif amplitude == 0.5:
+            pulse_amplitude = 2*0.8952
+        elif amplitude == 1:
+            pulse_amplitude = 2*1.1693
+        elif amplitude == 2:
+            pulse_amplitude = 2*1.7592
+        elif amplitude == 3:
+            pulse_amplitude = 2*2.2008
+        elif amplitude == 4:
+            pulse_amplitude = 2*2.605455
+        elif amplitude == 5:
+            pulse_amplitude = 2*2.9248
+        elif amplitude == 6:
+            pulse_amplitude = 2*32552
+        elif amplitude == 7:
+            pulse_amplitude = 2*3.541818
+        elif amplitude == 8:
+            pulse_amplitude = 2*3.872
+        elif amplitude == 9:
+            pulse_amplitude = 2*4.2144
+        elif amplitude == 10:
+            pulse_amplitude = 4.7756
+        else: 
+            print('Unknown amplitude')
 
     return pulse_amplitude
 
 class tmp_threshold():
+    '''Allows to save the threshold obtained by clicking eval_pcm_measurement => there maybe a better solultion'''
     threshold = numpy.nan
     def set_threshold(self, threshold_value):
         if len(threshold_value) > 1:
