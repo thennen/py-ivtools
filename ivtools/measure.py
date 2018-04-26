@@ -7,7 +7,7 @@ Keithley 2636B, 2634B, 2636A
 """
 
 # Local imports
-from . import plot
+from . import plot as ivplot
 from . import analyze
 from . import instruments
 
@@ -736,7 +736,7 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
     ps.capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
     time.sleep(.1)
     chdata = ps.get_data(measurechannels)
-    plot.plot_channels(chdata)
+    ivplot.plot_channels(chdata)
     chvalue = np.mean(chdata[ch])
     print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
 
@@ -760,7 +760,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     chs = ['A', ch]
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
     data = ps.get_data(chs)
-    plot.plot_channels(data)
+    ivplot.plot_channels(data)
 
     # will change the range and offset after all
     squeeze_range(data, [ch])
@@ -768,7 +768,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
     data = ps.get_data(chs)
 
-    plot.plot_channels(data)
+    ivplot.plot_channels(data)
 
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
