@@ -1,7 +1,7 @@
 """ Functions for doing data analysis on IV data """
 
 # Local imports
-from . import plot
+from . import plot as ivplot
 
 from functools import wraps
 import numpy as np
@@ -291,7 +291,7 @@ def select_by_derivative(data, threshold=None, debug=False):
         ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
         ax.set_xlim(xmin, xmax)
     elif debug == 2:
-        plot.plotiv(data, ax=ax)
+        ivplot.plotiv(data, ax=ax)
         ax.scatter(data['V'][index], data['I'][index])
 
     return index
@@ -832,7 +832,7 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpolate(data, interpvalues, column='I', reverse=False, findmonotonic=False):
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"

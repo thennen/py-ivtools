@@ -209,3 +209,43 @@ function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, np
     smua.measure.overlappediv(smua.nvbuffer1, smua.nvbuffer2)
 
 end
+
+
+function constantIMeasV_4pt(sourceI, points, interval, rangeI, nplc)
+    -- sources current on CHA and measures voltage on CHB over time
+    -- 4 pt measurement
+    -- not tested, probably doesn't work!
+
+    reset()
+
+    -- Configure the SMUs
+    smua.reset()
+    smua.source.func            = smua.OUTPUT_DCAMPS
+    smua.measure.nplc           = nplc
+    smua.source.leveli          = sourceI
+    smua.measure.count          = points
+    smua.measure.interval       = interval
+    smua.sense                  = smua.SENSE_REMOTE
+
+    -- Autorange by passing rangeI = 0
+    if rangeI == 0 then
+      smua.measure.autorangei = smua.AUTORANGE_ON
+    else
+      smua.measure.rangei = rangeI
+    end
+
+    -- Prepare the Reading Buffers
+    smua.nvbuffer1.clear()
+    smua.nvbuffer1.collecttimestamps    = 1
+    smua.nvbuffer1.collectsourcevalues  = 1
+    smua.nvbuffer2.clear()
+    smua.nvbuffer2.collecttimestamps    = 1
+    smua.nvbuffer2.collectsourcevalues  = 1
+
+    -- Ready to begin the test
+    smua.source.output                  = smua.OUTPUT_ON
+    -- Start the trigger model execution
+
+    smua.measure.overlappediv(smua.nvbuffer1, smua.nvbuffer2)
+
+end

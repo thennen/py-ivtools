@@ -221,7 +221,7 @@ s = autocaller(savedata)
 # TODO: Would I ever want to turn off autosaving? autoplotting?  Could call the iv functions from measure.py directly..
 
 # Wrap any fuctions that you want to automatically make plots with this
-def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False):
+def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
     ''' Activates auto data plotting and saving for wrapped functions '''
     @wraps(func)
     def func_with_plotting(*args, **kwargs):
@@ -249,7 +249,8 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False):
                     plt.pause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
-            savedata(data)
+            if autosave:
+                savedata(data)
         return data
     return func_with_plotting
 
@@ -261,6 +262,6 @@ if k is not None:
     live = True
     if '2636A' in k.idn():
         live = False
-    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live)
-    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live)
-    kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live)
+    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)

@@ -2,7 +2,7 @@
 
 # Local imports
 from . import analyze
-from . import plot
+from . import plot as ivplot
 
 import os
 import re
@@ -14,6 +14,7 @@ import sys
 import subprocess
 import numpy as np
 import time
+from matplotlib import pyplot as plt
 try:
     import cPickle as pickle
 except:
@@ -366,7 +367,7 @@ def read_txt(filepath, **kwargs):
     colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]'],
                   'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
-                  't': ['time', 'Time [S]'],
+                  't': ['time', 'Time [S]', 't[s]'],
                   'Vmeasured': ['Voltage Probe (V)']}
 
     # Default arguments for readcsv
@@ -387,6 +388,18 @@ def read_txt(filepath, **kwargs):
             header = [firstline]
             header.extend(more_header)
             # Save this line to parse later
+            colname_line = more_header[-1]
+            # Single string version
+            header = ''.join(header)
+        elif firstline.startswith('linestoskip:'):
+            # GPIB control monstrosity
+            skiprows = int(firstline[12:].strip()) + 1
+            readcsv_args['skiprows'] = skiprows
+            more_header = []
+            for _ in range(skiprows - 1):
+                more_header.append(f.readline())
+            header = [firstline]
+            header.extend(more_header)
             colname_line = more_header[-1]
             # Single string version
             header = ''.join(header)
@@ -435,8 +448,9 @@ def read_txt(filepath, **kwargs):
     dataout['header'] = header
 
     # Replace Keithley nan values with real nans
-    nanmask = dataout['I'] == 9.9100000000000005e+37
-    dataout['I'][nanmask] = np.nan
+    if 'I' in dataout:
+        nanmask = dataout['I'] == 9.9100000000000005e+37
+        dataout['I'][nanmask] = np.nan
 
     return pd.Series(dataout)
 
@@ -745,7 +759,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       s.I *= 1e6
       s.units['I'] = '$\mu$A'
       smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-      plot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
+      ivplot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       if 'thickness_1' in s:
@@ -760,7 +774,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
       step = int(ceil(len(df) / maxloops))
       smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-      plot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+      ivplot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       s = df.iloc[0]
