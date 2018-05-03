@@ -15,6 +15,8 @@ Normal numpy broadcasting rules apply, so one can of course pass single paramete
 
 from scipy import constants
 import numpy as np
+from scipy.optimize import fsolve
+from functools import reduce
 
 pi = constants.pi
 q = constants.elementary_charge # Because e is 2.71828..
@@ -24,8 +26,8 @@ exp = np.exp
 sqrt = np.sqrt
 
 
-# TODO: Which mechanisms have closed form solutions for I(V, T, ...)? is it useful to include them?
-# Maybe a numerical solver can wrap the V(I, T) functions to furnish I(V, T)
+# TODO: Which mechanisms have closed form solutions for E(J, T, ...)? is it useful to include them?
+# Maybe a numerical solver can wrap the J(E, T) functions to furnish E(J, T)
 
 # TODO: Give everything default values corresponding to some physical material
 
@@ -36,6 +38,11 @@ copper = dict(mu=10,
               Ef=40,
               Ec=30)
 # Now I can call ohmic(E, T, **copper)
+
+# TODO: some first order self-heating model.  What thermal impedances are reasonable?
+#       Probably this would look like a self_heating function which takes a mechanism and a thermal impedance
+
+# TODO: linearized plots for the mechanisms that have them
 
 # TODO: Figure out what to do about units.  Want to use electron volts obviously. And many units are commonly given with cm.
 # mobility cm^2/V/s, but V/cm is a strange unit for E..
@@ -147,12 +154,22 @@ def thermionic_field_emission():
     '''
     pass
 
+######################################## Made up #######################################
+
+def empirical_1(E, T, A=3.38e2, Eb=0.155, c=7.89e-4, **kwargs):
+    '''
+    E:     Electric Field [V/cm]
+    T:     Temperature [K]
+    '''
+    kT = kB * T
+    return E * A * exp(-q*Eb/kT) * exp(c * sqrt(E))
+
 ######################################## Fitting ########################################
 
 def interp_ivt():
     ''' interpolate measured I(V, T) data for uniform I or V values'''
 
-def fit_ivt(i, v, t, thickness, area, conductionfunc, **kwargs):
+def fit_ivt(i, v, t, thickness, area, mechanism, **kwargs):
 
     # How to pass the data?
     # i, v, t could be 1d arrays of same length..
@@ -170,3 +187,43 @@ def fit_ivt(i, v, t, thickness, area, conductionfunc, **kwargs):
 
     # if my normal data structure is passed, i = vstack(df['I']), v = vstack(df['V']), t = df['T']
     pass
+
+######################################## Self-heating #####################################
+
+def T_selfheat(J, E, T0, Rth):
+    # This is how temperature depends on J and E, considering self-heating
+    return T0 + Rth * J * E
+
+def self_heating_bulk(J, mechanism, Rth=3.2e5, T0=300, **kwargs):
+    '''
+    Calculate E(J) if T = T0 + Rth * Power
+    passing J values because the result might not be single valued in voltage (s-type NDR)
+    How to deal with volume?  maybe pass Rth * volume? do I need to pass A and t??
+    Rth has units Kelvin/Watt
+    but J*E is Watt/volume, so Rth*J*E is Kelvin/volume
+    '''
+    # Mechanism should be only missing E and T values
+    if kwargs:
+        mechanism = reduce(mechanism, **kwargs)
+    # Now, given E, we need a consistent solution for I(V, T) and T(I, V)
+    E = []
+    # For each current density, find the electric field numerically
+    for j in J:
+        def solvethis(e):
+            T = T_selfheat(j, e, T0, Rth)
+            jm = mechanism(E=e, T=T)
+            return j - jm
+        # Volts/meter
+        e_guess = 1e9
+        e, *rest = fsolve(solvethis, e_guess)
+        E.append(e)
+    return np.array(E)
+
+######################################## linearized plots #####################################
+
+def schottky_plot():
+    pass
+
+def poole_frenkel_plot():
+    pass
+
