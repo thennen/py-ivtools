@@ -32,6 +32,8 @@ rigol = None
 k = None
 # Any TektronixDPO73304D found
 ttx = None
+# Any PG5 found
+pg5 = None
 
 # TODO: try to connect to all known instruments
 
@@ -135,9 +137,35 @@ def connect_tektronix(addr=None):
                 print('TektronixDPO73304D already connected')
                 print('TektronixDPO73304D *IDN?: {}'.format(idn))
             except:
-                print('TektronixDPO73304D not responding, and keithley variable is not None.')
+                print('TektronixDPO73304D not responding, and textronix variable is not None.')
     if ttx is None:
         print('Connection to TektronixDPO73304D failed.')
+
+def connect_pg5(addr=None):
+    global pg5
+    if addr is None:
+        addrs = ['ASRL3::INSTR']
+    else:
+        addrs = [addr]
+    for addr in addrs:
+        if pg5 is None:
+            try:
+                pg5 = instruments.PG5(addr)
+                idn = pg5.ask('*IDN?').replace('\n','')
+                print('PG5 *IDN?: {}'.format(idn))
+            except:
+                pg5 = None
+        else:
+            try:
+                # Is PG5 already connected?    
+                idn = pg5.ask('*IDN?')
+                print('PG5 already connected')
+                print('PG5 *IDN?: {}'.format(idn))
+            except:
+                print('PG5 not responding and pg5 variable is not None.')
+    if pg5 is None:
+        print('Connection to PG5 failed.')
+
 
 def connect_instruments():
     ''' Connect all the necessary equipment '''
@@ -146,6 +174,7 @@ def connect_instruments():
     connect_rigolawg()
     connect_keithley()
     connect_tektronix()
+    connect_pg5()
 
 
 def close_instruments():
