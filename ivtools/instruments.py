@@ -1005,6 +1005,9 @@ class TektronixDPO73304D(object):
         trigger_str = self.ask('TRIG:STATE?')
         return trigger_str == 'READY\n'
 
+    def trigger_position(self, position):
+        self.write('HORIZONTAL:POSITION ' + str(position))
+
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
 #########################################################
