@@ -153,6 +153,7 @@ def connect_pg5(addr=None):
                 pg5 = instruments.PG5(addr)
                 idn = pg5.ask('*IDN?').replace('\n','')
                 print('PG5 *IDN?: {}'.format(idn))
+                pg5.read()   # read necessary to avoid empty line issue
             except:
                 pg5 = None
         else:
@@ -161,6 +162,7 @@ def connect_pg5(addr=None):
                 idn = pg5.ask('*IDN?')
                 print('PG5 already connected')
                 print('PG5 *IDN?: {}'.format(idn))
+                pg5.read()   # read necessary to avoid empty line issue
             except:
                 print('PG5 not responding and pg5 variable is not None.')
     if pg5 is None:

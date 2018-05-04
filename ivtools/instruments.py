@@ -1028,22 +1028,23 @@ class PG5(object):
     #TO DO: fix communication during ask commands, setting self.conn.query_delay to higher values doesnt help
     def error(self):
         '''prints the last error'''
-        error_msg = self.ask(':SYST:ERR:NEXT?', delay = 1)
+        error_msg = self.ask(':SYST:ERR:NEXT?')
         print(error_msg)
-    #TO DO: fix set_trigger_type (doesnt do anything right now)
-    def set_trigger_type(self, type):
-        '''sets the trigger type:
-        type = \'IMM\' for internal clock
-        type = \'TTL\' for external triggering
-        tpye = \'MANUAL\' for manual triggering'''
-        if type is 'IMM':
-            self.write(':TRIG:SOUR IMM')
-        elif type is 'TTL':
-            self.write(':TRIG:SOUR TTL')
-        elif type is 'MANUAL':
-            self.write(':TRIG:SOUR MANUAL')
-        else:
-            print('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
+    #TO DO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
+    
+    # def set_trigger_type(self, type):
+    #     '''sets the trigger type:
+    #     type = \'IMM\' for internal clock
+    #     type = \'TTL\' for external triggering
+    #     tpye = \'MANUAL\' for manual triggering'''
+    #     if type is 'IMM':
+    #         self.write(':TRIG:SOUR IMM')
+    #     elif type is 'TTL':
+    #         self.write(':TRIG:SOUR TTL')
+    #     elif type is 'MANUAL':
+    #         self.write(':TRIG:SOUR MANUAL')
+    #     else:
+    #         print('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
 
     def set_pulse_width(self, pulse_width):
         '''sets the pulse width in ps (between 50 and 250 ps)'''
