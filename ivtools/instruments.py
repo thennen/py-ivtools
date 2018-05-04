@@ -946,9 +946,10 @@ class Eurotherm2408(object):
         CHAN = '1'
         gid = str(self.gid)
         uid = str(self.uid)
-        data = format(data, '.2f')
-        bcc = str(reduce(xor, (mnemonic + data + ETX).encode()))
+        data = format(data, '.1f')
+        bcc = chr(reduce(xor, (mnemonic + data + ETX).encode()))
         msg = EOT + gid + gid + uid + uid + STX + mnemonic + data + ETX + bcc
+        # print(msg)
         self.conn.write(msg.encode())
 
         # Wait?
@@ -961,7 +962,12 @@ class Eurotherm2408(object):
         ACK = '\x06'
         NAK = '\x15'
         reply = self.conn.read_all()
-        return reply
+        if reply == ACK.encode():
+            return True
+        elif reply == NAK.encode():
+            return False
+        else:
+            raise Exception('Eurotherm not connected properly')
 
     def read_data(self, mnemonic):
         EOT = '\x04'
@@ -970,6 +976,7 @@ class Eurotherm2408(object):
         uid = str(self.uid)
         # Poll
         # [EOT] (GID) (GID) (UID) (UID) (CHAN) (C1) (C2) [ENQ]
+        # CHAN optional, will be returned only if sent
         poll = EOT + gid + gid + uid + uid + mnemonic + ENQ
         self.conn.write(poll.encode())
 
@@ -986,7 +993,7 @@ class Eurotherm2408(object):
             return np.nan
 
     def read_temp(self):
-        return self.read_data('PV')
+        return float(self.read_data('PV'))
 
     def set_temp(self, value):
         return self.write_data('SL', value)
