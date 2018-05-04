@@ -122,10 +122,10 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
 def eval_pcm_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_plots()
-
     ########## declareation of buttons ###########
     def agree(self):
         waitVar1.set(True)
+
     def threhsold_visible(self):
         ax_dialog.set_title('Please indicate threshold')
         ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
@@ -133,12 +133,18 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         b_agree.on_clicked(agree)
         cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
         root.wait_variable(waitVar1)
-        data['t_threshold'].append(threshold_class.threshold-data['t_scope'][i][pulse_index[0]])
+        if not threshold_written_class.state:
+            data['t_threshold'].append(threshold_class.threshold-t_scope[pulse_index[0]])
+            threshold_written_class.state = True
         waitVar.set(True)
-        
+
 
     def threshold_invisible(self):
-        data['t_threshold'].append(numpy.nan)
+        #print(threshold_written_class.state)
+        if not threshold_written_class.state:
+            data['t_threshold'].append(numpy.nan)
+            threshold_written_class.state = True
+        #print(threshold_written_class.state)
         waitVar.set(True)
 
     def onpick(event):
@@ -161,41 +167,44 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     data['t_threshold'] = []
     ########## if two channel experiment: ################
     if data['v_pulse']:       
-        for i in range(0,len(data['v_pulse'])):
-            pulse_minimum =min(data['v_pulse'][i])
-            pulse_index = where(np.array(data['v_pulse'][i]) < 0.5* pulse_minimum)
-            pulse_end = data['t_scope'][i][pulse_index[-1]]
-            pulse_start = data['t_scope'][i][pulse_index[0]]
+        for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
+            pulse_minimum =min(v_pulse)
+            pulse_index = where(np.array(v_pulse) < 0.5* pulse_minimum)
+            pulse_end = t_scope[pulse_index[-1]]
+            pulse_start = t_scope[pulse_index[0]]
 
             data['pulse_width'].append(pulse_end-pulse_start)
-            data['pulse_amplitude'].append(np.mean(data['v_pulse'][i][pulse_index])*2)
+            data['pulse_amplitude'].append(np.mean(v_pulse[pulse_index])*2)
         
     ########## if one channel experiment: ################       
     else:
-        for i in range(0,len(data['v_answer'])):
-            pulse_minimum =min(data['v_answer'][i])
-            pulse_index = where(np.array(data['v_answer'][i]) < 0.5* pulse_minimum)
+        for t_scope, v_answer in zip(data['t_scope'],data['v_answer']):
+            pulse_minimum =min(v_answer)
+            pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
             pulse_start_index = pulse_index[0]
-            pulse_start = data['t_scope'][i][pulse_start_index]
-            pulse_end_index = pulse_start_index + where(np.array(data['v_answer'][i][pulse_start_index:-1]) >= 0)[0]
-            pulse_end = data['t_scope'][i][pulse_end_index]
+            pulse_start = t_scope[pulse_start_index]
+            pulse_end_index = pulse_start_index + where(np.array(v_answer[pulse_start_index:-1]) >= 0)[0]
+            pulse_end = t_scope[pulse_end_index]
             '''for short pulses the width is determined as FWHM, otherwise from pulse start until 
              the zero line is crossed for the first time '''
             if pulse_end - pulse_start < 1e-9:
-                pulse_end = data['t_scope'][i][pulse_index[-1]]
+                pulse_end = t_scope[pulse_index[-1]]
             data['pulse_width'].append(pulse_end-pulse_start)
             data['pulse_amplitude'].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'], bits = data['bits']))
             #import pdb; pdb.set_trace()
     ######## detection of threshold event by hand ###########
     if manual_evaluation:
         threshold_class = tmp_threshold()
+        threshold_written_class = threshold_written()
+        
         root = tk.Tk()
         root.withdraw()
         waitVar = tk.BooleanVar()
         waitVar1 = tk.BooleanVar()
-        for i in range(0,len(data['v_answer'])):
-            x_data = data['t_scope'][i]
-            y_data = data['v_answer'][i]/max(abs(data['v_answer'][i]))
+        for t_scope, v_answer in zip(data['t_scope'], data['v_answer']):
+            threshold_written_class.state = False
+            x_data = t_scope
+            y_data = v_answer/max(abs(v_answer))
             figure_handle, ax_dialog = plt.subplots()
             plt.title('Is a threshold visible?')
             plt.subplots_adjust(bottom=0.25)
@@ -208,7 +217,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
             b_no.on_clicked(threshold_invisible)
             root.wait_variable(waitVar)
             plt.close(figure_handle)
-            print(len(data['pulse_amplitude'])-len(data['t_threshold']))
+            #print(len(data['pulse_amplitude'])-len(data['t_threshold']))            
         root.destroy()
     return data
 
@@ -224,10 +233,15 @@ def eval_all_pcm_measurements(filepath):
         all_data.append(eval_pcm_measurement(filename, manual_evaluation = True))
     t_threshold = np.array(all_data[0]['t_threshold'])
     pulse_amplitude = np.array(all_data[0]['pulse_amplitude'])
-    
-    for i in range(1,len(all_data)):
-        t_threshold = np.append(t_threshold,np.array(all_data[i]['t_threshold']))
-        pulse_amplitude = np.append(pulse_amplitude,np.array(all_data[i]['pulse_amplitude']))
+    t_threshold = []
+    for data in all_data:
+        if len(t_threshold)>0:
+            t_threshold = np.append(t_threshold,np.array(data['t_threshold']))
+            pulse_amplitude = np.append(pulse_amplitude,np.array(data['pulse_amplitude']))
+        else:
+            t_threshold = np.array(data['t_threshold'])
+            pulse_amplitude = np.array(data['pulse_amplitude'])
+    plot_pcm_vt(pulse_amplitude, t_threshold)
     return all_data, t_threshold, pulse_amplitude
 
 def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
@@ -310,6 +324,15 @@ def plot_pcm_amp_comp(data, i = 0):
     handles, labels = ax_cmp.get_legend_handles_labels()
     ax_cmp.legend(handles, labels, loc = 'lower right')
 
+def plot_pcm_vt(pulse_amplitude, t_threshold):
+    fig = plt.figure()
+    ax_vt = plt.gca()
+    ax_vt.semilogy(pulse_amplitude, t_threshold,'.k')
+    ax_vt.set_ylabel('t_Threshold [s]')
+    ax_vt.set_xlabel('Votlage [V]')
+    ax_vt.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    fig.show()
+
 class tmp_threshold():
     '''Allows to save the threshold obtained by clicking eval_pcm_measurement => there maybe a better solultion'''
     threshold = numpy.nan
@@ -319,3 +342,6 @@ class tmp_threshold():
             self.threshold = numpy.nan
         else:
             self.threshold = threshold_value
+
+class threshold_written():
+    state = False
