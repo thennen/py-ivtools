@@ -53,7 +53,6 @@ def setup_pcm_plots():
 
 def setup_vcm_plots():
 
-
     def plot0(data, ax=None, **kwargs):
         ax.cla()
         ax.plot(data['t_hrs'], data['V_hrs'] / data['I_hrs'], **kwargs)
@@ -168,14 +167,39 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def vcm_measurement(V_read = 0.2):
+def vcm_pg5_measurement(V_read = 0.2, cycles = 1):
     setup_vcm_plots()
-    k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
-    while not k.done():
-        plt.pause(0.1)
-    hrs_data = k.get_data()
-    data = add_suffix_to_dict(hrs_data,'_hrs')
-    iplots.updateline(data)
+    hrs_list = []
+    for i in range(cycles):
+        ### Reading HRS resistance ############################################################################
+
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
+        while not k.done():
+            plt.pause(0.1)
+        hrs_data = k.get_data()
+        hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
+        iplots.updateline(hrs_list[-1])
+
+
+
+        ### RSetting up scope  ################################################################################
+
+        ttx.inputstate(1, True)
+        ttx.inputstate(2, False)
+        ttx.inputstate(3, False)
+        ttx.inputstate(4, False)        
+        ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=50)
+        ttx.trigger_position(20)
+        ttx.scale(1,0.3)
+        ttx.position(1, -4)
+        ttx.arm(source = 1, level = 0.6, edge = 'e')
+
+        ### Applying pulse and reading scope data #############################################################
+
+        input('Connect the RF probes and press enter')
+        pg5.trigger()
+    #to do write a function that transposes the list of dictionaries to a dictionary with lists which is going to be returned
+    data = 1
     return data
 
 def eval_pcm_measurement(data, manual_evaluation = False):
