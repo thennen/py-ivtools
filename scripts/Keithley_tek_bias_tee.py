@@ -59,7 +59,7 @@ def setup_vcm_plots():
         ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs)
         ax.set_ylabel('Resistance HRS [V/A]')
         ax.set_xlabel('Time [s]')
-        ax.set_title('Read HRS')
+        ax.set_title('Read HRS #' + str(len(data)))
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
     def plot1(data, ax=None, **kwargs):
@@ -68,21 +68,23 @@ def setup_vcm_plots():
         ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs)
         ax.set_ylabel('Resistance LRS [V/A]')
         ax.set_xlabel('Time [s]')
-        ax.set_title('Read LRS')
+        ax.set_title('Read LRS #' +str(len(data)))
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
     def plot2(data, ax=None, **kwargs):
         ax.cla()
         line = data.iloc[-1]
-        ax.plot(line.t_sweep,  line.V_sweep /  line.I_sweep)
+        ax.plot(line.V_sweep,  line.V_sweep /  line.I_sweep)
         ax.set_ylabel('Resistance Sweep [V/A]')
-        ax.set_xlabel('Time [s]')
-        ax.set_title('Sweep')
+        ax.set_xlabel('Voltage [V]')
+        ax.set_title('Sweep #' + str(len(data)))
+        ax.set_yscale('log')
+        ax.set_ylim(bottom =100)
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())   
         
     def plot3(data, ax=None, **kwargs):
         ax.cla()
-        ax.set_title('Answer')
+        ax.set_title('Answer #' + str(len(data)))
         line = data.iloc[-1]
         ax.plot(line.t_ttx, line.V_ttx, **kwargs)    
         ax.set_ylabel('Voltage [V]')
@@ -167,15 +169,18 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
+def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_width = 50e-12, automatic_measurement = False):
     setup_vcm_plots()
 
     hrs_list = []
     lrs_list = []
     sweep_list = []
     scope_list = []
+    vlist = tri(v1 = v1, v2 = v2, step = step)
+
 
     for i in range(cycles):
+
         ### Reading HRS resistance ############################################################################
 
         k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
@@ -185,9 +190,6 @@ def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
         k.set_channel_state('B', False)
         hrs_data = k.get_data()
         hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
-        
-
-
 
         ### RSetting up scope  ################################################################################
 
@@ -197,7 +199,9 @@ def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
         ttx.inputstate(4, False)        
         ttx.position(1, -4)
         ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=50)
-        if pulse_width < 150e-12:
+        if pulse_width < 100e-12:
+            ttx.trigger_position(40)
+        elif pulse_width < 150e-12:
             ttx.trigger_position(30)
         else:
             ttx.trigger_position(20)
@@ -205,16 +209,22 @@ def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
         plt.pause(0.1)
         ttx.arm(source = 1, level =0.6, edge = 'e')
 
+
         ### Applying pulse and reading scope data #############################################################
-        
-        input('Connect the RF probes and press enter')
+        if not automatic_measurement:
+            input('Connect the RF probes and press enter')
         pg5.set_pulse_width(pulse_width)
         pg5.trigger()
         plt.pause(0.1)
+        if not ttx.triggerstate:
+            plt.pause(0.1)
         scope_list.append(ttx.get_curve(1))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+
         ### Reading LRS resistance #############################################################################
 
+        if not automatic_measurement:
+            input('Connect the DC probes and press enter')
         k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
         while not k.done():
             plt.pause(0.1)
@@ -225,14 +235,14 @@ def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
 
         ### performing sweep ###################################################################################
-
-        k.iv(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
+        
+        k.iv(vlist)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
         k.set_channel_state('B', False)
-        lrs_data = k.get_data()
-        lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
+        sweep_data = k.get_data()
+        sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
 
     return data
