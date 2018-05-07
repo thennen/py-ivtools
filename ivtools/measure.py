@@ -27,11 +27,11 @@ import pickle
 ps = None
 # Rigol DG5000 AWG
 rigol = None
-# Any Keithley found
+# Keithley
 k = None
-# Any TektronixDPO73304D found
+# TektronixDPO73304D
 ttx = None
-# Any PG5 found
+# Pulse Generator PG5
 pg5 = None
 
 # TODO: try to connect to all known instruments
