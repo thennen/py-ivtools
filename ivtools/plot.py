@@ -10,6 +10,7 @@ import pandas as pd
 import inspect
 from matplotlib.widgets import SpanSelector
 from inspect import signature
+import os
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
     '''
