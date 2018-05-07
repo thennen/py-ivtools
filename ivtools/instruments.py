@@ -1186,3 +1186,60 @@ class TektronixDPO73304D(object):
     def triggerstate(self):
         trigger_str = self.ask('TRIG:STATE?')
         return trigger_str == 'READY\n'
+
+    def trigger_position(self, position):
+        self.write('HORIZONTAL:POSITION ' + str(position))
+
+#########################################################
+# PG5 (Picosecond Pulse generator) ######################
+#########################################################
+
+class PG5(object):
+    def __init__(self, addr='ASRL3::INSTR'):
+        try:
+            self.connect(addr)
+        except:
+            print('PG 5 connection failed at {}'.format(addr))
+
+    def connect(self, addr='ASRL3::INSTR'):
+        self.conn = visa_rm.get_instrument(addr)
+        # Expose a few methods directly to self
+        self.write = self.conn.write
+        self.ask = self.conn.ask
+        self.read = self.conn.read
+        self.read_raw = self.conn.read_raw
+        self.close = self.conn.close
+        moduledir = os.path.split(__file__)[0]
+    #TO DO: fix communication during ask commands, setting self.conn.query_delay to higher values doesnt help
+    def error(self):
+        '''prints the last error'''
+        error_msg = self.ask(':SYST:ERR:NEXT?')
+        print(error_msg)
+    #TO DO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
+    
+    # def set_trigger_type(self, type):
+    #     '''sets the trigger type:
+    #     type = \'IMM\' for internal clock
+    #     type = \'TTL\' for external triggering
+    #     tpye = \'MANUAL\' for manual triggering'''
+    #     if type is 'IMM':
+    #         self.write(':TRIG:SOUR IMM')
+    #     elif type is 'TTL':
+    #         self.write(':TRIG:SOUR TTL')
+    #     elif type is 'MANUAL':
+    #         self.write(':TRIG:SOUR MANUAL')
+    #     else:
+    #         print('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
+
+    def set_pulse_width(self, pulse_width):
+        '''sets the pulse width in ps (between 50 and 250 ps)'''
+        self.write(':PULS:WIDT ' + str(pulse_width*1e-12))
+
+    def set_period(self, period):
+        '''sets the period in µs (between  1 and 1e6 µs)'''
+        self.write(':PULS:PER ' + str(period*1e-6))
+
+    def trigger(self):
+        '''Executes a pulse'''
+        self.write(':INIT')
+    
