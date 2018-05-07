@@ -74,12 +74,11 @@ def setup_vcm_plots():
     def plot2(data, ax=None, **kwargs):
         ax.cla()
         line = data.iloc[-1]
-        ax.plot(line.V_sweep,  line.V_sweep /  line.I_sweep)
+
+        ax.semilogy(line.V_sweep,  line.V_sweep /  line.I_sweep)
         ax.set_ylabel('Resistance Sweep [V/A]')
         ax.set_xlabel('Voltage [V]')
         ax.set_title('Sweep #' + str(len(data)))
-        ax.set_yscale('log')
-        ax.set_ylim(bottom =100)
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())   
         
     def plot3(data, ax=None, **kwargs):
@@ -190,7 +189,8 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
         k.set_channel_state('B', False)
         hrs_data = k.get_data()
         hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
-
+        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+        iplots.updateline(data)
         ### RSetting up scope  ################################################################################
 
         ttx.inputstate(1, True)
@@ -220,7 +220,7 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
             plt.pause(0.1)
         scope_list.append(ttx.get_curve(1))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
-
+        iplots.updateline(data)
         ### Reading LRS resistance #############################################################################
 
         if not automatic_measurement:
@@ -233,7 +233,7 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
         lrs_data = k.get_data()
         lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
-
+        iplots.updateline(data)
         ### performing sweep ###################################################################################
         
         k.iv(vlist)
@@ -244,6 +244,7 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
         sweep_data = k.get_data()
         sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+        iplots.updateline(data)
 
     return data
 
@@ -482,8 +483,4 @@ def combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list):
     lrs_df = pd.DataFrame(lrs_list)
     scope_df = pd.DataFrame(scope_list)
     sweep_df = pd.DataFrame(sweep_list)
-    data = pd.concat([hrs_df, lrs_df, scope_df, sweep_df] , axis = 1)
-    iplots.updateline(data)
-    return data
-
-
+    return pd.concat([hrs_df, lrs_df, scope_df, sweep_df] , axis = 1)
