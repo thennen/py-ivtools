@@ -55,7 +55,7 @@ def setup_vcm_plots():
 
     def plot0(data, ax=None, **kwargs):
         ax.cla()
-        ax.plot(data['t_hrs'], data['V_hrs'] / data['I_hrs'], **kwargs)
+        ax.plot( np.array(data['t_hrs'].tail(1)),  np.array(data['V_hrs'].tail(1)) /  np.array(data['I_hrs'].tail(1)))
         ax.set_ylabel('Resistance [V/A]')
         ax.set_xlabel('Time [s]')
         ax.set_title('Read HRS')
@@ -167,18 +167,25 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def vcm_pg5_measurement(V_read = 0.2, cycles = 1):
+def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
     setup_vcm_plots()
+
     hrs_list = []
+    lrs_list = []
+    sweep_list = []
+    scope_list = []
+
     for i in range(cycles):
         ### Reading HRS resistance ############################################################################
 
         k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
         while not k.done():
             plt.pause(0.1)
+        k.set_channel_state('A', False)
+        k.set_channel_state('B', False)
         hrs_data = k.get_data()
         hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
-        iplots.updateline(hrs_list[-1])
+        
 
 
 
@@ -188,18 +195,39 @@ def vcm_pg5_measurement(V_read = 0.2, cycles = 1):
         ttx.inputstate(2, False)
         ttx.inputstate(3, False)
         ttx.inputstate(4, False)        
-        ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=50)
-        ttx.trigger_position(20)
-        ttx.scale(1,0.3)
         ttx.position(1, -4)
-        ttx.arm(source = 1, level = 0.6, edge = 'e')
+        ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=50)
+        if pulse_width < 150e-12:
+            ttx.trigger_position(30)
+        else:
+            ttx.trigger_position(20)
+        ttx.scale(1,0.3)
+        plt.pause(0.1)
+        ttx.arm(source = 1, level =0.6, edge = 'e')
 
         ### Applying pulse and reading scope data #############################################################
-
+        
         input('Connect the RF probes and press enter')
+        pg5.set_pulse_width(pulse_width)
         pg5.trigger()
-    #to do write a function that transposes the list of dictionaries to a dictionary with lists which is going to be returned
-    data = 1
+        plt.pause(0.1)
+        scope_list.append(ttx.get_curve(1))
+        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+        ### Reading LRS resistance #############################################################################
+
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
+        while not k.done():
+            plt.pause(0.1)
+        k.set_channel_state('A', False)
+        k.set_channel_state('B', False)
+        lrs_data = k.get_data()
+        lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
+        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+
+        ### performing sweep ###################################################################################
+
+        #TO DO
+
     return data
 
 def eval_pcm_measurement(data, manual_evaluation = False):
@@ -431,3 +459,14 @@ def add_suffix_to_dict(data, suffix):
 
 class threshold_written():
     state = False
+
+def combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list):
+    hrs_df = pd.DataFrame(hrs_list)
+    lrs_df = pd.DataFrame(lrs_list)
+    scope_df = pd.DataFrame(scope_list)
+    sweep_df = pd.DataFrame(sweep_list)
+    data = pd.concat([hrs_df, lrs_df, scope_df, sweep_df] , axis = 1)
+    iplots.updateline(data)
+    return data
+
+
