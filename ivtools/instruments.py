@@ -3,8 +3,16 @@ These classes contain functionality specific to only one instrument.
 Don't put code in an instrument class that has anything to do with a different instrument,
 or any particular application!
 
-They are grouped into classes because there may be some overlapping functions/names which should be contained
+They are grouped into classes because there may be some overlapping functions/names which
+should be contained.
 Should only put instruments here that have an actual data connection to the computer
+
+TODO:
+
+The module maintains weak references to instrument instances, so that they can be updated on reload in order to
+reuse existing connections
+
+Should also find existing connections if already available
 '''
 
 import numpy as np
@@ -12,10 +20,47 @@ import visa
 import time
 import os
 import pandas as pd
+import serial
 from collections import deque
+import weakref
 
+# Store the resource manager instance in the visa module
+# Because this module (instruments.py) may be reloaded,
+# and I want to retain access to the same ResourceManager instance.
+if not hasattr(visa, 'rm'):
+    visa.rm = visa.ResourceManager()
+visa_rm = visa.rm
 
-visa_rm = visa.ResourceManager()
+#########################################################
+# Parent Class   ########################################
+#########################################################
+class Instrument(object):
+    ''' Writing default methods for visa type instruments.  Overload them for others '''
+    def __init__(self):
+        # TODO: look for already connected instance with same handle, if available, return it
+        try:
+            self.connect()
+        except:
+            # Say which instrument failed
+            print('failed')
+
+    def connect():
+        # Pass through some methods of the connection
+        self.conn = None
+        if hasattr(self.conn, 'close'):
+            setattr(self, 'close', self.conn.close)
+        if worked:
+            pass
+        else:
+            pass
+
+    def _reload(self):
+        # Some default reload behavior
+        pass
+
+    def isconnected():
+        pass
+
 
 #########################################################
 # Picoscope 6000 ########################################
@@ -80,25 +125,25 @@ class Picoscope(object):
 
         @property
         def a(self):
-            print(self['A'])
+            return self['A']
         @a.setter
         def a(self, value):
             self.set('A', value)
         @property
         def b(self):
-            print(self['B'])
+            return self['B']
         @b.setter
         def b(self, value):
             self.set('B', value)
         @property
         def c(self):
-            print(self['C'])
+            return self['B']
         @c.setter
         def c(self, value):
             self.set('C', value)
         @property
         def d(self):
-            print(self['D'])
+            return self['B']
         @d.setter
         def d(self, value):
             self.set('D', value)
@@ -108,6 +153,7 @@ class Picoscope(object):
         # TODO: add increment and decrement
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
+            # TODO: I think the possible ranges also depends on the input coupling
             self.possible = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
             self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
             self['A'] = 1.0
@@ -123,7 +169,7 @@ class Picoscope(object):
             if value in self.possible * atten:
                 newvalue = value
             else:
-                argclosest = argmin(np.abs(self.possible * atten - value))
+                argclosest = np.argmin(np.abs(self.possible * atten - value))
                 closest = self.possible[argclosest] * atten
                 print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
                 newvalue = closest
@@ -371,11 +417,19 @@ class Picoscope(object):
 #########################################################
 class RigolDG5000(object):
     # There is at least one python library for DG5000, but I could not get it to run.
+    # TODO: Remember the waveform loaded into rigol volatile memory, and don't overwrite it if it didn't change
+    #       This will save you from needing to toggle the output relay
+    # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
         try:
             self.connect(addr)
         except:
             print('Rigol connection failed.')
+            return
+        # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
+        # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
+        self.screensaver(False)
+        self.volatilewfm = []
 
     def connect(self, addr):
         self.conn = visa_rm.open_resource(addr)
@@ -394,10 +448,13 @@ class RigolDG5000(object):
         '''
         self.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
 
-    def outputstate(self, state=True, ch=1):
+    def outputstate(self, state=None, ch=1):
         ''' Turn output state on or off '''
-        statestr = 'ON' if state else 'OFF'
-        self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
+        if state is None:
+            return self.ask(':OUTPUT{}:STATE?'.format(ch)).strip() == 'ON'
+        else:
+            statestr = 'ON' if state else 'OFF'
+            self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
 
     def frequency(self, freq, ch=1):
         ''' Set frequency of AWG waveform.  Not the sample rate! '''
@@ -413,6 +470,7 @@ class RigolDG5000(object):
 
     def output_resistance(self, r=50, ch=1):
         ''' Manual says you can change output resistance from 1 to 10k'''
+        # Default is infinity??
         self.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
 
     def sync(self, state=True):
@@ -442,7 +500,10 @@ class RigolDG5000(object):
     # <<<<< For burst mode
     def ncycles(self, n, ch=1):
         ''' Set number of cycles that will be output in burst mode '''
-        self.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
+        if n > 1000000:
+            raise Exception('Rigol can only pulse maximum 1,000,000 cycles')
+        else:
+            self.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
 
     def trigsource(self, source='MAN', ch=1):
         ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
@@ -459,9 +520,13 @@ class RigolDG5000(object):
         '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
         self.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
 
-    def burst(self, state=True, ch=1):
+    def burst(self, state=None, ch=1):
         ''' Turn the burst mode on or off '''
+        # I think rigol is retarded, so it doesn't always turn off the burst mode on the first command
+        # It switches something else off instead, but only if you set up a waveform after entering burstmode
+        # The fix is to just issue the command twice..
         statestr = 'ON' if state else 'OFF'
+        self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
         self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
 
     # End for burst mode >>>>>
@@ -470,7 +535,7 @@ class RigolDG5000(object):
         Load some data as an arbitrary waveform to be output.
         Data will be normalized.  Use amplitude to set the amplitude.
         Make sure that the output is off, because the command switches out of burst mode
-        and will start outputting immediately.
+        and otherwise will start outputting immediately.
         '''
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
         # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
@@ -503,13 +568,11 @@ class RigolDG5000(object):
 
     ### These use the wrapped SCPI commands to accomplish something useful
 
-    def load_volatile_wfm(self, waveform, duration, n=1, ch=1, interp=True):
+    def load_volatile_wfm(self, waveform, duration, ch=1, interp=True):
         '''
         Load waveform into volatile memory, but don't trigger
+        NOTICE: This will leave burst mode as a side-effect!  Thank RIGOL.
         '''
-        if len(waveform) > 512e3:
-            raise Exception('Too many samples requested for rigol AWG (probably?)')
-
         # toggling output state is slow, clunky, annoying, and should not be necessary.
         # it might also cause some spikes that could damage the device.
         # Also goes into high impedance output which could have some undesirable consequences.
@@ -517,28 +580,43 @@ class RigolDG5000(object):
         # out of burst mode automatically.  If the output is still enabled, you will get a
         # continuous pulse train until you can get back into burst mode.
         # contacted RIGOL about the problem but they did not help.  Seems there is no way around it.
-        self.outputstate(False, ch=ch)
-        #
-        # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
-        # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
-        self.screensaver(False)
-        #time.sleep(.01)
+
+        if len(waveform) > 512e3:
+            raise Exception('Too many samples requested for rigol AWG (probably?)')
+
+        burst_state = self.ask(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
         # Turn on interpolation for IVs, off for steps
         self.interp(interp)
-        # This command switches out of burst mode for some stupid reason
-        self.load_wfm(waveform)
+        # Only update waveform if necessary
+        if np.any(waveform != self.volatilewfm):
+            if burst_state:
+                output_state = self.outputstate(None, ch=ch)
+                if output_state:
+                    self.outputstate(False, ch=ch)
+                # This command switches out of burst mode for some stupid reason
+                self.load_wfm(waveform)
+                self.burst(True, ch=ch)
+                if output_state:
+                    self.outputstate(True, ch=ch)
+            else:
+                self.load_wfm(waveform)
+            self.volatilewfm = waveform
+        else:
+            # Just switch to the arbitrary waveform that is already in memory
+            self.write(':SOURce{}:FUNC:SHAPe USER'.format(ch))
         freq = 1. / duration
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
         self.amplitude(2*maxamp, ch=ch)
-        self.burstmode('TRIG', ch=ch)
+
+    def setup_burstmode(self, n=1, burstmode='TRIG', trigsource='MAN', ch=1):
+        # Set up bursting
+        self.burstmode(burstmode, ch=ch)
+        self.trigsource(trigsource, ch=ch)
         self.ncycles(n, ch=ch)
-        self.trigsource('MAN', ch=ch)
         self.burst(True, ch=ch)
-        self.outputstate(True, ch=ch)
 
-
-    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
+    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
         '''
         Set up a built-in waveform to pulse n times
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
@@ -552,17 +630,18 @@ class RigolDG5000(object):
             freq = 1. / duration
 
         # Set up waveform
-        self.burst(True, ch=ch)
-        self.burstmode('TRIG', ch=ch)
         self.shape(shape, ch=ch)
-        # Rigol's definition of amp is peak-to-peak, which is unusual.
+        # Rigol's definition of amplitude is peak-to-peak, which is unusual.
         self.amplitude(2*amp, ch=ch)
         self.offset(offset, ch=ch)
-        self.burstmode('TRIG', ch=ch)
-        self.ncycles(n, ch=ch)
-        self.trigsource('MAN', ch=ch)
         self.frequency(freq, ch=ch)
 
+
+    def continuous_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
+        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
+        # Get out of burst mode
+        self.burst(False, ch=ch)
+        self.outputstate(True)
 
     def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
         '''
@@ -570,13 +649,17 @@ class RigolDG5000(object):
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
         HAVersine|LORentz|ARBPULSE|DUAltone
         '''
-        passthrough = {k:v for k,v in locals().items() if k != 'self'}
-        self.load_builtin_wfm(**passthrough)
-
-        self.outputstate(True)
+        self.setup_burstmode(n=n)
+        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
+        self.outputstate(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 
+    def continuous_arbitrary(self, waveform, duration=None, ch=1):
+        self.load_volatile_wfm(waveform, duration=duration, ch=ch)
+        # Get out of burst mode
+        self.burst(False, ch=ch)
+        self.outputstate(True)
 
     def pulse_arbitrary(self, waveform, duration, n=1, ch=1, interp=True):
         '''
@@ -586,11 +669,11 @@ class RigolDG5000(object):
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
         '''
         # Load waveform
-        passthrough = {k:v for k, v in locals().items() if k != 'self'}
-        self.load_volatile_wfm(**passthrough)
+        self.load_volatile_wfm(waveform=waveform, duration=duration, ch=ch, interp=interp)
+        self.setup_burstmode(n=n)
+        self.outputstate(True, ch=ch)
         # Trigger rigol
-        self.trigger(ch=1)
-
+        self.trigger(ch=ch)
 
 #########################################################
 # Keithley 2600 #########################################
@@ -666,20 +749,30 @@ class Keithley2600(object):
 
         self.run_lua_lines(cmdlist)
 
-    def iv(self, vlist, Irange, Ilimit, nplc=1, delay='smua.DELAY_AUTO'):
-        '''Wraps the SweepVList lua function defined on keithley'''
+    def iv(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+        '''
+        range = 0 enables autoranging
+        Wraps the SweepVList lua function defined on keithley
+        '''
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        self.write('SweepVList(sweeplist, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay))
+        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay, Vrange))
 
-    def vi(self, ilist, Vrange, Vlimit, nplc=1, delay='smua.DELAY_AUTO'):
-        '''Wraps the SweepIList lua function defined on keithley'''
+    def vi(self, ilist, Vrange=0, Vlimit=0, nplc=1, delay='smua.DELAY_AUTO', Irange=None):
+        '''
+        range = 0 enables autoranging
+        if Irange not passed, it will be max(abs(ilist))
+        Wraps the SweepIList lua function defined on keithley
+        '''
 
         # Send list of voltage values to keithley
         self.send_list(ilist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        Irange = np.max(np.abs(ilist))
+        if Irange is None:
+            # Fix the current source range, as I have had instability problems that are different
+            # for different ranges
+            Irange = np.max(np.abs(ilist))
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
 
     def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1):
@@ -743,7 +836,10 @@ class Keithley2600(object):
         self.write('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
         # reply comes back with #0 or something in the beginning and a newline at the end
         raw = self.read_raw()[2:-1]
-        return np.fromstring(raw, dtype=np.float64)
+        # TODO: replace nanvals here, not in get_data
+        data_array = np.fromstring(raw, dtype=np.float64)
+        data_array = self.replace_nanvals(data_array)
+        return data_array
 
     def get_data(self, start=1, end=None, history=True):
         '''
@@ -774,11 +870,9 @@ class Keithley2600(object):
                 out['source'] = 'V'
                 out['V'] = self.read_buffer('smua.nvbuffer2', 'sourcevalues', start, end)
                 Vmeasured = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
-                Vmeasured = Keithley2600.replace_nanvals(Vmeasured)
                 out['Vmeasured'] = Vmeasured
                 out['units']['Vmeasured'] = 'V'
                 I = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
-                I = Keithley2600.replace_nanvals(I)
                 out['I'] = I
                 out['Icomp'] = float(self.ask('print(smua.source.limiti)'))
             else:
@@ -789,11 +883,9 @@ class Keithley2600(object):
 
                 out['I'] = self.read_buffer('smua.nvbuffer1', 'sourcevalues', start, end)
                 Imeasured = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
-                Imeasured = Keithley2600.replace_nanvals(Imeasured)
                 out['Imeasured'] = Imeasured
                 out['units']['Imeasured'] = 'A'
                 V = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
-                V = Keithley2600.replace_nanvals(V)
                 out['V'] = V
 
             out['t'] = self.read_buffer('smua.nvbuffer2', 'timestamps', start, end)
@@ -827,10 +919,101 @@ class Keithley2600(object):
         else:
             self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
 
+
+#########################################################
+# Eurotherm 2408 -- #################
+#########################################################
+class Eurotherm2408(object):
+    '''
+    This uses some dumb proprietary EI-BISYNCH protocol over serial.
+    Make the connections DB2 -> HF, DB3 -> HE, DB5 -> HD.
+    You can also use modbus.
+    '''
+    def __init__(self, addr='COM32', gid=0, uid=1):
+        self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
+        self.gid = gid
+        self.uid = uid
+    def write_data(self, mnemonic, data):
+        # Select
+        # C1 C2 are the two characters of the mnemonic
+        # [EOT] (GID) (GID) (UID) (UID) [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
+        from functools import reduce
+        from operator import xor
+        STX = '\x02'
+        ETX = '\x03'
+        EOT = '\x04'
+        ENQ = '\x05'
+        CHAN = '1'
+        gid = str(self.gid)
+        uid = str(self.uid)
+        data = format(data, '.1f')
+        bcc = chr(reduce(xor, (mnemonic + data + ETX).encode()))
+        msg = EOT + gid + gid + uid + uid + STX + mnemonic + data + ETX + bcc
+        # print(msg)
+        self.conn.write(msg.encode())
+
+        # Wait?
+        time.sleep(.05)
+
+        # Should reply
+        # [NAK] - failed to write
+        # [ACK] - successful write
+        # (nothing) - oh shit
+        ACK = '\x06'
+        NAK = '\x15'
+        reply = self.conn.read_all()
+        if reply == ACK.encode():
+            return True
+        elif reply == NAK.encode():
+            return False
+        else:
+            raise Exception('Eurotherm not connected properly')
+
+    def read_data(self, mnemonic):
+        EOT = '\x04'
+        ENQ = '\x05'
+        gid = str(self.gid)
+        uid = str(self.uid)
+        # Poll
+        # [EOT] (GID) (GID) (UID) (UID) (CHAN) (C1) (C2) [ENQ]
+        # CHAN optional, will be returned only if sent
+        poll = EOT + gid + gid + uid + uid + mnemonic + ENQ
+        self.conn.write(poll.encode())
+
+        # Wait?
+        time.sleep(.05)
+
+        # Reply
+        # [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
+        reply = self.conn.read_all()
+        try:
+            return float(reply[3:-2])
+        except:
+            print('Failed to read Eurotherm 2408 temperature.')
+            return np.nan
+
+    def read_temp(self):
+        return float(self.read_data('PV'))
+
+    def set_temp(self, value):
+        return self.write_data('SL', value)
+
+    def output_level(self):
+        return self.read_data('OP')
+
+    def status(self):
+        statusdict = {1: 'Reset',
+                      2: 'Run',
+                      3: 'Hold',
+                      4: 'Holdback',
+                      5: 'Complete'}
+        return self.read_data('PC')
+
+
 #########################################################
 # Measurement Computing USB1208HS DAQ ###################
 #########################################################
-class USB2708HS():
+class USB2708HS(object):
     def __init__(self):
         # Import here because I don't want the entire module to error if you don't have mcculw installed
         from mcculw import ul
@@ -882,7 +1065,6 @@ class USB2708HS():
 #########################################################
 # TektronixDPO73304D ####################################
 #########################################################
-
 class TektronixDPO73304D(object):
     def __init__(self, addr='GPIB0::1::INSTR'):
         try:

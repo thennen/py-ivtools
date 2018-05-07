@@ -79,11 +79,15 @@ gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
 
 if hostname == 'pciwe46':
-    datafolder = r'D:\t\ivdata'
+    datafolder = 'D:/t/ivdata'
 elif hostname == 'pciwe38':
-    datafolder = 'C:/Messdaten/'    
+    # Moritz computer
+    datafolder = 'C:/Messdaten/'
+elif hostname == 'pciwe34':
+    # Mark II
+    datafolder = 'F:/Messdaten/hennen'
 else:
-    datafolder = r'C:\t\data'
+    datafolder = 'C:/t/data'
 
 # Default data subfolder
 subfolder = datestr
@@ -172,7 +176,7 @@ class autocaller():
         return 'autocalled ' + self.function.__name__
 
 # Add items to this and they will be appended as metadata to all subsequent measurements
-meta.static = {'gitrev':gitrev}
+meta.static['gitrev'] = gitrev
 
 
 ################ Bindings for convenience #################
@@ -224,7 +228,7 @@ s = autocaller(savedata)
 # TODO: Would I ever want to turn off autosaving? autoplotting?  Could call the iv functions from measure.py directly..
 
 # Wrap any fuctions that you want to automatically make plots with this
-def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False):
+def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
     ''' Activates auto data plotting and saving for wrapped functions '''
     @wraps(func)
     def func_with_plotting(*args, **kwargs):
@@ -252,7 +256,8 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False):
                     plt.pause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
-            savedata(data)
+            if autosave:
+                savedata(data)
         return data
     return func_with_plotting
 
@@ -264,6 +269,6 @@ if k is not None:
     live = True
     if '2636A' in k.idn():
         live = False
-    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live)
-    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live)
-    kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live)
+    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)

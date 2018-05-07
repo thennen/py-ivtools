@@ -10,6 +10,7 @@ import pandas as pd
 import inspect
 from matplotlib.widgets import SpanSelector
 from inspect import signature
+import os
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
     '''
@@ -130,7 +131,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
                     kwargs.update(c=c)
                     line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs))
             else:
-                line = plot(data[x], data[y], **kwargs)
+                line = plt.plot(data[x], data[y], **kwargs)
                 ax.set_xlabel(x)
                 ax.set_ylabel(y)
         else:
@@ -188,7 +189,7 @@ def auto_title(data, keys=None, ax=None):
         otherkeys = ['layer_1', 'thickness_1', 'width_nm', 'R_series']
         othervalues = [safeindex(meta, k) for k in otherkeys]
         # use kohm if necessary
-        if othervalues[3] >= 1000:
+        if othervalues[3] != '?' and othervalues[3] >= 1000:
             othervalues[3] = str(int(othervalues[3]/1000)) + 'k'
         formatstr = '{}, {}, t={}nm, w={}nm, Rs={}$\Omega$'
         title = formatstr.format(id, *othervalues)
@@ -675,6 +676,7 @@ def VoverIplotter(data, ax=None, **kwargs):
         VoverI = data['V'] / data['I']
 
     VoverI = VoverI[mask]
+    VoverI[VoverI <= 0] = np.nan
 
     ax.plot(V, VoverI, **kwargs)
     #color = ax.lines[-1].get_color()
@@ -686,11 +688,17 @@ def VoverIplotter(data, ax=None, **kwargs):
     ax.set_ylabel('V/I [$\Omega$]')
 
 def vcalcplotter(data, ax=None, R=8197, **kwargs):
+    '''
+    Subtract internal series resistance voltage drop
+    For Lassen R = 143, 2164, 8197, 12857
+    '''
     if ax is None:
         fig, ax = plt.subplots()
+    # wtf modifies the input data?  Shouldn't do that.
     data['Vcalc'] = data['V'] - R * data['I']
-    plotiv(d, ax=ax, x='Vcalc', **kwargs)
+    plotiv(data, ax=ax, x='Vcalc', **kwargs)
     ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 
 ### Widgets
@@ -987,3 +995,13 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     # Put the limits back
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
+
+
+def engformatter(axis='y', ax=None):
+    if ax is None:
+        ax = plt.gca()
+    if axis.lower() == 'x':
+        axis = ax.xaxis
+    else:
+        axis = ax.yaxis
+    axis.set_major_formatter(mpl.ticker.EngFormatter())

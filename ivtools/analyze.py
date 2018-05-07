@@ -1,7 +1,7 @@
 """ Functions for doing data analysis on IV data """
 
 # Local imports
-from . import plot
+from . import plot as ivplot
 
 from functools import wraps
 import numpy as np
@@ -11,6 +11,7 @@ from numbers import Number
 from scipy.optimize import curve_fit
 import pandas as pd
 from matplotlib import pyplot as plt
+
 
 def ivfunc(func):
     '''
@@ -290,7 +291,7 @@ def select_by_derivative(data, threshold=None, debug=False):
         ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
         ax.set_xlim(xmin, xmax)
     elif debug == 2:
-        plot.plotiv(data, ax=ax)
+        ivplot.plotiv(data, ax=ax)
         ax.scatter(data['V'][index], data['I'][index])
 
     return index
@@ -722,7 +723,7 @@ def meaniv(data, columns=None):
         if isdf:
             dataout[k] = data[k].mean()
         else:
-            dataout[k] = np.mean([d[k] for d in data])
+            dataout[k] = np.mean([d[k] for d in data], axis=0)
     add_missing_keys(firstrow, dataout)
     if isdf:
         return pd.Series(dataout)
@@ -831,7 +832,7 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpolate(data, interpvalues, column='I', reverse=False, findmonotonic=False):
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, left=None, right=None):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"
@@ -853,9 +854,9 @@ def interpolate(data, interpvalues, column='I', reverse=False, findmonotonic=Fal
     dataout = {}
     for ik in interpkeys:
         if reverse:
-            dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1])
+            dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
         else:
-            dataout[ik] = np.interp(interpvalues, data[column], data[ik])
+            dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
     dataout[column] = interpvalues
     add_missing_keys(data, dataout)
 
@@ -1318,12 +1319,14 @@ def fit_sine_array(array, dt=1, guess_freq=1, debug=False):
     #guess_amplitude = 3*np.std(array)/(2**0.5)
     guess_amplitude = (np.max(array) - np.min(array)) / 2
     guess_offset = np.mean(array)
-    guess_phase = np.arcsin((array[0] - guess_offset) / guess_amplitude)
+    startval = (array[0] - guess_offset) / guess_amplitude
+    startval = np.clip(startval, -1, 1)
+    guess_phase = np.arcsin(startval)
     if array[1] < array[0]:
         # Probably there is a big phase shift, because curve is decreasing at first
         # But np.arcsin will always return between +- pi/2, which is where sine is increasing.
         # Need the other solution.
-        guess_phase = sign(guess_phase) * (np.pi - abs(guess_phase))
+        guess_phase = np.sign(guess_phase) * (np.pi - abs(guess_phase))
 
     # Could guess freq by fft, but that would probably take longer than the fit itself.
 
@@ -1334,7 +1337,7 @@ def fit_sine_array(array, dt=1, guess_freq=1, debug=False):
         return np.sin(x * 2 * np.pi * freq + phase) * amplitude + offset
 
     # Now do the fit
-    t = linspace(0, dt, len(array))
+    t = np.linspace(0, dt, len(array))
     fit, cov = curve_fit(my_sin, t, array, p0=p0)
 
     if debug:
@@ -1396,7 +1399,7 @@ def largest_fft_component(data):
             dataout[c + '_freq'] *= data['sample_rate'] / l
         dataout[c + '_amp'] = mag[fundi] * 2 / l
         # fft gives phase of cos, but we apply signals starting from zero, so phase of sine is clearer
-        dataout[c + '_phase'] = phase[fundi] + pi/2
+        dataout[c + '_phase'] = phase[fundi] + np.pi/2
         dataout[c + '_offset'] = mag[0]
 
     return dataout
@@ -1417,6 +1420,7 @@ def fit_sine(data, columns=None, guess_ncycles=None, debug=False):
         # freq_response function adds this key so we don't need to guess
         guess_ncycles = data['ncycles']
     elif guess_ncycles is None:
+        # TODO: could guess based on fft or something, but could be slow
         raise Exception('If data does not contain ncycles key, then guess_ncycles must be passed!')
 
     guess_freq = guess_ncycles / dt
@@ -1429,11 +1433,11 @@ def fit_sine(data, columns=None, guess_ncycles=None, debug=False):
         # Don't want negative amplitudes.  But constraining fit function always has bad consequences.
         if sinefit['amp'] < 0:
             sinefit['amp'] *= -1
-            # Keep phase in range of (-pi:pi]
+            # Keep phase in range of (-np.pi:np.pi]
             if sinefit['phase'] > 0:
-                sinefit['phase'] -= pi
+                sinefit['phase'] -= np.pi
             else:
-                sinefit['phase'] += pi
+                sinefit['phase'] += np.pi
 
 
         #Want a single index dataframe.  Name the columns like this:

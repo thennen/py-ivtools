@@ -2,16 +2,19 @@
 
 # Local imports
 from . import analyze
-from . import plot
+from . import plot as ivplot
 
 import os
 import re
 import fnmatch
 import pandas as pd
 from datetime import datetime
+from matplotlib import pyplot as plt
 import sys
 import subprocess
 import numpy as np
+import time
+from matplotlib import pyplot as plt
 try:
     import cPickle as pickle
 except:
@@ -135,7 +138,8 @@ class MetaHandler(object):
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
         meta_df = meta_df.dropna(1, 'all')
-        meta_df = meta_df.sort_values(by=['coupon', 'module', 'device'])
+        sortby = [k for k in ('coupon', 'module', 'device') if k in meta_df.columns]
+        meta_df = meta_df.sort_values(by=sortby)
 
         # Try to convert data types
         typedict = dict(wafer_number=np.uint8,
@@ -363,7 +367,7 @@ def read_txt(filepath, **kwargs):
     colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]'],
                   'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
-                  't': ['time', 'Time [S]'],
+                  't': ['time', 'Time [S]', 't[s]'],
                   'Vmeasured': ['Voltage Probe (V)']}
 
     # Default arguments for readcsv
@@ -384,6 +388,18 @@ def read_txt(filepath, **kwargs):
             header = [firstline]
             header.extend(more_header)
             # Save this line to parse later
+            colname_line = more_header[-1]
+            # Single string version
+            header = ''.join(header)
+        elif firstline.startswith('linestoskip:'):
+            # GPIB control monstrosity
+            skiprows = int(firstline[12:].strip()) + 1
+            readcsv_args['skiprows'] = skiprows
+            more_header = []
+            for _ in range(skiprows - 1):
+                more_header.append(f.readline())
+            header = [firstline]
+            header.extend(more_header)
             colname_line = more_header[-1]
             # Single string version
             header = ''.join(header)
@@ -432,8 +448,9 @@ def read_txt(filepath, **kwargs):
     dataout['header'] = header
 
     # Replace Keithley nan values with real nans
-    nanmask = dataout['I'] == 9.9100000000000005e+37
-    dataout['I'][nanmask] = np.nan
+    if 'I' in dataout:
+        nanmask = dataout['I'] == 9.9100000000000005e+37
+        dataout['I'][nanmask] = np.nan
 
     return pd.Series(dataout)
 
@@ -487,11 +504,15 @@ def read_pandas_files(filepaths, concat=True, dropcols=None):
             if dropcols is not None:
                 realdropcols = [dc for dc in dropcols if dc in pdobject]
                 pdobject = pdobject.drop(realdropcols, 1)
+            if 'filepath' not in pdobject:
+                pdobject['filepath'] = [f] * len(pdobject)
             pdlist.append(pdobject)
         elif type(pdobject) is pd.Series:
             if dropcols is not None:
                 realdropcols = [dc for dc in dropcols if dc in pdobject]
                 pdobject = pdobject.drop(realdropcols)
+            if 'filepath' not in pdobject:
+                pdobject['filepath'] = f
             # Took me a while to figure out how to convert series into single row dataframe
             pdlist.append(pd.DataFrame.from_records([pdobject]))
             # This resets all the datatypes to object !!
@@ -560,6 +581,7 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 print('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
+    set_readonly(filepath)
     print('Wrote {}'.format(os.path.abspath(filepath)))
 
 def write_matlab(data, filepath, varname=None, compress=True):
@@ -718,6 +740,10 @@ def write_sql(data, db):
     data.to_sql(db, con, if_exists='append')
     # TODO: figure out what to do if data has columns that aren't already in the database.
 
+def set_readonly(filepath):
+    from stat import S_IREAD, S_IRGRP, S_IROTH
+    os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
+
 def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
@@ -733,7 +759,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       s.I *= 1e6
       s.units['I'] = '$\mu$A'
       smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-      plot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
+      ivplot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       if 'thickness_1' in s:
@@ -748,7 +774,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
       step = int(ceil(len(df) / maxloops))
       smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-      plot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+      ivplot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       s = df.iloc[0]
