@@ -55,39 +55,39 @@ def setup_vcm_plots():
 
     def plot0(data, ax=None, **kwargs):
         ax.cla()
-        ax.plot( np.array(data['t_hrs'].tail(1)),  np.array(data['V_hrs'].tail(1)) /  np.array(data['I_hrs'].tail(1)))
-        ax.set_ylabel('Resistance [V/A]')
+        line = data.iloc[-1]
+        ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs)
+        ax.set_ylabel('Resistance HRS [V/A]')
         ax.set_xlabel('Time [s]')
         ax.set_title('Read HRS')
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+    def plot1(data, ax=None, **kwargs):
+        ax.cla()
+        line = data.iloc[-1]
+        ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs)
+        ax.set_ylabel('Resistance LRS [V/A]')
+        ax.set_xlabel('Time [s]')
+        ax.set_title('Read LRS')
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+    def plot2(data, ax=None, **kwargs):
+        ax.cla()
+        line = data.iloc[-1]
+        ax.plot(line.t_sweep,  line.V_sweep /  line.I_sweep)
+        ax.set_ylabel('Resistance Sweep [V/A]')
+        ax.set_xlabel('Time [s]')
+        ax.set_title('Sweep')
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())   
+        
     def plot3(data, ax=None, **kwargs):
         ax.cla()
         ax.set_title('Answer')
-        if data['t_scope']:
-            ax.plot(data['t_scope'][-1], data['v_answer'][-1], **kwargs)    
+        line = data.iloc[-1]
+        ax.plot(line.t_ttx, line.V_ttx, **kwargs)    
         ax.set_ylabel('Voltage [V]')
         ax.set_xlabel('Time [s]')
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        
-    def plot1(data, ax=None, **kwargs):
-        ax.cla()
-        ax.semilogy(data['t'], data['V_hrs'] / data['I_hrs'], **kwargs)
-        if data['t_event']:
-            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
-        ax.set_ylabel('Resistance [V/A]')
-        ax.set_xlabel('Time [s]')
-        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        
-    def plot2(data, ax=None, **kwargs):
-        ax.cla()
-        ax.set_title('Pulse')
-        if data['t_scope']:
-            ax.plot(data['t_scope'][-1], data['v_pulse'][-1], **kwargs)
-        ax.set_ylabel('Voltage [V]')
-        ax.set_xlabel('Time [s]')
-        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        
-
         
     iplots.plotters = [[0, plot0],
                        [1, plot1],
@@ -226,7 +226,14 @@ def vcm_pg5_measurement(V_read = 0.2, cycles = 1, pulse_width = 50e-12):
 
         ### performing sweep ###################################################################################
 
-        #TO DO
+        k.iv(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
+        while not k.done():
+            plt.pause(0.1)
+        k.set_channel_state('A', False)
+        k.set_channel_state('B', False)
+        lrs_data = k.get_data()
+        lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
+        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
 
     return data
 

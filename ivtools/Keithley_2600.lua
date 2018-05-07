@@ -15,6 +15,8 @@ function SweepVList(sweepList, rangeI, limitI, nplc, delay, rangeV)
     -- "Explicitly setting a measure range will disable measure autoranging for that function."
     if rangeI ~= 0 then
       smua.measure.rangei = rangeI
+    else -- Autorange option added by Moritz
+        smua.measure.autorangei = smua.AUTORANGE_ON
     end
 
     -- In case you want to also fix the measurement range of the source
@@ -26,6 +28,7 @@ function SweepVList(sweepList, rangeI, limitI, nplc, delay, rangeV)
       smua.source.rangev = rangeV
       --smua.measure.rangev = rangeV
     end
+
 
     -- Prepare the Reading Buffers
     smua.nvbuffer1.clear()
