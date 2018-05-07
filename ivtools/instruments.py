@@ -907,7 +907,6 @@ class TektronixDPO73304D(object):
 
     def scale(self, channel=1, scale=0.0625):
         self.write('CH' + str(channel) + ':SCAle ' + str(scale))
-        self.write('*WAI')
 
     def position(self, channel=1, position=0):
         self.write('CH'+str(channel)+':POS '+str(position))
@@ -951,7 +950,7 @@ class TektronixDPO73304D(object):
         if source == 0:
             self.write('TRIG:A:EDGE:SOUrce AUX')
         else:
-            self.write('TRIG:A:EDGE:SOUrce CH' + str(source))
+            self.write('TRIG:A:EDGE:SOUrce CH ' + str(source))
         self.write('TRIG:A:LEVEL ' + str(level))
         self.write('ACQ:STOPA SEQUENCE')
         self.write('ACQ:STATE 1')
