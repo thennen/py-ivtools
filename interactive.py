@@ -60,8 +60,6 @@ if not firstrun:
     old['rigol'] = rigol
     old['k'] = k
     old['ttx'] = ttx
-    old['COMPLIANCE_CURRENT'] = measure.COMPLIANCE_CURRENT
-    old['INPUT_OFFSET'] = measure.INPUT_OFFSET
     old['pg5'] = pg5
 
 # Dump everything into interactive namespace for convenience
@@ -156,9 +154,7 @@ else:
         tresource = old['pg5'].conn.resource_name
         old['pg5'].close()
         measure.connect_pg5(tresource)
-    measure.COMPLIANCE_CURRENT = old['COMPLIANCE_CURRENT']
-    measure.INPUT_OFFSET = old['INPUT_OFFSET']
-    meta = io.MetaHandler(oldinstance=meta)
+        meta = io.MetaHandler(oldinstance=meta)
     iplots = ivtools.plot.interactive_figs(oldinstance=iplots)
 
 if measure.ps is not None:
@@ -224,8 +220,6 @@ def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
 
 # just typing s will save the d variable
 s = autocaller(savedata)
-
-# TODO: Would I ever want to turn off autosaving? autoplotting?  Could call the iv functions from measure.py directly..
 
 # Wrap any fuctions that you want to automatically make plots with this
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):

@@ -3,12 +3,13 @@ These classes contain functionality specific to only one instrument.
 Don't put code in an instrument class that has anything to do with a different instrument,
 or any particular application!
 
-They are grouped into classes because there may be some overlapping functions/names which
-should be contained.
+They are grouped into classes because there may be some overlapping function names which
+should be contained.  Also there might be a situation where we need multiple instances
+(e.g. when using two Keithley's).
+
 Should only put instruments here that have an actual data connection to the computer
 
 TODO:
-
 The module maintains weak references to instrument instances, so that they can be updated on reload in order to
 reuse existing connections
 
@@ -1215,7 +1216,7 @@ class PG5(object):
         error_msg = self.ask(':SYST:ERR:NEXT?')
         print(error_msg)
     #TO DO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
-    
+
     # def set_trigger_type(self, type):
     #     '''sets the trigger type:
     #     type = \'IMM\' for internal clock

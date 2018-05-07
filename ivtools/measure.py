@@ -10,6 +10,7 @@ Keithley 2636B, 2634B, 2636A
 from . import plot as ivplot
 from . import analyze
 from . import instruments
+from . import settings
 
 from fractions import Fraction
 from math import gcd
@@ -19,10 +20,7 @@ import pandas as pd
 import os
 import visa
 from functools import partial
-
-visa_rm = visa.ResourceManager()
-'USB0::0x1AB1::0x0640::DG5T155000186::INSTR',
-'TCPIP0::192.168.11.12::inst0::INSTR'
+import pickle
 
 # These are the instrument instances.  They are None until connected.
 # Picoscope
@@ -37,11 +35,6 @@ ttx = None
 pg5 = None
 
 # TODO: try to connect to all known instruments
-
-# These are None until the instruments are connected
-
-COMPLIANCE_CURRENT = 0
-INPUT_OFFSET = 0
 
 def detect_instruments():
     ''' find which instruments are available to connect to '''
@@ -457,18 +450,19 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
             #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
             # channelb should never go below zero, except for potentially op amp overshoot
             # I have seen it reach -0.1V
+            CC = settings.COMPLIANCE_CURRENT
             if R is None:
                 # Hypothetical resistance method
                 # Signal should never go below 0V (compliance)
                 b_min = 0
-                b_resistance = max(abs(v1), abs(v2)) / COMPLIANCE_CURRENT / 1.1
+                b_resistance = max(abs(v1), abs(v2)) / CC / 1.1
                 # Compliance current sets the voltage offset at zero input.
                 # Add 10% to be safe.
-                b_max = (COMPLIANCE_CURRENT - min(v1, v2) / b_resistance) * 2e3 * 1.1
+                b_max = (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
             else:
                 # R was passed, assume device has constant resistance with this value
-                b_min = (COMPLIANCE_CURRENT - max(v1, v2) / R) * 2e3
-                b_max = (COMPLIANCE_CURRENT - min(v1, v2) / R) * 2e3
+                b_min = (CC - max(v1, v2) / R) * 2e3
+                b_max = (CC- min(v1, v2) / R) * 2e3
             brange, boffs = ps.best_range((b_min, b_max))
             ps.range['B'] = brange
             ps.offset['B'] = boffs
@@ -516,7 +510,7 @@ def set_compliance(cc_value):
     Use two analog outputs to set the compliance current and compensate input offset.
     Right now we use static lookup tables for compliance and compensation values.
     '''
-    global COMPLIANCE_CURRENT, INPUT_OFFSET
+    daq = instruments.USB2708HS()
     if cc_value > 1e-3:
         raise Exception('Compliance value out of range! Max 1 mA.')
     fn = 'c:/t/py-ivtools/compliance_calibration.pkl'
@@ -526,10 +520,10 @@ def set_compliance(cc_value):
     DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
     DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
     print('Setting compliance to {} A'.format(cc_value))
-    analog_out(0, dacval=DAC0)
-    analog_out(1, volts=DAC1)
-    COMPLIANCE_CURRENT = cc_value
-    INPUT_OFFSET = 0
+    daq.analog_out(0, dacval=DAC0)
+    daq.analog_out(1, volts=DAC1)
+    settings.COMPLIANCE_CURRENT = cc_value
+    settings.INPUT_OFFSET = 0
 
 def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     '''
@@ -538,6 +532,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
     This takes some time..
     '''
+    daq = instruments.USB2708HS()
     # Measure compliance currents and input offsets with static Vb
 
     fig1, ax1 = plt.subplots()
@@ -562,8 +557,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         else:
             compensations -= np.array(offsets_list[-1]) / .085
         for v,cv in zip(dacvals, compensations):
-            analog_out(1, volts=cv)
-            analog_out(0, v)
+            daq.analog_out(1, volts=cv)
+            daq.analog_out(0, v)
             time.sleep(.1)
             cc, offs = measure_compliance()
             ccurrent.append(cc)
@@ -616,9 +611,6 @@ def measure_compliance():
     There is a second complication because the input is not always at zero volts, because it is not compensated fully.
     This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
     '''
-    global COMPLIANCE_CURRENT
-    global INPUT_OFFSET
-
     # Put AWG in hi-Z mode (output channel off)
     # Then current at compliance circuit input has to be ~zero
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
@@ -638,7 +630,7 @@ def measure_compliance():
     Bmean = np.mean(picodata['B'])
 
     # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
-    INPUT_OFFSET = Amean
+    settings.INPUT_OFFSET = Amean
     print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
 
     # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
@@ -649,7 +641,7 @@ def measure_compliance():
     # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
     #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
     ccurrent = Bmean / (R * gain)
-    COMPLIANCE_CURRENT = ccurrent
+    settings.COMPLIANCE_CURRENT = ccurrent
     print('Measured compliance current: {} A'.format(ccurrent))
 
     return (ccurrent, Amean)
@@ -664,10 +656,9 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
-    global COMPLIANCE_CURRENT
-    global INPUT_OFFSET
-
     dataout = datain
+    CC = settings.COMPLIANCE_CURRENT
+    IO = settings.INPUT_OFFSET
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
@@ -677,19 +668,19 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     gain = 1
     # Common base resistor
     R = 2e3
-    dataout['V'] = A - dtype(INPUT_OFFSET)
-    #dataout['V_formula'] = 'CHA - INPUT_OFFSET'
-    dataout['INPUT_OFFSET'] = INPUT_OFFSET
+    dataout['V'] = A - dtype(IO)
+    #dataout['V_formula'] = 'CHA - IO'
+    dataout['INPUT_OFFSET'] = IO
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    dataout['I'] = -1 * B / dtype(R * gain) + dtype(COMPLIANCE_CURRENT)
+    dataout['I'] = -1 * B / dtype(R * gain) + dtype(CC)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
     dataout['units'] = {'V':'V', 'I':'A'}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
     #dataout['Rout_conv'] = R
-    dataout['CC'] = COMPLIANCE_CURRENT
+    dataout['CC'] = CC
     dataout['gain'] = gain * R
     return dataout
 
