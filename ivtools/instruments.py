@@ -1049,12 +1049,12 @@ class PG5(object):
     #         print('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
 
     def set_pulse_width(self, pulse_width):
-        '''sets the pulse width in ps (between 50 and 250 ps)'''
-        self.write(':PULS:WIDT ' + str(pulse_width*1e-12))
+        '''sets the pulse width (between 50 and 250 ps)'''
+        self.write(':PULS:WIDT ' + str(pulse_width))
 
     def set_period(self, period):
-        '''sets the period in µs (between  1 and 1e6 µs)'''
-        self.write(':PULS:PER ' + str(period*1e-6))
+        '''sets the period  (between  1 and 1e6 µs)'''
+        self.write(':PULS:PER ' + str(period))
 
     def trigger(self):
         '''Executes a pulse'''
