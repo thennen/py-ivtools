@@ -229,13 +229,18 @@ def vcm_pg5_measurement(samplename, samplepad, v1, v2, step = 0.02, V_read = 0.2
         ttx.inputstate(2, True)
         ttx.inputstate(3, False)
         ttx.inputstate(4, False)
-
-        if attenuation == 6:
+        if attenuation == 3:
+            trigger_level = 0.04
+            ttx.scale(2, 0.1)
+            ttx.position(2, -3.5)
+        elif attenuation == 6:
+            trigger_level = 0.03
             ttx.scale(2, 0.07)
-            ttx.position(2, -2.5)
+            ttx.position(2, -2)
         elif attenuation ==10:
+            trigger_level = 0.02
             ttx.scale(2, 0.05)
-            ttx.position(2, -2.5)
+            ttx.position(2, -2)
         elif attenuation == 13:
             trigger_level = 0.02
             ttx.scale(2, 0.04)
@@ -245,8 +250,9 @@ def vcm_pg5_measurement(samplename, samplepad, v1, v2, step = 0.02, V_read = 0.2
             ttx.scale(2, 0.03)
             ttx.position(2, -2)
         else:
+            trigger_level = 0.05
             ttx.scale(2, 0.12)
-            ttx.position(2, -2.5)
+            ttx.position(2, -4.5)
 
         ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
         if pulse_width < 100e-12:
