@@ -1,5 +1,7 @@
 from matplotlib.widgets import Button
 import tkinter as tk
+import sys
+from pathlib import Path
 
 def where(*args):
     return np.where(*args)[0]
@@ -54,41 +56,67 @@ def setup_pcm_plots():
 def setup_vcm_plots():
 
     def plot0(data, ax=None, **kwargs):
-        ax.cla()
         line = data.iloc[-1]
-        ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs)
-        ax.set_ylabel('Resistance HRS [V/A]')
-        ax.set_xlabel('Time [s]')
-        ax.set_title('Read HRS #' + str(len(data)))
-        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-
+        i=0
+        if np.isnan(line.t_hrs).any():
+            i+=1
+            line = data.iloc[-2]
+        ax.set_title('Read HRS #' + str(len(data)-i))
+        if not np.isnan(line.t_hrs).any():
+            ax.cla()
+            ax.set_title('Read HRS #' + str(len(data)-i))
+            ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs)
+            ax.set_ylabel('Resistance HRS [V/A]')
+            ax.set_xlabel('Time [s]')
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
     def plot1(data, ax=None, **kwargs):
-        ax.cla()
         line = data.iloc[-1]
-        ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs)
-        ax.set_ylabel('Resistance LRS [V/A]')
-        ax.set_xlabel('Time [s]')
-        ax.set_title('Read LRS #' +str(len(data)))
-        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        i=0
+        if np.isnan(line.t_ttx).any():
+            line = data.iloc[-2]
+            i+=1
+        ax.set_title('Answer #' + str(len(data)-i))
+        if not np.isnan(line.t_ttx).any():
+            ax.cla()
+            ax.set_title('Answer #' + str(len(data)-i))
+            ax.plot(line.t_ttx, line.V_ttx, **kwargs)    
+            ax.set_ylabel('Voltage [V]')
+            ax.set_xlabel('Time [s]')
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
     def plot2(data, ax=None, **kwargs):
-        ax.cla()
         line = data.iloc[-1]
+        i=0
+        if np.isnan(line.t_lrs).any():
+            line = data.iloc[-2]
+            i+=1
+        ax.set_title('Read LRS #' + str(len(data)))
+        if not np.isnan(line.t_lrs).any():
+            ax.cla()
+            ax.set_title('Read LRS #' + str(len(data)))
+            ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs)
+            ax.set_ylabel('Resistance LRS [V/A]')
+            ax.set_xlabel('Time [s]')
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
-        ax.semilogy(line.V_sweep,  line.V_sweep /  line.I_sweep)
-        ax.set_ylabel('Resistance Sweep [V/A]')
-        ax.set_xlabel('Voltage [V]')
-        ax.set_title('Sweep #' + str(len(data)))
-        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())   
-        
     def plot3(data, ax=None, **kwargs):
-        ax.cla()
-        ax.set_title('Answer #' + str(len(data)))
         line = data.iloc[-1]
-        ax.plot(line.t_ttx, line.V_ttx, **kwargs)    
-        ax.set_ylabel('Voltage [V]')
-        ax.set_xlabel('Time [s]')
-        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        i=0
+        if np.isnan(line.V_sweep).any():
+            line = data.iloc[-2]
+            i+=1
+        ax.set_title('Sweep #' + str(len(data)-i))
+        if not np.isnan(line.V_sweep).any():
+            ax.cla()
+            ax.set_title('Sweep #' + str(len(data)-i))
+            ax.semilogy(line.V_sweep,  line.V_sweep /  line.I_sweep)
+            ax.set_ylabel('Resistance Sweep [V/A]')
+            ax.set_xlabel('Voltage [V]')
+            ax.set_ylim(bottom = 1e2)
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())   
+        
+
         
     iplots.plotters = [[0, plot0],
                        [1, plot1],
@@ -97,8 +125,12 @@ def setup_vcm_plots():
                  
     iplots.newline()  
     
-
-
+def set_keithley_plotters():
+    iplots.plotters = keithley_plotters
+    iplots.ax0.cla()
+    iplots.ax1.cla()
+    iplots.ax2.cla()
+    iplots.ax3.cla()
 
 def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
  interval = 0.1, trigger = -0.3, two_channel = False):
@@ -168,7 +200,8 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     ttx.disarm()
     savedata(data)
 
-def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_width = 50e-12, automatic_measurement = False):
+def vcm_pg5_measurement(samplename, samplepad, v1, v2, step = 0.02, V_read = 0.2, range_lrs = 1e-3, range_hrs = 1e-4, range_sweep = 1e-2, 
+    cycles = 1, pulse_width = 50e-12, attenuation = 0,  automatic_measurement = True):
     setup_vcm_plots()
 
     hrs_list = []
@@ -177,12 +210,11 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
     scope_list = []
     vlist = tri(v1 = v1, v2 = v2, step = step)
 
-
     for i in range(cycles):
 
         ### Reading HRS resistance ############################################################################
 
-        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = range_hrs , limitI = 1, nplc = 1)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
@@ -193,39 +225,63 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
         iplots.updateline(data)
         ### RSetting up scope  ################################################################################
 
-        ttx.inputstate(1, True)
-        ttx.inputstate(2, False)
+        ttx.inputstate(1, False)
+        ttx.inputstate(2, True)
         ttx.inputstate(3, False)
-        ttx.inputstate(4, False)        
-        ttx.position(1, -4)
-        ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=50)
+        ttx.inputstate(4, False)
+
+        if attenuation == 6:
+            ttx.scale(2, 0.07)
+            ttx.position(2, -2.5)
+        elif attenuation ==10:
+            ttx.scale(2, 0.05)
+            ttx.position(2, -2.5)
+        elif attenuation == 13:
+            trigger_level = 0.02
+            ttx.scale(2, 0.04)
+            ttx.position(2, -2)
+        elif attenuation == 16:
+            trigger_level = 0.02
+            ttx.scale(2, 0.03)
+            ttx.position(2, -2)
+        else:
+            ttx.scale(2, 0.12)
+            ttx.position(2, -2.5)
+
+        ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
         if pulse_width < 100e-12:
             ttx.trigger_position(40)
         elif pulse_width < 150e-12:
             ttx.trigger_position(30)
         else:
             ttx.trigger_position(20)
-        ttx.scale(1,0.3)
+
+
+
         plt.pause(0.1)
-        ttx.arm(source = 1, level =0.6, edge = 'e')
+
+        ttx.arm(source = 2, level = trigger_level, edge = 'e')
 
 
         ### Applying pulse and reading scope data #############################################################
+
         if not automatic_measurement:
             input('Connect the RF probes and press enter')
         pg5.set_pulse_width(pulse_width)
+        plt.pause(0.1)
         pg5.trigger()
         plt.pause(0.1)
         if not ttx.triggerstate:
             plt.pause(0.1)
-        scope_list.append(ttx.get_curve(1))
+        scope_list.append(ttx.get_curve(2))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
         iplots.updateline(data)
+
         ### Reading LRS resistance #############################################################################
 
         if not automatic_measurement:
             input('Connect the DC probes and press enter')
-        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = 0, limitI = 1, nplc = 1)
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = range_lrs, limitI = 1, nplc = 1)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
@@ -234,9 +290,10 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
         lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
         iplots.updateline(data)
+
         ### performing sweep ###################################################################################
         
-        k.iv(vlist)
+        k.iv(vlist, Irange = range_sweep) 
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
@@ -245,6 +302,22 @@ def vcm_pg5_measurement(v1, v2, step = 0.01, V_read = 0.2, cycles = 1, pulse_wid
         sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
         iplots.updateline(data)
+        #savedata(data,datafolder + str(pulse_width) + 'ps')
+
+    data['attenuation'] = attenuation
+    data['pulse_width'] = pulse_width
+
+    datafolder = os.path.join('C:\Messdaten', samplename, samplepad)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(i))
+    file_link = Path(filepath + '.df')
+    while file_link.is_file():
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(i))
+        file_link = Path(filepath + '.df')
+    io.write_pandas_pickle(meta.attach(data), filepath)
 
     return data
 
