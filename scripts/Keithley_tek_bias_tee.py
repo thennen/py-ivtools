@@ -232,7 +232,7 @@ def vcm_pg5_measurement(samplename, samplepad, v1, v2, step = 0.02, V_read = 0.2
         if attenuation == 3:
             trigger_level = 0.04
             ttx.scale(2, 0.1)
-            ttx.position(2, -3.5)
+            ttx.position(2, -4)
         elif attenuation == 6:
             trigger_level = 0.03
             ttx.scale(2, 0.07)
