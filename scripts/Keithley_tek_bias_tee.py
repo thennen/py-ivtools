@@ -429,6 +429,31 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         root.destroy()
     return data
 
+def eval_vcm_measurement(data):
+    setup_vcm_plots()
+    if(type(data) == str):
+        data = pd.read_pickle(data)
+    iplots.show()
+    iplots.updateline(data)
+    data['pulse_width_meas'] = []
+    data['pulse_amplitude'] = []
+    data['R_hrs'] = []
+    data['R_lrs'] = []
+
+    ###### Eval Reads ##########################
+
+
+
+def determine_resistance(i, v):
+    '''returns average resistance of all entries'''
+    i = np.array(i)
+    v = np.array(v)
+    i_mean = np.mean(i)
+    v_mean = np.mean(v)
+    r = v_mean/i_mean
+    return np.mean(r)
+
+
 def eval_all_pcm_measurements(filepath):
     ''' executes all eval_pcm_measurements in one directory and bundles the results'''
     if filepath[-1] != '/':
