@@ -368,7 +368,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     ######## beginning of main evalution #############
     if(type(data) == str):
         data = pd.read_pickle(data)
-    iplots.show()    
+        iplots.show()    
     iplots.updateline(data)
     data['pulse_width'] = []
     data['pulse_amplitude'] = []
@@ -435,14 +435,27 @@ def eval_vcm_measurement(data):
         data = pd.read_pickle(data)
     iplots.show()
     iplots.updateline(data)
-    data['pulse_width_meas'] = []
-    data['pulse_amplitude'] = []
-    data['R_hrs'] = []
-    data['R_lrs'] = []
+    print(type(data))
+    fwhm = []
+    pulse_amplitude = []
+    R_hrs = []
+    R_lrs = []
 
     ###### Eval Reads ##########################
 
+    for I_hrs, V_hrs, I_lrs, V_lrs in zip(data['I_hrs'], data['V_hrs'], data['I_lrs'], data['V_lrs']):
+        R_hrs.append(determine_resistance(v = V_hrs, i = I_hrs))
+        R_lrs.append(determine_resistance(v = V_lrs, i = I_lrs))
 
+    ##### Eval Pulses ##########################
+
+    for t_ttx, V_ttx in zip(data['t_ttx'], data['V_ttx']):
+        fwhm.append(fwhm3(valuelist = V_ttx, time = t_ttx))
+   
+    data['R_hrs'] = R_hrs
+    data['R_lrs'] = R_lrs
+    data['fwhm'] = fwhm
+    return data
 
 def determine_resistance(i, v):
     '''returns average resistance of all entries'''
@@ -451,7 +464,8 @@ def determine_resistance(i, v):
     i_mean = np.mean(i)
     v_mean = np.mean(v)
     r = v_mean/i_mean
-    return np.mean(r)
+    return r
+
 
 
 def eval_all_pcm_measurements(filepath):
@@ -588,3 +602,43 @@ def combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list):
     scope_df = pd.DataFrame(scope_list)
     sweep_df = pd.DataFrame(sweep_list)
     return pd.concat([hrs_df, lrs_df, scope_df, sweep_df] , axis = 1)
+
+def fwhm(valuelist, time, peakpos=-1):
+    """calculates the full width at half maximum (fwhm) of some curve.
+    the function will return the fwhm with sub-pixel interpolation. It will start at the maximum position and 'walk' left and right until it approaches the half values.
+    INPUT: 
+    - valuelist: e.g. the list containing the temporal shape of a pulse 
+    OPTIONAL INPUT: 
+    -peakpos: position of the peak to examine (list index)
+    the global maximum will be used if omitted.
+    OUTPUT:
+    -fwhm (value)
+    """
+    if peakpos== -1: #no peakpos given -> take maximum
+        peak = np.max(valuelist)
+        peakpos = np.min( np.nonzero( valuelist==peak  )  )
+
+    peakvalue = valuelist[peakpos]
+    phalf = peakvalue / 2.0
+
+    # go left and right, starting from peakpos
+    ind1 = peakpos
+    ind2 = peakpos   
+
+    while ind1>2 and valuelist[ind1]>phalf:
+        ind1=ind1-1
+    while ind2<len(valuelist)-1 and valuelist[ind2]>phalf:
+        ind2=ind2+1  
+    #ind1 and 2 are now just below phalf
+    grad1 = valuelist[ind1+1]-valuelist[ind1]
+    grad2 = valuelist[ind2]-valuelist[ind2-1]
+    #calculate the linear interpolations
+    p1interp= ind1 + (phalf -valuelist[ind1])/grad1
+    p2interp= ind2 + (phalf -valuelist[ind2])/grad2
+    #calculate the width
+    width = p2interp-p1interp
+
+    ### calculate pulse widht
+    time_step = time[1]-time[0]
+    fwhm = width*time_step
+    return fwhm
