@@ -344,6 +344,17 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
 
+def mypause(interval):
+    ''' plt.pause calls plt.show, which steals focus on some systems.  Use this instead '''
+    backend = plt.rcParams['backend']
+    if backend in mpl.rcsetup.interactive_bk:
+        figManager = mpl._pylab_helpers.Gcf.get_active()
+        if figManager is not None:
+            canvas = figManager.canvas
+            if canvas.figure.stale:
+                canvas.draw()
+            canvas.start_event_loop(interval)
+            return
 
 # Could be a module, but I want it to keep its state when the code is reloaded
 class interactive_figs(object):
@@ -450,7 +461,7 @@ class interactive_figs(object):
                     ax.plot([])
                     print('Plotter number {} failed!'.format(axnum))
                 ax.get_figure().canvas.draw()
-        plt.pause(0.05)
+        mypause(0.05)
 
     def updateline(self, data):
         '''
@@ -484,7 +495,7 @@ class interactive_figs(object):
                 except:
                     print('Plotter number {} failed!'.format(axnum))
             ax.get_figure().canvas.draw()
-        plt.pause(0.05)
+        mypause(0.05)
 
     def clear(self):
         ''' Clear all the axes '''
