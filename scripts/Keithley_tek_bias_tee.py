@@ -440,6 +440,9 @@ def eval_vcm_measurement(data):
     pulse_amplitude = []
     R_hrs = []
     R_lrs = []
+    data['R_hrs'] =[]
+    data['R_lrs'] = []
+    data['fwhm'] = []
 
     ###### Eval Reads ##########################
 
@@ -450,7 +453,7 @@ def eval_vcm_measurement(data):
     ##### Eval Pulses ##########################
 
     for t_ttx, V_ttx in zip(data['t_ttx'], data['V_ttx']):
-        fwhm.append(fwhm3(valuelist = V_ttx, time = t_ttx))
+        fwhm.append(fwhm(valuelist = V_ttx, time = t_ttx))
    
     data['R_hrs'] = R_hrs
     data['R_lrs'] = R_lrs
@@ -491,6 +494,17 @@ def eval_all_pcm_measurements(filepath):
     plot_pcm_vt(pulse_amplitude, t_threshold)
     return all_data, t_threshold, pulse_amplitude
 
+def eval_all_vcm_measurements(filepath):
+    ''' executes all eval_vcm_measurements in one directory and bundles the results. Also error propagation is included.'''
+    if filepath[-1] != '/':
+        filepath = filepath + '/'
+    files = os.listdir(filepath)
+    all_data = []
+    for f in files:
+        filename = filepath+f
+        print(filename)
+        all_data.append(eval_vcm_measurement(filename))
+    return all_data
 def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
     '''returns pulse amplitude in Volts depending on the measured output of the PSPL12500'''
     pulse_amplitude = numpy.nan
