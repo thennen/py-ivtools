@@ -42,6 +42,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yf
     # Try to name the axes according to metadata
     # Will error right now if you pass array as x or y
     if x == 'V': longnamex = 'Voltage'
+    if x == 'Vcalc': longnamex = 'Device Voltage'
     elif x is None:
         longnamex = 'Data Point'
     elif type(x) == str:
@@ -156,6 +157,14 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
         print('plotiv did not understand the input datatype {}'.format(dtype))
         return
 
+    # Use EngFormatter if the plotted values are small or large
+    xlims = np.array(ax.get_xlim())
+    if any(xlims > 1e3) or all(xlims < 1e-1):
+        ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    ylims = np.array(ax.get_ylim())
+    if any(ylims > 1e3) or all(ylims < 1e-1):
+        ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
     if autotitle:
         auto_title(data, keys=None, ax=ax)
 
@@ -198,7 +207,7 @@ def auto_title(data, keys=None, ax=None):
 
     ax.set_title(title)
 
-def plot_R_states(data, v0=.1, v1=None, **kwargs):
+def plot_R_stajes(data, v0=.1, v1=None, **kwargs):
     resist_states = analyze.resistance_states(data, v0, v1)
     resist1 = resist_states[0]
     resist2 = resist_states[1]
@@ -344,6 +353,12 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
 
+
+def plot_cumulative_dist(data, ax=None, **kwargs):
+    ''' Because I always forget how to do it'''
+    if ax is None:
+        fig, ax = plt.subplots()
+    ax.plot(np.sort(data), np.arange(len(data))/len(data), **kwargs)
 
 # Could be a module, but I want it to keep its state when the code is reloaded
 class interactive_figs(object):
@@ -661,11 +676,12 @@ def VoverIplotter(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     # Mask small currents, since V/I will blow up
     # There's definitely a better way.
-    if len(data['I'] > 0):
-        max_current = np.max(np.abs(data['I']))
-        mask = np.abs(data['I']) > .01 * max_current
-    else:
-        mask = []
+    #if len(data['I'] > 0):
+    #    max_current = np.max(np.abs(data['I']))
+    #    mask = np.abs(data['I']) > .01 * max_current
+    #else:
+    #    mask = []
+    mask = np.abs(data['V']) > .01
     V = data['V'][mask]
 
     if 'Vmeasured' in data:
@@ -695,7 +711,11 @@ def vcalcplotter(data, ax=None, R=8197, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     # wtf modifies the input data?  Shouldn't do that.
-    data['Vcalc'] = data['V'] - R * data['I']
+    if type(data) is list:
+        for d in data:
+            d['Vcalc'] = d['V'] - R * d['I']
+    else:
+        data['Vcalc'] = data['V'] - R * data['I']
     plotiv(data, ax=ax, x='Vcalc', **kwargs)
     ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())

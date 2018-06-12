@@ -23,6 +23,7 @@ import scipy.io as spio
 from scipy.io import savemat
 pjoin = os.path.join
 splitext = os.path.splitext
+psplit = os.path.split
 
 gitdir = os.path.split(__file__)[0]
 
@@ -101,6 +102,7 @@ class MetaHandler(object):
     def load_lassen(self, **kwargs):
         '''
         Load wafer information for Lassen
+        if a key is specified which is in the deposition sheet, then try to merge in deposition data
         Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
         '''
         deposition_file = os.path.join(self.moduledir, 'sampledata/CeRAM_Depositions.xlsx')
@@ -117,10 +119,13 @@ class MetaHandler(object):
         # Merge the non-coupon specific portion of lassen_df
         coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
         non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
-        non_coupon_specific = lassen_df[lassen_df.coupon == 1][non_coupon_cols]
+        non_coupon_specific = lassen_df[lassen_df.coupon == 42][non_coupon_cols]
         lassen_df = pd.concat((lassen_df, non_coupon_specific))
 
-        meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
+        if any([(k in deposition_df) for k in kwargs.keys()]):
+            meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
+        else:
+            meta_df = lassen_df
 
         # Check that function got valid arguments
         for key, values in kwargs.items():
@@ -257,6 +262,8 @@ class MetaHandler(object):
         for fnkey in self.filenamekeys:
             if fnkey in self.meta.keys():
                 filename += '_{}'.format(self.meta[fnkey])
+            elif fnkey in self.static.keys():
+                filename += '_{}'.format(self.static[fnkey])
         return filename
 
 def validvarname(varStr):
@@ -364,8 +371,8 @@ def read_txt(filepath, **kwargs):
     # ...
 
     # Here is a dict which constructs a mapping between various column names I have seen and a standard column name
-    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]'],
-                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]'],
+    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]', 'I1'],
+                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]', 'V1'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
                   't': ['time', 'Time [S]', 't[s]'],
                   'Vmeasured': ['Voltage Probe (V)']}
@@ -403,6 +410,12 @@ def read_txt(filepath, **kwargs):
             colname_line = more_header[-1]
             # Single string version
             header = ''.join(header)
+        elif firstline.startswith('#Temperature'):
+            # no header ....
+            header = firstline
+            readcsv_args['header'] = None
+            readcsv_args['comment'] = '#'
+            colname_line = 't\tV\tI\tV/I'
         else:
             # Assume first row contains column names
             # But cannot trust that they are properly delimited
@@ -452,36 +465,41 @@ def read_txt(filepath, **kwargs):
         nanmask = dataout['I'] == 9.9100000000000005e+37
         dataout['I'][nanmask] = np.nan
 
+
     return pd.Series(dataout)
 
-def read_txts(directory, pattern='*', exclude=None, **kwargs):
-    ''' Load list of loops from separate text files. Specify files by glob
-    pattern.  kwargs are passed to loadtxt'''
+def read_txts(filepaths, sort=True, **kwargs):
+    # Try to sort by file number, even if fixed width numbers are not used
+    # For now I will assume the filename ends in _(somenumber)
+    # this function used to contain the globbing code, now you should use the glob() function
+    fnames = [psplit(fp)[-1] for fp in filepaths]
+    if sort:
+        try:
+            filepaths.sort(key=lambda fn: int(splitext(fn.split('_')[-1])[0]))
+        except:
+            print('Failed to sort files by file number. Sorting by mtime instead.')
+            filepaths.sort(key=lambda fn: os.path.getmtime(fn))
+
+    print('Loading the following files:')
+    print('\n'.join(fnames))
+
+    datalist = []
+    for fp in filepaths:
+        datalist.append(read_txt(fp, **kwargs))
+
+    return pd.DataFrame(datalist)
+
+
+def glob(pattern='*', directory='.', exclude=None):
     pattern = pattern.join('**')
     fnames = fnmatch.filter(os.listdir(directory), pattern)
     if exclude is not None:
         exclude = exclude.join('**')
         excludefiles = fnmatch.filter(fnames, exclude)
         fnames = [mf for mf in fnames if mf not in excludefiles]
-
-    # Try to sort by file number, even if fixed width numbers are not used
-    # For now I will assume the filename ends in _(somenumber)
-    try:
-        fnames.sort(key=lambda fn: int(splitext(fn.split('_')[-1])[0]))
-    except:
-        print('Failed to sort files by file number. Sorting by mtime instead.')
-        fnames.sort(key=lambda fn: os.path.getmtime(pjoin(directory, fn)))
-
-    print('Loading the following files:')
-    print('\n'.join(fnames))
-
-    fpaths = [pjoin(directory, fn) for fn in fnames]
-
-    datalist = []
-    for fp in fpaths:
-        datalist.append(read_txt(fp, **kwargs))
-
-    return pd.DataFrame(datalist)
+    fpaths = [os.path.join(directory, fn) for fn in fnames]
+    abspaths = [os.path.abspath(fp) for fp in fpaths]
+    return abspaths
 
 
 def read_pandas_files(filepaths, concat=True, dropcols=None):

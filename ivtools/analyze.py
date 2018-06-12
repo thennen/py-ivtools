@@ -333,7 +333,7 @@ def thresholds_byval(data, value):
 '''
 
 @ivfunc
-def moving_avg(data, window=5, columns=('I', 'V', 't')):
+def moving_avg(data, window=5, columns=None):
     ''' Smooth data arrays with moving avg '''
     if columns is None:
         columns = find_data_arrays(data)
@@ -438,7 +438,10 @@ def maketimearray(data):
     # TODO: need to account for any possible downsampling!
     # Don't know what data columns exist
     columns = find_data_arrays(data)
-    return np.arange(len(data[columns[0]])) * 1/data['sample_rate']
+    t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
+    if 'downsampling' in data:
+        t *= data['downsampling']
+    return t
 
 
 @ivfunc
