@@ -110,7 +110,7 @@ def setup_vcm_plots():
         if not np.isnan(line.V_sweep).any():
             ax.cla()
             ax.set_title('Sweep #' + str(len(data)-i))
-            ax.semilogy(line.V_sweep,  line.V_sweep /  line.I_sweep)
+            ax.semilogy(line.V_sweep,  line.V_sweep /  line.I_sweep - 50)
             ax.set_ylabel('Resistance Sweep [V/A]')
             ax.set_xlabel('Voltage [V]')
             ax.set_ylim(bottom = 1e2)
@@ -430,44 +430,39 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     return data
 
 def eval_vcm_measurement(data):
+    impedance = 50
     setup_vcm_plots()
     if(type(data) == str):
         data = pd.read_pickle(data)
     iplots.show()
     iplots.updateline(data)
     print(type(data))
-    fwhm = []
+    fwhm_list = []
     pulse_amplitude = []
     R_hrs = []
     R_lrs = []
-    data['R_hrs'] =[]
-    data['R_lrs'] = []
-    data['fwhm'] = []
 
     ###### Eval Reads ##########################
 
     for I_hrs, V_hrs, I_lrs, V_lrs in zip(data['I_hrs'], data['V_hrs'], data['I_lrs'], data['V_lrs']):
-        R_hrs.append(determine_resistance(v = V_hrs, i = I_hrs))
-        R_lrs.append(determine_resistance(v = V_lrs, i = I_lrs))
+        R_hrs.append(determine_resistance(v = V_hrs, i = I_hrs)-impedance)
+        R_lrs.append(determine_resistance(v = V_lrs, i = I_lrs)-impedance)
 
     ##### Eval Pulses ##########################
 
-    for t_ttx, V_ttx in zip(data['t_ttx'], data['V_ttx']):
-        fwhm.append(fwhm(valuelist = V_ttx, time = t_ttx))
+    for t_ttx, V_ttx, pulse_width in zip(data['t_ttx'], data['V_ttx'], data['pulse_width']):
+        fwhm_value = fwhm(valuelist = V_ttx, time = t_ttx)
+        if fwhm_value < pulse_width:
+            fwhm_list.append(pulse_width)
+        else:
+            fwhm_list.append(fwhm(valuelist = V_ttx, time = t_ttx))
+
    
     data['R_hrs'] = R_hrs
     data['R_lrs'] = R_lrs
-    data['fwhm'] = fwhm
+    data['fwhm'] = fwhm_list
     return data
 
-def determine_resistance(i, v):
-    '''returns average resistance of all entries'''
-    i = np.array(i)
-    v = np.array(v)
-    i_mean = np.mean(i)
-    v_mean = np.mean(v)
-    r = v_mean/i_mean
-    return r
 
 
 
@@ -500,11 +495,31 @@ def eval_all_vcm_measurements(filepath):
         filepath = filepath + '/'
     files = os.listdir(filepath)
     all_data = []
+    R_hrs_mean = []
+    R_hrs_std = []
+    R_lrs_mean = []
+    R_lrs_std = []
+    fwhm_mean = []
+    fwhm_std = []
+    R_ratio_mean =[]
+    R_ratio_std = []
+
     for f in files:
         filename = filepath+f
         print(filename)
-        all_data.append(eval_vcm_measurement(filename))
-    return all_data
+        data = eval_vcm_measurement(filename)
+        all_data.append(data)
+        R_hrs_mean.append(np.mean(data['R_hrs']))
+        R_hrs_std.append(np.std(data['R_hrs']))
+        R_lrs_mean.append(np.mean(data['R_lrs']))
+        R_lrs_std.append(np.std(data['R_lrs']))
+        fwhm_mean.append(np.mean(data['fwhm']))
+        fwhm_std.append(np.std(data['fwhm']))
+        R_ratio_mean.append(R_lrs_mean[-1]/R_hrs_mean[-1])
+        R_ratio_std.append(R_ratio_mean[-1]*np.sqrt(np.power(R_hrs_std[-1]/R_hrs_mean[-1], 2)+np.power(R_lrs_std[-1]/R_lrs_mean[-1], 2)))
+
+    return all_data, R_hrs_mean, R_hrs_std, R_lrs_mean, R_lrs_std, fwhm_mean, fwhm_std, R_ratio_mean, R_ratio_std
+
 def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
     '''returns pulse amplitude in Volts depending on the measured output of the PSPL12500'''
     pulse_amplitude = numpy.nan
@@ -596,7 +611,7 @@ def plot_pcm_vt(pulse_amplitude, t_threshold):
 
 class tmp_threshold():
     '''Allows to save the threshold obtained by clicking eval_pcm_measurement => there maybe a better solultion'''
-    threshold = numpy.nan
+    threshold = np.nan
     def set_threshold(self, threshold_value):
         if len(threshold_value) > 1:
             print('More than one point selected. Zoom closer to treshold event')
@@ -656,3 +671,24 @@ def fwhm(valuelist, time, peakpos=-1):
     time_step = time[1]-time[0]
     fwhm = width*time_step
     return fwhm
+
+def determine_resistance(i, v):
+    '''returns average resistance of all entries'''
+    i = np.array(i)
+    v = np.array(v)
+    i_mean = np.mean(i)
+    v_mean = np.mean(v)
+    r = v_mean/i_mean
+    return r
+
+def deb_to_atten(deb):
+    return np.power(10, -deb/20)
+
+def savefig2(fig_handle, location):
+    location = location + '.fig.pickle'
+    pickle.dump(fig_handle, open(location, 'wb'))
+
+def openfig(location):
+    fig = pickle.load(open(location, 'rb'))
+    fig.show()
+    return fig
