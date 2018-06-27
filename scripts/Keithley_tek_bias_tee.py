@@ -133,7 +133,7 @@ def set_keithley_plotters():
     iplots.ax3.cla()
 
 def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
- interval = 0.1, trigger = -0.3, two_channel = False):
+ interval = 0.1, trigger = -0.3, two_channel = False, rangeI = 0):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
     setup_pcm_plots()
@@ -150,7 +150,7 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
 
     datafolder = 'C:/Messdaten/' + samplename + '/' + samplepad + '/'
 
-    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = 0, limitI = 1, nplc = 1)
+    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = 1)
 
     ttx.inputstate(1, False)
     ttx.inputstate(2, True)
@@ -161,8 +161,8 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
         ttx.position(4, 4)
     else:
         ttx.inputstate(4, False)
-    ttx.scale(2, 0.03)
-    ttx.position(2, 1)
+    ttx.scale(2, 0.04)
+    ttx.position(2, 3.5)
     ttx.change_samplerate_and_recordlength(100e9, 5000)
     if two_channel:
         ttx.arm(source = 4, level = trigger, edge = 'e')
@@ -174,11 +174,13 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
             plt.pause(0.1)
         else:
             number_of_events +=1
-            data_scope1 = ttx.get_curve(4)
+            if two_channel:
+                data_scope1 = ttx.get_curve(4)
+
             data_scope2 = ttx.get_curve(2)
             
             time_array = data['t']
-            data['t_scope'].append(data_scope1['t_ttx'])
+            data['t_scope'].append(data_scope2['t_ttx'])
             if two_channel:
                 data['v_pulse'].append(data_scope1['V_ttx'])
             data['v_answer'].append(data_scope2['V_ttx'])
