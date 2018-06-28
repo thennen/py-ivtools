@@ -146,6 +146,8 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     data['t_event'] = []
     data['amplitude'] = amplitude
     data['bits'] = bits
+    data['samplepad'] = samplepad
+    data['samplename'] = samplename
     iplots.show()    
 
     datafolder = 'C:/Messdaten/' + samplename + '/' + samplepad + '/'
@@ -200,11 +202,27 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     k.set_channel_state('A', False)
     k.set_channel_state('B', False)
     ttx.disarm()
-    savedata(data)
+    
+     datafolder = os.path.join('C:\Messdaten', samplename, samplepad)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, '_pcm_measurement_'+str(i))
+    file_link = Path(filepath + '.df')
+    while file_link.is_file():
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, '_pcm_measurement_'+str(i))
+        file_link = Path(filepath + '.df')
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    return data
 
 def vcm_pg5_measurement(samplename, samplepad, v1, v2, step = 0.02, V_read = 0.2, range_lrs = 1e-3, range_hrs = 1e-4, range_sweep = 1e-2, 
     cycles = 1, pulse_width = 50e-12, attenuation = 0,  automatic_measurement = True):
     setup_vcm_plots()
+
+    data['samplepad'] = samplepad
+    data['samplename'] = samplename
 
     hrs_list = []
     lrs_list = []
