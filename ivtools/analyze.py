@@ -333,7 +333,7 @@ def thresholds_byval(data, value):
 '''
 
 @ivfunc
-def moving_avg(data, window=5, columns=('I', 'V', 't')):
+def moving_avg(data, window=5, columns=None):
     ''' Smooth data arrays with moving avg '''
     if columns is None:
         columns = find_data_arrays(data)
@@ -438,7 +438,10 @@ def maketimearray(data):
     # TODO: need to account for any possible downsampling!
     # Don't know what data columns exist
     columns = find_data_arrays(data)
-    return np.arange(len(data[columns[0]])) * 1/data['sample_rate']
+    t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
+    if 'downsampling' in data:
+        t *= data['downsampling']
+    return t
 
 
 @ivfunc
@@ -832,7 +835,7 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False):
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, left=None, right=None):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"
@@ -854,9 +857,9 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False)
     dataout = {}
     for ik in interpkeys:
         if reverse:
-            dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1])
+            dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
         else:
-            dataout[ik] = np.interp(interpvalues, data[column], data[ik])
+            dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
     dataout[column] = interpvalues
     add_missing_keys(data, dataout)
 

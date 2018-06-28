@@ -3,12 +3,13 @@ These classes contain functionality specific to only one instrument.
 Don't put code in an instrument class that has anything to do with a different instrument,
 or any particular application!
 
-They are grouped into classes because there may be some overlapping functions/names which
-should be contained.
+They are grouped into classes because there may be some overlapping function names which
+should be contained.  Also there might be a situation where we would like multiple instances
+(e.g. when using two Keithley's).
+
 Should only put instruments here that have an actual data connection to the computer
 
 TODO:
-
 The module maintains weak references to instrument instances, so that they can be updated on reload in order to
 reuse existing connections
 
@@ -21,8 +22,6 @@ import time
 import os
 import pandas as pd
 import serial
-from collections import deque
-import weakref
 
 # Store the resource manager instance in the visa module
 # Because this module (instruments.py) may be reloaded,
@@ -109,6 +108,7 @@ class Picoscope(object):
         print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
                            index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
 
+    # Settings are a class mainly because I wanted a convenient syntax for typing in repeatedly
     class _PicoSetting(dict):
         def __init__(self, parent):
             self._parent = parent
@@ -435,7 +435,8 @@ class RigolDG5000(object):
         self.conn = visa_rm.open_resource(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
-        self.ask = self.conn.ask
+        self.query = self.conn.query
+        self.ask = self.query
         self.close = self.conn.close
 
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
@@ -451,7 +452,7 @@ class RigolDG5000(object):
     def outputstate(self, state=None, ch=1):
         ''' Turn output state on or off '''
         if state is None:
-            return self.ask(':OUTPUT{}:STATE?'.format(ch)).strip() == 'ON'
+            return self.query(':OUTPUT{}:STATE?'.format(ch)).strip() == 'ON'
         else:
             statestr = 'ON' if state else 'OFF'
             self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
@@ -495,7 +496,7 @@ class RigolDG5000(object):
 
     def error(self, ):
         ''' Get error message from rigol '''
-        return self.ask(':SYSTem:ERRor?')
+        return self.query(':SYSTem:ERRor?')
 
     # <<<<< For burst mode
     def ncycles(self, n, ch=1):
@@ -564,7 +565,7 @@ class RigolDG5000(object):
         self.write(':DISP:WIND:HLIG:COL {}'.format(c))
 
     def idn(self):
-        return self.ask('*IDN?').replace('\n', '')
+        return self.query('*IDN?').replace('\n', '')
 
     ### These use the wrapped SCPI commands to accomplish something useful
 
@@ -584,7 +585,7 @@ class RigolDG5000(object):
         if len(waveform) > 512e3:
             raise Exception('Too many samples requested for rigol AWG (probably?)')
 
-        burst_state = self.ask(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
+        burst_state = self.query(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
         # Turn on interpolation for IVs, off for steps
         self.interp(interp)
         # Only update waveform if necessary
@@ -703,7 +704,8 @@ class Keithley2600(object):
         self.conn = visa_rm.get_instrument(addr, open_timeout=0)
         # Expose a few methods directly to self
         self.write = self.conn.write
-        self.ask = self.conn.ask
+        self.query = self.conn.query
+        self.ask = self.query
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
@@ -713,7 +715,7 @@ class Keithley2600(object):
         self.data= deque(maxlen=100)
 
     def idn(self):
-        return self.ask('*IDN?').replace('\n', '')
+        return self.query('*IDN?').replace('\n', '')
 
     def run_lua_lines(self, lines):
         ''' Send some lines (list of strings) to Keithley lua interpreter '''
@@ -787,9 +789,9 @@ class Keithley2600(object):
 
     def done(self):
         # works with smua.trigger.initiate()
-        donesweeping = not bool(float(self.ask('print(status.operation.sweeping.condition)')))
+        donesweeping = not bool(float(self.query('print(status.operation.sweeping.condition)')))
         # works with smua.measure.overlappediv()
-        donemeasuring = not bool(float(self.ask('print(status.operation.measuring.condition)')))
+        donemeasuring = not bool(float(self.query('print(status.operation.measuring.condition)')))
         # works with both
 
         return donesweeping & donemeasuring
@@ -811,7 +813,7 @@ class Keithley2600(object):
         # Another bad way ...
         answer = 1
         while answer != 0.0:
-            answer = float(self.ask('print(status.operation.sweeping.condition)'))
+            answer = float(self.query('print(status.operation.sweeping.condition)'))
             plt.pause(.3)
         '''
 
@@ -824,10 +826,10 @@ class Keithley2600(object):
         '''
         if end is None:
             # Read the whole length
-            end = int(float(self.ask('print({}.n)'.format(buffer))))
+            end = int(float(self.query('print({}.n)'.format(buffer))))
         # makes keithley give numbers in ascii
         # self.write('format.data = format.ASCII')
-        #readingstr = self.ask('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
+        #readingstr = self.query('printbuffer({}, {}, {}.{})'.format(start, end, buffer, attr))
         #return np.float64(readingstr.split(', '))
 
         # Makes keithley give numbers in binary float64
@@ -850,7 +852,7 @@ class Keithley2600(object):
 
         Can pass start and end values if you want just a specific part of the arrays
         '''
-        numpts = int(float(self.ask('print(smua.nvbuffer1.n)')))
+        numpts = int(float(self.query('print(smua.nvbuffer1.n)')))
         if end is None:
             end = numpts
         if numpts > 0:
@@ -863,7 +865,7 @@ class Keithley2600(object):
             # TODO: What other information is available from Keithley registers?
 
             # Need to do something different if sourcing voltage vs sourcing current
-            source = self.ask('print(smua.source.func)')
+            source = self.query('print(smua.source.func)')
             source = float(source)
             if source:
                 # Returns 1.0 for voltage source (smua.OUTPUT_DCVOLTS)
@@ -874,12 +876,12 @@ class Keithley2600(object):
                 out['units']['Vmeasured'] = 'V'
                 I = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
                 out['I'] = I
-                out['Icomp'] = float(self.ask('print(smua.source.limiti)'))
+                out['Icomp'] = float(self.query('print(smua.source.limiti)'))
             else:
                 # Current source
                 out['source'] = 'I'
-                out['Vrange'] = float(self.ask('print(smua.nvbuffer2.measureranges[1])'))
-                out['Vcomp'] = float(self.ask('print(smua.source.limitv)'))
+                out['Vrange'] = float(self.query('print(smua.nvbuffer2.measureranges[1])'))
+                out['Vcomp'] = float(self.query('print(smua.source.limitv)'))
 
                 out['I'] = self.read_buffer('smua.nvbuffer1', 'sourcevalues', start, end)
                 Imeasured = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
@@ -1075,21 +1077,21 @@ class TektronixDPO73304D(object):
         self.conn = visa_rm.get_instrument(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
-        self.ask = self.conn.ask
+        self.query = self.conn.query
+        self.ask = self.query
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
         moduledir = os.path.split(__file__)[0]
 
     def idn(self):
-        return self.ask('*IDN?').replace('\n', '')
+        return self.query('*IDN?').replace('\n', '')
 
     def bandwidth(self, channel=1, bandwidth=33e9):
         self.write('CH' + str(channel) + ':BAN ' + str(bandwidth))
 
     def scale(self, channel=1, scale=0.0625):
         self.write('CH' + str(channel) + ':SCAle ' + str(scale))
-        self.write('*WAI')
 
     def position(self, channel=1, position=0):
         self.write('CH'+str(channel)+':POS '+str(position))
@@ -1133,7 +1135,7 @@ class TektronixDPO73304D(object):
         if source == 0:
             self.write('TRIG:A:EDGE:SOUrce AUX')
         else:
-            self.write('TRIG:A:EDGE:SOUrce CH' + str(source))
+            self.write('TRIG:A:EDGE:SOUrce CH ' + str(source))
         self.write('TRIG:A:LEVEL ' + str(level))
         self.write('ACQ:STOPA SEQUENCE')
         self.write('ACQ:STATE 1')
@@ -1143,10 +1145,10 @@ class TektronixDPO73304D(object):
             self.write('TRIG:A:EDGE:SLO FALL')
         else:
             self.write('TRIG:A:EDGE:SLO EIT')
-        triggerstate = self.ask('TRIG:STATE?')
+        triggerstate = self.query('TRIG:STATE?')
         while 'REA' not in triggerstate or 'SAVE' in triggerstate:
             self.write('ACQ:STATE 1')
-            triggerstate = self.ask('TRIG:STATE?')
+            triggerstate = self.query('TRIG:STATE?')
 
     def get_curve(self, channel=1):
         self.write('HEAD 0')
@@ -1154,9 +1156,9 @@ class TektronixDPO73304D(object):
         self.write('WFMOUTPRE:BIT_NR 8')
         self.write('DATA:ENC RPB')
         self.write('DATA:SOURCE CH' + str(channel))
-        rl = int(self.ask('HOR:RECO?'))
+        rl = int(self.query('HOR:RECO?'))
 
-        pre = self.ask('WFMOutpre?')
+        pre = self.query('WFMOutpre?')
         pre_split = pre.split(';')
         if len(pre_split) == 5:
             print('Channel ' + str(channel) + ' is not used.')
@@ -1184,7 +1186,7 @@ class TektronixDPO73304D(object):
         self.write('ACQ:STATE 0')
 
     def triggerstate(self):
-        trigger_str = self.ask('TRIG:STATE?')
+        trigger_str = self.query('TRIG:STATE?')
         return trigger_str == 'READY\n'
 
     def trigger_position(self, position):
@@ -1205,7 +1207,8 @@ class PG5(object):
         self.conn = visa_rm.get_instrument(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
-        self.ask = self.conn.ask
+        self.query = self.conn.query
+        self.ask = self.query
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
@@ -1213,10 +1216,10 @@ class PG5(object):
     #TO DO: fix communication during ask commands, setting self.conn.query_delay to higher values doesnt help
     def error(self):
         '''prints the last error'''
-        error_msg = self.ask(':SYST:ERR:NEXT?')
+        error_msg = self.query(':SYST:ERR:NEXT?')
         print(error_msg)
     #TO DO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
-    
+
     # def set_trigger_type(self, type):
     #     '''sets the trigger type:
     #     type = \'IMM\' for internal clock
@@ -1232,12 +1235,12 @@ class PG5(object):
     #         print('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
 
     def set_pulse_width(self, pulse_width):
-        '''sets the pulse width in ps (between 50 and 250 ps)'''
-        self.write(':PULS:WIDT ' + str(pulse_width*1e-12))
+        '''sets the pulse width (between 50 and 250 ps)'''
+        self.write(':PULS:WIDT ' + str(pulse_width))
 
     def set_period(self, period):
-        '''sets the period in µs (between  1 and 1e6 µs)'''
-        self.write(':PULS:PER ' + str(period*1e-6))
+        '''sets the period  (between  1 and 1e6 µs)'''
+        self.write(':PULS:PER ' + str(period))
 
     def trigger(self):
         '''Executes a pulse'''
