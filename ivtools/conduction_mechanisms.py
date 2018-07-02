@@ -92,11 +92,17 @@ def poole_frenkel_1d(E, T, mu=4, Nc=5e18, phi_t=0.56, eps_r=20, **kwargs):
     J = q * mu * Nc * E * exp(-Eb/kT)
     return J
 
-def poole_frenkel_3d():
+def poole_frenkel_3d(E, T, sig_p=1.06e4, Ea=0.321, eps_i=9):
     '''
+
     http://aip.scitation.org/doi/10.1063/1.1655871
     '''
-    pass
+    kT = kB * T
+    Ea = Ea * q
+    beta = sqrt(q**3 / pi / eps0 / eps_i)
+    alpha = beta * sqrt(E) / kT / 2
+    J = E * sig_p * exp(-Ea/kT) * (0.25 / alpha**2 * (1 + (alpha - 1) * exp(alpha)) + 0.5)
+    return J
 
 def polaron_hopping(V, n=2e28, a=5e-10, r=8e-10, delta_E=1.23, w=1e17):
     '''
@@ -228,4 +234,8 @@ def schottky_plot():
 
 def poole_frenkel_plot():
     pass
+
+def arrhenius_plot():
+    pass
+
 
