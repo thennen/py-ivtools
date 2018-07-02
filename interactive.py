@@ -52,16 +52,6 @@ try:
 except:
     firstrun = True
 
-if not firstrun:
-    # Store old settings/connections before they get clobbered by module reload
-    # There's probably a super slick way to do this ....
-    old = {}
-    old['ps'] = ps
-    old['rigol'] = rigol
-    old['k'] = k
-    old['ttx'] = ttx
-    old['pg5'] = pg5
-
 # Dump everything into interactive namespace for convenience
 # TODO: run test for overlapping names
 from ivtools.measure import *
@@ -76,31 +66,57 @@ hostname = socket.gethostname()
 gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
 
+# 2634B : 192.168.11.11
+# 2636A : 192.168.11.12
+# 2636B : 192.168.11.13
+
+# Hostname specific settings
 if hostname == 'pciwe46':
     datafolder = 'D:/t/ivdata'
+    # Variable name, Instrument class, arguments to pass to init
+    connections = [('ps', instruments.Picoscope),
+                   ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                   ('daq', instruments.USB2708HS),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                   ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
 elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = 'C:/Messdaten/'
+    connections = {}
 elif hostname == 'pciwe34':
     # Mark II
     datafolder = 'F:/Messdaten/hennen'
+    connections = {}
 else:
-    datafolder = 'C:/t/data'
+    datafolder = 'C:/data'
+    connections = {}
 
-# Default data subfolder
-subfolder = datestr
-if len(sys.argv) > 1:
-    # Can give a folder name with command line argument
-    subfolder += '_' + sys.argv[1]
-print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+globalvars = globals()
+instrument_varnames = {instruments.Picoscope:'ps',
+                       instruments.RigolDG5000:'rigol',
+                       instruments.Keithley2600:'k',
+                       instruments.PG5:'pg5',
+                       instruments.TektronixDPO73304D:'ttx',
+                       instruments.USB2708HS:'daq'}
 
-def datadir():
-    return os.path.join(datafolder, subfolder)
+# Make varnames None until connected
+for vn in instrument_varnames.items():
+    globalvars[vn] = None
 
-io.makefolder(datafolder, subfolder)
-print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+visa_resources = ivtools.instrument_manager.visa_rm.list_resources()
+for varname, inst_class, *args in connections:
+    if len(args) > 0:
+        if args[0].startswith('USB') or args[0].startswith('GPIB'):
+            # don't bother trying to connect to it if it's not in visa_resources
+            if args[0] not in visa_resources:
+                # TODO: I think there are multiple valid formats for visa addresses.
+                # How to equate them?
+                # https://pyvisa.readthedocs.io/en/stable/names.html
+                continue
+    globalvars[varname] = inst_class(*args)
 
-# Default plotter configuration
+# Plotter configurations
 # For picoscope + rigol
 pico_plotters = [[0, ivplot.ivplotter],
                  [1, ivplot.chplotter],
@@ -113,21 +129,26 @@ keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 
 if firstrun:
-    ### Runs only the first time
+    ### Runs only the first time ###
+    # Default data subfolder
+    subfolder = datestr
+    if len(sys.argv) > 1:
+        # Can give a folder name with command line argument
+        subfolder += '_' + sys.argv[1]
+    print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+    print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+
+    def datadir():
+        return os.path.join(datafolder, subfolder)
+
+    io.makefolder(datafolder, subfolder)
     magic('matplotlib')
     io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
     meta = io.MetaHandler()
     iplots = ivplot.interactive_figs(n=4)
-    # Just try to connect normally
-    measure.connect_picoscope()
-    measure.connect_rigolawg()
-    measure.connect_keithley()
-    measure.connect_tektronix()
-    measure.connect_pg5()
     firstrun = False
     # Need to specify what the plots should do by default
-    # There are a few different ways one could handle this
-    if measure.k is None:
+    if k is None:
         print('Setting up automatic plotting for picoscope')
         iplots.plotters = pico_plotters
     else:
@@ -135,30 +156,11 @@ if firstrun:
         iplots.plotters = keithley_plotters
 else:
     # Transfer all the settings you want to keep into new instances/environment
-    if old['ps'] is not None:
-        measure.ps = instruments.Picoscope(previous_instance=old['ps'])
-    # with visa I think it's best to just close the session and reconnect
-    if old['k'] is not None:
-        kresource = old['k'].conn.resource_name
-        old['k'].close()
-        measure.connect_keithley(kresource)
-    if old['rigol'] is not None:
-        rigolresource = old['rigol'].conn.resource_name
-        old['rigol'].close()
-        measure.connect_rigolawg(rigolresource)
-    if old['ttx'] is not None:
-        tresource = old['ttx'].conn.resource_name
-        old['ttx'].close()
-        measure.connect_tektronix(tresource)
-    if old['pg5'] is not None:
-        tresource = old['pg5'].conn.resource_name
-        old['pg5'].close()
-        measure.connect_pg5(tresource)
-        meta = io.MetaHandler(oldinstance=meta)
+    meta = io.MetaHandler(oldinstance=meta)
     iplots = ivtools.plot.interactive_figs(oldinstance=iplots)
 
-if measure.ps is not None:
-    measure.ps.print_settings()
+if ps is not None:
+    ps.print_settings()
 
 class autocaller():
     '''
@@ -176,13 +178,6 @@ meta.static['gitrev'] = gitrev
 
 
 ################ Bindings for convenience #################
-
-# Instruments
-ps = measure.ps
-k = measure.k
-ttx = measure.ttx
-rigol = measure.rigol
-pg5 = measure.pg5
 
 # Metadata selector
 pp = autocaller(meta.print)
@@ -221,7 +216,7 @@ def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
 # just typing s will save the d variable
 s = autocaller(savedata)
 
-# Wrap any fuctions that you want to automatically make plots with this
+# Wrap any fuctions that you want to automatically make plots/write to disk with this:
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
     ''' Activates auto data plotting and saving for wrapped functions '''
     @wraps(func)
@@ -259,10 +254,11 @@ picoiv = interactive_wrapper(measure.picoiv)
 
 # If keithley is connected ...
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
-if k is not None:
+if k is not None and hasattr(k, 'query'):
     live = True
     if '2636A' in k.idn():
         live = False
     kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kiv_4pt = interactive_wrapper(k.iv_4pt, k.get_data, donefunc=k.done, live=live, autosave=True)
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)

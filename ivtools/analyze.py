@@ -472,7 +472,7 @@ def indexiv(data, index):
 
 
 @ivfunc
-def sliceiv(data, stop=-1, start=0, step=1):
+def sliceiv(data, stop=None, start=0, step=1):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start, stop can be functions that take the iv loop as argument
@@ -486,9 +486,11 @@ def sliceiv(data, stop=-1, start=0, step=1):
         stop = stop(data)
         if np.isnan(stop): stop = -1
     dataout = {}
+    def int_or_none(ind):
+        return None if ind is None else int(ind)
     for sk in slicekeys:
         # Apply the filter to all the relevant items
-        dataout[sk] = data[sk][slice(int(start), int(stop), int(step))]
+        dataout[sk] = data[sk][slice(int_or_none(start), int_or_none(stop), int_or_none(step))]
     add_missing_keys(data, dataout)
     return dataout
 

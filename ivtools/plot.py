@@ -12,7 +12,7 @@ from matplotlib.widgets import SpanSelector
 from inspect import signature
 import os
 
-def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yfunc=None, **kwargs):
+def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yfunc=None, **kwargs):
     '''
     Plot an array vs another array contained in iv object
     if None is passed for x, then plots vs range(len(x))
@@ -35,6 +35,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yf
 
     if maxsamples is not None and maxsamples < l:
         # Down sample data
+        print('Downsampling data for plot!!')
         step = int(l/maxsamples)
         X = X[np.arange(0, l, step)]
         Y = Y[np.arange(0, l, step)]
@@ -80,8 +81,8 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=100000, xfunc=None, yf
 
     return ax.plot(X, Y, **kwargs)[0]
 
-def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfunc=None, yfunc=None,
-           plotfunc=_plot_single_iv, autotitle=False, **kwargs):
+def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
+           plotfunc=_plot_single_iv, autotitle=False, labels=None, **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     Can plot any column vs any other column
@@ -124,13 +125,26 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
                 normc = (c - np.min(c)) / (np.max(c) - np.min(c))
                 colors = cmap(normc)
 
+        if type(labels) is str:
+            # label by the column with this name
+            labels = data[labels]
+            # otherwise we will iterate through labels directly
+        if labels is not None:
+            # make np.nan count as None (not labelled)
+            labels = list(map(lambda v: None if np.isnan(v) else v, labels))
+            # TODO: if there are repeat labels, only label the first one?  Might not always want that behavior..
+            assert len(labels) == len(data)
+        else:
+            # still need to iterate through labels
+            labels = [None] * len(data)
+
         if dtype == pd.DataFrame:
             if x is None or hasattr(data.iloc[0][x], '__iter__'):
                 # Plot x array vs y array.  x can be none, then it will just be data point number
                 line = []
-                for (row, iv), c in zip(data.iterrows(), colors):
+                for (row, iv), c, l in zip(data.iterrows(), colors, labels):
                     kwargs.update(c=c)
-                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs))
+                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
             else:
                 line = plt.plot(data[x], data[y], **kwargs)
                 ax.set_xlabel(x)
@@ -138,9 +152,10 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=10000, cm='jet', xfun
         else:
             if x is None or hasattr(data[0][x], '__iter__'):
                 line = []
-                for iv, c in zip(data, colors):
+                for iv, c, l in zip(data, colors, labels):
                     kwargs.update(c=c)
-                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs))
+                    newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
+                    line.append(newline)
             else:
                 # Probably referencing scalar values.
                 # No tests to make sure both x and y scalar values for all loops.
@@ -981,7 +996,7 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     for xi,yi in zip(xp, yp):
         ax.plot(x, yi - slope * (x - xi), **plotargs)
     # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(metric_prefix(R)))
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
@@ -1028,6 +1043,16 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     ax.set_ylim(y0, y1)
 
 
+def metric_prefix(x):
+    #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
+    if abs(x) < min(values):
+        return '{:n}'.format(x)
+    for v, p in zip(values, prefix):
+        if abs(x) >= v:
+            return '{:n}{}'.format(x/v, p)
+
 def engformatter(axis='y', ax=None):
     if ax is None:
         ax = plt.gca()
@@ -1036,3 +1061,4 @@ def engformatter(axis='y', ax=None):
     else:
         axis = ax.yaxis
     axis.set_major_formatter(mpl.ticker.EngFormatter())
+

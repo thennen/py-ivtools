@@ -22,43 +22,19 @@ import time
 import os
 import pandas as pd
 import serial
+from collections import deque
+# This module keeps track of all the instrument instances
+# and allows you to update them when this module reloads
+from . import instrument_manager
+Instrument = instrument_manager.Instrument
+visa_rm = instrument_manager.visa_rm
 
-# Store the resource manager instance in the visa module
-# Because this module (instruments.py) may be reloaded,
-# and I want to retain access to the same ResourceManager instance.
-if not hasattr(visa, 'rm'):
-    visa.rm = visa.ResourceManager()
-visa_rm = visa.rm
 
-#########################################################
-# Parent Class   ########################################
-#########################################################
-class Instrument(object):
-    ''' Writing default methods for visa type instruments.  Overload them for others '''
-    def __init__(self):
-        # TODO: look for already connected instance with same handle, if available, return it
-        try:
-            self.connect()
-        except:
-            # Say which instrument failed
-            print('failed')
 
-    def connect():
-        # Pass through some methods of the connection
-        self.conn = None
-        if hasattr(self.conn, 'close'):
-            setattr(self, 'close', self.conn.close)
-        if worked:
-            pass
-        else:
-            pass
-
-    def _reload(self):
-        # Some default reload behavior
-        pass
-
-    def isconnected():
-        pass
+# Picoscope is borg:
+# https://code.activestate.com/recipes/66531-singleton-we-dont-need-no-stinkin-singleton-the-bo/
+# This means if you ever want several instances of the same instrument class to control different
+# instruments (e.g. two picoscopes), you will need to find another solution
 
 
 #########################################################
@@ -68,40 +44,50 @@ class Picoscope(object):
     '''
     This class will basically extend the colinoflynn picoscope module
     Has some higher level functionality, and it stores/manipulates the channel settings.
-
-    If you pass a previous connected instance to init, it will take over the existing connection
     '''
-    def __init__(self, previous_instance=None):
+    def __init__(self):
+        self.__dict__ = instrument_manager.pico_state
         from picoscope import ps6000
         self.ps6000 = ps6000
-        # I might have subclassed PS6000, but then I would have to import it before the class definition...
-        # Not sure at the moment how to take over an old connection when reinstantiating
-        # self.get_data will return data as well as
+        # I could have subclassed PS6000, but then I would have to import it before the class definition...
+        # Then this whole package would have picoscope module as a dependency
+        # self.get_data will return data as well as save it here
         self.data = None
         # Store channel settings in this class
-        # TODO find a way to make these persist when this module gets reloaded!
-        # This might be really bad programming ..
-        self.range = self._PicoRange(self)
-        self.offset = self._PicoOffset(self)
-        self.atten = self._PicoAttenuation(self)
-        self.coupling = self._PicoCouping(self)
-        if previous_instance is None:
-            self.ps = ps6000.PS6000(connect=True)
+        if not hasattr(self, 'range'):
+            self.range = self._PicoRange(self)
+            self.offset = self._PicoOffset(self)
+            self.atten = self._PicoAttenuation(self)
+            self.coupling = self._PicoCouping(self)
+        self.connect()
+
+    def connect(self):
+        # We are borg, so might already be connected!
+        if self.connected():
+            #info = self.ps.getUnitInfo('VariantInfo')
+            #print('Picoscope {} already connected!'.format(info))
+            pass
         else:
-            self.ps = ps6000.PS6000(connect=False)
-            self.ps.handle = previous_instance.handle
-            self.range.update(previous_instance.range)
-            self.offset.update(previous_instance.offset)
-            self.atten.update(previous_instance.atten)
-            self.coupling.update(previous_instance.coupling)
-            # if you don't clear the handle on the old instance, the garbage collector
-            # can close the picoscope connection
-            previous_instance.ps.handle = None
-        self.close = self.ps.close
-        self.handle = self.ps.handle
-        # TODO: methods of PS6000 to expose?
-        self.getAllUnitInfo = self.ps.getAllUnitInfo
-        self.getUnitInfo = self.ps.getUnitInfo
+            try:
+                self.ps = self.ps6000.PS6000(connect=True)
+                model = self.ps.getUnitInfo('VariantInfo')
+                print('Picoscope {} connection succeeded.'.format(model))
+                self.close = self.ps.close
+                self.handle = self.ps.handle
+                # TODO: methods of PS6000 to expose?
+                self.getAllUnitInfo = self.ps.getAllUnitInfo
+                self.getUnitInfo = self.ps.getUnitInfo
+            except:
+                self.ps = None
+                print('Connection to picoscope failed. There could be an unclosed session.')
+
+    def connected(self):
+        if hasattr(self, 'ps'):
+            try:
+                self.ps.getUnitInfo('VariantInfo')
+                return True
+            except:
+                return False
 
     def print_settings(self):
         print('Picoscope channel settings:')
@@ -150,7 +136,7 @@ class Picoscope(object):
 
     class _PicoRange(_PicoSetting):
         # Holds the values for picoscope channel ranges.  Enforces valid values.
-        # TODO: add increment and decrement
+        # TODO: add increment and decrement?
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
             # TODO: I think the possible ranges also depends on the input coupling
@@ -417,8 +403,6 @@ class Picoscope(object):
 #########################################################
 class RigolDG5000(object):
     # There is at least one python library for DG5000, but I could not get it to run.
-    # TODO: Remember the waveform loaded into rigol volatile memory, and don't overwrite it if it didn't change
-    #       This will save you from needing to toggle the output relay
     # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
         try:
@@ -432,12 +416,17 @@ class RigolDG5000(object):
         self.volatilewfm = []
 
     def connect(self, addr):
-        self.conn = visa_rm.open_resource(addr)
-        # Expose a few methods directly to self
-        self.write = self.conn.write
-        self.query = self.conn.query
-        self.ask = self.query
-        self.close = self.conn.close
+        try:
+            self.conn = visa_rm.open_resource(addr)
+            # Expose a few methods directly to self
+            self.write = self.conn.write
+            self.query = self.conn.query
+            self.ask = self.query
+            self.close = self.conn.close
+            idn = self.conn.ask('*IDN?').replace('\n', '')
+            print('Rigol connection succeeded. *IDN?: {}'.format(idn))
+        except:
+            print('Connection to Rigol AWG failed.')
 
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 
@@ -586,8 +575,6 @@ class RigolDG5000(object):
             raise Exception('Too many samples requested for rigol AWG (probably?)')
 
         burst_state = self.query(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
-        # Turn on interpolation for IVs, off for steps
-        self.interp(interp)
         # Only update waveform if necessary
         if np.any(waveform != self.volatilewfm):
             if burst_state:
@@ -609,6 +596,8 @@ class RigolDG5000(object):
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
         self.amplitude(2*maxamp, ch=ch)
+        # Turn on interpolation for IVs, off for steps
+        self.interp(interp)
 
     def setup_burstmode(self, n=1, burstmode='TRIG', trigsource='MAN', ch=1):
         # Set up bursting
@@ -675,6 +664,7 @@ class RigolDG5000(object):
         self.outputstate(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
+
 
 #########################################################
 # Keithley 2600 #########################################
@@ -760,6 +750,16 @@ class Keithley2600(object):
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
         self.write('SweepVList(sweeplist, {}, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay, Vrange))
+
+    def iv_4pt(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+        '''
+        range = 0 enables autoranging
+        Wraps the SweepVList lua function defined on keithley
+        '''
+        # Send list of voltage values to keithley
+        self.send_list(vlist, varname='sweeplist')
+        # TODO: make sure the inputs are valid
+        self.write('SweepVList_4pt(sweeplist, {}, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay, Vrange))
 
     def vi(self, ilist, Vrange=0, Vlimit=0, nplc=1, delay='smua.DELAY_AUTO', Irange=None):
         '''
@@ -896,6 +896,8 @@ class Keithley2600(object):
 
             out['units']['I'] = 'A'
             out['units']['V'] = 'V'
+
+            out['idn'] = self.idn()
 
         else:
             empty = np.array([])
@@ -1073,7 +1075,8 @@ class TektronixDPO73304D(object):
             self.connect(addr)
         except:
             print('TektronixDPO73304D connection failed at {}'.format(addr))
-    def connect(self, addr='GPIB0::1::INSTR'):
+
+    def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
@@ -1082,7 +1085,6 @@ class TektronixDPO73304D(object):
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
-        moduledir = os.path.split(__file__)[0]
 
     def idn(self):
         return self.query('*IDN?').replace('\n', '')
@@ -1201,9 +1203,9 @@ class PG5(object):
         try:
             self.connect(addr)
         except:
-            print('PG 5 connection failed at {}'.format(addr))
+            print('PG5 connection failed at {}'.format(addr))
 
-    def connect(self, addr='ASRL3::INSTR'):
+    def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
         # Expose a few methods directly to self
         self.write = self.conn.write
@@ -1212,13 +1214,17 @@ class PG5(object):
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
-        moduledir = os.path.split(__file__)[0]
-    #TO DO: fix communication during ask commands, setting self.conn.query_delay to higher values doesnt help
+
+    def idn(self):
+        idn = self.ask('*IDN?')
+        self.read()   # read necessary to avoid empty line issue
+        return idn.replace('\n', '')
+
     def error(self):
         '''prints the last error'''
         error_msg = self.query(':SYST:ERR:NEXT?')
         print(error_msg)
-    #TO DO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
+    # TODO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
 
     # def set_trigger_type(self, type):
     #     '''sets the trigger type:

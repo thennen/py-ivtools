@@ -5,7 +5,6 @@ Picoscope 6403C
 Rigol DG5102 AWG
 Keithley 2636B, 2634B, 2636A
 """
-
 # Local imports
 from . import plot as ivplot
 from . import analyze
@@ -22,172 +21,12 @@ import visa
 from functools import partial
 import pickle
 
-# These are the instrument instances.  They are None until connected.
-# Picoscope
-ps = None
-# Rigol DG5000 AWG
-rigol = None
-# Keithley
-k = None
-# TektronixDPO73304D
-ttx = None
-# Pulse Generator PG5
-pg5 = None
-
-# TODO: try to connect to all known instruments
-
-def detect_instruments():
-    ''' find which instruments are available to connect to '''
-    pass
-
-def connect_picoscope():
-    global ps
-    if ps is None:
-        try:
-            ps = instruments.Picoscope()
-            model = ps.getUnitInfo('VariantInfo')
-            print('Picoscope {} connection succeeded.'.format(model))
-        except:
-            print('Connection to picoscope failed. There could be an unclosed session.')
-            ps = None
-    else:
-        try:
-            model = ps.getUnitInfo('VariantInfo')
-            print('Picoscope {} already connected.'.format(model))
-            #info = ps.getAllUnitInfo()
-            #print(info)
-        except:
-            print('ps variable is not None, and not an active picoscope connection.')
-
-def connect_rigolawg(rigolstr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
-    global rigol
-    if rigol is None:
-        try:
-            rigol = instruments.RigolDG5000(rigolstr)
-            idn = rigol.ask('*IDN?').replace('\n', '')
-            print('Rigol *IDN?: {}'.format(idn))
-        except:
-            print('Connection to Rigol AWG failed.')
-            rigol = None
-    else:
-        try:
-            # Check if rigol is already defined and connected
-            idn = rigol.ask('*IDN?')
-            print('Rigol AWG already connected')
-            print(idn)
-        except:
-            print('rigol variable is not None.  Doing nothing.')
-
-def connect_keithley(addr=None):
-    # TODO: This is a total disaster .. fix it
-    global k
-    # 2634B : 192.168.11.11
-    # 2636A : 192.168.11.12
-    # 2636B : 192.168.11.13
-    if addr is None:
-        addrs = ['TCPIP::192.168.11.11::inst0::INSTR',
-                 'TCPIP::192.168.11.12::inst0::INSTR',
-                 'TCPIP::192.168.11.13::inst0::INSTR',
-                 'GPIB0::26::INSTR']
-    else:
-        addrs = [addr]
-    for addr in addrs:
-        if k is None:
-            try:
-                k = instruments.Keithley2600(addr)
-                idn = k.ask('*IDN?').replace('\n', '')
-                print('Keithley *IDN?: {}'.format(idn))
-            except:
-                k = None
-        else:
-            try:
-                # Is keithley already connected?
-                idn = k.ask('*IDN?')
-                print('Keithley already connected')
-                print('Keithley *IDN?: {}'.format(idn))
-            except:
-                print('Keithley not responding, and keithley variable is not None.')
-    if k is None:
-        print('Connection to Keithley failed.')
-        
-def connect_tektronix(addr=None):
-    global ttx
-    if addr is None:
-        addrs = ['GPIB0::1::INSTR']
-    else:
-        addrs = [addr]
-    for addr in addrs:
-        if ttx is None:
-            try:
-                ttx = instruments.TektronixDPO73304D(addr)
-                idn = ttx.ask('*IDN?').replace('\n', '')
-                print('TektronixDPO73304D *IDN?: {}'.format(idn))
-            except:
-                ttx = None
-        else:
-            try:
-                # Is TektronixDPO73304D already connected?
-                idn = ttx.ask('*IDN?')
-                print('TektronixDPO73304D already connected')
-                print('TektronixDPO73304D *IDN?: {}'.format(idn))
-            except:
-                print('TektronixDPO73304D not responding, and textronix variable is not None.')
-    if ttx is None:
-        print('Connection to TektronixDPO73304D failed.')
-
-def connect_pg5(addr=None):
-    global pg5
-    if addr is None:
-        addrs = ['ASRL3::INSTR']
-    else:
-        addrs = [addr]
-    for addr in addrs:
-        if pg5 is None:
-            try:
-                pg5 = instruments.PG5(addr)
-                idn = pg5.ask('*IDN?').replace('\n','')
-                print('PG5 *IDN?: {}'.format(idn))
-                pg5.read()   # read necessary to avoid empty line issue
-            except:
-                pg5 = None
-        else:
-            try:
-                # Is PG5 already connected?    
-                idn = pg5.ask('*IDN?')
-                print('PG5 already connected')
-                print('PG5 *IDN?: {}'.format(idn))
-                pg5.read()   # read necessary to avoid empty line issue
-            except:
-                print('PG5 not responding and pg5 variable is not None.')
-    if pg5 is None:
-        print('Connection to PG5 failed.')
-
-
-def connect_instruments():
-    ''' Connect all the necessary equipment '''
-    print('Attempting to connect all instruments.')
-    connect_picoscope()
-    connect_rigolawg()
-    connect_keithley()
-    connect_tektronix()
-    connect_pg5()
-
-
-def close_instruments():
-    global ps
-    global rigol
-    # Close connection to pico
-    ps.close()
-    ps = None
-    # Close connection to rigol
-    rigol.close()
-    rigol = None
-
-
 ########### Picoscope - Rigol AWG testing #############
 
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, duration=None,
                               ncycles=10, samplespercycle=1000, fs=None):
+    rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
 
     if not (bool(samplespercycle) ^ bool(fs)):
         raise Exception('Must give either samplespercycle, or sampling frequency (fs), and not both')
@@ -213,6 +52,8 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     Send n pulses of the input waveform and capture on specified channels of picoscope.
     Duration determines the length of one repetition of waveform.
     '''
+    rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
@@ -232,7 +73,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     Provide either fs or nsamples
     kwargs go nowhere
     '''
-
+    rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
 
     if not (bool(fs) ^ bool(nsamples)):
         raise Exception('Must pass either fs or nsamples, and not both')
@@ -291,7 +133,13 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
         # This will be bad if you send in a single shot waveform with multiple cycles
         # In that case, you shouldn't be using autosmoothimate or autosplit
         # TODO: make a separate function for IV trains?
-        factor = max(int(nsamples_shot / 1000), 1)
+        if autosmoothimate is True:
+            # yes I meant IS true..
+            npts = 1000
+        else:
+            # Can pass the number of data points you would like to end up with
+            npts = autosmoothimate
+        factor = max(int(nsamples_shot / npts), 1)
         print('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
@@ -314,6 +162,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
+    rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
+
     if fend > 1e8:
         raise Exception('Rigol can only output up to 100MHz')
 
@@ -414,6 +265,7 @@ def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
     Voltage sweep rate will  be constant.
     Trigger immediately
     '''
+    rigol = instruments.RigolDG5000()
 
     rate, duration = _rate_duration(v1, v2, rate, duration)
 
@@ -427,45 +279,47 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     Trigger immediately
     If you pass vmin != -vmax, will not start at zero!
     '''
+    rigol = instruments.RigolDG5000()
 
     wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
 
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
-        # Auto offset for current input
-        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
-        # Each range has a maximum possible offset
-        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+    ps = instruments.Picoscope()
+    # Auto offset for current input
+    possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+    # Each range has a maximum possible offset
+    max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
 
-        if 'A' in ch:
-            # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-            arange, aoffs = ps.best_range((v1, v2))
-            ps.range['A'] = arange
-            ps.offset['A'] = aoffs
+    if 'A' in ch:
+        # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
+        arange, aoffs = ps.best_range((v1, v2))
+        ps.range['A'] = arange
+        ps.offset['A'] = aoffs
 
-        if 'B' in ch:
-            # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
-            # Center the measurement range on zero current
-            #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
-            # channelb should never go below zero, except for potentially op amp overshoot
-            # I have seen it reach -0.1V
-            CC = settings.COMPLIANCE_CURRENT
-            if R is None:
-                # Hypothetical resistance method
-                # Signal should never go below 0V (compliance)
-                b_min = 0
-                b_resistance = max(abs(v1), abs(v2)) / CC / 1.1
-                # Compliance current sets the voltage offset at zero input.
-                # Add 10% to be safe.
-                b_max = (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
-            else:
-                # R was passed, assume device has constant resistance with this value
-                b_min = (CC - max(v1, v2) / R) * 2e3
-                b_max = (CC- min(v1, v2) / R) * 2e3
-            brange, boffs = ps.best_range((b_min, b_max))
-            ps.range['B'] = brange
-            ps.offset['B'] = boffs
+    if 'B' in ch:
+        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
+        # Center the measurement range on zero current
+        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
+        # channelb should never go below zero, except for potentially op amp overshoot
+        # I have seen it reach -0.1V
+        CC = settings.COMPLIANCE_CURRENT
+        if R is None:
+            # Hypothetical resistance method
+            # Signal should never go below 0V (compliance)
+            b_min = 0
+            b_resistance = max(abs(v1), abs(v2)) / CC / 1.1
+            # Compliance current sets the voltage offset at zero input.
+            # Add 10% to be safe.
+            b_max = (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
+        else:
+            # R was passed, assume device has constant resistance with this value
+            b_min = (CC - max(v1, v2) / R) * 2e3
+            b_max = (CC- min(v1, v2) / R) * 2e3
+        brange, boffs = ps.best_range((b_min, b_max))
+        ps.range['B'] = brange
+        ps.offset['B'] = boffs
 
 def raw_to_V(datain, dtype=np.float32):
     '''
@@ -498,10 +352,6 @@ def _rate_duration(v1, v2, rate=None, duration=None):
         duration = 2 * (v1 - v2) / rate
 
     return rate, duration
-
-
-####### Moritz's dumb stuff #######
-
 
 
 ########### Compliance circuit ###################
@@ -611,6 +461,7 @@ def measure_compliance():
     There is a second complication because the input is not always at zero volts, because it is not compensated fully.
     This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
     '''
+    rigol = instruments.RigolDG5000()
     # Put AWG in hi-Z mode (output channel off)
     # Then current at compliance circuit input has to be ~zero
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
@@ -750,6 +601,8 @@ def Rext_to_iv(datain, R=5100, dtype=np.float32):
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier
     # Apply voltage
+    rigol = instruments.RigolDG5000()
+
     print('Outputting {} volts on Rigol CH1'.format(Vin))
     rigol.pulse_arbitrary(np.repeat(Vin, 100), 1e-3)
     time.sleep(1)

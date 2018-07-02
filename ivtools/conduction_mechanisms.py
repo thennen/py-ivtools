@@ -190,11 +190,13 @@ def fit_ivt(i, v, t, thickness, area, mechanism, **kwargs):
 
 ######################################## Self-heating #####################################
 
-def T_selfheat(J, E, T0, Rth):
+def T_selfheat(I, V, T0, Rth):
     # This is how temperature depends on J and E, considering self-heating
-    return T0 + Rth * J * E
+    # pass I and V and Rth
+    # or j and E and rho_th = Rth * volume
+    return T0 + Rth * I * V
 
-def self_heating_bulk(J, mechanism, Rth=3.2e5, T0=300, **kwargs):
+def self_heating_bulk(J, mechanism, Rth=3.2e5, T0=300, Eguess=1e9, **kwargs):
     '''
     Calculate E(J) if T = T0 + Rth * Power
     passing J values because the result might not be single valued in voltage (s-type NDR)
@@ -214,9 +216,9 @@ def self_heating_bulk(J, mechanism, Rth=3.2e5, T0=300, **kwargs):
             jm = mechanism(E=e, T=T)
             return j - jm
         # Volts/meter
-        e_guess = 1e9
-        e, *rest = fsolve(solvethis, e_guess)
+        e, *rest = fsolve(solvethis, Eguess)
         E.append(e)
+        Eguess = e
     return np.array(E)
 
 ######################################## linearized plots #####################################
