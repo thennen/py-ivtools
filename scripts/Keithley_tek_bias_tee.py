@@ -203,7 +203,7 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     k.set_channel_state('B', False)
     ttx.disarm()
     
-     datafolder = os.path.join('C:\Messdaten', samplename, samplepad)
+    datafolder = os.path.join('C:\Messdaten', samplename, samplepad)
     subfolder = datestr
     file_exits = True
     i=1
