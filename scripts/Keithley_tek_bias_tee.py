@@ -398,26 +398,42 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
             pulse_minimum =min(v_pulse)
             pulse_index = where(np.array(v_pulse) < 0.5* pulse_minimum)
-            pulse_end = t_scope[pulse_index[-1]]
-            pulse_start = t_scope[pulse_index[0]]
-
-            data['pulse_width'].append(pulse_end-pulse_start)
+            #pulse_end = t_scope[pulse_index[-1]]
+            #pulse_start = t_scope[pulse_index[0]]
+            v_max = max(v_pulse)
+            v_min = min(v_pulse)
+            if v_max > -v_min:
+                pulse_width = fwhm(valuelist = v_pulse, time = t_scope)
+            else:
+                pulse_width = fwhm(valuelist = -v_pulse, time = t_scope)
+            data['pulse_width'].append(pulse_width)
             data['pulse_amplitude'].append(np.mean(v_pulse[pulse_index])*2)
         
     ########## if one channel experiment: ################       
     else:
         for t_scope, v_answer in zip(data['t_scope'],data['v_answer']):
-            pulse_minimum =min(v_answer)
-            pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
-            pulse_start_index = pulse_index[0]
-            pulse_start = t_scope[pulse_start_index]
-            pulse_end_index = pulse_start_index + where(np.array(v_answer[pulse_start_index:-1]) >= 0)[0]
-            pulse_end = t_scope[pulse_end_index]
-            '''for short pulses the width is determined as FWHM, otherwise from pulse start until 
-             the zero line is crossed for the first time '''
-            if pulse_end - pulse_start < 1e-9:
-                pulse_end = t_scope[pulse_index[-1]]
-            data['pulse_width'].append(pulse_end-pulse_start)
+            # pulse_minimum =min(v_answer)
+            # pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
+            # pulse_start_index = pulse_index[0]
+            # pulse_start = t_scope[pulse_start_index]
+            # pulse_end_index = pulse_start_index + where(np.array(v_answer[pulse_start_index:-1]) >= 0)[0]
+            # pulse_end = t_scope[pulse_end_index]
+            
+            # '''for short pulses the width is determined as FWHM, otherwise from pulse start until 
+            #  the zero line is crossed for the first time '''
+            # if pulse_end - pulse_start < 1e-9:
+            #     pulse_end = t_scope[pulse_index[-1]]
+            #     pulse_width = pulse_end - pulse_start
+            # else:
+
+            v_max = max(v_answer)
+            v_min = min(v_answer)
+            if v_max > -v_min:
+                pulse_width = fwhm(valuelist = v_answer, time = t_scope)
+            else:
+                pulse_width = fwhm(valuelist = -v_answer, time = t_scope)
+
+            data['pulse_width'].append(pulse_width)
             data['pulse_amplitude'].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'], bits = data['bits']))
             #import pdb; pdb.set_trace()
     ######## detection of threshold event by hand ###########
