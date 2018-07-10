@@ -104,11 +104,14 @@ def poole_frenkel_3d(E, T, sig_p=1.06e4, Ea=0.321, eps_i=9):
     J = E * sig_p * exp(-Ea/kT) * (0.25 / alpha**2 * (1 + (alpha - 1) * exp(alpha)) + 0.5)
     return J
 
-def polaron_hopping(V, n=2e28, a=5e-10, r=8e-10, delta_E=1.23, w=1e17):
+#def polaron_hopping(V, n=2e28, a=5e-10, r=8e-10, delta_E=1.23, w=1e17):
+def polaron_hopping(E, T, a, b):
     '''
+    I am just typing stuff and I don't know if it is right
     An explanation of the parameters
     '''
-    pass
+    kT = kB * T
+    return a * E * T**(-3/2) * exp(-b * q/kT)
 
 def mott_gurney():
     '''
@@ -169,6 +172,17 @@ def empirical_1(E, T, A=3.38e2, Eb=0.155, c=7.89e-4, **kwargs):
     '''
     kT = kB * T
     return E * A * exp(-q*Eb/kT) * exp(c * sqrt(E))
+
+
+################################### Wrappers #####################################
+
+def macroscopic(mech, A, t, *args, **kwargs):
+    # This name might be retarded
+    # return a function in terms of V, I instead of j, E
+    @wraps(mech)
+    def newmech(V, *args, **kwargs):
+        return A * mech(V / t, *args, **kwargs)
+    return newmech
 
 ######################################## Fitting ########################################
 

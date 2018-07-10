@@ -166,7 +166,7 @@ class MetaHandler(object):
         self.i = 0
         self.df = meta_df
         self.meta = meta_df.iloc[0]
-        self.prettykeys = ['dep_code', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+        self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
@@ -804,7 +804,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
 
    plt.close(fig)
 
-def change_devicemeta(filepath, newmeta, deleteold=False):
+def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
     filedir, filename = os.path.split(filepath)
     filename, extension = os.path.splitext(filename)
@@ -817,9 +817,10 @@ def change_devicemeta(filepath, newmeta, deleteold=False):
         s = datain.iloc[0]
     # Retain time information in filename
     newfilename = filename[:21]
-    for fnkey in filenamekeys:
-        if fnkey in s.index:
-            newfilename += '_{}'.format(s[fnkey])
+    if filenamekeys is not None:
+        for fnkey in filenamekeys:
+            if fnkey in s.index:
+                newfilename += '_{}'.format(s[fnkey])
     newpath = os.path.join(filedir, newfilename + extension)
     print('writing new file {}'.format(newpath))
     datain.to_pickle(newpath)
