@@ -11,6 +11,7 @@ from numbers import Number
 from scipy.optimize import curve_fit
 import pandas as pd
 from matplotlib import pyplot as plt
+import sys
 
 
 def ivfunc(func):
@@ -1471,3 +1472,90 @@ def replace_nanvals(array):
     for nv in nanvalues:
         array[array == nv] = np.nan
     return array
+
+
+### Interactive
+
+def hand_select(df, groupby=None, **kwargs):
+    '''
+    Select a subset of loops by hand.
+    Right now it selects one loop from each group
+    '''
+    print('\n\n')
+    print('left arrow: previous loop')
+    print('right arrow: next loop')
+    print('down arrow: truncate n data points')
+    print('left arrow: untruncate n data points')
+    print('[1-9]: Set n')
+    print('Enter: select loop and')
+    print('\n\n')
+
+    # Shitty manual loop selection written as fast as I could
+    def selectloop(data):
+        fig, ax = plt.subplots()
+        fignum = fig.number
+        n = 0
+        class thinger(object):
+            def __init__(self):
+                self.n = 0
+                self.l = None
+                self.step = 1
+            def press(self, event):
+                print('press', event.key)
+                if event.key == 'right':
+                    # plot next loop
+                    self.l = None
+                    self.n = (self.n + self.step) % len(data)
+                elif event.key == 'left':
+                    # plot previous loop
+                    self.l = None
+                    self.n = (self.n - self.step) % len(data)
+                elif event.key == 'enter':
+                    # select the loop and return
+                    plt.close(fig)
+                    return
+                elif event.key == 'down':
+                    # Take a datapoint off the end
+                    if self.l is None:
+                        self.l = -self.step
+                    else:
+                        self.l -= self.step
+                elif event.key == 'up':
+                    # add another datapoint to the end
+                    if self.l is not None:
+                        self.l += self.step
+                elif event.key in '0123456789':
+                    # change step size
+                    self.step = 2**int(event.key)
+                    return
+
+                if len(data) >= self.n + 1:
+                    del ax.lines[-1]
+                    print(self.n, self.l)
+                    #print(data.iloc[self.n].Irange[0])
+                    ivplot.plotiv(sliceiv(data.iloc[self.n], stop=self.l), x='Vcalc', color='red', ax=ax)
+                else:
+                    print('no more data')
+                    self.n -= 1
+
+                sys.stdout.flush()
+                fig.canvas.draw()
+
+        ivplot.plotiv(data, x='Vcalc', alpha=.1, color='black', ax=ax)
+        ivplot.plotiv(data.iloc[0], x='Vcalc', color='red', ax=ax)
+
+        thing = thinger() # lol object oriented
+        cid = fig.canvas.mpl_connect('key_press_event', thing.press)
+        # loop until figure closed?
+        while plt.fignum_exists(fignum):
+            plt.pause(.1)
+
+        return sliceiv(data.iloc[thing.n], stop=thing.l)
+
+    if groupby is None:
+        return selectloop(df)
+    else:
+        selected = []
+        for k,g in df.groupby(groupby):
+            selected.append(selectloop(g))
+        return pd.DataFrame(selected)
