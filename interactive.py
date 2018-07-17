@@ -87,7 +87,13 @@ elif hostname == 'pciwe38':
 elif hostname == 'pciwe34':
     # Mark II
     datafolder = 'F:/Messdaten/hennen'
-    connections = {}
+    connections = [('et', instruments.Eurotherm2408),
+                   #('ps', instruments.Picoscope),
+                   #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                   #('daq', instruments.USB2708HS),
+                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                   ('k', instruments.Keithley2600, 'GPIB0::26::INSTR')]
 else:
     datafolder = 'C:/data'
     connections = {}
@@ -101,8 +107,8 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.USB2708HS:'daq'}
 
 # Make varnames None until connected
-for vn in instrument_varnames.items():
-    globalvars[vn] = None
+for k,v in instrument_varnames.items():
+    globalvars[v] = None
 
 visa_resources = ivtools.instrument_manager.visa_rm.list_resources()
 for varname, inst_class, *args in connections:
