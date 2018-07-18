@@ -150,8 +150,6 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
     data['samplename'] = samplename
     iplots.show()    
 
-    datafolder = 'C:/Messdaten/' + samplename + '/' + padname + '/'
-
     k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = 1)
 
     ttx.inputstate(1, False)
@@ -208,11 +206,9 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
     file_exits = True
     i=1
     filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
-    file_link = Path(filepath + '.df')
-    while file_link.is_file():
+    while os.path.isfile(filepath + '.s'):
         i +=1
         filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
-        file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
     return data
