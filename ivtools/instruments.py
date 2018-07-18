@@ -913,11 +913,18 @@ class Keithley2600(object):
         return array
 
     def set_channel_state(self, channel='A', state=True):
+        '''Turns the selected channel on or off. '''
         ch = channel.lower()
         if state:
             self.write('smu{0}.source.output = smu{0}.OUTPUT_ON'.format(ch))
         else:
             self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
+
+    def set_channel_voltage(self, channel = 'A', voltage = 0):
+        '''Sets the voltage for the selected channel. Also changes measurement mode to voltage.'''
+        ch = channel.lower()
+        self.write('smu{0}.source.func = smu{0}.OUTPUT_DCVOLTS'.format(ch))
+        self.write('smu{0}.source.levelv = '.format(ch) + str(voltage))
 
 
 #########################################################
