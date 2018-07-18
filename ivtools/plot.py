@@ -40,25 +40,28 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         X = X[np.arange(0, l, step)]
         Y = Y[np.arange(0, l, step)]
 
-    # Try to name the axes according to metadata
+    # Name the axes
     # Will error right now if you pass array as x or y
-    if x == 'V': longnamex = 'Voltage'
-    if x == 'Vcalc': longnamex = 'Device Voltage'
-    elif x is None:
-        longnamex = 'Data Point'
-    elif type(x) == str:
-        longnamex = x
-    if y == 'I': longnamey = 'Current'
-    else: longnamey = y
+    defaultunits = {'V':     ('Voltage', 'V'),
+                    'Vcalc': ('Device Voltage', 'V'),
+                    'I':     ('Current', 'A'),
+                    None:    ('Data Point', '#')}
+    longnamex = x
+    unitx = '?'
+    longnamey = y
+    unity = '?'
+    if x in defaultunits.keys():
+        longnamex, unitx = defaultunits[x]
+    if y in defaultunits.keys():
+        longnamey, unity = defaultunits[y]
+
+    # Overwrite the guess with value from dict if it exists
     if ('longnames' in iv.keys()) and (type(iv['longnames']) == dict):
         if x in iv['longnames'].keys():
             longnamex = iv['longnames'][x]
         if y in iv['longnames'].keys():
             longnamey = iv['longnames'][y]
-    if x is None: unitx = '#'
-    else: unitx = '?'
-    unity = '?'
-    if 'units' in iv.keys():
+    if ('units' in iv.keys()) and (type(iv['units']) == dict):
         if x in iv['units'].keys():
             unitx = iv['units'][x]
         if y in iv['units'].keys():
@@ -135,8 +138,18 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             # TODO: if there are repeat labels, only label the first one?  Might not always want that behavior..
             assert len(labels) == len(data)
         else:
-            # still need to iterate through labels
+            # still need to iterate through labels, so make a list of None
             labels = [None] * len(data)
+
+        # Drop repeat labels that have the same line style, because we don't need hundreds of repeat labeled objects
+        # right now only the color identifies the line style
+        # Python loop style..
+        lineset = set()
+        for i, (l,c) in enumerate(zip(labels, colors)):
+            if (l,c) in lineset:
+                labels[i] = None
+            else:
+                lineset.add((l,c))
 
         if dtype == pd.DataFrame:
             if x is None or hasattr(data.iloc[0][x], '__iter__'):
@@ -184,7 +197,8 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         auto_title(data, keys=None, ax=ax)
 
     # should I really return this?  usually I don't assign the values and then they get cached by ipython forever
-    return ax, line
+    # I have never actually used the return value.
+    # return ax, line
 
 def auto_title(data, keys=None, ax=None):
     '''
