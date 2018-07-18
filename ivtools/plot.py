@@ -143,9 +143,11 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
 
         # Drop repeat labels that have the same line style, because we don't need hundreds of repeat labeled objects
         # right now only the color identifies the line style
-        # Python loop style..
+        # Python loop style.. will not be efficient, but it's the first solution I thought of.
         lineset = set()
-        for i, (l,c) in enumerate(zip(labels, colors)):
+        for i in range(len(data)):
+            l = labels[i]
+            c = tuple(colors[i])
             if (l,c) in lineset:
                 labels[i] = None
             else:
