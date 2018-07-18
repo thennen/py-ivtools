@@ -146,15 +146,14 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
     data['t_event'] = []
     data['amplitude'] = amplitude
     data['bits'] = bits
-    data['samplepad'] = samplepad
+    data['padname'] = padname
     data['samplename'] = samplename
     iplots.show()    
 
     datafolder = 'C:/Messdaten/' + samplename + '/' + padname + '/'
 
     k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = 1)
-    data['samplename'] = samplename
-    data['padname'] = padname
+
     ttx.inputstate(1, False)
     ttx.inputstate(2, True)
     ttx.inputstate(3, False)
@@ -204,15 +203,15 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
     k.set_channel_state('B', False)
     ttx.disarm()
     
-    datafolder = os.path.join('C:\Messdaten', samplename, samplepad)
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, '_pcm_measurement_'+str(i))
+    filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
     file_link = Path(filepath + '.df')
     while file_link.is_file():
         i +=1
-        filepath = os.path.join(datafolder, subfolder, '_pcm_measurement_'+str(i))
+        filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
