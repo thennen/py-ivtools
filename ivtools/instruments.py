@@ -775,11 +775,11 @@ class Keithley2600(object):
             Irange = np.max(np.abs(ilist))
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
 
-    def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1):
+    def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1, reset_keithley = True): #
         '''Wraps the constantVoltageMeasI lua function defined on keithley'''
         # Call constantVoltageMeasI
         # TODO: make sure the inputs are valid
-        self.write('constantVMeasI({}, {}, {}, {}, {}, {}, {})'.format(sourceVA, sourceVB, points, interval, rangeI, limitI, nplc))
+        self.write('constantVMeasI({}, {}, {}, {}, {}, {}, {}, {})'.format(sourceVA, sourceVB, points, interval, rangeI, limitI, nplc, reset_keithley))
         #self.write('smua.source.levelv = 0')
         #self.write('smua.source.output = smub.OUTPUT_OFF')
         #self.write('smub.source.levelv = 0')

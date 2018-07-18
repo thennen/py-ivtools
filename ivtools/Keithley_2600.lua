@@ -168,12 +168,15 @@ function SweepVList2CH(sweepList1, VB, rangeI, limitI, nplc, delay)
     smua.trigger.initiate()
 end
 
-function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, nplc)
+function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, nplc, reset_keithley)
 
-    reset()
-
+    if reset_keithley then
+        reset()
+    end
     -- Configure the SMU
-    smua.reset()
+    if reset_keithley then
+        smua.reset()
+    end
     smua.source.func            = smua.OUTPUT_DCVOLTS
     smua.source.limiti          = limitI
     smua.measure.nplc           = nplc
@@ -198,7 +201,9 @@ function constantVMeasI(sourceVA, sourceVB, points, interval, rangeI, limitI, np
     smua.measure.interval       = interval
 
     -- Set ChB
-    smub.reset()
+    if reset_keithley then
+        smub.reset()
+    end
     smub.source.func            = smua.OUTPUT_DCVOLTS
     smub.source.limiti          = limitI
     smub.measure.rangei         = limitI
