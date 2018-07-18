@@ -132,7 +132,7 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
-def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
+def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
  interval = 0.1, trigger = -0.3, two_channel = False, rangeI = 0):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
@@ -148,10 +148,11 @@ def pcm_measurement(samplename, samplepad, amplitude = 10, bits = 256, sourceVA 
     data['bits'] = bits
     iplots.show()    
 
-    datafolder = 'C:/Messdaten/' + samplename + '/' + samplepad + '/'
+    datafolder = 'C:/Messdaten/' + samplename + '/' + padname + '/'
 
     k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = 1)
-
+    data['samplename'] = samplename
+    data['padname'] = padname
     ttx.inputstate(1, False)
     ttx.inputstate(2, True)
     ttx.inputstate(3, False)
