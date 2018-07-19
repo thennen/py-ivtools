@@ -150,7 +150,12 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
     data['samplename'] = samplename
     iplots.show()    
 
-    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = 1)
+    k.set_channel_state(channel = 'A', state = True)
+    k.set_channel_voltage(channel = 'A', voltage = sourceVA)
+
+    plt.pause(1)
+
+    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = 1, reset_keithley = False)
 
     ttx.inputstate(1, False)
     ttx.inputstate(2, True)
