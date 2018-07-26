@@ -383,15 +383,23 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         waitVar1.set(True)
 
     def threhsold_visible(self):
+        pulse_minimum =min(v_answer)
+        pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
+        pulse_start_index = pulse_index[0]
+        pulse_start = t_scope[pulse_start_index]
+        print(pulse_start)
         ax_dialog.set_title('Please indicate threshold')
+        ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
         ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
         b_agree = Button(ax_agree,'Agree')
         b_agree.on_clicked(agree)
         cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
         root.wait_variable(waitVar1)
         if not threshold_written_class.state:
-            data['t_threshold'].append(threshold_class.threshold-t_scope[pulse_index[0]])
+            print(threshold_class.threshold)
+            data['t_threshold'].append(threshold_class.threshold-pulse_start)
             threshold_written_class.state = True
+
         waitVar.set(True)
 
 
@@ -410,7 +418,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         threshold_class.set_threshold(t_threshold)
         if len(ind) == 1:
             ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
-            #ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
+            
             plt.pause(0.1)
 
     ######## beginning of main evalution #############
@@ -424,8 +432,8 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     ########## if two channel experiment: ################
     if data['v_pulse']:       
         for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
-            pulse_minimum =min(v_pulse)
-            pulse_index = where(np.array(v_pulse) < 0.25* pulse_minimum)
+           # pulse_minimum =min(v_pulse)
+            #pulse_index = where(np.array(v_pulse) < 0.15* pulse_minimum)
             #pulse_end = t_scope[pulse_index[-1]]
             #pulse_start = t_scope[pulse_index[0]]
             v_max = max(v_pulse)
@@ -440,10 +448,11 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     ########## if one channel experiment: ################       
     else:
         for t_scope, v_answer in zip(data['t_scope'],data['v_answer']):
-            pulse_minimum =min(v_answer)
-            pulse_index = where(np.array(v_answer) < 0.25* pulse_minimum)
+            #pulse_minimum =min(v_answer)
+            #pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
             #pulse_start_index = pulse_index[0]
             #pulse_start = t_scope[pulse_start_index]
+            #print(pulse_start)
             #pulse_end_index = pulse_start_index + where(np.array(v_answer[pulse_start_index:-1]) >= 0)[0]
             #pulse_end = t_scope[pulse_end_index]
             
@@ -489,7 +498,8 @@ def eval_pcm_measurement(data, manual_evaluation = False):
             b_no.on_clicked(threshold_invisible)
             root.wait_variable(waitVar)
             plt.close(figure_handle)
-            #print(len(data['pulse_amplitude'])-len(data['t_threshold']))            
+            #print(len(data['pulse_amplitude'])-len(data['t_threshold']))         
+        plot_pcm_threshold(data)   
         root.destroy()
     return data
 
@@ -526,9 +536,6 @@ def eval_vcm_measurement(data):
     data['R_lrs'] = R_lrs
     data['fwhm'] = fwhm_list
     return data
-
-
-
 
 def eval_all_pcm_measurements(filepath):
     ''' executes all eval_pcm_measurements in one directory and bundles the results'''
@@ -586,66 +593,27 @@ def eval_all_vcm_measurements(filepath):
 
 def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
     '''returns pulse amplitude in Volts depending on the measured output of the PSPL12500'''
-    pulse_amplitude = numpy.nan
-    if bits == 1:
-        if amplitude == 0.3:
-            pulse_amplitude = 2*0.728
-        elif amplitude == 0.4:
-            pulse_amplitude = 2*0.776
-        elif amplitude == 0.5:
-            pulse_amplitude = 2*0.8356
-        elif amplitude == 1:
-            pulse_amplitude = 2*1.1088
-        elif amplitude == 2:
-            pulse_amplitude = 2*1.5314
-        elif amplitude == 3:
-            pulse_amplitude = 2*2.0028
-        elif amplitude == 4:
-            pulse_amplitude = 2*2.306727
-        elif amplitude == 5:
-            pulse_amplitude = 2*2.622
-        elif amplitude == 6:
-            pulse_amplitude = 2*2.8624
-        elif amplitude == 7:
-            pulse_amplitude = 2*3.144727
-        elif amplitude == 8:
-            pulse_amplitude = 2*3.378
-        elif amplitude == 9:
-            pulse_amplitude = 2*3.652
-        elif amplitude == 10:
-            pulse_amplitude = 2*4.184
-        else: 
-            print('Unknown amplitude')
+    pulse_amplitude = np.nan
 
-    elif bits > 1:
-        if amplitude == 0.3:
-            pulse_amplitude = 2*0.7646
-        elif amplitude == 0.4:
-            pulse_amplitude = 2*0.8182
-        elif amplitude == 0.5:
-            pulse_amplitude = 2*0.8952
-        elif amplitude == 1:
-            pulse_amplitude = 2*1.1693
-        elif amplitude == 2:
-            pulse_amplitude = 2*1.7592
-        elif amplitude == 3:
-            pulse_amplitude = 2*2.2008
-        elif amplitude == 4:
-            pulse_amplitude = 2*2.605455
-        elif amplitude == 5:
-            pulse_amplitude = 2*2.9248
-        elif amplitude == 6:
-            pulse_amplitude = 2*3.2552
-        elif amplitude == 7:
-            pulse_amplitude = 2*3.541818
-        elif amplitude == 8:
-            pulse_amplitude = 2*3.872
-        elif amplitude == 9:
-            pulse_amplitude = 2*4.2144
-        elif amplitude == 10:
-            pulse_amplitude = 2*4.7756
-        else: 
-            print('Unknown amplitude')
+    if bits == 1:
+        amplitude_array = [0.3, 0.4, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        return_values = [2*0.728, 2*0.776, 2*0.8356, 2*1.1088, 2*1.5314, 2*2.0028, 
+        2*2.306727, 2*2.622, 2*2.8624, 2*3.144727, 2*3.378, 2*3.652, 2*4.184]
+
+    else:
+        amplitude_array = [0.3, 0.4, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        return_values = [2*0.7646, 2*0.8182, 2*0.8952, 2*1.1693, 2*1.7592, 2*2.2008, 
+        2*2.605455, 2*2.9248, 2*3.2552, 2*3.541818, 2*3.872, 2*4.2144, 2*4.7756]
+
+    index = where(amplitude_array == amplitude)
+
+    if index.size > 0:
+        pulse_amplitude = return_values[index]
+    else:
+        print('Unknown amplitude')
+        index_pre = where(np.array(amplitude_array) > amplitude)[0]
+        x= amplitude%1
+        pulse_amplitude = (x*return_values[index_pre+1]+(1-x)*return_values[index_pre])
 
     return pulse_amplitude
 
@@ -756,3 +724,25 @@ def openfig(location):
     fig = pickle.load(open(location, 'rb'))
     fig.show()
     return fig
+
+def plot_pcm_transients(data):
+    i=1
+    fig, ax = plt.subplots()
+    for time, voltage in zip(data['t_scope'], data['v_answer']):
+        ax.plot(time, np.array(voltage)/50, label = str(i))
+        i+=1
+    ax.legend(loc = 'lower right')
+    ax.set_ylabel('Current [A]')
+    ax.set_xlabel('Time [s]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    
+    fig.tight_layout()
+    fig.show()
+
+def plot_pcm_threshold(data):
+    fig, ax = plt.subplots()
+    ax.semilogy(data['t_threshold'],'.')
+    ax.set_xlabel('Pulse No')
+    ax.set_ylabel('t_threshold [s]')
+    fig.tight_layout()
+    fig.show()
