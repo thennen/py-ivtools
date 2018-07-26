@@ -264,7 +264,7 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2,
             ttx.position(2, -4)
         elif attenuation == 6:
             trigger_level = 0.03
-            ttx.scale(2, 0.07)
+            ttx.scale(2, 0.08)
             ttx.position(2, -3)
         elif attenuation ==10:
             trigger_level = 0.02
