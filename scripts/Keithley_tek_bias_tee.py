@@ -302,8 +302,6 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2,
 
         if not automatic_measurement:
             input('Connect the RF probes and press enter')
-
-
             plt.pause(0.5)
         else:
             pg5.set_pulse_width(pulse_width)
@@ -412,7 +410,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         threshold_class.set_threshold(t_threshold)
         if len(ind) == 1:
             ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
-            ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
+            #ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
             plt.pause(0.1)
 
     ######## beginning of main evalution #############
@@ -427,7 +425,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     if data['v_pulse']:       
         for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
             pulse_minimum =min(v_pulse)
-            pulse_index = where(np.array(v_pulse) < 0.5* pulse_minimum)
+            pulse_index = where(np.array(v_pulse) < 0.25* pulse_minimum)
             #pulse_end = t_scope[pulse_index[-1]]
             #pulse_start = t_scope[pulse_index[0]]
             v_max = max(v_pulse)
@@ -442,12 +440,12 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     ########## if one channel experiment: ################       
     else:
         for t_scope, v_answer in zip(data['t_scope'],data['v_answer']):
-            # pulse_minimum =min(v_answer)
-            # pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
-            # pulse_start_index = pulse_index[0]
-            # pulse_start = t_scope[pulse_start_index]
-            # pulse_end_index = pulse_start_index + where(np.array(v_answer[pulse_start_index:-1]) >= 0)[0]
-            # pulse_end = t_scope[pulse_end_index]
+            pulse_minimum =min(v_answer)
+            pulse_index = where(np.array(v_answer) < 0.25* pulse_minimum)
+            #pulse_start_index = pulse_index[0]
+            #pulse_start = t_scope[pulse_start_index]
+            #pulse_end_index = pulse_start_index + where(np.array(v_answer[pulse_start_index:-1]) >= 0)[0]
+            #pulse_end = t_scope[pulse_end_index]
             
             # '''for short pulses the width is determined as FWHM, otherwise from pulse start until 
             #  the zero line is crossed for the first time '''
