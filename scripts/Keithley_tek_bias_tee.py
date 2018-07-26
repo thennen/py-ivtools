@@ -2,6 +2,7 @@ from matplotlib.widgets import Button
 import tkinter as tk
 import sys
 from pathlib import Path
+from collections import defaultdict
 
 def where(*args):
     return np.where(*args)[0]
@@ -218,8 +219,11 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
 
     return data
 
-def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2, range_lrs = 1e-3, range_hrs = 1e-4, range_sweep = 1e-2, 
-    cycles = 1, pulse_width = 50e-12, attenuation = 0,  automatic_measurement = True, sweep = True):
+def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2, 
+    range_lrs = 1e-3, range_hrs = 1e-4, range_sweep = 1e-2, 
+    cycles = 1, pulse_width = 50e-12, attenuation = 0,  
+    automatic_measurement = True, sweep = True,
+    two_sweeps = False):
     setup_vcm_plots()
     data = {}
     data['padname'] = padname
@@ -234,8 +238,12 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2, 
     for i in range(cycles):
 
         ### Reading HRS resistance ############################################################################
+        k.set_channel_state(channel = 'A', state = True)
+        k.set_channel_voltage(channel = 'A', voltage = V_read)
 
-        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = range_hrs , limitI = 1, nplc = 1)
+        plt.pause(1)
+
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = 10)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
@@ -271,7 +279,7 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2, 
             ttx.scale(2, 0.03)
             ttx.position(2, -2)
         else:
-            trigger_level = 0.1
+            trigger_level = 0.05
             ttx.scale(2, 0.12)
             ttx.position(2, -4)
 
@@ -324,12 +332,29 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2, 
 
         ### performing sweep ###################################################################################
         if sweep:
-            k.iv(vlist, Irange = range_sweep) 
-            while not k.done():
-                plt.pause(0.1)
-            k.set_channel_state('A', False)
-            k.set_channel_state('B', False)
-            sweep_data = k.get_data()
+            if two_sweeps:
+                dates_dict = defaultdict(list)
+                vlist1 = tri(v1 = v1, v2 = 0, step = step)
+                vlist2 = tri(v1 = 0, v2 = v2, step = step)
+                k.iv(vlist1, Irange = 1e-4, Ilimit = 1e-4) 
+                while not k.done():
+                    plt.pause(0.1)
+                sweep_data = k.get_data()
+                k.iv(vlist2, Irange = range_sweep) 
+                while not k.done():
+                    plt.pause(0.1)
+                data_2nd_sweep = k.get_data()
+                for key in data_2nd_sweep:
+                    data_to_append = data_2nd_sweep[key]
+                    if not isinstance(data_to_append,dict) and not isinstance(data_to_append, str):
+                        sweep_data[key] = np.append(sweep_data[key], data_to_append)
+            else:  
+                k.iv(vlist, Irange = range_sweep) 
+                while not k.done():
+                    plt.pause(0.1)
+                k.set_channel_state('A', False)
+                k.set_channel_state('B', False)
+                sweep_data = k.get_data()
             sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
