@@ -605,15 +605,16 @@ def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
         return_values = [2*0.7646, 2*0.8182, 2*0.8952, 2*1.1693, 2*1.7592, 2*2.2008, 
         2*2.605455, 2*2.9248, 2*3.2552, 2*3.541818, 2*3.872, 2*4.2144, 2*4.7756]
 
-    index = where(amplitude_array == amplitude)
+    index = where(np.array(amplitude_array) == amplitude)
 
     if index.size > 0:
-        pulse_amplitude = return_values[index]
+        pulse_amplitude = return_values[int(index)]
     else:
         print('Unknown amplitude')
         index_pre = where(np.array(amplitude_array) > amplitude)[0]
+
         x= amplitude%1
-        pulse_amplitude = (x*return_values[index_pre+1]+(1-x)*return_values[index_pre])
+        pulse_amplitude = (x*return_values[int(index_pre+1)]+(1-x)*return_values[int(index_pre)])
 
     return pulse_amplitude
 
