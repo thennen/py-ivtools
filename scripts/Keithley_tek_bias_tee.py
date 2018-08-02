@@ -605,6 +605,8 @@ def eval_all_vcm_measurements(filepath):
 def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
     '''returns pulse amplitude in Volts depending on the measured output of the PSPL12500'''
     pulse_amplitude = np.nan
+    if np.isnan(amplitude):
+        return np.nan
 
     if bits == 1:
         amplitude_array = [0.3, 0.4, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
