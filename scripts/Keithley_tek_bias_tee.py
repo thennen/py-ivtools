@@ -133,8 +133,25 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
-def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = -0.2, points = 250, 
- interval = 0.1, trigger = -0.3, two_channel = False, rangeI = 0 , nplc = 1, pulse_width = 50e-12, attenuation =0, polarity = 1, continious = False):
+def pcm_measurement(samplename,
+padname,
+amplitude = np.nan,
+bits = np.nan,
+sourceVA = -0.2,
+points = 250, 
+interval = 0.1,
+trigger = 0.1,
+two_channel = False,
+rangeI = 0,
+nplc = 1,
+pulse_width = 50e-12,
+attenuation =np.nan,
+polarity = 1,
+answer_position = -2.5,
+pulse_postition = -4,
+answer_scale = 0.12,
+pulse_scale = 0.12,
+continious = False):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
     setup_pcm_plots()
@@ -164,13 +181,14 @@ def pcm_measurement(samplename, padname, amplitude = 10, bits = 256, sourceVA = 
     ttx.inputstate(3, False)
     if two_channel:
         ttx.inputstate(4, True)
-        ttx.scale(4, 0.5)
-        ttx.position(4, 4*polarity)
+        ttx.scale(4, pulse_scale)
+        ttx.position(4, pulse_position*polarity)
     else:
         ttx.inputstate(4, False)
-    ttx.scale(2, 0.02)
-    ttx.position(2, 2.5*polarity)
+    ttx.scale(2, answer_scale)
+    ttx.position(2, answer_position*polarity)
     ttx.change_samplerate_and_recordlength(100e9, 5000)
+    trigger = trigger*polarity
     if two_channel:
         ttx.arm(source = 4, level = trigger, edge = 'e')
     else:

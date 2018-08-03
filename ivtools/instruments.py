@@ -1139,7 +1139,7 @@ class TektronixDPO73304D(object):
         if source == 0:
             self.write('TRIG:A:EDGE:SOUrce AUX')
         else:
-            self.write('TRIG:A:EDGE:SOUrce CH ' + str(source))
+            self.write('TRIG:A:EDGE:SOUrce CH' + str(source))
         self.write('TRIG:A:LEVEL ' + str(level))
         self.write('ACQ:STOPA SEQUENCE')
         self.write('ACQ:STATE 1')
