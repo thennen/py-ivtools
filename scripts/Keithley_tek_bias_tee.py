@@ -182,11 +182,11 @@ continious = False):
     if two_channel:
         ttx.inputstate(4, True)
         ttx.scale(4, pulse_scale)
-        ttx.position(4, pulse_position*polarity)
+        ttx.position(4, -pulse_position*polarity)
     else:
         ttx.inputstate(4, False)
     ttx.scale(2, answer_scale)
-    ttx.position(2, answer_position*polarity)
+    ttx.position(2, -answer_position*polarity)
     ttx.change_samplerate_and_recordlength(100e9, 5000)
     trigger = trigger*polarity
     if two_channel:
@@ -195,14 +195,15 @@ continious = False):
         ttx.arm(source = 2, level = trigger, edge = 'e')
     
     if pg5:
-            plt.pause(3)
-            pg5.set_pulse_width(pulse_width)
-            pg5.trigger()
+        plt.pause(3)
+        pg5.set_pulse_width(pulse_width)
+        pg5.trigger()
     
     while not k.done():
         
         if pg5 and continious:
             pg5.trigger()
+
         data.update(k.get_data())
         if ttx.triggerstate():
             plt.pause(0.1)
