@@ -249,11 +249,26 @@ continious = False):
 
     return data
 
-def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2, 
-    range_lrs = 1e-3, range_hrs = 1e-4, range_sweep = 1e-2, 
-    cycles = 1, pulse_width = 50e-12, attenuation = 0,  
-    automatic_measurement = True, sweep = True,
-    two_sweeps = False):
+def vcm_pg5_measurement(samplename,
+padname,
+v1,
+v2,
+step = 0.02,
+V_read = 0.2,
+range_lrs = 1e-3,
+range_hrs = 1e-4,
+range_sweep = 1e-2,
+cycles = 1,
+pulse_width = 50e-12,
+attenuation = 0,
+automatic_measurement = True,
+sweep = True,
+two_sweeps = False,
+scale = 0.12,
+position = -3,
+trigger_level = 0.05,
+nplc = 10):
+
     setup_vcm_plots()
     data = {}
     data['padname'] = padname
@@ -273,7 +288,7 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2,
 
         plt.pause(1)
 
-        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = 10)
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
@@ -282,36 +297,39 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2,
         hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
         data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
         iplots.updateline(data)
-        ### RSetting up scope  ################################################################################
+        ### Setting up scope  ################################################################################
 
         ttx.inputstate(1, False)
         ttx.inputstate(2, True)
         ttx.inputstate(3, False)
         ttx.inputstate(4, False)
-        if attenuation == 3:
-            trigger_level = 0.04
-            ttx.scale(2, 0.1)
-            ttx.position(2, -4)
-        elif attenuation == 6:
-            trigger_level = 0.03
-            ttx.scale(2, 0.08)
-            ttx.position(2, -3)
-        elif attenuation ==10:
-            trigger_level = 0.02
-            ttx.scale(2, 0.05)
-            ttx.position(2, -2)
-        elif attenuation == 13:
-            trigger_level = 0.02
-            ttx.scale(2, 0.04)
-            ttx.position(2, -2)
-        elif attenuation == 16:
-            trigger_level = 0.02
-            ttx.scale(2, 0.03)
-            ttx.position(2, -2)
-        else:
-            trigger_level = 0.05
-            ttx.scale(2, 0.12)
-            ttx.position(2, -4)
+        # if attenuation == 3:
+        #     trigger_level = 0.04
+        #     ttx.scale(2, 0.1)
+        #     ttx.position(2, -4)
+        # elif attenuation == 6:
+        #     trigger_level = 0.03
+        #     ttx.scale(2, 0.08)
+        #     ttx.position(2, -3)
+        # elif attenuation ==10:
+        #     trigger_level = 0.02
+        #     ttx.scale(2, 0.05)
+        #     ttx.position(2, -2)
+        # elif attenuation == 13:
+        #     trigger_level = 0.02
+        #     ttx.scale(2, 0.04)
+        #     ttx.position(2, -2)
+        # elif attenuation == 16:
+        #     trigger_level = 0.02
+        #     ttx.scale(2, 0.03)
+        #     ttx.position(2, -2)
+        # else:
+        #     trigger_level = 0.05
+        #     ttx.scale(2, 0.12)
+        #     ttx.position(2, -4)
+        ttx.scale(2, scale)
+        ttx.position(2, position)
+
 
         ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
         if pulse_width < 100e-12:
@@ -390,6 +408,9 @@ def vcm_pg5_measurement(samplename, padname, v1, v2, step = 0.02, V_read = 0.2,
 
     data['attenuation'] = attenuation
     data['pulse_width'] = pulse_width
+    data['scale'] = scale
+    data['position'] = position
+    data['trigger_level'] = trigger_level
 
     datafolder = os.path.join('C:\Messdaten', samplename, padname)
     subfolder = datestr
