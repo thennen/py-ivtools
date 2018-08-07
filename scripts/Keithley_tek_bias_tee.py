@@ -267,7 +267,8 @@ two_sweeps = False,
 scale = 0.12,
 position = -3,
 trigger_level = 0.05,
-nplc = 10):
+nplc = 10,
+limitI = 1e-3):
 
     setup_vcm_plots()
     data = {}
@@ -382,7 +383,8 @@ nplc = 10):
                 dates_dict = defaultdict(list)
                 vlist1 = tri(v1 = v1, v2 = 0, step = step)
                 vlist2 = tri(v1 = 0, v2 = v2, step = step)
-                k.iv(vlist1, Irange = 1e-4, Ilimit = 1e-4) 
+                Irange2 = roundup10(limitI)
+                k.iv(vlist1, Irange = Irange2, Ilimit = limitI) 
                 while not k.done():
                     plt.pause(0.1)
                 sweep_data = k.get_data()
@@ -800,3 +802,9 @@ def plot_pcm_threshold(data):
     ax.set_ylabel('t_threshold [s]')
     fig.tight_layout()
     fig.show()
+
+
+def roundup10(value):
+    log_value = np.log10(value)
+    exponent = np.ceil(log_value)
+    return np.power(10,exponent) 
