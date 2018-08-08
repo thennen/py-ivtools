@@ -92,10 +92,10 @@ def setup_vcm_plots():
         if np.isnan(line.t_lrs).any():
             line = data.iloc[-2]
             i+=1
-        ax.set_title('Read LRS #' + str(len(data)))
+        ax.set_title('Read LRS #' + str(len(data)-i))
         if not np.isnan(line.t_lrs).any():
             ax.cla()
-            ax.set_title('Read LRS #' + str(len(data)))
+            ax.set_title('Read LRS #' + str(len(data)-i))
             ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs)
             ax.set_ylabel('Resistance LRS [V/A]')
             ax.set_xlabel('Time [s]')
