@@ -367,7 +367,12 @@ limitI = 1e-3):
 
         if not automatic_measurement:
             input('Connect the DC probes and press enter')
-        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = range_lrs, limitI = 1, nplc = 1)
+
+        k.set_channel_state(channel = 'A', state = True)
+        k.set_channel_voltage(channel = 'A', voltage = V_read)
+
+        plt.pause(1)
+        k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.01, rangeI = range_lrs, limitI = 1, nplc = nplc)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
