@@ -258,6 +258,7 @@ V_read = 0.2,
 range_lrs = 1e-3,
 range_hrs = 1e-4,
 range_sweep = 1e-2,
+range_sweep2 = 1e-3,
 cycles = 1,
 pulse_width = 50e-12,
 attenuation = 0,
@@ -268,7 +269,8 @@ scale = 0.12,
 position = -3,
 trigger_level = 0.05,
 nplc = 10,
-limitI = 1e-3):
+limitI = 3e-4,
+limitI2 = 3e-4):
 
     setup_vcm_plots()
     data = {}
@@ -388,12 +390,11 @@ limitI = 1e-3):
                 dates_dict = defaultdict(list)
                 vlist1 = tri(v1 = v1, v2 = 0, step = step)
                 vlist2 = tri(v1 = 0, v2 = v2, step = step)
-                Irange2 = roundup10(limitI)
-                k.iv(vlist1, Irange = Irange2, Ilimit = limitI) 
+                k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
                 while not k.done():
                     plt.pause(0.1)
                 sweep_data = k.get_data()
-                k.iv(vlist2, Irange = range_sweep) 
+                k.iv(vlist2, Irange = range_sweep2, Ilimit = limitI2) 
                 while not k.done():
                     plt.pause(0.1)
                 data_2nd_sweep = k.get_data()
