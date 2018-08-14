@@ -407,6 +407,7 @@ cc_step = 25e-6):
                 k.set_channel_state('B', False)
                 r_data = k.get_data()
                 resistance = np.mean(r_data['V']/r_data['I']) - 50
+                print('Compliance = ' + str(current_compliance))
                 print('Resistance = ' + str(resistance))
 
                 if resistance >= r_lower and resistance <= r_upper:
