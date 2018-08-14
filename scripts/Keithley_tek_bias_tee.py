@@ -274,7 +274,8 @@ limitI = 3e-4,
 limitI2 = 3e-4,
 r_window = False,
 r_lower = 1e3,
-r_upper = 2e3):
+r_upper = 2e3,
+cc_step = 25e-6):
 
     setup_vcm_plots()
     data = {}
@@ -412,11 +413,11 @@ r_upper = 2e3):
                     window_hit = True
                     break
                 elif resistance < r_lower:
-                    current_compliance -= 5e-5
+                    current_compliance -= cc_step
                 else:
-                    current_compliance += 5e-5
+                    current_compliance += cc_step
 
-                if current_compliance < 5e-5 or current_compliance > 1e-3:
+                if current_compliance < cc_step or current_compliance > 1e-3:
                     print('Failed_hitting resistance window, consider abortion of measurement')
                     window_hit = True
                     break
