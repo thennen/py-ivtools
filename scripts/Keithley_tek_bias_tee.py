@@ -254,6 +254,7 @@ padname,
 v1,
 v2,
 step = 0.02,
+step2 = 0.02,
 V_read = 0.2,
 range_lrs = 1e-3,
 range_hrs = 1e-4,
@@ -364,7 +365,7 @@ limitI2 = 3e-4):
             if two_sweeps:
                 dates_dict = defaultdict(list)
                 vlist1 = tri(v1 = v1, v2 = 0, step = step)
-                vlist2 = tri(v1 = 0, v2 = v2, step = step)
+                vlist2 = tri(v1 = 0, v2 = v2, step = step2)
                 k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
                 while not k.done():
                     plt.pause(0.1)
