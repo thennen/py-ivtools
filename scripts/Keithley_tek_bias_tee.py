@@ -412,11 +412,11 @@ r_upper = 2e3):
                     window_hit = True
                     break
                 elif resistance < r_lower:
-                    current_compliance -= 2e-5
+                    current_compliance -= 5e-6
                 else:
-                    current_compliance += 2e-5
+                    current_compliance += 5e-6
 
-                if current_compliance < 5e-5 or current_compliance > 1e-3:
+                if current_compliance < 5e-6 or current_compliance > 1e-3:
                     print('Failed_hitting resistance window, consider abortion of measurement')
                     window_hit = True
                     break
