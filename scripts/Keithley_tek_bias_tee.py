@@ -66,7 +66,7 @@ def setup_vcm_plots():
         if not np.isnan(line.t_hrs).any():
             ax.cla()
             ax.set_title('Read HRS #' + str(len(data)-i))
-            ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs)
+            ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs - 50)
             ax.set_ylabel('Resistance HRS [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -96,7 +96,7 @@ def setup_vcm_plots():
         if not np.isnan(line.t_lrs).any():
             ax.cla()
             ax.set_title('Read LRS #' + str(len(data)-i))
-            ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs)
+            ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs - 50)
             ax.set_ylabel('Resistance LRS [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -291,7 +291,7 @@ limitI2 = 3e-4):
 
         plt.pause(1)
 
-        k.it(sourceVA = V_read, sourceVB = 0, points =20, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+        k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
@@ -306,30 +306,7 @@ limitI2 = 3e-4):
         ttx.inputstate(2, True)
         ttx.inputstate(3, False)
         ttx.inputstate(4, False)
-        # if attenuation == 3:
-        #     trigger_level = 0.04
-        #     ttx.scale(2, 0.1)
-        #     ttx.position(2, -4)
-        # elif attenuation == 6:
-        #     trigger_level = 0.03
-        #     ttx.scale(2, 0.08)
-        #     ttx.position(2, -3)
-        # elif attenuation ==10:
-        #     trigger_level = 0.02
-        #     ttx.scale(2, 0.05)
-        #     ttx.position(2, -2)
-        # elif attenuation == 13:
-        #     trigger_level = 0.02
-        #     ttx.scale(2, 0.04)
-        #     ttx.position(2, -2)
-        # elif attenuation == 16:
-        #     trigger_level = 0.02
-        #     ttx.scale(2, 0.03)
-        #     ttx.position(2, -2)
-        # else:
-        #     trigger_level = 0.05
-        #     ttx.scale(2, 0.12)
-        #     ttx.position(2, -4)
+
         ttx.scale(2, scale)
         ttx.position(2, position)
 
@@ -341,8 +318,6 @@ limitI2 = 3e-4):
             ttx.trigger_position(30)
         else:
             ttx.trigger_position(20)
-
-
 
         plt.pause(0.1)
 
@@ -374,7 +349,7 @@ limitI2 = 3e-4):
         k.set_channel_voltage(channel = 'A', voltage = V_read)
 
         plt.pause(1)
-        k.it(sourceVA = V_read, sourceVB = 0, points =20, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+        k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
         while not k.done():
             plt.pause(0.1)
         k.set_channel_state('A', False)
