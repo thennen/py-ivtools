@@ -271,7 +271,10 @@ position = -3,
 trigger_level = 0.05,
 nplc = 10,
 limitI = 3e-4,
-limitI2 = 3e-4):
+limitI2 = 3e-4,
+r_window = False,
+r_lower = 1e3,
+r_upper = 2e3):
 
     setup_vcm_plots()
     data = {}
@@ -388,8 +391,47 @@ limitI2 = 3e-4):
             sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
-        #savedata(data,datafolder + str(pulse_width) + 'ps')
+        if r_window:
+            current_compliance = limitI2
+            window_hit = False
+            while not window_hit:
+                k.set_channel_state(channel = 'A', state = True)
+                k.set_channel_voltage(channel = 'A', voltage = V_read)
 
+                plt.pause(1)
+                k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+                while not k.done():
+                    plt.pause(0.1)
+                k.set_channel_state('A', False)
+                k.set_channel_state('B', False)
+                r_data = k.get_data()
+                resistance = np.mean(r_data['V']/r_data['I']) - 50
+                print('Resistance = ' + str(resistance))
+
+                if resistance >= r_lower and resistance <= r_upper:
+                    window_hit = True
+                    break
+                elif resistance < r_lower:
+                    current_compliance -= 2e-5
+                else:
+                    current_compliance += 2e-5
+
+                if current_compliance < 5e-5 or current_compliance > 1e-3:
+                    print('Failed_hitting resistance window, consider abortion of measurement')
+                    window_hit = True
+                    break
+
+                k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
+                while not k.done():
+                    plt.pause(0.1)
+                sweep_data = k.get_data()
+                k.iv(vlist2, Irange = range_sweep2, Ilimit = current_compliance) 
+                while not k.done():
+                    plt.pause(0.1)
+                data_2nd_sweep = k.get_data()
+
+
+  
     data['attenuation'] = attenuation
     data['pulse_width'] = pulse_width
     data['scale'] = scale
