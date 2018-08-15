@@ -288,150 +288,166 @@ cc_step = 25e-6):
     scope_list = []
     vlist = tri(v1 = v1, v2 = v2, step = step)
 
+    abort = False
     for i in range(cycles):
+        if not abort:
+            ### Reading HRS resistance ############################################################################
+            k.set_channel_state(channel = 'A', state = True)
+            k.set_channel_voltage(channel = 'A', voltage = V_read)
 
-        ### Reading HRS resistance ############################################################################
-        k.set_channel_state(channel = 'A', state = True)
-        k.set_channel_voltage(channel = 'A', voltage = V_read)
+            plt.pause(1)
 
-        plt.pause(1)
-
-        k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
-        while not k.done():
-            plt.pause(0.1)
-        k.set_channel_state('A', False)
-        k.set_channel_state('B', False)
-        hrs_data = k.get_data()
-        hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
-        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
-        iplots.updateline(data)
-        ### Setting up scope  ################################################################################
-
-        ttx.inputstate(1, False)
-        ttx.inputstate(2, True)
-        ttx.inputstate(3, False)
-        ttx.inputstate(4, False)
-
-        ttx.scale(2, scale)
-        ttx.position(2, position)
-
-
-        ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
-        if pulse_width < 100e-12:
-            ttx.trigger_position(40)
-        elif pulse_width < 150e-12:
-            ttx.trigger_position(30)
-        else:
-            ttx.trigger_position(20)
-
-        plt.pause(0.1)
-
-        ttx.arm(source = 2, level = trigger_level, edge = 'e')
-
-
-        ### Applying pulse and reading scope data #############################################################
-
-        if not automatic_measurement:
-            input('Connect the RF probes and press enter')
-            plt.pause(0.5)
-        else:
-            pg5.set_pulse_width(pulse_width)
-            plt.pause(0.1)
-            pg5.trigger()
-            plt.pause(0.1)
-        if not ttx.triggerstate:
-            plt.pause(0.1)
-        scope_list.append(ttx.get_curve(2))
-        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
-        iplots.updateline(data)
-
-        ### Reading LRS resistance #############################################################################
-
-        if not automatic_measurement:
-            input('Connect the DC probes and press enter')
-
-        k.set_channel_state(channel = 'A', state = True)
-        k.set_channel_voltage(channel = 'A', voltage = V_read)
-
-        plt.pause(1)
-        k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
-        while not k.done():
-            plt.pause(0.1)
-        k.set_channel_state('A', False)
-        k.set_channel_state('B', False)
-        lrs_data = k.get_data()
-        lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
-        data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
-        iplots.updateline(data)
-
-        ### performing sweep ###################################################################################
-        if sweep:
-            if two_sweeps:
-                dates_dict = defaultdict(list)
-                vlist1 = tri(v1 = v1, v2 = 0, step = step)
-                vlist2 = tri(v1 = 0, v2 = v2, step = step2)
-                k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
-                while not k.done():
-                    plt.pause(0.1)
-                sweep_data = k.get_data()
-                k.iv(vlist2, Irange = range_sweep2, Ilimit = limitI2) 
-                while not k.done():
-                    plt.pause(0.1)
-                data_2nd_sweep = k.get_data()
-                for key in data_2nd_sweep:
-                    data_to_append = data_2nd_sweep[key]
-                    if not isinstance(data_to_append,dict) and not isinstance(data_to_append, str):
-                        sweep_data[key] = np.append(sweep_data[key], data_to_append)
-            else:  
-                k.iv(vlist, Irange = range_sweep) 
-                while not k.done():
-                    plt.pause(0.1)
-                k.set_channel_state('A', False)
-                k.set_channel_state('B', False)
-                sweep_data = k.get_data()
-            sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
+            k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+            while not k.done():
+                plt.pause(0.1)
+            k.set_channel_state('A', False)
+            k.set_channel_state('B', False)
+            hrs_data = k.get_data()
+            hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
-        if r_window:
-            current_compliance = limitI2
-            window_hit = False
-            while not window_hit:
-                k.set_channel_state(channel = 'A', state = True)
-                k.set_channel_voltage(channel = 'A', voltage = V_read)
+            ### Setting up scope  ################################################################################
 
-                plt.pause(1)
-                k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
-                while not k.done():
-                    plt.pause(0.1)
-                k.set_channel_state('A', False)
-                k.set_channel_state('B', False)
-                r_data = k.get_data()
-                resistance = np.mean(r_data['V']/r_data['I']) - 50
-                print('Compliance = ' + str(current_compliance))
-                print('Resistance = ' + str(resistance))
+            ttx.inputstate(1, False)
+            ttx.inputstate(2, True)
+            ttx.inputstate(3, False)
+            ttx.inputstate(4, False)
 
-                if resistance >= r_lower and resistance <= r_upper:
-                    window_hit = True
-                    break
-                elif resistance < r_lower:
-                    current_compliance -= cc_step
-                else:
-                    current_compliance += cc_step
+            ttx.scale(2, scale)
+            ttx.position(2, position)
 
-                if current_compliance < cc_step or current_compliance > 1e-3:
-                    print('Failed_hitting resistance window, consider abortion of measurement')
-                    window_hit = True
-                    break
 
-                k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
-                while not k.done():
-                    plt.pause(0.1)
-                sweep_data = k.get_data()
-                k.iv(vlist2, Irange = range_sweep2, Ilimit = current_compliance) 
-                while not k.done():
-                    plt.pause(0.1)
-                data_2nd_sweep = k.get_data()
+            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
+            if pulse_width < 100e-12:
+                ttx.trigger_position(40)
+            elif pulse_width < 150e-12:
+                ttx.trigger_position(30)
+            else:
+                ttx.trigger_position(20)
 
+            plt.pause(0.1)
+
+            ttx.arm(source = 2, level = trigger_level, edge = 'e')
+
+
+            ### Applying pulse and reading scope data #############################################################
+
+            if not automatic_measurement:
+                input('Connect the RF probes and press enter')
+                plt.pause(0.5)
+            else:
+                pg5.set_pulse_width(pulse_width)
+                plt.pause(0.1)
+                pg5.trigger()
+                plt.pause(0.1)
+            if not ttx.triggerstate:
+                plt.pause(0.1)
+            scope_list.append(ttx.get_curve(2))
+            data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+            iplots.updateline(data)
+
+            ### Reading LRS resistance #############################################################################
+
+            if not automatic_measurement:
+                input('Connect the DC probes and press enter')
+
+            k.set_channel_state(channel = 'A', state = True)
+            k.set_channel_voltage(channel = 'A', voltage = V_read)
+
+            plt.pause(1)
+            k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+            while not k.done():
+                plt.pause(0.1)
+            k.set_channel_state('A', False)
+            k.set_channel_state('B', False)
+            lrs_data = k.get_data()
+            lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
+            data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+            iplots.updateline(data)
+
+            ### performing sweep ###################################################################################
+            if sweep:
+                if two_sweeps:
+                    dates_dict = defaultdict(list)
+                    vlist1 = tri(v1 = v1, v2 = 0, step = step)
+                    vlist2 = tri(v1 = 0, v2 = v2, step = step2)
+                    k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    sweep_data = k.get_data()
+                    k.iv(vlist2, Irange = range_sweep2, Ilimit = limitI2) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    data_2nd_sweep = k.get_data()
+                    for key in data_2nd_sweep:
+                        data_to_append = data_2nd_sweep[key]
+                        if not isinstance(data_to_append,dict) and not isinstance(data_to_append, str):
+                            sweep_data[key] = np.append(sweep_data[key], data_to_append)
+                else:  
+                    k.iv(vlist, Irange = range_sweep) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    k.set_channel_state('A', False)
+                    k.set_channel_state('B', False)
+                    sweep_data = k.get_data()
+                sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
+                data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+                iplots.updateline(data)
+            if r_window:
+                current_compliance = limitI2
+                window_hit = False
+                u=0
+                d=0
+                while not window_hit:
+                    
+                    k.set_channel_state(channel = 'A', state = True)
+                    k.set_channel_voltage(channel = 'A', voltage = V_read)
+
+                    plt.pause(1)
+                    k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+                    while not k.done():
+                        plt.pause(0.1)
+                    k.set_channel_state('A', False)
+                    k.set_channel_state('B', False)
+                    r_data = k.get_data()
+                    resistance = np.mean(r_data['V']/r_data['I']) - 50
+                    print('Compliance = ' + str(current_compliance))
+                    print('Resistance = ' + str(resistance))
+
+                    if resistance >= r_lower and resistance <= r_upper:
+                        window_hit = True
+                        break
+                    elif resistance < r_lower:
+                        current_compliance -= cc_step
+                        u = 0
+                        d += 1
+                    elif resistance > 3.5e4 or u >=50:
+                        vlist2 = tri(v1 = 0, v2 = -2, step = step2)
+                        current_compliance = 2e-3
+                    elif d >= 50:
+                        vlist1 = tri(v1 = 2, v2 = 0, step = step)
+                    else:
+                        current_compliance += cc_step
+                        u += 1
+                        d = 0
+                    if u > 51 or d > 51:
+                        print('Failed hitting resistance window, aborting measurement')
+                        window_hit = True
+                        abort = True
+                        break
+
+                    k.iv(vlist1, Irange = range_sweep, Ilimit = limitI) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    
+                    k.iv(vlist2, Irange = range_sweep2, Ilimit = current_compliance) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    vlist1 = tri(v1 = v1, v2 = 0, step = step)
+                    vlist2 = tri(v1 = 0, v2 = v2, step = step2)
+
+                    if current_compliance > 1e-3:
+                        current_compliance = limitI2
 
   
     data['attenuation'] = attenuation
@@ -452,7 +468,7 @@ cc_step = 25e-6):
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
-    return data
+    return data, abort
 
 def eval_pcm_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
