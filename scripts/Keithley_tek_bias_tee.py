@@ -850,3 +850,18 @@ def roundup10(value):
     log_value = np.log10(value)
     exponent = np.ceil(log_value)
     return np.power(10,exponent) 
+
+def find_tset(fwhm, R_ratio, limit = 0.1, direction = 'below'):
+    R_ratio = np.array(R_ratio)
+    fwhm = np.array(fwhm)
+    if direction is 'below':
+        index = where(R_ratio < limit)
+    else:
+        index = where(R_ratio > limit)
+    if index.size is 0:
+        return np.nan
+    if direction is 'below':
+        t_set = min(fwhm[index])
+    else:
+        t_set = max(fwhm[index])
+    return t_set
