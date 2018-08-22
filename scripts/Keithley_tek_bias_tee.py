@@ -851,20 +851,56 @@ def roundup10(value):
     exponent = np.ceil(log_value)
     return np.power(10,exponent) 
 
-def find_threshold(fwhm, R_ratio, limit = 0.1, direction = 'first', threshold = 'below'):
+def transition_time(fwhm, R_ratio, upper_limit = 0.9, lower_limit = 0.1, reset = False):
     R_ratio = np.array(R_ratio)
     fwhm = np.array(fwhm)
 
-    if threshold is 'below':
-        index = where(R_ratio <= limit)
-    else:
-        index = where(R_ratio >= limit)
+    #sorting
+    sorted_index = np.argsort(fwhm)
+    fwhm=fwhm[sorted_index]
+    R_ratio = R_ratio[sorted_index]
 
-    if index.size is 0:
+    if not reset:
+        index = where(R_ratio < upper_limit)
+        start_index = index[0]-1    #last entry at which all values are above the upper limit
+        index = where(R_ratio > lower_limit)
+        end_index = index[-1] + 1   #first entry at which all values are below the lower limit
+    else:
+        index = where(R_ratio > lower_limit)
+        start_index = index[0]-1    #last entry at which all values are below the lower limit
+        index = where(R_ratio < below_limit)
+        end_index = index[-1] + 1   #first entry at which all values are below the upper limit
+    try:    
+        t_start = fwhm[start_index]    
+        t_end = fwhm[end_index]
+    except:
+        print('Out of array error => returning nan')
         return np.nan
 
-    if direction is 'first':
-        t_threshold = min(fwhm[index])
+    transition_time = t_end-t_start
+    return transition_time
+
+
+
+def set_time(fwhm, R_ratio, limit = 0.5, reset = False):
+    fwhm = np.array(fwhm)
+    R_ratio = np.array(R_ratio)
+    
+    #sorting
+    sorted_index = np.argsort(fwhm)
+    fwhm=fwhm[sorted_index]
+    R_ratio = R_ratio[sorted_index]
+
+    if not reset:
+        index = where(R_ratio > limit)
+        t_set_index = index[-1] + 1
     else:
-        t_threshold = max(fwhm[index])
-    return t_threshold
+        index = where(R_ratio < limit)
+        t_set_index = index[-1] + 1
+
+    try:
+        t_set = fwhm[t_set_index]
+    except:
+        print('Out of array error => returning nan')
+        return np.nan
+    return t_set
