@@ -862,13 +862,21 @@ def transition_time(fwhm, R_ratio, upper_limit = 0.9, lower_limit = 0.1, reset =
 
     if not reset:
         index = where(R_ratio < upper_limit)
+        if index.size < 1: 
+            return np.nan
         start_index = index[0]-1    #last entry at which all values are above the upper limit
         index = where(R_ratio > lower_limit)
+        if index.size < 1: 
+            return np.nan
         end_index = index[-1] + 1   #first entry at which all values are below the lower limit
     else:
         index = where(R_ratio > lower_limit)
+        if index.size < 1: 
+            return np.nan
         start_index = index[0]-1    #last entry at which all values are below the lower limit
         index = where(R_ratio < below_limit)
+        if index.size < 1: 
+            return np.nan
         end_index = index[-1] + 1   #first entry at which all values are below the upper limit
     try:    
         t_start = fwhm[start_index]    
@@ -893,9 +901,13 @@ def set_time(fwhm, R_ratio, limit = 0.5, reset = False):
 
     if not reset:
         index = where(R_ratio > limit)
+        if index.size < 1: 
+            return fwhm[0]
         t_set_index = index[-1] + 1
     else:
         index = where(R_ratio < limit)
+        if index.size < 1: 
+            return fwhm[0]
         t_set_index = index[-1] + 1
 
     try:
@@ -904,3 +916,29 @@ def set_time(fwhm, R_ratio, limit = 0.5, reset = False):
         print('Out of array error => returning nan')
         return np.nan
     return t_set
+
+def get_R_median(all_data):
+    R_ratio_median = []
+    fwhm_array =  []
+    for data in all_data:
+        R_ratio = data['R_lrs']/data['R_hrs']
+        R_ratio_median.append(np.median(R_ratio))
+        fwhm_array.append(np.mean(data['fwhm']))
+    return fwhm_array, R_ratio_median
+
+def Boxplot_array(all_data):
+    R = []
+    fwhm = []
+    for data in all_data:
+        R.append(data['R_lrs']/data['R_hrs'])
+        fwhm.append(np.mean(data['fwhm']))
+
+    fwhm = np.array(fwhm)
+    R = np.array(R)
+    sorted_index = np.argsort(np.array(fwhm))
+    fwhm=fwhm[sorted_index]
+    R = R[sorted_index]
+    R= np.ndarray.tolist(R)
+
+    fwhm = np.ndarray.tolist(fwhm)
+    return fwhm, R
