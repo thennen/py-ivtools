@@ -681,7 +681,7 @@ def eval_all_vcm_measurements(filepath):
         R_lrs_std.append(np.std(data['R_lrs']))
         fwhm_mean.append(np.mean(data['fwhm']))
         fwhm_std.append(np.std(data['fwhm']))
-        R_ratio_mean.append(R_lrs_mean[-1]/R_hrs_mean[-1])
+        R_ratio_mean.append(np.mean(data['R_lrs']/data['R_hrs']))
         R_ratio_std.append(R_ratio_mean[-1]*np.sqrt(np.power(R_hrs_std[-1]/R_hrs_mean[-1], 2)+np.power(R_lrs_std[-1]/R_lrs_mean[-1], 2)))
 
     return all_data, R_hrs_mean, R_hrs_std, R_lrs_mean, R_lrs_std, fwhm_mean, fwhm_std, R_ratio_mean, R_ratio_std
@@ -806,9 +806,7 @@ def determine_resistance(i, v):
     '''returns average resistance of all entries'''
     i = np.array(i)
     v = np.array(v)
-    i_mean = np.mean(i)
-    v_mean = np.mean(v)
-    r = v_mean/i_mean
+    r = np.mean(v/i)
     return r
 
 def deb_to_atten(deb):
