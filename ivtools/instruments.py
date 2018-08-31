@@ -23,6 +23,7 @@ import pandas as pd
 import serial
 from collections import deque
 import weakref
+import matplotlib.pyplot as plt
 
 # Store the resource manager instance in the visa module
 # Because this module (instruments.py) may be reloaded,
@@ -925,6 +926,59 @@ class Keithley2600(object):
         ch = channel.lower()
         self.write('smu{0}.source.func = smu{0}.OUTPUT_DCVOLTS'.format(ch))
         self.write('smu{0}.source.levelv = '.format(ch) + str(voltage))
+
+    def read_resistance(self, channel = 'A', voltage = 0.2, start_range = 1e-3, bias_tee_precautions = False):
+        '''Reads the resistance with the correct range without using the autorange from Keithley'''
+        range_smu = start_range
+        range_correct = False
+
+        while not range_correct:
+            print('Range SMU = ' + str(range_smu))
+            range_too_high = False
+            range_too_low = False
+            if bias_tee_precautions:
+                self.set_channel_state(channel = channel, state = True)
+                self.set_channel_voltage(channel = channel, voltage = voltage)
+                plt.pause(1)
+
+            if channel is 'A':
+                self.it(sourceVA = voltage, sourceVB = 0, points =5, interval = 0.1, rangeI = range_smu , limitI = 1, nplc = 10)
+            else:
+                self.it(sourceVA = 0, sourceVB = voltage, points =5, interval = 0.1, rangeI = range_smu , limitI = 1, nplc = 10)
+
+            while not self.done():
+                plt.pause(0.1)
+
+            self.set_channel_state('A', False)
+            self.set_channel_state('B', False)
+            data = self.get_data()
+
+            for value in data['I']:
+                if np.isnan(value):
+                    range_too_low = True
+
+            if range_too_low:
+                print('Range too low')
+                range_smu = np.power(10, np.log10(range_smu) + 1)
+
+            else:
+                max_current = max(abs(data['I']))
+                if 0.095*range_smu > max_current:
+                    range_too_high = True
+                    print('Range too high')
+                    max_current_log = np.log10(max_current)
+                    range_exponent = np.ceil(max_current_log)
+                    range_smu = np.power(10, range_exponent)
+                else:
+                    range_correct = True
+
+        print('Maximum current = ' + str(max_current))
+        resistance = np.mean(data['V']/data['I'])
+        print('Resistance = ' + str(resistance))
+        return resistance, data
+
+
+
 
 
 #########################################################

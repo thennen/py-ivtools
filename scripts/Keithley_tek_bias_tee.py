@@ -125,6 +125,61 @@ def setup_vcm_plots():
                        [3, plot3]]
                  
     iplots.newline()  
+
+def setup_pcm_plots_2():
+
+    def plot0(data, ax=None, **kwargs):
+        line = data.iloc[-1]
+        i=0
+        if np.isnan(line.t_pre).any():
+            i+=1
+            line = data.iloc[-2]
+        ax.set_title('Read PRE #' + str(len(data)-i))
+        if not np.isnan(line.t_pre).any():
+            ax.cla()
+            ax.set_title('Read PRE #' + str(len(data)-i))
+            ax.plot(line.t_pre,  line.V_pre /  line.I_pre - 50)
+            ax.set_ylabel('Resistance PRE [V/A]')
+            ax.set_xlabel('Time [s]')
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+    def plot1(data, ax=None, **kwargs):
+        line = data.iloc[-1]
+        i=0
+        if np.isnan(line.t_ttx).any():
+            line = data.iloc[-2]
+            i+=1
+        ax.set_title('Answer #' + str(len(data)-i))
+        if not np.isnan(line.t_ttx).any():
+            ax.cla()
+            ax.set_title('Answer #' + str(len(data)-i))
+            ax.plot(line.t_ttx, line.V_ttx, **kwargs)    
+            ax.set_ylabel('Voltage [V]')
+            ax.set_xlabel('Time [s]')
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+    def plot2(data, ax=None, **kwargs):
+        line = data.iloc[-1]
+        i=0
+        if np.isnan(line.t_post).any():
+            line = data.iloc[-2]
+            i+=1
+        ax.set_title('Read POST #' + str(len(data)-i))
+        if not np.isnan(line.t_post).any():
+            ax.cla()
+            ax.set_title('Read POST #' + str(len(data)-i))
+            ax.plot(line.t_post,  line.V_post /  line.I_post - 50)
+            ax.set_ylabel('Resistance Post [V/A]')
+            ax.set_xlabel('Time [s]')
+            ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+
+        
+    iplots.plotters = [[0, plot0],
+                       [1, plot1],
+                       [2, plot2]]
+                 
+    iplots.newline()  
     
 def set_keithley_plotters():
     iplots.plotters = keithley_plotters
@@ -470,6 +525,92 @@ cc_step = 25e-6):
 
     return data, abort
 
+
+def pcm_resistance_measurement(samplename,
+padname,
+bits,
+amplitude,
+V_read = 0.2,
+start_range = 1e-3,
+cycles = 1,
+scale = 0.12,
+position = 3,
+trigger_level = -0.1,
+recordlength=2000
+):
+
+    setup_pcm_plots_2()
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    pre_list = []
+    post_list = []
+    scope_list = []
+
+
+    abort = False
+    for i in range(cycles):
+        if not abort:
+            ### Reading Pre resistance ############################################################################
+            _, pre_data = k.read_resistance(start_range = start_range, voltage = V_read)
+            pre_list.append(add_suffix_to_dict(pre_data,'_pre'))
+            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
+            iplots.updateline(data)
+            ### Setting up scope  ################################################################################
+
+            ttx.inputstate(1, False)
+            ttx.inputstate(2, True)
+            ttx.inputstate(3, False)
+            ttx.inputstate(4, False)
+
+            ttx.scale(2, scale)
+            ttx.position(2, position)
+
+            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=recordlength)
+            ttx.trigger_position(20)
+
+            plt.pause(0.1)
+            input('Connect RF probes')
+            ttx.arm(source = 2, level = trigger_level, edge = 'e')
+
+            ### Applying pulse and reading scope data #############################################################
+
+            
+            plt.pause(0.5)
+
+            while ttx.triggerstate():
+                plt.pause(0.1)
+            scope_list.append(ttx.get_curve(2))
+            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
+            iplots.updateline(data)
+
+            ### Reading Post resistance ########################
+            input('Connect DC probes')
+            _, post_data = k.read_resistance(start_range = start_range, voltage = V_read)
+            post_list.append(add_suffix_to_dict(post_data,'_post'))
+            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
+            iplots.updateline(data)
+  
+    data['amplitude'] = amplitude
+    data['bits'] = bits
+    data['scale'] = scale
+    data['position'] = position
+    data['trigger_level'] = trigger_level
+
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, str(int(bits)) + 'bits_'+str(i))
+    file_link = Path(filepath + '.df')
+    while file_link.is_file():
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, str(int(bits)) + 'bits_'+str(i))
+        file_link = Path(filepath + '.df')
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    return data
 def eval_pcm_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_pcm_plots()
@@ -755,12 +896,16 @@ def add_suffix_to_dict(data, suffix):
 class threshold_written():
     state = False
 
-def combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list):
+def combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list = np.nan):
     hrs_df = pd.DataFrame(hrs_list)
     lrs_df = pd.DataFrame(lrs_list)
     scope_df = pd.DataFrame(scope_list)
-    sweep_df = pd.DataFrame(sweep_list)
-    return pd.concat([hrs_df, lrs_df, scope_df, sweep_df] , axis = 1)
+    if sweep_list is not np.nan:
+        sweep_df = pd.DataFrame(sweep_list)
+        return_frame = pd.concat([hrs_df, lrs_df, scope_df, sweep_df] , axis = 1)
+    else: 
+        return_frame = pd.concat([hrs_df, lrs_df, scope_df] , axis = 1)
+    return return_frame
 
 def fwhm(valuelist, time, peakpos=-1):
     """calculates the full width at half maximum (fwhm) of some curve.
@@ -844,11 +989,6 @@ def plot_pcm_threshold(data):
     fig.show()
 
 
-def roundup10(value):
-    log_value = np.log10(value)
-    exponent = np.ceil(log_value)
-    return np.power(10,exponent) 
-
 def transition_time(fwhm, R_ratio, upper_limit = 0.9, lower_limit = 0.1, reset = False):
     R_ratio = np.array(R_ratio)
     fwhm = np.array(fwhm)
@@ -886,7 +1026,13 @@ def transition_time(fwhm, R_ratio, upper_limit = 0.9, lower_limit = 0.1, reset =
     transition_time = t_end-t_start
     return transition_time
 
-
+def roundup10(value):
+    '''Rounds to the next higher order of magnitude. E.g. for a value of 3.17e-3 this function 
+    would return 1e-2'''
+    #Usefull for detecting the right range of a smu.
+    log_value = np.log10(value)
+    exponent = np.ceil(log_value)
+    return np.power(10,exponent) 
 
 def set_time(fwhm, R_ratio, limit = 0.5, reset = False):
     fwhm = np.array(fwhm)
