@@ -142,6 +142,7 @@ def setup_pcm_plots_2():
             ax.set_ylabel('Resistance PRE [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+            ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
         
     def plot1(data, ax=None, **kwargs):
         line = data.iloc[-1]
@@ -172,7 +173,7 @@ def setup_pcm_plots_2():
             ax.set_ylabel('Resistance Post [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        
+            ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
         
     iplots.plotters = [[0, plot0],
@@ -276,7 +277,7 @@ continious = False):
                 data['v_pulse'].append(data_scope1['V_ttx'])
             data['v_answer'].append(data_scope2['V_ttx'])
             '''Moritz: last current data point measured after last trigger event so the entry one before
-             will be used as time reference (-2 instead of -1, which be the last entry)'''
+             will be used as time reference (-2 instead of -1, which is the last entry)'''
             data['t_event'].append(time_array[len(time_array)-2])
             print(time_array[len(time_array)-2])
             if two_channel:
@@ -576,11 +577,12 @@ recordlength=2000
 
             ### Applying pulse and reading scope data #############################################################
 
-            
+            print('Apply pulse')
             plt.pause(0.5)
 
             while ttx.triggerstate():
                 plt.pause(0.1)
+            plt.pause(0.5)
             scope_list.append(ttx.get_curve(2))
             data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
             iplots.updateline(data)
@@ -602,11 +604,12 @@ recordlength=2000
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, str(int(bits)) + 'bits_'+str(i))
+    amplitude_decimal = (amplitude % 1)*10
+    filepath = os.path.join(datafolder, subfolder, str(int(amplitude)) + 'p' + str(int(amplitude_decimal)) + '_amplitude_'+str(i))
     file_link = Path(filepath + '.df')
     while file_link.is_file():
         i +=1
-        filepath = os.path.join(datafolder, subfolder, str(int(bits)) + 'bits_'+str(i))
+        filepath = os.path.join(datafolder, subfolder, str(int(amplitude)) + 'p' + str(int(amplitude_decimal)) + '_amplitude_'+str(i))
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 

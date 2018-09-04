@@ -927,7 +927,7 @@ class Keithley2600(object):
         self.write('smu{0}.source.func = smu{0}.OUTPUT_DCVOLTS'.format(ch))
         self.write('smu{0}.source.levelv = '.format(ch) + str(voltage))
 
-    def read_resistance(self, channel = 'A', voltage = 0.2, start_range = 1e-3, bias_tee_precautions = False):
+    def read_resistance(self, channel = 'A', voltage = 0.2, start_range = 1e-3, points = 10, nplc = 10, bias_tee_precautions = False):
         '''Reads the resistance with the correct range without using the autorange from Keithley'''
         range_smu = start_range
         range_correct = False
@@ -942,9 +942,9 @@ class Keithley2600(object):
                 plt.pause(1)
 
             if channel is 'A':
-                self.it(sourceVA = voltage, sourceVB = 0, points =5, interval = 0.1, rangeI = range_smu , limitI = 1, nplc = 10)
+                self.it(sourceVA = voltage, sourceVB = 0, points = points, interval = 0.1, rangeI = range_smu , limitI = 1, nplc = nplc)
             else:
-                self.it(sourceVA = 0, sourceVB = voltage, points =5, interval = 0.1, rangeI = range_smu , limitI = 1, nplc = 10)
+                self.it(sourceVA = 0, sourceVB = voltage, points =points , interval = 0.1, rangeI = range_smu , limitI = 1, nplc = nplc)
 
             while not self.done():
                 plt.pause(0.1)
