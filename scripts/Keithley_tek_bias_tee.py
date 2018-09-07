@@ -537,7 +537,8 @@ cycles = 1,
 scale = 0.12,
 position = 3,
 trigger_level = -0.1,
-recordlength=2000
+recordlength=2000,
+points = 10
 ):
 
     setup_pcm_plots_2()
@@ -554,7 +555,7 @@ recordlength=2000
     for i in range(cycles):
         if not abort:
             ### Reading Pre resistance ############################################################################
-            _, pre_data = k.read_resistance(start_range = start_range, voltage = V_read)
+            _, pre_data = k.read_resistance(start_range = start_range, voltage = V_read, points = points)
             pre_list.append(add_suffix_to_dict(pre_data,'_pre'))
             data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
             iplots.updateline(data)
@@ -583,13 +584,16 @@ recordlength=2000
             while ttx.triggerstate():
                 plt.pause(0.1)
             plt.pause(0.5)
-            scope_list.append(ttx.get_curve(2))
+            scope_data = ttx.get_curve(2)
+            plt.pause(0.5)
+            scope_data = ttx.get_curve(2)
+            scope_list.append(scope_data)
             data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
             iplots.updateline(data)
 
             ### Reading Post resistance ########################
             input('Connect DC probes')
-            _, post_data = k.read_resistance(start_range = start_range, voltage = V_read)
+            _, post_data = k.read_resistance(start_range = start_range, voltage = V_read, points = points)
             post_list.append(add_suffix_to_dict(post_data,'_post'))
             data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
             iplots.updateline(data)
