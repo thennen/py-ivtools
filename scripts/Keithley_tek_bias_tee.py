@@ -3,6 +3,7 @@ import tkinter as tk
 import sys
 from pathlib import Path
 from collections import defaultdict
+from scipy.optimize import curve_fit
 
 def where(*args):
     return np.where(*args)[0]
@@ -746,6 +747,211 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         root.destroy()
     return data
 
+def pcm_resistance_measurement(samplename,
+padname,
+bits,
+amplitude,
+V_read = 0.2,
+start_range = 1e-3,
+cycles = 1,
+scale = 0.12,
+position = 3,
+trigger_level = -0.1,
+recordlength=2000,
+points = 10
+):
+
+    setup_pcm_plots_2()
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    pre_list = []
+    post_list = []
+    scope_list = []
+
+
+    abort = False
+    for i in range(cycles):
+        if not abort:
+            ### Reading Pre resistance ############################################################################
+            _, pre_data = k.read_resistance(start_range = start_range, voltage = V_read, points = points)
+            pre_list.append(add_suffix_to_dict(pre_data,'_pre'))
+            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
+            iplots.updateline(data)
+            ### Setting up scope  ################################################################################
+
+            ttx.inputstate(1, False)
+            ttx.inputstate(2, True)
+            ttx.inputstate(3, False)
+            ttx.inputstate(4, False)
+
+            ttx.scale(2, scale)
+            ttx.position(2, position)
+
+            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=recordlength)
+            ttx.trigger_position(20)
+
+            plt.pause(0.1)
+            input('Connect RF probes')
+            ttx.arm(source = 2, level = trigger_level, edge = 'e')
+
+            ### Applying pulse and reading scope data #############################################################
+
+            print('Apply pulse')
+            plt.pause(0.5)
+
+            while ttx.triggerstate():
+                plt.pause(0.1)
+            plt.pause(0.5)
+            scope_data = ttx.get_curve(2)
+            plt.pause(0.5)
+            scope_data = ttx.get_curve(2)
+            scope_list.append(scope_data)
+            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
+            iplots.updateline(data)
+
+            ### Reading Post resistance ########################
+            input('Connect DC probes')
+            _, post_data = k.read_resistance(start_range = start_range, voltage = V_read, points = points)
+            post_list.append(add_suffix_to_dict(post_data,'_post'))
+            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
+            iplots.updateline(data)
+  
+    data['amplitude'] = amplitude
+    data['bits'] = bits
+    data['scale'] = scale
+    data['position'] = position
+    data['trigger_level'] = trigger_level
+
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    amplitude_decimal = (amplitude % 1)*10
+    filepath = os.path.join(datafolder, subfolder, str(int(amplitude)) + 'p' + str(int(amplitude_decimal)) + '_amplitude_'+str(i))
+    file_link = Path(filepath + '.df')
+    while file_link.is_file():
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, str(int(amplitude)) + 'p' + str(int(amplitude_decimal)) + '_amplitude_'+str(i))
+        file_link = Path(filepath + '.df')
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    return data
+def eval_pcm_r_measurement(data, manual_evaluation = False):
+    '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
+    setup_pcm_plots_2()
+    ########## declareation of buttons ###########
+    def agree(self):
+        waitVar1.set(True)
+
+    def threhsold_visible(self):
+        pulse_minimum =min(v_answer)
+        pulse_index = where(np.array(v_answer) < 0.15* pulse_minimum)
+        pulse_start_index = pulse_index[0]
+        pulse_start = t_scope[pulse_start_index]
+        print(pulse_start)
+        ax_dialog.set_title('Please indicate threshold')
+        ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
+        ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
+        b_agree = Button(ax_agree,'Agree')
+        b_agree.on_clicked(agree)
+        cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
+        root.wait_variable(waitVar1)
+        if not threshold_written_class.state:
+            print(threshold_class.threshold)
+            data['t_threshold'][x].append(threshold_class.threshold-pulse_start)
+            threshold_written_class.state = True
+
+        waitVar.set(True)
+
+
+    def threshold_invisible(self):
+        #print(threshold_written_class.state)
+        if not threshold_written_class.state:
+            data['t_threshold'][x].append(numpy.nan)
+            threshold_written_class.state = True
+        #print(threshold_written_class.state)
+        waitVar.set(True)
+
+    def onpick(event):
+        ind = event.ind
+        t_threshold = np.take(x_data, ind)
+        print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
+        threshold_class.set_threshold(t_threshold)
+        if len(ind) == 1:
+            ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
+            
+            plt.pause(0.1)
+
+    ######## beginning of main evalution #############
+    if(type(data) == str):
+        data = pd.read_pickle(data)
+        iplots.show()    
+    iplots.updateline(data)
+    data['pulse_width'] = [list() for x in range(len(data.index))]
+    data['pulse_amplitude'] = [list() for x in range(len(data.index))]
+    data['t_threshold'] = [list() for x in range(len(data.index))]
+    ########## if two channel experiment: ################
+    for x in range(len(data.index)):
+        if 'v_pulse' in data.keys():       
+            for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
+               # pulse_minimum =min(v_pulse)
+                #pulse_index = where(np.array(v_pulse) < 0.15* pulse_minimum)
+                #pulse_end = t_scope[pulse_index[-1]]
+                #pulse_start = t_scope[pulse_index[0]]
+                v_max = max(v_pulse)
+                v_min = min(v_pulse)
+                if v_max > -v_min:
+                    pulse_width = fwhm(valuelist = v_pulse, time = t_scope)
+                else:
+                    pulse_width = fwhm(valuelist = -v_pulse, time = t_scope)
+                data['pulse_width'][x].append(pulse_width)
+                data['pulse_amplitude'][x].append(np.mean(v_pulse[pulse_index])*2)
+            
+        ########## if one channel experiment: ################       
+        else:
+            for t_scope, v_answer in zip(data['t_ttx'],data['V_ttx']):
+
+                v_max = max(v_answer)
+                v_min = min(v_answer)
+                if v_max > -v_min:
+                    pulse_width = fwhm(valuelist = v_answer, time = t_scope)
+                else:
+                    pulse_width = fwhm(valuelist = -v_answer, time = t_scope)
+
+                data['pulse_width'][x].append(pulse_width)
+                data['pulse_amplitude'][x].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'][x], bits = data['bits'][x]))
+                #import pdb; pdb.set_trace()
+        ######## detection of threshold event by hand ###########
+        if manual_evaluation:
+            threshold_class = tmp_threshold()
+            threshold_written_class = threshold_written()
+            
+            root = tk.Tk()
+            root.withdraw()
+            waitVar = tk.BooleanVar()
+            waitVar1 = tk.BooleanVar()
+            for t_scope, v_answer in zip(data['t_ttx'], data['V_ttx']):
+                threshold_written_class.state = False
+                x_data = t_scope
+                y_data = v_answer/max(abs(v_answer))
+                figure_handle, ax_dialog = plt.subplots()
+                plt.title('Is a threshold visible?')
+                plt.subplots_adjust(bottom=0.25)
+                ax_dialog.plot(x_data,y_data, picker = True)
+                ax_yes = plt.axes([0.7, 0.05, 0.1, 0.075])
+                ax_no = plt.axes([0.81, 0.05, 0.1, 0.075])
+                b_yes = Button(ax_yes, 'Yes')
+                b_yes.on_clicked(threhsold_visible)
+                b_no = Button(ax_no, 'No')
+                b_no.on_clicked(threshold_invisible)
+                root.wait_variable(waitVar)
+                plt.close(figure_handle)
+                #print(len(data['pulse_amplitude'])-len(data['t_threshold']))         
+            root.destroy()
+    return data
+
 def eval_vcm_measurement(data):
     impedance = 50
     setup_vcm_plots()
@@ -779,6 +985,7 @@ def eval_vcm_measurement(data):
     data['R_lrs'] = R_lrs
     data['fwhm'] = fwhm_list
     return data
+
 
 def eval_all_pcm_measurements(filepath):
     ''' executes all eval_pcm_measurements in one directory and bundles the results'''
@@ -833,6 +1040,29 @@ def eval_all_vcm_measurements(filepath):
         R_ratio_std.append(R_ratio_mean[-1]*np.sqrt(np.power(R_hrs_std[-1]/R_hrs_mean[-1], 2)+np.power(R_lrs_std[-1]/R_lrs_mean[-1], 2)))
 
     return all_data, R_hrs_mean, R_hrs_std, R_lrs_mean, R_lrs_std, fwhm_mean, fwhm_std, R_ratio_mean, R_ratio_std
+
+def eval_all_pcm_r_measurements(filepath):
+    if filepath[-1] != '/':
+        filepath = filepath + '/'
+    files = os.listdir(filepath)
+    all_data = []
+    for f in files:
+        filename = filepath+f
+        print(filename)
+        all_data.append(eval_pcm_r_measurement(filename, manual_evaluation = True))
+    t_threshold = []
+    pulse_amplitude = []
+    R_pre = []
+    R_post = []
+    for data in all_data:
+        t_threshold.append(data['t_threshold'][0][0])
+        pulse_amplitude.append(data['pulse_amplitude'][0])
+        R_pre.append(np.mean(data['V_pre'][0]/data['I_pre'][0]))
+        R_post.append(np.mean(data['V_post'][0]/data['I_post'][0]))
+    plot_R_threshold(R_pre, t_threshold)
+    print('Amplitude = ' + str(pulse_amplitude[0]) + 'V')
+    return all_data, t_threshold, pulse_amplitude, R_pre, R_post
+
 
 def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
     '''returns pulse amplitude in Volts depending on the measured output of the PSPL12500'''
@@ -1093,3 +1323,31 @@ def Boxplot_array(all_data):
 
     fwhm = np.ndarray.tolist(fwhm)
     return fwhm, R
+
+def plot_R_threshold(r, t):
+    fig, ax = plt.subplots()
+    ax.loglog(r,t,'.')
+    ax.set_xlabel('Resistance [$\Omega$]')
+    ax.set_ylabel('$t_{\mathrm{Threshold}}$ [s]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    fig.tight_layout()
+    fig.show()
+    return fig, ax
+
+
+def plot_R_threshold_color(r, t):
+    fig, ax = plt.subplots()
+    sc = ax.scatter(r,t,cmap = 'rainbow', c= range(len(t)))
+    ax.set_yscale('log')
+    ax.set_xscale('log')
+    ax.set_xlim(left=1e4, right =1.2e7)
+    ax.set_ylim(bottom = 1e-10, top = 12e-9)
+    ax.set_xlabel('Resistance [$\Omega$]')
+    ax.set_ylabel('$t_{\mathrm{Threshold}}$ [s]')
+    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    plt.colorbar(sc)
+    fig.tight_layout()
+    fig.show()
+    return fig, ax
