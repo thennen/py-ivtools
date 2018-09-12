@@ -847,7 +847,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False):
 
     def threhsold_visible(self):
         pulse_minimum =min(v_answer)
-        pulse_index = where(np.array(v_answer) < 0.15* pulse_minimum)
+        pulse_index = where(np.array(v_answer)[1:-1] < 0.2* pulse_minimum) #ignoring first value which is ofter just wrong
         pulse_start_index = pulse_index[0]
         pulse_start = t_scope[pulse_start_index]
         print(pulse_start)
