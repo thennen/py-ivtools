@@ -1250,6 +1250,13 @@ class TektronixDPO73304D(object):
     def trigger_position(self, position):
         self.write('HORIZONTAL:POSITION ' + str(position))
 
+    def busy(self):
+        state_string = self.ask('BUSY?')
+        if state_string[0] == '0':
+            return False
+        else: 
+            return True
+
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
 #########################################################

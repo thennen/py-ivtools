@@ -581,12 +581,11 @@ points = 10
 
             print('Apply pulse')
             plt.pause(0.5)
-
             while ttx.triggerstate():
                 plt.pause(0.1)
             plt.pause(0.5)
-            scope_data = ttx.get_curve(2)
-            plt.pause(0.5)
+            while ttx.busy():
+                plt.pause(0.1)
             scope_data = ttx.get_curve(2)
             scope_list.append(scope_data)
             data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
@@ -747,97 +746,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         root.destroy()
     return data
 
-def pcm_resistance_measurement(samplename,
-padname,
-bits,
-amplitude,
-V_read = 0.2,
-start_range = 1e-3,
-cycles = 1,
-scale = 0.12,
-position = 3,
-trigger_level = -0.1,
-recordlength=2000,
-points = 10
-):
 
-    setup_pcm_plots_2()
-    data = {}
-    data['padname'] = padname
-    data['samplename'] = samplename
-
-    pre_list = []
-    post_list = []
-    scope_list = []
-
-
-    abort = False
-    for i in range(cycles):
-        if not abort:
-            ### Reading Pre resistance ############################################################################
-            _, pre_data = k.read_resistance(start_range = start_range, voltage = V_read, points = points)
-            pre_list.append(add_suffix_to_dict(pre_data,'_pre'))
-            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
-            iplots.updateline(data)
-            ### Setting up scope  ################################################################################
-
-            ttx.inputstate(1, False)
-            ttx.inputstate(2, True)
-            ttx.inputstate(3, False)
-            ttx.inputstate(4, False)
-
-            ttx.scale(2, scale)
-            ttx.position(2, position)
-
-            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=recordlength)
-            ttx.trigger_position(20)
-
-            plt.pause(0.1)
-            input('Connect RF probes')
-            ttx.arm(source = 2, level = trigger_level, edge = 'e')
-
-            ### Applying pulse and reading scope data #############################################################
-
-            print('Apply pulse')
-            plt.pause(0.5)
-
-            while ttx.triggerstate():
-                plt.pause(0.1)
-            plt.pause(0.5)
-            scope_data = ttx.get_curve(2)
-            plt.pause(0.5)
-            scope_data = ttx.get_curve(2)
-            scope_list.append(scope_data)
-            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
-            iplots.updateline(data)
-
-            ### Reading Post resistance ########################
-            input('Connect DC probes')
-            _, post_data = k.read_resistance(start_range = start_range, voltage = V_read, points = points)
-            post_list.append(add_suffix_to_dict(post_data,'_post'))
-            data = combine_lists_to_data_frame(pre_list, post_list, scope_list)
-            iplots.updateline(data)
-  
-    data['amplitude'] = amplitude
-    data['bits'] = bits
-    data['scale'] = scale
-    data['position'] = position
-    data['trigger_level'] = trigger_level
-
-    datafolder = os.path.join('C:\Messdaten', samplename, padname)
-    subfolder = datestr
-    file_exits = True
-    i=1
-    amplitude_decimal = (amplitude % 1)*10
-    filepath = os.path.join(datafolder, subfolder, str(int(amplitude)) + 'p' + str(int(amplitude_decimal)) + '_amplitude_'+str(i))
-    file_link = Path(filepath + '.df')
-    while file_link.is_file():
-        i +=1
-        filepath = os.path.join(datafolder, subfolder, str(int(amplitude)) + 'p' + str(int(amplitude_decimal)) + '_amplitude_'+str(i))
-        file_link = Path(filepath + '.df')
-    io.write_pandas_pickle(meta.attach(data), filepath)
-
-    return data
 def eval_pcm_r_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_pcm_plots_2()
