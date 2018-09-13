@@ -970,6 +970,24 @@ def eval_all_pcm_r_measurements(filepath):
         R_post.append(np.mean(data['V_post'][0]/data['I_post'][0]))
     plot_R_threshold(R_pre, t_threshold)
     print('Amplitude = ' + str(pulse_amplitude[0]) + 'V')
+    
+    export_data = {}
+    export_data['all_data'] = all_data
+    export_data['t_threshold'] = t_threshold
+    export_data['pulse_amplitude'] = pulse_amplitude
+    export_data['R_pre'] = R_pre
+    export_data['R_post'] = R_post
+    export_data = pd.DataFrame(export_data)
+    
+
+    file_link = filepath + 'data.df'
+    i=0
+    while file_link.is_file():
+        i +=1
+        file_link = filepath + 'data_' + str(i) + '.df'
+
+    write_pandas_pickle(data, filepath + 'data')
+
     return all_data, t_threshold, pulse_amplitude, R_pre, R_post
 
 
@@ -985,8 +1003,8 @@ def get_pulse_amplitude_of_PSPL125000(amplitude, bits):
         2*2.306727, 2*2.622, 2*2.8624, 2*3.144727, 2*3.378, 2*3.652, 2*4.184]
 
     else:
-        amplitude_array = [0.3, 0.4, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
-        return_values = [2*0.7646, 2*0.8182, 2*0.8952, 2*1.1693, 2*1.7592, 2*2.2008, 
+        amplitude_array = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        return_values = [2*0.5956, 2*0.6481, 2*0.7188, 2*0.7757, 2*0.8182, 2*0.8952, 2*1.1693, 2*1.7592, 2*2.2008, 
         2*2.605455, 2*2.9248, 2*3.2552, 2*3.541818, 2*3.872, 2*4.2144, 2*4.7756]
 
     index = where(np.array(amplitude_array) == amplitude)
