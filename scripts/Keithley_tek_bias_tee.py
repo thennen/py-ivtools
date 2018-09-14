@@ -139,7 +139,7 @@ def setup_pcm_plots_2():
         if not np.isnan(line.t_pre).any():
             ax.cla()
             ax.set_title('Read PRE #' + str(len(data)-i))
-            ax.plot(line.t_pre,  line.V_pre /  line.I_pre - 50)
+            ax.plot(line.t_pre,  line.V_pre /  line.I_pre)
             ax.set_ylabel('Resistance PRE [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -170,7 +170,7 @@ def setup_pcm_plots_2():
         if not np.isnan(line.t_post).any():
             ax.cla()
             ax.set_title('Read POST #' + str(len(data)-i))
-            ax.plot(line.t_post,  line.V_post /  line.I_post - 50)
+            ax.plot(line.t_post,  line.V_post /  line.I_post)
             ax.set_ylabel('Resistance Post [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
