@@ -747,7 +747,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     return data
 
 
-def eval_pcm_r_measurement(data, manual_evaluation = False):
+def eval_pcm_r_measurement(data, manual_evaluation = False, t = np.nan, v = np.nan):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_pcm_plots_2()
     ########## declareation of buttons ###########
@@ -756,7 +756,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False):
 
     def threhsold_visible(self):
         pulse_minimum =min(v_answer)
-        pulse_index = where(np.array(v_answer)[1:-1] < 0.2* pulse_minimum) #ignoring first value which is ofter just wrong
+        pulse_index = where(np.array(v_answer)[1:-1] < 0.15* pulse_minimum) #ignoring first value which is ofter just wrong
         pulse_start_index = pulse_index[0]
         pulse_start = t_scope[pulse_start_index]
         print(pulse_start)
@@ -964,7 +964,7 @@ def eval_all_pcm_r_measurements(filepath):
     R_pre = []
     R_post = []
     for data in all_data:
-        t_threshold.append(data['t_threshold'][0][0])
+        t_threshold.append(np.array(data['t_threshold'][0])[0])
         pulse_amplitude.append(data['pulse_amplitude'][0])
         R_pre.append(np.mean(data['V_pre'][0]/data['I_pre'][0]))
         R_post.append(np.mean(data['V_post'][0]/data['I_post'][0]))
@@ -980,13 +980,15 @@ def eval_all_pcm_r_measurements(filepath):
     export_data = pd.DataFrame(export_data)
     
 
-    file_link = filepath + 'data.df'
+    file_name = os.path.join(filepath + 'data')
+    file_link = Path(file_name + '.df')
     i=0
     while file_link.is_file():
         i +=1
-        file_link = filepath + 'data_' + str(i) + '.df'
+        file_name = os.path.join(filepath + 'data_' + str(i))
+        file_link = Path(file_name+ '.df')
 
-    write_pandas_pickle(data, filepath + 'data')
+    write_pandas_pickle(data, file_name)
 
     return all_data, t_threshold, pulse_amplitude, R_pre, R_post
 
@@ -1052,7 +1054,7 @@ class tmp_threshold():
             print('More than one point selected. Zoom closer to treshold event')
             self.threshold = numpy.nan
         else:
-            self.threshold = threshold_value
+            self.threshold = threshold_value[0]
 
 def add_suffix_to_dict(data, suffix):
     return {k+suffix:v for k,v in data.items()}
