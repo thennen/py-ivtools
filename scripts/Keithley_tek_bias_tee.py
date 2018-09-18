@@ -747,30 +747,55 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     return data
 
 
-def eval_pcm_r_measurement(data, manual_evaluation = False, t = np.nan, v = np.nan):
+def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_cap = np.nan):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_pcm_plots_2()
     ########## declareation of buttons ###########
-    def agree(self):
-        waitVar1.set(True)
+    # def agree(self):
+    #     waitVar1.set(True)
+
 
     def threhsold_visible(self):
+        user_aproove = False
         pulse_minimum =min(v_answer)
-        pulse_index = where(np.array(v_answer)[1:-1] < 0.15* pulse_minimum) #ignoring first value which is ofter just wrong
+        pulse_index = where(np.array(v_answer)[1:-1] < 0.2* pulse_minimum) #ignoring first value which is ofter just wrong
         pulse_start_index = pulse_index[0]
         pulse_start = t_scope[pulse_start_index]
-        print(pulse_start)
+        #print(pulse_start)
         ax_dialog.set_title('Please indicate threshold')
+        #plt.autoscale('False')
+        ax_dialog.autoscale(False)
         ax_dialog.plot(np.array([pulse_start,pulse_start]),np.array([-1,0.3]))
-        ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
-        b_agree = Button(ax_agree,'Agree')
-        b_agree.on_clicked(agree)
-        cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
-        root.wait_variable(waitVar1)
-        if not threshold_written_class.state:
-            print(threshold_class.threshold)
-            data['t_threshold'][x].append(threshold_class.threshold-pulse_start)
-            threshold_written_class.state = True
+        # ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
+        # b_agree = Button(ax_agree,'Agree')
+        # b_agree.on_clicked(agree)
+        above_threshold_level = where(np.array(v_diff/50 < -200e-6))
+        try:
+            threshold_event = where(above_threshold_level>pulse_start_index+6)[0]
+        except:
+            print('No threshold')
+        while not user_aproove:
+            threshold_index = above_threshold_level[threshold_event]-1
+            t_threshold = t_scope[threshold_index]-pulse_start
+            print(t_threshold)
+            ax_dialog.plot(np.array([t_scope[threshold_index],t_scope[threshold_index]]),np.array([-1,0.3]))
+            plt.pause(0.1)
+            user_answer = input('Do you approve? ')            
+            if user_answer == 'n':
+                user_aproove = False
+                threshold_event = where(above_threshold_level>above_threshold_level[threshold_event])[0]
+            elif user_answer == 'd':
+                t_threshold = np.nan
+                user_aproove = True
+            elif user_answer == 'y':
+                user_aproove = True
+
+        data['t_threshold'][x].append(t_threshold)
+        #cid = figure_handle.canvas.mpl_connect('pick_event', onpick)
+        # if not threshold_written_class.state:
+        #     print(threshold_class.threshold)
+        #     data['t_threshold'][x].append(threshold_class.threshold-pulse_start)
+        #     threshold_written_class.state = True
 
         waitVar.set(True)
 
@@ -786,7 +811,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t = np.nan, v = np.n
     def onpick(event):
         ind = event.ind
         t_threshold = np.take(x_data, ind)
-        print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
+        #print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
         threshold_class.set_threshold(t_threshold)
         if len(ind) == 1:
             ax_dialog.plot(np.array([t_threshold,t_threshold]),np.array([-1,0.3]))
@@ -834,6 +859,8 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t = np.nan, v = np.n
                 #import pdb; pdb.set_trace()
         ######## detection of threshold event by hand ###########
         if manual_evaluation:
+            above_threshold_level = np.array(np.nan)
+            threshold_event =np.nan
             threshold_class = tmp_threshold()
             threshold_written_class = threshold_written()
             
@@ -844,11 +871,23 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t = np.nan, v = np.n
             for t_scope, v_answer in zip(data['t_ttx'], data['V_ttx']):
                 threshold_written_class.state = False
                 x_data = t_scope
-                y_data = v_answer/max(abs(v_answer))
+                y_data = v_answer
                 figure_handle, ax_dialog = plt.subplots()
                 plt.title('Is a threshold visible?')
                 plt.subplots_adjust(bottom=0.25)
-                ax_dialog.plot(x_data,y_data, picker = True)
+                if type(t_cap) == float:
+                    ax_dialog.plot(x_data,y_data, picker = True)
+                else:
+                    ax_dialog.plot(x_data,y_data/50, label = '$I_{\mathrm{Meas.}}$')
+                    ax_dialog.plot(t_cap,v_cap/50, label = '$I_{\mathrm{Cap.}}$')
+                    v_diff = subtract_capacitive_current(y_data, v_cap)
+                    ax_dialog.plot(x_data, v_diff/50, label = '$I_{\mathrm{Diff.}}$', picker = True)
+                    ax_dialog.set_xlabel('Time [s]')
+                    ax_dialog.set_ylabel('Curreent [A]')
+                    ax_dialog.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+                    ax_dialog.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+                    ax_dialog.legend()
+
                 ax_yes = plt.axes([0.7, 0.05, 0.1, 0.075])
                 ax_no = plt.axes([0.81, 0.05, 0.1, 0.075])
                 b_yes = Button(ax_yes, 'Yes')
@@ -950,15 +989,19 @@ def eval_all_vcm_measurements(filepath):
 
     return all_data, R_hrs_mean, R_hrs_std, R_lrs_mean, R_lrs_std, fwhm_mean, fwhm_std, R_ratio_mean, R_ratio_std
 
-def eval_all_pcm_r_measurements(filepath):
+def eval_all_pcm_r_measurements(filepath, t_cap = np.nan, v_cap = np.nan):
     if filepath[-1] != '/':
         filepath = filepath + '/'
     files = os.listdir(filepath)
     all_data = []
     for f in files:
-        filename = filepath+f
-        print(filename)
-        all_data.append(eval_pcm_r_measurement(filename, manual_evaluation = True))
+        if 'data' in f or 'Thumbs' in f or '.png' in f:
+            pass
+        else:
+            filename = filepath+f
+            print(filename)
+            all_data.append(eval_pcm_r_measurement(filename, manual_evaluation = True, t_cap = t_cap, v_cap = v_cap))
+    
     t_threshold = []
     pulse_amplitude = []
     R_pre = []
@@ -1264,7 +1307,6 @@ def plot_R_threshold(r, t):
     fig.show()
     return fig, ax
 
-
 def plot_R_threshold_color(r, t):
     fig, ax = plt.subplots()
     sc = ax.scatter(r,t,cmap = 'rainbow', c= range(len(t)))
@@ -1280,3 +1322,16 @@ def plot_R_threshold_color(r, t):
     fig.tight_layout()
     fig.show()
     return fig, ax
+
+def subtract_capacitive_current(v_meas, v_cap, trigger_position = 20):
+    start_index_meas = int(trigger_position/100*len(v_meas))
+    start_index_cap = int(trigger_position/100*len(v_cap))
+    begin_cap = start_index_cap-start_index_meas
+    end_cap = len(v_meas) + start_index_cap -start_index_meas
+    try:
+        v_diff = v_meas - v_cap[begin_cap:end_cap]
+    except:
+        v_diff = v_meas
+        print('v_cap to short')
+    return v_diff
+
