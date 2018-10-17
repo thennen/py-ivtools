@@ -402,6 +402,20 @@ def plot_cumulative_dist(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     ax.plot(np.sort(data), np.arange(len(data))/len(data), **kwargs)
 
+def plot_ivt(d, phaseshift=14):
+    ''' A not-so-refined subplot of current and voltage vs time'''
+    fig, ax1 = plt.subplots()
+    ax2 = ax1.twinx()
+    if 't' not in d:
+        d['t'] = analyze.maketimearray(d)
+    ax1.plot(t, d['V'], c='blue', label='V')
+    ax2.plot(t - phaseshift* 1e-9, d['I'], c='green', label='I')
+    ax2.set_ylabel('Current [A]', color='green')
+    ax1.set_ylabel('Applied Voltage [V]', color='blue')
+    ax1.set_xlabel('Time [s]')
+    ax1.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    ax2.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
 # Could be a module, but I want it to keep its state when the code is reloaded
 class interactive_figs(object):
     '''
