@@ -16,7 +16,7 @@ Normal numpy broadcasting rules apply, so one can of course pass single paramete
 from scipy import constants
 import numpy as np
 from scipy.optimize import fsolve
-from functools import reduce
+from functools import reduce, wraps
 
 pi = constants.pi
 q = constants.elementary_charge # Because e is 2.71828..

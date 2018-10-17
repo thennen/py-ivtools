@@ -948,31 +948,36 @@ def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
 
 
 ### Reference marks
-def plot_powerlaw_lines(ax, slope=-2, num=20, label='Area Scaling', **kwargs):
+def plot_powerlaw_lines(ax=None, slope=-2, num=20, label='Area$^{-1}$ Scaling', **kwargs):
     '''
     Put some reference lines on a log-log plot indicating a certain power law dependence
-    y = a * x^slope
-    values of a chosen to fill the plot
+    log(y) = a * log(x)^slope
+    values of 'a' chosen to fill the current plot limits
+    For now, will not work properly if there are negative numbers on the x or y limits
     '''
-    ylims = ax.get_ylim()
-    ymin, ymax = ylims
+    if ax is None:
+        ax = plt.gca()
+    ymin, ymax = ax.get_ylim()
+    xmin, xmax = ax.get_xlim()
+    if (ymin < 0) or (xmin < 0):
+        raise Exception('I cannot do anything intelligent with negative axis limits yet')
     logymin, logymax = np.log10(ymin), np.log10(ymax)
-    xlims = ax.get_xlim()
-    xmin, xmax = xlims
     logxmin, logxmax = np.log10(xmin), np.log10(xmax)
     # y and x points that the lines should pass through
     y = np.logspace(logymin, logymax, num)
     x = np.logspace(logxmin, logxmax, num)
+    if slope > 0:
+        y = y[::-1]
     xplot = np.logspace(logxmin, logxmax, 100)
-    plotargs = dict(linestyle='--', alpha=.2, color='black', label=None)
+    plotargs = dict(linestyle='--', alpha=.2, color='black')
     plotargs.update(kwargs)
-    for xi, yi in zip(x, y[::-1]):
-        #ax.plot(xlims, (yi, yi + yi/xmin**slope *(xmax**slope - xmin**slope)), '--', alpha=.2, color='black')
-        ax.plot(xplot, yi/xi**slope * xplot**slope, **plotargs)
+    for xi, yi in zip(x, y):
+        ax.plot(xplot, yi/xi**slope * xplot**slope, label=None, **plotargs)
+    # Label only one line (so legend does not repeat)
     ax.lines[-1].set_label(label)
-    # Put the limits back
-    ax.set_xlim(*xlims)
-    ax.set_ylim(*ylims)
+    # Put the limits back to where they were initially
+    ax.set_xlim(xmin, xmax)
+    ax.set_ylim(ymin, ymax)
 
 # Used to be called this.  Leaving it here to not break old scripts
 plot_log_reference_lines = plot_powerlaw_lines
@@ -1078,3 +1083,9 @@ def engformatter(axis='y', ax=None):
         axis = ax.yaxis
     axis.set_major_formatter(mpl.ticker.EngFormatter())
 
+
+def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
+    new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
+        'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
+        cmap(np.linspace(minval, maxval, n)))
+    return new_cmap
