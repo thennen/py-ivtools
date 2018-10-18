@@ -31,6 +31,7 @@ def detect_instruments():
     pass
 
 # Define parent class which registers all instances and defines behavior for reloading the class
+# NOTE: I am not using this yet, just thinking about it
 class Instrument(object):
     ''' Writing default methods for visa type instruments.  Overload them for others '''
     def __init__(self, *args, **kwargs):
