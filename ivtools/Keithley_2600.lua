@@ -1,3 +1,14 @@
+--[[
+  Keithley 2600 Series runs its own lua interpreter
+  This code will be executed directly in that interpreter
+  We use it for defining lua functions that can then be called from a superior programming language
+
+  Ideally we would have each individual lua command wrapped in python so that we could write these
+  functions in python directly, but this would take a lot of work and time to translate from the pdf manual.
+
+  I wonder if there is a way to ~automatically generate that wrapper code..
+--]]
+
 function SweepVList(sweepList, rangeI, limitI, nplc, delay, rangeV)
     reset()
 
