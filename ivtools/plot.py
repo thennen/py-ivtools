@@ -965,7 +965,7 @@ def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
 def plot_powerlaw_lines(ax=None, slope=-2, num=20, label='Area$^{-1}$ Scaling', **kwargs):
     '''
     Put some reference lines on a log-log plot indicating a certain power law dependence
-    log(y) = a * log(x)^slope
+    y = a * x^slope
     values of 'a' chosen to fill the current plot limits
     For now, will not work properly if there are negative numbers on the x or y limits
     '''
