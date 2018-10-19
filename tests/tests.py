@@ -1,6 +1,4 @@
-# Here are some test functions not conforming to any software engineering conventions
-
-# I would need to write instrument emulators in order to write actual tests?
+# Here are some test functions probably not conforming to any software engineering conventions
 
 import sys
 import os
@@ -37,4 +35,6 @@ def name_collisions():
     return fail
 
 if __name__ == '__main__':
-    name_collisions()
+    fail = name_collisions()
+    if not fail:
+        print('No name collisions detected!')
