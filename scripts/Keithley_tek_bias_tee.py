@@ -675,8 +675,8 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     ########## if two channel experiment: ################
     if data['v_pulse']:       
         for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
-           # pulse_minimum =min(v_pulse)
-            #pulse_index = where(np.array(v_pulse) < 0.15* pulse_minimum)
+            pulse_minimum =min(v_pulse)
+            pulse_index = where(np.array(v_pulse) < 0.5* pulse_minimum)
             #pulse_end = t_scope[pulse_index[-1]]
             #pulse_start = t_scope[pulse_index[0]]
             v_max = max(v_pulse)
@@ -1335,3 +1335,12 @@ def subtract_capacitive_current(v_meas, v_cap, trigger_position = 20):
         print('v_cap to short')
     return v_diff
 
+def hs(x=0):
+    return np.heaviside(x,1)
+
+
+def threshold(time, t_start= 7.7e-9, t_diff = 0.7e-9, r_start = 1e6, r_end = 1200):
+    r_diff = r_start-r_end
+    t_end = t_start + t_diff
+    r_slope = r_diff/t_diff
+    return r_start - hs(t_end-time)*hs(time-t_start)*r_slope*(time-t_start)
