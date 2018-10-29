@@ -2,6 +2,7 @@
 
 # Local imports
 from . import analyze
+from . import persistent_state
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -434,8 +435,9 @@ class interactive_figs(object):
     can have several plotting functions per axis though ..
     '''
     # TODO: save/load configurations to disk?
-    def __init__(self, n=4, oldinstance=None):
-        if oldinstance is None:
+    def __init__(self, n=4, clear_state=False):
+        self.__dict__ = persistent_state.plotter_state
+        if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...
             import ctypes
@@ -469,10 +471,8 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
+            # doesn't do anything yet
             self.enable = True
-        else:
-            # This is to completely reload the class code but keep the same state
-            self.__dict__ = oldinstance.__dict__
 
     def createfig(self, n):
         '''

@@ -3,6 +3,7 @@
 # Local imports
 from . import analyze
 from . import plot as ivplot
+from . import persistent_state
 
 import os
 import re
@@ -33,10 +34,11 @@ class MetaHandler(object):
     '''
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files
-
+    MetaHandler is Borg.  Its state lives in an separate module.
     '''
-    def __init__(self, oldinstance=None):
-        if oldinstance is None:
+    def __init__(self, clear_state=False):
+        self.__dict__ = persistent_state.metahandler_state
+        if not self.__dict__ or clear_state:
             # This stores the currently selected metadata.  It's a dict or a pd.Series
             # Go ahead and overwrite it if you want
             self.meta = {}
@@ -53,9 +55,6 @@ class MetaHandler(object):
             # These keys get printed when you step through the list of metadata
             self.prettykeys = []
             self.moduledir = os.path.split(__file__)[0]
-        else:
-            # In case you redefine the class but want to keep the same data inside
-            self.__dict__ = oldinstance.__dict__
 
 
     def self_merge(self, columns=None):

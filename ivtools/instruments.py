@@ -27,9 +27,8 @@ from collections import deque
 # and allows you to update them when this module reloads
 # For now, it just stores the visa resource manager instance, so that it doesn't get overwritten by possible module reload,
 # and perhaps stupidly the picoscope state
-from . import instrument_manager
-#Instrument = instrument_manager.Instrument
-visa_rm = instrument_manager.visa_rm
+from . import persistent_state
+visa_rm = persistent_state.visa_rm
 # Could also store the visa_rm in visa itself
 #visa.visa_rm = visa.ResourceManager()
 #visa_rm = visa.visa_rm
@@ -51,7 +50,7 @@ class Picoscope(object):
     Has some higher level functionality, and it stores/manipulates the channel settings.
     '''
     def __init__(self):
-        self.__dict__ = instrument_manager.pico_state
+        self.__dict__ = persistent_state.pico_state
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I could have subclassed PS6000, but then I would have to import it before the class definition...

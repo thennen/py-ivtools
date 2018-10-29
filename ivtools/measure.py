@@ -9,7 +9,7 @@ Keithley 2636B, 2634B, 2636A
 from . import plot as ivplot
 from . import analyze
 from . import instruments
-from . import settings
+from . import persistent_state as settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
