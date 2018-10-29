@@ -27,12 +27,11 @@ def ivfunc(func):
 
     Some preliminary testing indicates that operating on dataframes can be much slower (~100x) than list of dicts.
 
-    If any of the arguments instances of "paramlist", this tells ivfunc to also index into this list when
+    If any of the arguments are instances of "paramlist", this tells ivfunc to also index into this list when
     calling the wrapped function, so that you can pass a list of parameters to use for each data row.
 
-    If you pass a function wrapped with the paramfunc function, that function will get called on the data to
-    determine the argument.
-
+    If you pass as an argument a function wrapped with the paramfunc function, that function will get called on each of
+    the data to determine the argument individually.
     '''
     def paramtransform(param, i, data):
         if type(param) == paramlist:
@@ -141,7 +140,7 @@ def ivfunc(func):
 
 class paramlist(list):
     # Only a class so that ivfunc can know what you want to do with it
-    # Which is pass a list of parameters to use for each loop
+    # Which is pass a list of parameters to use for each individual loop
     pass
 
 
@@ -1299,7 +1298,7 @@ def extract(data, key):
 def smooth(x, N):
     '''
     Efficient rolling mean for arrays
-    Faster than numpy.convolve for most situations (window < 10)
+    Faster than numpy.convolve for most situations (window > 10)
     Floating point errors will accumulate if you use lower precision!
     Converts to and back from float64.  Still seems to be an issue using float16.
     '''

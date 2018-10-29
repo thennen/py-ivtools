@@ -23,11 +23,16 @@ import os
 import pandas as pd
 import serial
 from collections import deque
-# This module keeps track of all the instrument instances
+# TODO This module will keep track of all the instrument instances
 # and allows you to update them when this module reloads
+# For now, it just stores the visa resource manager instance, so that it doesn't get overwritten by possible module reload,
+# and perhaps stupidly the picoscope state
 from . import instrument_manager
-Instrument = instrument_manager.Instrument
+#Instrument = instrument_manager.Instrument
 visa_rm = instrument_manager.visa_rm
+# Could also store the visa_rm in visa itself
+#visa.visa_rm = visa.ResourceManager()
+#visa_rm = visa.visa_rm
 
 
 
@@ -520,12 +525,67 @@ class RigolDG5000(object):
         self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
 
     # End for burst mode >>>>>
+
+
+    def writebinary(self, scpicmd, values):
+
+        ##self.inst.write_binary_values(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i], datatype='H', is_big_endian=False)
+        self.inst.write_binary_values(scpicmd, values, datatype='H', is_big_endian=False)
+
+    def WriteWF2AWGBinary(self, dt, A):
+        """
+        This absolutely will not work!  copy pasted from Hans code
+        :param dt: time interval
+        :param A: Waveform 0<=A<=1 or -1<=A<=0
+        :return: nothing
+        This is derived from a working example and has been verified to always work. Reprogramming always required.
+        Method #3: Binary transfer. Needs to happen in batches of 16384 where the number of allowed batches is: 1, 2, 4, 8, 16 and 32
+        len(A) is NOT len(A) = # of points programmed"""
+
+        CHUNK = 16384
+        CHUNK1 = CHUNK - 1
+        CHUNK2 = round(CHUNK /2)
+        nA = len(A)
+        nFullChunks, LastLen = int(np.floor(nA / CHUNK)), int(np.fmod(nA, CHUNK))
+        if LastLen == 0:
+            nFullChunks = nFullChunks - 1
+
+        A = np.array(A)
+        A = (((A + 1) / 2 * CHUNK1).astype(int)).tolist()
+
+        Pads = (nFullChunks + 1) * CHUNK - nA                            # length is CHUNK = 16384
+        A.extend([CHUNK2] * Pads)
+        self.NptsProg = len(A)
+
+        MAGICLENGTHS = [16384, 32768, 65536, 131072, 262144, 524288]
+        if self.NptsProg not in MAGICLENGTHS:
+            Amagic = next(x for x in MAGICLENGTHS if x > self.NptsProg)
+            MorePads = Amagic - self.NptsProg
+            A.extend([CHUNK2] * MorePads)
+
+        self.NptsProg = len(A)
+        A2send = [A[i:i + CHUNK] for i in range(0, self.NptsProg, CHUNK)]
+
+        if MONITORCMDS or nA > 50000:
+            print("Programming Rigol by method 3: want " + str(nA) + " points, sending " + str(self.NptsProg))
+        period = dt * (self.NptsProg - 1)
+        self.write(":SOURC{}:PER {}".format(self.Ch, period))
+        self.write(":DATA:POIN VOLATILE, " + str(CHUNK1 * (len(A2send))))## to send arb this way it must always be a multiple of 16383 points.
+
+        for i in range(len(A2send) - 1):
+            self.writeBinary(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i])
+            if self.IsUSB: time.sleep(USBWAIT)
+
+        self.writeBinary(":TRAC:DATA:DAC16 VOLATILE,END,", A2send[-1])
+
     def load_wfm(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
-        Data will be normalized.  Use amplitude to set the amplitude.
+        Data will be normalized.  Use self.amplitude() to set the amplitude.
         Make sure that the output is off, because the command switches out of burst mode
         and otherwise will start outputting immediately.
+        very limited number of samples can be written ~20,000
+        Rigol will just stop responding and need to be restarted if you send too many points..
         '''
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
         # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
@@ -568,6 +628,30 @@ class RigolDG5000(object):
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
         self.write(':TRAC:DATA:DAC VOLATILE,')
+
+    def load_wfm_ints(self, waveform):
+        '''
+        Load some data as an arbitrary waveform to be output.
+        Data will be normalized.  Use self.amplitude() to set the amplitude.
+        Make sure that the output is off, because the command switches out of burst mode
+        and otherwise will start outputting immediately.
+        UNTESTED!  convert to integers so that we can send more data points!
+        Supposedly gets to about 40,000 samples
+        '''
+        # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
+        # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
+        # Construct a string out of the waveform
+        waveform = np.array(waveform, dtype=np.float32)
+        maxamp = np.max(np.abs(waveform))
+        if maxamp != 0:
+            normwaveform = waveform/maxamp
+        else:
+            # Not a valid waveform anyway .. rigol will beep
+            normwaveform = waveform
+        normwaveform = ((normwaveform + 1) / 2 * 16383).astype(int).tolist()
+        wfm_str = str(normwaveform).strip('[]').replace(' ', '')
+        # This command switches out of burst mode for some stupid reason
+        self.write(':TRAC:DATA:DAC VOLATILE,{}'.format(wfm_str))
 
     def interp(self, interp=True):
         ''' Set AWG datapoint interpolation mode '''
