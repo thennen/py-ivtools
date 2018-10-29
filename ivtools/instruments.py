@@ -58,7 +58,7 @@ class Picoscope(object):
             self.range = self._PicoRange(self)
             self.offset = self._PicoOffset(self)
             self.atten = self._PicoAttenuation(self)
-            self.coupling = self._PicoCouping(self)
+            self.coupling = self._PicoCoupling(self)
         self.connect()
 
     def connect(self):
@@ -204,7 +204,7 @@ class Picoscope(object):
             # I am not sure what the possible values of this setting are ..
             #self.possible =
 
-    class _PicoCouping(_PicoSetting):
+    class _PicoCoupling(_PicoSetting):
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
             self['A'] = 'DC'
@@ -537,9 +537,37 @@ class RigolDG5000(object):
         else:
             # Not a valid waveform anyway .. rigol will beep
             normwaveform = waveform
-        wfm_str = ','.join([str(w) for w in normwaveform])
+
+        #wfm_str = ','.join([str(w) for w in normwaveform])
+        # I think rigol has a very small limit for input buffer, so can't send a massive string
+        # So I am truncating the string to only show mV level.  This might piss me off in the future when I want better than mV accuracy.
+        wfm_str = ','.join([str(round(w, 3)) for w in normwaveform])
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
+
+
+    def load_wfm_binary(self, waveform):
+        '''
+        Load some data as an arbitrary waveform to be output.
+        Data will be normalized.  Use amplitude to set the amplitude.
+        Make sure that the output is off, because the command switches out of burst mode
+        and otherwise will start outputting immediately.
+        '''
+        # Construct a byte string out of the waveform
+        waveform = np.array(waveform, dtype=np.float32)
+        maxamp = np.max(np.abs(waveform))
+        if maxamp != 0:
+            normwaveform = waveform/maxamp
+        else:
+            # Not a valid waveform anyway .. rigol will beep
+            normwaveform = waveform
+
+        # I think rigol has a very small limit for input buffer, so can't send a massive string
+        # So I am truncating the string to only show mV level.  This might piss me off in the future when I want better than mV accuracy.
+        wfm_str = ','.join([str(round(w, 3)) for w in normwaveform])
+        # This command switches out of burst mode for some stupid reason
+        self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
+        self.write(':TRAC:DATA:DAC VOLATILE,')
 
     def interp(self, interp=True):
         ''' Set AWG datapoint interpolation mode '''
