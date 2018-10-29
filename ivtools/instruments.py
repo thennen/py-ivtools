@@ -534,7 +534,7 @@ class RigolDG5000(object):
 
     def WriteWF2AWGBinary(self, dt, A):
         """
-        This absolutely will not work!  copy pasted from Hans code
+        This absolutely will not work!  copy pasted from Hans code, for reference if one ever decides to implement this
         :param dt: time interval
         :param A: Waveform 0<=A<=1 or -1<=A<=0
         :return: nothing
@@ -605,30 +605,6 @@ class RigolDG5000(object):
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
 
-
-    def load_wfm_binary(self, waveform):
-        '''
-        Load some data as an arbitrary waveform to be output.
-        Data will be normalized.  Use amplitude to set the amplitude.
-        Make sure that the output is off, because the command switches out of burst mode
-        and otherwise will start outputting immediately.
-        '''
-        # Construct a byte string out of the waveform
-        waveform = np.array(waveform, dtype=np.float32)
-        maxamp = np.max(np.abs(waveform))
-        if maxamp != 0:
-            normwaveform = waveform/maxamp
-        else:
-            # Not a valid waveform anyway .. rigol will beep
-            normwaveform = waveform
-
-        # I think rigol has a very small limit for input buffer, so can't send a massive string
-        # So I am truncating the string to only show mV level.  This might piss me off in the future when I want better than mV accuracy.
-        wfm_str = ','.join([str(round(w, 3)) for w in normwaveform])
-        # This command switches out of burst mode for some stupid reason
-        self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
-        self.write(':TRAC:DATA:DAC VOLATILE,')
-
     def load_wfm_ints(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
@@ -694,12 +670,12 @@ class RigolDG5000(object):
                 if output_state:
                     self.outputstate(False, ch=ch)
                 # This command switches out of burst mode for some stupid reason
-                self.load_wfm(waveform)
+                self.load_wfm_ints(waveform)
                 self.burst(True, ch=ch)
                 if output_state:
                     self.outputstate(True, ch=ch)
             else:
-                self.load_wfm(waveform)
+                self.load_wfm_ints(waveform)
             self.volatilewfm = waveform
         else:
             # Just switch to the arbitrary waveform that is already in memory
