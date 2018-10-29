@@ -72,7 +72,7 @@ datestr = time.strftime('%Y-%m-%d')
 
 # Hostname specific settings
 if hostname == 'pciwe46':
-    datafolder = 'D:/t/ivdata'
+    datafolder = r'D:\t\ivdata'
     # Variable name, Instrument class, arguments to pass to init
     connections = [('ps', instruments.Picoscope),
                    ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
@@ -82,11 +82,11 @@ if hostname == 'pciwe46':
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
 elif hostname == 'pciwe38':
     # Moritz computer
-    datafolder = 'C:/Messdaten/'
+    datafolder = r'C:\Messdaten'
     connections = {}
 elif hostname == 'pciwe34':
     # Mark II
-    datafolder = 'F:/Messdaten/hennen'
+    datafolder = r'F:\Messdaten\hennen'
     connections = [('et', instruments.Eurotherm2408),
                    #('ps', instruments.Picoscope),
                    #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
@@ -95,7 +95,7 @@ elif hostname == 'pciwe34':
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'GPIB0::26::INSTR')]
 else:
-    datafolder = 'C:/data'
+    datafolder = r'C:\data'
     connections = {}
 
 globalvars = globals()
