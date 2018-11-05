@@ -507,7 +507,6 @@ def read_pandas_files(filepaths, concat=True, dropcols=None):
     '''
     Load in dataframes and/or series in list of filepaths
     return concatenated dataframe
-    series will all have index 0 ...
     '''
     pdlist = []
     # Try to get pandas to read the files, but don't give up if some fail
@@ -540,7 +539,7 @@ def read_pandas_files(filepaths, concat=True, dropcols=None):
             print('Do not know wtf this file is:')
         print('Loaded {}.'.format(f))
     if concat:
-        return pd.concat(pdlist)
+        return pd.concat(pdlist).reset_index()
     else:
         return pdlist
 
@@ -561,13 +560,23 @@ def read_pandas_glob(directory='.', pattern='*', exclude=None, concat=True):
 
     return read_pandas_files(matchfilepaths, concat=concat)
 
-def read_pandas_recent(directory='.', pastseconds=60, concat=True):
+def read_pandas_recent(directory='.', pastseconds=None, n=None, len=None, pattern=None, concat=True):
     ''' Read files in directory which were made in the last pastseconds '''
     now = time.time()
     filepaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+    if pattern is not None:
+        pattern = pattern.join('**')
+        filepaths = fnmatch.filter(filepaths, pattern)
     ctimes = [os.path.getctime(fp) for fp in filepaths]
-    recentfps = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
-    return read_pandas_files(recentfps, concat=concat)
+    if pastseconds is not None:
+        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
+    if n is not None:
+        if len is not None:
+            return read_pandas_files(filepaths[-n:-n+len], concat=concat)
+        else:
+            return read_pandas_files(filepaths[-n:], concat=concat)
+
+    return read_pandas_files(filepaths, concat=concat)
 
 def write_pandas_pickle(data, filepath=None, drop=None):
     ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
@@ -781,7 +790,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       ivplot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
-      if 'thickness_1' in s:
+      if 'width_nm' in s:
           plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
       plt.savefig(pngfp)
       print('Wrote {}'.format(pngfp))
@@ -797,7 +806,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
       s = df.iloc[0]
-      if 'thickness_1' in s:
+      if 'width_nm' in s:
           plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
       plt.savefig(pngfp)
       print('Wrote {}'.format(pngfp))

@@ -11,6 +11,7 @@ from . import analyze
 from . import instruments
 from . import settings
 
+from matplotlib import pyplot as plt
 from fractions import Fraction
 from math import gcd
 import numpy as np
@@ -23,8 +24,8 @@ import pickle
 
 ########### Picoscope - Rigol AWG testing #############
 
-def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=1e3, duration=None,
-                              ncycles=10, samplespercycle=1000, fs=None):
+def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, duration=None,
+                              ncycles=10, samplespercycle=None, fs=None):
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -382,6 +383,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
     This takes some time..
     '''
+
+    ps = instruments.Picoscope()
     daq = instruments.USB2708HS()
     # Measure compliance currents and input offsets with static Vb
 
@@ -389,7 +392,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     fig2, ax2 = plt.subplots()
     ccurrent_list = []
     offsets_list = []
-    dacvals = np.int16(linspace(0, 2**11, ndacvals))
+    dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
 
     for it in range(iterations):
         ccurrent = []
@@ -452,6 +455,7 @@ def plot_compliance_calibration():
     return cc
 
 def measure_compliance():
+
     '''
     Our circuit does not yet compensate the output for different current compliance levels
     Right now current compliance is set by a physical knob, not by the computer.  This will change.
@@ -462,11 +466,12 @@ def measure_compliance():
     This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
     '''
     rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
     # Put AWG in hi-Z mode (output channel off)
     # Then current at compliance circuit input has to be ~zero
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
-    ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol_outputstate(False)
+    ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
+    rigol.outputstate(False)
     time.sleep(.1)
     # Immediately capture some samples on channels A and B
     # Use these channel settings for the capture -- does not modify global settings
@@ -631,7 +636,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     # Power supply is 5V, so this should cover the whole range
     RANGE[ch] = 5
     OFFSET[ch] = 0
-    sinwave = outamp * sin(linspace(0, 1, 2**12)*2*pi)
+    sinwave = outamp * sin(np.linspace(0, 1, 2**12)*2*pi)
     chs = ['A', ch]
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
     data = ps.get_data(chs)
@@ -650,8 +655,8 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
 # Change this when you change probing circuits
 #pico_to_iv = rehan_to_iv
-#pico_to_iv = ccircuit_to_iv
-pico_to_iv = partial(Rext_to_iv, R=50)
+pico_to_iv = ccircuit_to_iv
+#pico_to_iv = partial(Rext_to_iv, R=50)
 
 def tri(v1, v2, n=None, step=None):
     '''

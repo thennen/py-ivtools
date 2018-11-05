@@ -11,6 +11,7 @@ import inspect
 from matplotlib.widgets import SpanSelector
 from inspect import signature
 import os
+from functools import wraps
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yfunc=None, **kwargs):
     '''
@@ -237,8 +238,9 @@ def auto_title(data, keys=None, ax=None):
         title = ', '.join(['{}:{}'.format(k, safeindex(meta, k)) for k in keys])
 
     ax.set_title(title)
+    return title
 
-def plot_R_stajes(data, v0=.1, v1=None, **kwargs):
+def plot_R_states(data, v0=.1, v1=None, **kwargs):
     resist_states = analyze.resistance_states(data, v0, v1)
     resist1 = resist_states[0]
     resist2 = resist_states[1]
@@ -402,14 +404,22 @@ def plot_cumulative_dist(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     ax.plot(np.sort(data), np.arange(len(data))/len(data), **kwargs)
 
-def plot_ivt(d, phaseshift=14):
+def plot_ivt(d, phaseshift=14, fig=None):
     ''' A not-so-refined subplot of current and voltage vs time'''
-    fig, ax1 = plt.subplots()
-    ax2 = ax1.twinx()
+    if fig is None:
+        fig, ax1 = plt.subplots()
+        ax2 = ax1.twinx()
+    else:
+        axs = fig.get_axes()
+        if len(axs) == 2:
+            ax1, ax2 = axs
+        elif len(axs) == 0:
+            ax1 = fig.add_subplot(111)
+            ax2 = ax1.twinx()
     if 't' not in d:
         d['t'] = analyze.maketimearray(d)
-    ax1.plot(t, d['V'], c='blue', label='V')
-    ax2.plot(t - phaseshift* 1e-9, d['I'], c='green', label='I')
+    ax1.plot(d['t'], d['V'], c='blue', label='V')
+    ax2.plot(d['t'] - phaseshift* 1e-9, d['I'], c='green', label='I')
     ax2.set_ylabel('Current [A]', color='green')
     ax1.set_ylabel('Applied Voltage [V]', color='blue')
     ax1.set_xlabel('Time [s]')
@@ -459,6 +469,7 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
+            self.enable = True
         else:
             # This is to completely reload the class code but keep the same state
             self.__dict__ = oldinstance.__dict__
@@ -608,6 +619,57 @@ class interactive_figs(object):
 
 
 ### These are supposed to be for the live plotting
+# They should take the data and an axis to plot on
+# Should handle single or multiple loops
+# TODO: Can I make a wrapper that makes that easier?
+def parametrized(dec):
+    ''' This is a meta-decorator to create a parametrized decorator.  You got a better idea? '''
+    def layer(*args, **kwargs):
+        def repl(f):
+            return dec(f, *args, **kwargs)
+        return repl
+    return layer
+
+@parametrized
+def plotter(plotfunc, cmap='jet', maxloops=100, maxsamples=5000, clear=False):
+    '''
+    Plotting functions decorated with this can be written as though they are plotting a single loop,
+    but will automatically plot multiple loops if passed.
+    Will also try to avoid plotting too much data by decimating (not implemented) it and plotting a maximum number of loops at a time
+    if the plotter does not plot the arrays directly, then you might not need to decimate/limit the number
+    I wish python had pattern matching...
+    '''
+    # TODO: Usually the data is in list or dict form when this is used. extend to series and dataframes?
+    cmap = plt.get_cmap(cmap)
+    @wraps(plotfunc)
+    def wrap(data, ax=None, *args, **kwargs):
+        if clear:
+            ax.cla()
+        typein = type(data)
+        if typein is dict:
+            # if data is length 1, simply call plotfunc
+            plotfunc(data, ax, *args, **kwargs)
+        elif typein is list:
+            # if data is longer than length 1, call plotfunc several times, and try to apply a color map
+            # use inspect to check if plotfunc can take keywords
+            lendata = len(data)
+            if lendata > maxloops:
+                data = [data[int(n)] for n in np.round(np.linspace(0, lendata - 1, maxloops))]
+            passcolor = False
+            argspec = inspect.getfullargspec(plotfunc)
+            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
+                # plotter won't error if we pass the color keyword argument
+                # it might even work ..
+                colors = cmap(np.linspace(0, 1, len(data)))
+                passcolor = True
+            for i,d in enumerate(data):
+                if passcolor:
+                    kwargs['color'] = colors[i]
+                plotfunc(d, ax, *args, **kwargs)
+        else:
+            print('Cannot plot that kind of data')
+    return wrap
+
 def plottertemplate(data, ax, **kwargs):
     '''
     Minimal template for defining a new plotter.
@@ -637,16 +699,16 @@ def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     plotiv(data, ax=ax, maxsamples=5000, **kwargs)
 
+
+#@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
-    # data might contain multiple loops because of splitting, but we want the unsplit arrays
-    # To avoid pasting them back together again, there is a global variable called chdata
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
-    for l in ax.lines[::-1]: l.remove()
+    #for l in ax.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform
     channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in data]
-    if any(channels):
+    if len(channels) > 0:
         lendata = len(data[channels[0]])
         if lendata > 100000:
             print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
@@ -655,13 +717,14 @@ def chplotter(data, ax=None, **kwargs):
             plotdata = data
         plot_channels(plotdata, ax=ax)
 
+#@plotter
 def dVdIplotter(data, ax=None, **kwargs):
     ''' Plot dV/dI vs V'''
     if ax is None:
         fig, ax = plt.subplots()
-    mask = np.abs(d['V']) > .01
-    vmasked = d['V'][mask]
-    imasked = d['I'][mask]
+    mask = np.abs(data['V']) > .01
+    vmasked = data['V'][mask]
+    imasked = data['I'][mask]
     dv = np.diff(vmasked)
     di = np.diff(imasked)
     ax.plot(vmasked[1:], dv/di, **kwargs)
@@ -669,6 +732,7 @@ def dVdIplotter(data, ax=None, **kwargs):
     ax.set_xlabel('Voltage [V]')
     ax.set_ylabel('V/I [$\Omega$]')
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
 
 # Keithley ones
 def Rfitplotter(data, ax=None, **kwargs):

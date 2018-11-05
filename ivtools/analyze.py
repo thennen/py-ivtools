@@ -393,7 +393,7 @@ def decimate(data, factor=5, columns=('I', 'V')):
 
 
 @ivfunc
-def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
+def smoothimate(data, window=10, factor=2, passes=1, columns=None):
     ''' Smooth with moving avg and then decimate the data'''
     if columns is None:
         columns = find_data_arrays(data)
@@ -420,11 +420,14 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=('I', 'V')):
         else:
             decarrays = smootharrays
     for c, ar, dtype in zip(columns, decarrays, dtypes):
-        if dtype is np.float64:
+        if dtype == np.float64:
             # Datatype was already float64, don't convert float64 to float64
             dataout[c] = ar
+        #elif dtype == np.int8:
+            # Maybe we should allow low resolution data (like scope samples) turn high resolution when smoothed
+            #dataout[c] = ar
         else:
-            # Convert back to original data type
+            # Convert back to original data type (like float32)
             dataout[c] = dtype(ar)
     add_missing_keys(data, dataout)
     dataout['downsampling'] = factor
@@ -709,7 +712,7 @@ def concativ(data):
         return out
 
 
-def meaniv(data, columns=None):
+def meaniv(data, truncate=False, columns=None):
     '''
     Return the average of all iv columns.
     No interpolation at the moment
@@ -723,6 +726,19 @@ def meaniv(data, columns=None):
         firstrow = data[0]
     if columns is None:
         columns = find_data_arrays(firstrow)
+
+    if isdf:
+        lens = data[columns[0]].apply(len)
+    else:
+        lens = np.array([len(d[columns[0]]) for d in data])
+
+    if truncate:
+        # If the arrays are different sizes, truncate them all to the smallest size so that they can be averaged
+        if not np.all(np.diff(lens) == 0):
+            trunc = np.min(lens)
+            print(f'Truncating data to length {trunc}')
+            data = sliceiv(data, stop=trunc)
+
     dataout = {}
     for k in columns:
         if isdf:
@@ -1213,6 +1229,7 @@ def set_dict_kv(data, dictname, key, value):
     Set a dict key:value pair for all dicts in iv list.
     basically setting second level k:v for nested dicts
     i.e. set_dict_kv(df, 'longnames', 'T', 'Temperature')
+    Won't work for dataframes that don't already have the dictname column, because it tries to add data to the individual series, without ever seeing the real dataframe
     '''
     if dictname in data:
         data[dictname][key] = value
@@ -1220,9 +1237,17 @@ def set_dict_kv(data, dictname, key, value):
         data[dictname] = {key: value}
 
 def set_unit(data, name, unit):
+    # Need to make the column if it's a dataframe and doesn't have it
+    if type(data) == pd.DataFrame:
+        if 'units' not in data:
+            data['units'] = [{}] * len(data)
     set_dict_kv(data, 'units', name, unit)
 
 def set_longname(data, name, longname):
+    # Need to make the column if it's a dataframe and doesn't have it
+    if type(data) == pd.DataFrame:
+        if 'longnames' not in data:
+            data['longnames'] = [{}] * len(data)
     set_dict_kv(data, 'longnames', name, longname)
 
 def set_unit_info(data, colname, unit=None, longname=None):
@@ -1231,9 +1256,9 @@ def set_unit_info(data, colname, unit=None, longname=None):
     This information can then be used to label plots automatically
     '''
     if unit is not None:
-        set_dict_kv(data, 'longnames', colname, longname)
+        set_unit(data, colname, unit)
     if longname is not None:
-        set_dict_kv(data, 'units', colname, unit)
+        set_longname(data, colname, longname)
 
 # These are not needed for pandas types obviously
 # Just trying to get some of that functionality into list of dicts
