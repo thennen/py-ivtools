@@ -1,5 +1,6 @@
 import ivtools
 # Reload all the modules in case they changed
+# Do not reload persistent_state, because not being reloaded is its sole purpose
 import importlib
 importlib.reload(ivtools)
 importlib.reload(ivtools.measure)
