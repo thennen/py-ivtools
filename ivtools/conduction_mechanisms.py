@@ -251,5 +251,3 @@ def poole_frenkel_plot():
 
 def arrhenius_plot():
     pass
-
-

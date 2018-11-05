@@ -275,8 +275,9 @@ def validvarname(varStr):
        sub_strip = 'm_' + sub_strip
     return sub_strip
 
-def valid_filename():
-    pass
+def valid_filename(s):
+    s = str(s).strip().replace(' ', '_')
+    return re.sub(r'(?u)[^-\w.]', '', s)
 
 
 def timestamp(date=True, time=True, ms=True, us=False):
