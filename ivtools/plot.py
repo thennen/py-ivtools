@@ -705,7 +705,7 @@ def chplotter(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
-    #for l in ax.lines[::-1]: l.remove()
+    for l in ax.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform
     channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in data]
     if len(channels) > 0:
@@ -830,6 +830,8 @@ def vcalcplotter(data, ax=None, R=8197, **kwargs):
     '''
     if ax is None:
         fig, ax = plt.subplots()
+    if hasattr(R, '__call__'):
+        R = R()
     # wtf modifies the input data?  Shouldn't do that.
     if type(data) is list:
         for d in data:

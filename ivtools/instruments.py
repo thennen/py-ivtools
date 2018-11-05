@@ -16,6 +16,8 @@ reuse existing connections
 Should also find existing connections if already available
 '''
 
+# TODO: Maybe split this up into one file per instrument..
+
 import numpy as np
 import visa
 import time
@@ -23,10 +25,6 @@ import os
 import pandas as pd
 import serial
 from collections import deque
-# TODO This module will keep track of all the instrument instances
-# and allows you to update them when this module reloads
-# For now, it just stores the visa resource manager instance, so that it doesn't get overwritten by possible module reload,
-# and perhaps stupidly the picoscope state
 from . import persistent_state
 visa_rm = persistent_state.visa_rm
 # Could also store the visa_rm in visa itself
@@ -406,7 +404,13 @@ class Picoscope(object):
 # Rigol DG5000 AWG ######################################
 #########################################################
 class RigolDG5000(object):
-    # There is at least one python library for DG5000, but I could not get it to run.
+    '''
+    This instrument is really a pain in the ass.  Good example of a job not well done by Rigol.
+    But we spent a lot of time learning its quirks and are kind of stuck with it.
+
+    Do not send anything to the Rigol that differs in any way from what it expects,
+    or it will just hang forever and need to be manually restarted along with the entire python shell.
+    '''
     # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
         try:
@@ -625,6 +629,8 @@ class RigolDG5000(object):
             normwaveform = waveform
         normwaveform = ((normwaveform + 1) / 2 * 16383).astype(int).tolist()
         wfm_str = str(normwaveform).strip('[]').replace(' ', '')
+        if len(wfm_str) > 261863:
+            raise Exception('There is no way to know for sure, but I think Rigol will have a problem with the length of waveform you want to use.  Therefore I refuse to send it.')
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA:DAC VOLATILE,{}'.format(wfm_str))
 

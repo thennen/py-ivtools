@@ -73,6 +73,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     Pulse a waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
     kwargs go nowhere
+    TODO: Don't let smartrange change the global settings
     '''
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
@@ -287,6 +288,7 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
+    # TODO: don't let this function change the pico state.  Just return the calculated ranges.
     ps = instruments.Picoscope()
     # Auto offset for current input
     possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
@@ -577,7 +579,7 @@ def rehan_to_iv(datain, dtype=np.float32):
     return dataout
 
 
-def Rext_to_iv(datain, R=5100, dtype=np.float32):
+def Rext_to_iv(datain, R=50, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     This is for the configuration where you are using a series resistor
@@ -655,8 +657,8 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
 # Change this when you change probing circuits
 #pico_to_iv = rehan_to_iv
-pico_to_iv = ccircuit_to_iv
-#pico_to_iv = partial(Rext_to_iv, R=50)
+#pico_to_iv = ccircuit_to_iv
+pico_to_iv = partial(Rext_to_iv, R=50)
 
 def tri(v1, v2, n=None, step=None):
     '''
