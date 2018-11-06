@@ -2,6 +2,7 @@
 
 # Local imports
 from . import analyze
+from . import persistent_state
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -440,8 +441,9 @@ class interactive_figs(object):
     can have several plotting functions per axis though ..
     '''
     # TODO: save/load configurations to disk?
-    def __init__(self, n=4, oldinstance=None):
-        if oldinstance is None:
+    def __init__(self, n=4, clear_state=False):
+        self.__dict__ = persistent_state.plotter_state
+        if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...
             import ctypes
@@ -475,10 +477,8 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
+            # doesn't do anything yet
             self.enable = True
-        else:
-            # This is to completely reload the class code but keep the same state
-            self.__dict__ = oldinstance.__dict__
 
     def createfig(self, n):
         '''
@@ -711,7 +711,7 @@ def chplotter(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
-    #for l in ax.lines[::-1]: l.remove()
+    for l in ax.lines[::-1]: l.remove()
     # Plot at most 100000 datapoints of the waveform
     channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in data]
     if len(channels) > 0:
@@ -836,6 +836,8 @@ def vcalcplotter(data, ax=None, R=8197, **kwargs):
     '''
     if ax is None:
         fig, ax = plt.subplots()
+    if hasattr(R, '__call__'):
+        R = R()
     # wtf modifies the input data?  Shouldn't do that.
     if type(data) is list:
         for d in data:

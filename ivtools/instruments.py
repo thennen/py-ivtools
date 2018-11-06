@@ -16,6 +16,8 @@ reuse existing connections
 Should also find existing connections if already available
 '''
 
+# TODO: Maybe split this up into one file per instrument..
+
 import numpy as np
 import visa
 import time
@@ -23,13 +25,8 @@ import os
 import pandas as pd
 import serial
 from collections import deque
-# TODO This module will keep track of all the instrument instances
-# and allows you to update them when this module reloads
-# For now, it just stores the visa resource manager instance, so that it doesn't get overwritten by possible module reload,
-# and perhaps stupidly the picoscope state
-from . import instrument_manager
-#Instrument = instrument_manager.Instrument
-visa_rm = instrument_manager.visa_rm
+from . import persistent_state
+visa_rm = persistent_state.visa_rm
 # Could also store the visa_rm in visa itself
 #visa.visa_rm = visa.ResourceManager()
 #visa_rm = visa.visa_rm
@@ -51,7 +48,7 @@ class Picoscope(object):
     Has some higher level functionality, and it stores/manipulates the channel settings.
     '''
     def __init__(self):
-        self.__dict__ = instrument_manager.pico_state
+        self.__dict__ = persistent_state.pico_state
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
@@ -407,7 +404,13 @@ class Picoscope(object):
 # Rigol DG5000 AWG ######################################
 #########################################################
 class RigolDG5000(object):
-    # There is at least one python library for DG5000, but I could not get it to run.
+    '''
+    This instrument is really a pain in the ass.  Good example of a job not well done by Rigol.
+    But we spent a lot of time learning its quirks and are kind of stuck with it.
+
+    Do not send anything to the Rigol that differs in any way from what it expects,
+    or it will just hang forever and need to be manually restarted along with the entire python shell.
+    '''
     # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
         try:
@@ -534,7 +537,7 @@ class RigolDG5000(object):
 
     def WriteWF2AWGBinary(self, dt, A):
         """
-        This absolutely will not work!  copy pasted from Hans code
+        This absolutely will not work!  copy pasted from Hans code, for reference if one ever decides to implement this
         :param dt: time interval
         :param A: Waveform 0<=A<=1 or -1<=A<=0
         :return: nothing
@@ -605,30 +608,6 @@ class RigolDG5000(object):
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
 
-
-    def load_wfm_binary(self, waveform):
-        '''
-        Load some data as an arbitrary waveform to be output.
-        Data will be normalized.  Use amplitude to set the amplitude.
-        Make sure that the output is off, because the command switches out of burst mode
-        and otherwise will start outputting immediately.
-        '''
-        # Construct a byte string out of the waveform
-        waveform = np.array(waveform, dtype=np.float32)
-        maxamp = np.max(np.abs(waveform))
-        if maxamp != 0:
-            normwaveform = waveform/maxamp
-        else:
-            # Not a valid waveform anyway .. rigol will beep
-            normwaveform = waveform
-
-        # I think rigol has a very small limit for input buffer, so can't send a massive string
-        # So I am truncating the string to only show mV level.  This might piss me off in the future when I want better than mV accuracy.
-        wfm_str = ','.join([str(round(w, 3)) for w in normwaveform])
-        # This command switches out of burst mode for some stupid reason
-        self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
-        self.write(':TRAC:DATA:DAC VOLATILE,')
-
     def load_wfm_ints(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
@@ -650,6 +629,8 @@ class RigolDG5000(object):
             normwaveform = waveform
         normwaveform = ((normwaveform + 1) / 2 * 16383).astype(int).tolist()
         wfm_str = str(normwaveform).strip('[]').replace(' ', '')
+        if len(wfm_str) > 261863:
+            raise Exception('There is no way to know for sure, but I think Rigol will have a problem with the length of waveform you want to use.  Therefore I refuse to send it.')
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA:DAC VOLATILE,{}'.format(wfm_str))
 
@@ -694,12 +675,12 @@ class RigolDG5000(object):
                 if output_state:
                     self.outputstate(False, ch=ch)
                 # This command switches out of burst mode for some stupid reason
-                self.load_wfm(waveform)
+                self.load_wfm_ints(waveform)
                 self.burst(True, ch=ch)
                 if output_state:
                     self.outputstate(True, ch=ch)
             else:
-                self.load_wfm(waveform)
+                self.load_wfm_ints(waveform)
             self.volatilewfm = waveform
         else:
             # Just switch to the arbitrary waveform that is already in memory

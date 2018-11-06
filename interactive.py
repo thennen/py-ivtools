@@ -45,12 +45,7 @@ from ivtools import measure
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import io
-
-# Define this on the first run only
-try:
-    firstrun
-except:
-    firstrun = True
+from ivtools import persistent_state
 
 # Dump everything into interactive namespace for convenience
 # TODO: run test for overlapping names
@@ -60,9 +55,21 @@ from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
 
+# Define this on the first run only
+try:
+    firstrun
+except:
+    firstrun = True
+
 magic = get_ipython().magic
 
+if firstrun:
+    # Don't run this more than once, or all the existing plots will get de-registered from the
+    # matplotlib state machine or whatever and nothing will update anymore
+    magic('matplotlib')
+
 hostname = socket.gethostname()
+# TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
 
@@ -110,7 +117,7 @@ instrument_varnames = {instruments.Picoscope:'ps',
 for k,v in instrument_varnames.items():
     globalvars[v] = None
 
-visa_resources = ivtools.instrument_manager.visa_rm.list_resources()
+visa_resources = ivtools.persistent_state.visa_rm.list_resources()
 for varname, inst_class, *args in connections:
     if len(args) > 0:
         if args[0].startswith('USB') or args[0].startswith('GPIB'):
@@ -122,11 +129,20 @@ for varname, inst_class, *args in connections:
                 continue
     globalvars[varname] = inst_class(*args)
 
-# Plotter configurations
+######### Plotter configurations
+def R_series():
+    if 'R_series' in meta.static:
+        return meta.static['R_series']
+    elif 'R_series' in meta.meta:
+        return meta.meta['R_series']
+    else:
+        return 0
+
 # For picoscope + rigol
 pico_plotters = [[0, ivplot.ivplotter],
                  [1, ivplot.chplotter],
-                 [2, ivplot.VoverIplotter]]
+                 [2, ivplot.VoverIplotter],
+                 [3, partial(ivplot.vcalcplotter, R=R_series)]]
 # For keithley
 kargs = {'marker':'.'}
 keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
@@ -134,36 +150,34 @@ keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 
+#########
+
+# Default data subfolder -- will reflect the date of the last time this script ran
+# Will NOT automatically rollover to the next date during a measurement that runs past 24:00
+subfolder = datestr
+if len(sys.argv) > 1:
+    # Can give a folder name with command line argument
+    subfolder += '_' + sys.argv[1]
+print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+io.makefolder(datafolder, subfolder)
+def datadir():
+    return os.path.join(datafolder, subfolder)
+
+meta = io.MetaHandler()
+# Make sure %matplotlib has been called!
+iplots = ivplot.interactive_figs(n=4)
+
+### Runs only the first time ###
 if firstrun:
-    ### Runs only the first time ###
-    # Default data subfolder
-    subfolder = datestr
-    if len(sys.argv) > 1:
-        # Can give a folder name with command line argument
-        subfolder += '_' + sys.argv[1]
-    print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
-    print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
-
-    def datadir():
-        return os.path.join(datafolder, subfolder)
-
-    io.makefolder(datafolder, subfolder)
-    magic('matplotlib')
     io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
-    meta = io.MetaHandler()
-    iplots = ivplot.interactive_figs(n=4)
+    # What the plots should do by default
+    iplots.plotters = pico_plotters
+    #iplots.plotters = keithley_plotters
     firstrun = False
-    # Need to specify what the plots should do by default
-    if k is None:
-        print('Setting up automatic plotting for picoscope')
-        iplots.plotters = pico_plotters
-    else:
-        print('Setting up automatic plotting for Keithley')
-        iplots.plotters = keithley_plotters
-else:
-    # Transfer all the settings you want to keep into new instances/environment
-    meta = io.MetaHandler(oldinstance=meta)
-    iplots = ivtools.plot.interactive_figs(oldinstance=iplots)
+
+
+
 
 if ps is not None:
     ps.print_settings()
@@ -181,9 +195,9 @@ class autocaller():
 
 # Add items to this and they will be appended as metadata to all subsequent measurements
 meta.static['gitrev'] = gitrev
+meta.static['hostname'] = hostname
 
-
-################ Bindings for convenience #################
+################ Bindings for interactive convenience #################
 
 # Metadata selector
 pp = autocaller(meta.print)
@@ -201,6 +215,9 @@ clearfigs = iplots.clear
 showfigs = iplots.show
 c = autocaller(clearfigs)
 sf = autocaller(iplots.show)
+plotters = iplots.plotters
+add_plotter = iplots.add_plotter
+del_plotters = iplots.del_plotters
 
 def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
     '''
@@ -218,9 +235,11 @@ def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
         filepath = os.path.join(datadir(), meta.filename())
     io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
     # TODO: append metadata to a sql table
-
 # just typing s will save the d variable
 s = autocaller(savedata)
+
+
+#############################################################
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):

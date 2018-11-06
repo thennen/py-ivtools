@@ -653,7 +653,6 @@ def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
     '''
     splitkeys = find_data_arrays(data)
 
-
     l = len(data[splitkeys[0]])
 
     if indices is None:
@@ -686,6 +685,8 @@ def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
         add_missing_keys(data, splitloop)
         outlist.append(splitloop)
 
+    # If you pass a Series, you get a list of dicts anyway
+    # This is slightly complicated to fix and I don't want to do it now
     return outlist
 
 
@@ -1099,7 +1100,7 @@ def add_missing_keys(datain, dataout):
 
 
 @ivfunc
-def resistance(data, v0=0.1, v1=None, x='V', y='I'):
+def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     '''
     Fit a line to IV data to find R.
     if v1 not given, fit from -v0 to +v0

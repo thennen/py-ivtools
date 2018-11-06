@@ -3,6 +3,7 @@
 # Local imports
 from . import analyze
 from . import plot as ivplot
+from . import persistent_state
 
 import os
 import re
@@ -33,10 +34,11 @@ class MetaHandler(object):
     '''
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files
-
+    MetaHandler is Borg.  Its state lives in an separate module.
     '''
-    def __init__(self, oldinstance=None):
-        if oldinstance is None:
+    def __init__(self, clear_state=False):
+        self.__dict__ = persistent_state.metahandler_state
+        if not self.__dict__ or clear_state:
             # This stores the currently selected metadata.  It's a dict or a pd.Series
             # Go ahead and overwrite it if you want
             self.meta = {}
@@ -53,10 +55,10 @@ class MetaHandler(object):
             # These keys get printed when you step through the list of metadata
             self.prettykeys = []
             self.moduledir = os.path.split(__file__)[0]
-        else:
-            # In case you redefine the class but want to keep the same data inside
-            self.__dict__ = oldinstance.__dict__
 
+    def __repr__(self):
+        #return self.meta.__repr__()
+        return pd.Series({**self.meta, **self.static}).__repr__()
 
     def self_merge(self, columns=None):
         '''
@@ -747,12 +749,13 @@ def write_meta_csv(data, filepath):
     ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
     dtype = type(data)
     if dtype is pd.Series:
-        s = pd.read_pickle(pjoin(root, f))
+        #s = pd.read_pickle(pjoin(root, f))
+        s = data
     elif dtype is pd.DataFrame:
         # Only save first row metadata -- Usually it's the same for all
-        df = pd.read_pickle(pjoin(root, f))
-        s = df.iloc[0]
-        s['nloops'] = len(df)
+        #df = pd.read_pickle(pjoin(root, f))
+        s = data.iloc[0]
+        s['nloops'] = len(data)
     elif dtype is list:
         s = pd.Series(data[0])
     elif dtype is dict:
@@ -772,7 +775,7 @@ def set_readonly(filepath):
     from stat import S_IREAD, S_IRGRP, S_IROTH
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
-def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
+def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwrite=False):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
    # TODO: Optionally group by sample, making one plot per sample
@@ -783,34 +786,36 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1):
    fig, ax = plt.subplots()
 
    for sfn in series_fns:
-      s = pd.read_pickle(sfn)
-      s.I *= 1e6
-      s.units['I'] = '$\mu$A'
-      smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-      ivplot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
       pngfn = sfn[:-2] + '.png'
       pngfp = os.path.join(datadir, pngfn)
-      if 'width_nm' in s:
-          plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
-      plt.savefig(pngfp)
-      print('Wrote {}'.format(pngfp))
-      ax.cla()
+      if overwrite or not os.path.isfile(pngfp):
+        s = pd.read_pickle(sfn)
+        s.I *= 1e6
+        s.units['I'] = '$\mu$A'
+        smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
+        ivplot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
+        if 'width_nm' in s:
+            plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
+        plt.savefig(pngfp)
+        print('Wrote {}'.format(pngfp))
+        ax.cla()
 
    for dffn in dataframe_fns:
-      df = pd.read_pickle(dffn)
-      df.I *= 1e6
-      df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
-      step = int(ceil(len(df) / maxloops))
-      smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-      ivplot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
       pngfn = dffn[:-3] + '.png'
       pngfp = os.path.join(datadir, pngfn)
-      s = df.iloc[0]
-      if 'width_nm' in s:
-          plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
-      plt.savefig(pngfp)
-      print('Wrote {}'.format(pngfp))
-      ax.cla()
+      if overwrite or not os.path.isfile(pngfp):
+        df = pd.read_pickle(dffn)
+        df.I *= 1e6
+        df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
+        step = int(ceil(len(df) / maxloops))
+        smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
+        ivplot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+        s = df.iloc[0]
+        if 'width_nm' in s:
+            plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
+        plt.savefig(pngfp)
+        print('Wrote {}'.format(pngfp))
+        ax.cla()
 
    plt.close(fig)
 
