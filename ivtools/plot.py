@@ -11,6 +11,7 @@ import inspect
 from matplotlib.widgets import SpanSelector
 from inspect import signature
 import os
+from numbers import Number
 from functools import wraps
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yfunc=None, **kwargs):
@@ -138,7 +139,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             # otherwise we will iterate through labels directly
         if labels is not None:
             # make np.nan count as None (not labelled)
-            labels = list(map(lambda v: None if np.isnan(v) else v, labels))
+            labels = list(map(lambda v: None if (isinstance(v, Number) and np.isnan(v)) else v, labels))
             # TODO: if there are repeat labels, only label the first one?  Might not always want that behavior..
             assert len(labels) == len(data)
         else:
