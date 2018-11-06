@@ -46,7 +46,9 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     # Will error right now if you pass array as x or y
     defaultunits = {'V':     ('Voltage', 'V'),
                     'Vcalc': ('Device Voltage', 'V'),
+                    'Vd':    ('Device Voltage', 'V'),
                     'I':     ('Current', 'A'),
+                    't':     ('Time', 's'),
                     None:    ('Data Point', '#')}
     longnamex = x
     unitx = '?'
