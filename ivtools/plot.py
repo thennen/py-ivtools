@@ -201,33 +201,18 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                 lineset.add((l,c))
 
         if dtype == pd.DataFrame:
-            #if x is None or hasattr(data.iloc[0][x], '__iter__'):
-                # Plot x array vs y array.  x can be none, then it will just turn into data point number
-                line = []
-                for (row, iv), c, l in zip(data.iterrows(), colors, labels):
-                    kwargs.update(c=c)
-                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
-            #else:
-            #    # Probably referencing scalar values.
-            #    # Still want to use the labelling ability of plotfunc
-            #    line = plt.plot(data[x], data[y], **kwargs)
-            #    ax.set_xlabel(x)
-            #    ax.set_ylabel(y)
+            # Plot x array vs y array.  x can be none, then it will just turn into data point number
+            line = []
+            for (row, iv), c, l in zip(data.iterrows(), colors, labels):
+                kwargs.update(c=c)
+                line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
         else:
-            if x is None or hasattr(data[0][x], '__iter__'):
-                line = []
-                for iv, c, l in zip(data, colors, labels):
-                    kwargs.update(c=c)
-                    newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
-                    line.append(newline)
-            else:
-                # Probably referencing scalar values.
-                # No tests to make sure both x and y scalar values for all loops.
-                X = [d[x] for d in data]
-                Y = [d[y] for d in data]
-                line = ax.scatter(X, Y, **kwargs)
-                ax.set_xlabel(x)
-                ax.set_ylabel(y)
+            line = []
+            for iv, c, l in zip(data, colors, labels):
+                kwargs.update(c=c)
+                newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
+                line.append(newline)
+
     elif dtype in (dict, pd.Series):
         # Just one IV
         line = plotfunc(data, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs)
