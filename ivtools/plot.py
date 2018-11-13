@@ -23,38 +23,67 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     if ax is None:
         fig, ax = plt.subplots()
 
+    # Can pass non strings to plot on the x,y axes
+    # But turn them into strings for subsequent part of the code
     if type(y) == str:
         Y = iv[y]
+    elif hasattr(y, '__call__'):
+        Y = y(iv)
+        y = y.__name__
     else:
         Y = y
-    l = len(Y)
+        # Don't know if this is a good idea
+        y = '[{}, ..., {}]'.format(y[0], y[-1])
 
     if x is None:
         X = np.arange(l)
     elif type(x) == str:
         X = iv[x]
+    elif hasattr(x, '__call__'):
+        X = x(iv)
+        x = x.__name__
     else:
         X = x
+        x = '[{}, ..., {}]'.format(x[0], x[-1])
 
-    if maxsamples is not None and maxsamples < l:
+    # X and Y should be the same length, if they are not, truncate one
+    if hasattr(X, '__iter__'):
+        lenX = len(X)
+    else:
+        lenX = 1
+    if hasattr(Y, '__iter__'):
+        lenY = len(Y)
+    else:
+        lenY = 1
+
+    if lenX != lenY:
+        print('X and Y arrays are not the same length! Truncating the longer one.')
+        if lenX > lenY:
+            X = X[:lenY]
+            lenX = lenY
+        else:
+            Y = Y[:lenX]
+            lenY = lenX
+
+    if maxsamples is not None and maxsamples < lenX:
         # Down sample data
         print('Downsampling data for plot!!')
-        step = int(l/maxsamples)
+        step = int(lenX/maxsamples)
         X = X[np.arange(0, l, step)]
         Y = Y[np.arange(0, l, step)]
 
     # Name the axes
-    # Will error right now if you pass array as x or y
     defaultunits = {'V':     ('Voltage', 'V'),
                     'Vcalc': ('Device Voltage', 'V'),
                     'Vd':    ('Device Voltage', 'V'),
                     'I':     ('Current', 'A'),
+                    'G':     ('Conductance', 'S'),
+                    'R':     ('Resistance', '$\Omega$'),
                     't':     ('Time', 's'),
                     None:    ('Data Point', '#')}
-    longnamex = x
-    unitx = '?'
-    longnamey = y
-    unity = '?'
+
+    longnamex, unitx = x, '?'
+    longnamey, unity = y, '?'
     if x in defaultunits.keys():
         longnamex, unitx = defaultunits[x]
     if y in defaultunits.keys():
@@ -72,8 +101,12 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         if y in iv['units'].keys():
             unity = iv['units'][y]
 
-    xlabel = '{} [{}]'.format(longnamex, unitx)
-    ylabel = '{} [{}]'.format(longnamey, unity)
+    xlabel = longnamex
+    if unitx != '?':
+        xlabel += ' [{}]'.format(unitx)
+    ylabel = longnamey
+    if unity != '?':
+        ylabel += ' [{}]'.format(unity)
 
     if xfunc is not None:
         # Apply a function to x array
@@ -87,7 +120,13 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
-    return ax.plot(X, Y, **kwargs)[0]
+    if lenX > 1:
+        line = ax.plot(X, Y, **kwargs)[0]
+    else:
+        # Not actually a line
+        line = ax.scatter(X, Y, **kwargs)
+
+    return line
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=_plot_single_iv, autotitle=False, labels=None, **kwargs):
@@ -162,16 +201,18 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                 lineset.add((l,c))
 
         if dtype == pd.DataFrame:
-            if x is None or hasattr(data.iloc[0][x], '__iter__'):
-                # Plot x array vs y array.  x can be none, then it will just be data point number
+            #if x is None or hasattr(data.iloc[0][x], '__iter__'):
+                # Plot x array vs y array.  x can be none, then it will just turn into data point number
                 line = []
                 for (row, iv), c, l in zip(data.iterrows(), colors, labels):
                     kwargs.update(c=c)
                     line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
-            else:
-                line = plt.plot(data[x], data[y], **kwargs)
-                ax.set_xlabel(x)
-                ax.set_ylabel(y)
+            #else:
+            #    # Probably referencing scalar values.
+            #    # Still want to use the labelling ability of plotfunc
+            #    line = plt.plot(data[x], data[y], **kwargs)
+            #    ax.set_xlabel(x)
+            #    ax.set_ylabel(y)
         else:
             if x is None or hasattr(data[0][x], '__iter__'):
                 line = []
@@ -182,7 +223,6 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             else:
                 # Probably referencing scalar values.
                 # No tests to make sure both x and y scalar values for all loops.
-                # Will break for dataframes right now.
                 X = [d[x] for d in data]
                 Y = [d[y] for d in data]
                 line = ax.scatter(X, Y, **kwargs)
