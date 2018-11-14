@@ -13,6 +13,8 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import sys
 
+# TODO make some functions that index/iterate rows of dataframe AND list, because they have different syntax
+#      this would avoid testing for the datatype in many different parts of the code
 
 def ivfunc(func):
     '''
@@ -21,6 +23,7 @@ def ivfunc(func):
 
     Decorated function should take a single loop and return anything
     Then this function will also take multiple loops, and return a list/dataframe of the outputs
+    The point is to make the analysis functions easier to write, and not repeat a bunch of code
 
     Handles dicts and pd.Series for singular input data, as well as "list of dict" and DataFrames for multiple input data
     An attempt is made to return the most reasonable type, given the input and output types
@@ -32,6 +35,7 @@ def ivfunc(func):
 
     If you pass as an argument a function wrapped with the paramfunc function, that function will get called on each of
     the data to determine the argument individually.
+    (Maybe we don't need to wrap functions, and assume this is the intent whenever any function is passed..)
     '''
     def paramtransform(param, i, data):
         if type(param) == paramlist:

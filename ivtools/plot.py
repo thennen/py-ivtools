@@ -12,6 +12,7 @@ import inspect
 from matplotlib.widgets import SpanSelector
 from inspect import signature
 import os
+from numbers import Number
 from functools import wraps
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yfunc=None, **kwargs):
@@ -22,36 +23,67 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     if ax is None:
         fig, ax = plt.subplots()
 
+    # Can pass non strings to plot on the x,y axes
+    # But turn them into strings for subsequent part of the code
     if type(y) == str:
         Y = iv[y]
+    elif hasattr(y, '__call__'):
+        Y = y(iv)
+        y = y.__name__
     else:
         Y = y
-    l = len(Y)
+        # Don't know if this is a good idea
+        y = '[{}, ..., {}]'.format(y[0], y[-1])
 
     if x is None:
         X = np.arange(l)
     elif type(x) == str:
         X = iv[x]
+    elif hasattr(x, '__call__'):
+        X = x(iv)
+        x = x.__name__
     else:
         X = x
+        x = '[{}, ..., {}]'.format(x[0], x[-1])
 
-    if maxsamples is not None and maxsamples < l:
+    # X and Y should be the same length, if they are not, truncate one
+    if hasattr(X, '__iter__'):
+        lenX = len(X)
+    else:
+        lenX = 1
+    if hasattr(Y, '__iter__'):
+        lenY = len(Y)
+    else:
+        lenY = 1
+
+    if lenX != lenY:
+        print('X and Y arrays are not the same length! Truncating the longer one.')
+        if lenX > lenY:
+            X = X[:lenY]
+            lenX = lenY
+        else:
+            Y = Y[:lenX]
+            lenY = lenX
+
+    if maxsamples is not None and maxsamples < lenX:
         # Down sample data
         print('Downsampling data for plot!!')
-        step = int(l/maxsamples)
+        step = int(lenX/maxsamples)
         X = X[np.arange(0, l, step)]
         Y = Y[np.arange(0, l, step)]
 
     # Name the axes
-    # Will error right now if you pass array as x or y
     defaultunits = {'V':     ('Voltage', 'V'),
                     'Vcalc': ('Device Voltage', 'V'),
+                    'Vd':    ('Device Voltage', 'V'),
                     'I':     ('Current', 'A'),
+                    'G':     ('Conductance', 'S'),
+                    'R':     ('Resistance', '$\Omega$'),
+                    't':     ('Time', 's'),
                     None:    ('Data Point', '#')}
-    longnamex = x
-    unitx = '?'
-    longnamey = y
-    unity = '?'
+
+    longnamex, unitx = x, '?'
+    longnamey, unity = y, '?'
     if x in defaultunits.keys():
         longnamex, unitx = defaultunits[x]
     if y in defaultunits.keys():
@@ -69,8 +101,12 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         if y in iv['units'].keys():
             unity = iv['units'][y]
 
-    xlabel = '{} [{}]'.format(longnamex, unitx)
-    ylabel = '{} [{}]'.format(longnamey, unity)
+    xlabel = longnamex
+    if unitx != '?':
+        xlabel += ' [{}]'.format(unitx)
+    ylabel = longnamey
+    if unity != '?':
+        ylabel += ' [{}]'.format(unity)
 
     if xfunc is not None:
         # Apply a function to x array
@@ -84,7 +120,13 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
-    return ax.plot(X, Y, **kwargs)[0]
+    if lenX > 1:
+        line = ax.plot(X, Y, **kwargs)[0]
+    else:
+        # Not actually a line
+        line = ax.scatter(X, Y, **kwargs)
+
+    return line
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=_plot_single_iv, autotitle=False, labels=None, colorbyval=True, **kwargs):
@@ -139,11 +181,14 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
 
         if type(labels) is str:
             # label by the column with this name
-            labels = data[labels]
+            if type(data) == list:
+                labels = [d[labels] for d in data]
+            else:
+                labels = data[labels]
             # otherwise we will iterate through labels directly
         if labels is not None:
             # make np.nan count as None (not labelled)
-            labels = list(map(lambda v: None if np.isnan(v) else v, labels))
+            labels = list(map(lambda v: None if (isinstance(v, Number) and np.isnan(v)) else v, labels))
             # TODO: if there are repeat labels, only label the first one?  Might not always want that behavior..
             assert len(labels) == len(data)
         else:
@@ -163,32 +208,18 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                 lineset.add((l,c))
 
         if dtype == pd.DataFrame:
-            if x is None or hasattr(data.iloc[0][x], '__iter__'):
-                # Plot x array vs y array.  x can be none, then it will just be data point number
-                line = []
-                for (row, iv), c, l in zip(data.iterrows(), colors, labels):
-                    kwargs.update(c=c)
-                    line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
-            else:
-                line = plt.plot(data[x], data[y], **kwargs)
-                ax.set_xlabel(x)
-                ax.set_ylabel(y)
+            # Plot x array vs y array.  x can be none, then it will just turn into data point number
+            line = []
+            for (row, iv), c, l in zip(data.iterrows(), colors, labels):
+                kwargs.update(c=c)
+                line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
         else:
-            if x is None or hasattr(data[0][x], '__iter__'):
-                line = []
-                for iv, c, l in zip(data, colors, labels):
-                    kwargs.update(c=c)
-                    newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
-                    line.append(newline)
-            else:
-                # Probably referencing scalar values.
-                # No tests to make sure both x and y scalar values for all loops.
-                # Will break for dataframes right now.
-                X = [d[x] for d in data]
-                Y = [d[y] for d in data]
-                line = ax.scatter(X, Y, **kwargs)
-                ax.set_xlabel(x)
-                ax.set_ylabel(y)
+            line = []
+            for iv, c, l in zip(data, colors, labels):
+                kwargs.update(c=c)
+                newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
+                line.append(newline)
+
     elif dtype in (dict, pd.Series):
         # Just one IV
         line = plotfunc(data, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs)
@@ -1176,3 +1207,24 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, n)))
     return new_cmap
+
+
+### Other kinds of plotting utilities
+
+def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
+    ''' line plot whose color changes along its length '''
+    from matplotlib.collections import LineCollection
+    if ax is None:
+        fig, ax = plt.subplots()
+    if c is None:
+        c = arange(len(x))
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
+    lc.set_array(c)
+    lc.set_linewidth(2)
+    lc.set(**kwargs)
+
+    ax.add_collection(lc)
+    ax.autoscale()
