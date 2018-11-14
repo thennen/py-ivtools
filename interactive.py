@@ -114,10 +114,13 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.USB2708HS:'daq'}
 
 # Make varnames None until connected
-for k,v in instrument_varnames.items():
+for kk,v in instrument_varnames.items():
     globalvars[v] = None
 
 visa_resources = ivtools.persistent_state.visa_rm.list_resources()
+# Connect to all the instruments
+# TODO: visa does not remember its TCPIP sessions, and will not reconnect properly!
+# TODO: there is currently no way to manage serial connections, will error if you try to connect twice
 for varname, inst_class, *args in connections:
     if len(args) > 0:
         if args[0].startswith('USB') or args[0].startswith('GPIB'):

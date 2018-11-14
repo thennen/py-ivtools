@@ -87,7 +87,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     return ax.plot(X, Y, **kwargs)[0]
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
-           plotfunc=_plot_single_iv, autotitle=False, labels=None, **kwargs):
+           plotfunc=_plot_single_iv, autotitle=False, labels=None, colorbyval=True, **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     Can plot any column vs any other column
@@ -122,9 +122,16 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             if c is None:
                 colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
             elif type(c) is str:
-                # color by the column given
-                normc = (data[c] - np.min(data[c])) / (np.max(data[c]) - np.min(data[c]))
-                colors = cmap(normc)
+                if colorbyval:
+                    # color by value of the column given
+                    normc = (data[c] - np.min(data[c])) / (np.max(data[c]) - np.min(data[c]))
+                    colors = cmap(normc)
+                else:
+                    # this means we want to color by the category of the value in the column
+                    # Should put in increasing order, but equally spaced on the color map,
+                    # not proportionally spaced according to the value of the data column
+                    uvals, category = np.unique(data[c], return_inverse=True)
+                    colors = cmap(category / max(category))
             else:
                 # It's probably an array of values?  Map them to colors
                 normc = (c - np.min(c)) / (np.max(c) - np.min(c))

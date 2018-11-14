@@ -657,8 +657,8 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
 # Change this when you change probing circuits
 #pico_to_iv = rehan_to_iv
-#pico_to_iv = ccircuit_to_iv
-pico_to_iv = partial(Rext_to_iv, R=50)
+pico_to_iv = ccircuit_to_iv
+#pico_to_iv = partial(Rext_to_iv, R=50)
 
 def tri(v1, v2, n=None, step=None):
     '''

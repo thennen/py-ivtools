@@ -1584,3 +1584,10 @@ def hand_select(df, groupby=None, **kwargs):
         for k,g in df.groupby(groupby):
             selected.append(selectloop(g))
         return pd.DataFrame(selected)
+
+
+### Not ivfuncs, useful to have around
+
+def category(alist):
+    unique, category = np.unique(alist, return_inverse=True)
+    return category

@@ -1027,9 +1027,19 @@ class Eurotherm2408(object):
     You can also use modbus.
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
-        self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
-        self.gid = gid
-        self.uid = uid
+        # BORG
+        self.__dict__ = persistent_state.eurotherm_state
+        self.connect(addr, gid, uid)
+
+    def connect(self, addr='COM32', gid=0, uid=1):
+        if not self.connected():
+            self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
+            self.gid = gid
+            self.uid = uid
+
+    def connected():
+        return hasattr(self, 'conn'):
+
     def write_data(self, mnemonic, data):
         # Select
         # C1 C2 are the two characters of the mnemonic

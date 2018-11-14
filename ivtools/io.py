@@ -721,24 +721,51 @@ def write_csv(data, filepath, columns=None, overwrite=False):
         # Write header of non-array data
         isarray = [k for k in data.keys() if type(data[k]) == np.ndarray]
         notarray = [k for k in data.keys() if k not in isarray]
-        if not overwrite and os.path.isfile(filepath):
+        if (not overwrite) and os.path.isfile(filepath):
             raise Exception('File already exists!')
         else:
             header = '\n'.join(['# {}\t{}'.format(k, data[k]) for k in notarray])
             if columns is None:
                 columns = isarray
+            directory = os.path.split(filepath)[0]
+            if not os.path.isdir(directory):
+                os.makedirs(directory)
             with open(filepath, 'w') as f:
                 f.write(header)
                 f.write('\n')
                 pd.DataFrame({k:data[k] for k in columns}).to_csv(f, sep='\t', index=False)
                 #np.savetxt(f, np.vstack([data[c] for c in columns]).T, delimiter='\t', header=header)
-    elif type(data) is list:
+    elif type(data) in (list, pd.DataFrame):
         # Come up with unique filenames, and pass it back to write_csv one by one
-        filenames = [insert_file_num(filepath, n, 3) for n in range(len(data))]
-        for fn, d in zip(filenames, data):
-            write_csv(d, filepath=fn)
+        if type(data) == pd.DataFrame:
+            for i, d in data.iterrows():
+                if hasattr(filepath, '__call__'):
+                    write_csv(d, filepath=filepath, columns=columns, overwrite=overwrite)
+                else:
+                    fn = insert_file_num(filepath, i, 3)
+                    write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
+        else:
+            for i, d in enumerate(data):
+                if hasattr(filepath, '__call__'):
+                    write_csv(d, filepath=filepath, columns=columns, overwrite=overwrite)
+                else:
+                    fn = insert_file_num(filepath, i, 3)
+                    write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
         # TODO: Don't write thousands of files
         # Don't write a 10 GB text file
+
+def write_csv_multi(data, filepath, columns=None, overwrite=False):
+    '''
+    NOT IMPLEMENTED
+    Write a list (or df) of loops to one csv file.
+    Could write a ragged list, for dinosaurs who want to copy paste into origin
+    Or could stack all the arrays vertically, which would be easier to read in programmatically maybe
+    '''
+    if type(data) in (dict, pd.Series):
+        # You called the wrong function
+        write_csv(data, filepath, columns=None, overwrite=False)
+    elif type(data) is list:
+        pass
 
 
 def insert_file_num(filepath, number, width=3):
@@ -807,7 +834,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwri
         df = pd.read_pickle(dffn)
         df.I *= 1e6
         df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
-        step = int(ceil(len(df) / maxloops))
+        step = int(np.ceil(len(df) / maxloops))
         smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
         ivplot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
         s = df.iloc[0]
