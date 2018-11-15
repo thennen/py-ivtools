@@ -9,14 +9,26 @@ should be contained.  Also there might be a situation where we would like multip
 
 Should only put instruments here that have an actual data connection to the computer
 
-TODO:
-The module maintains weak references to instrument instances, so that they can be updated on reload in order to
-reuse existing connections
+Right now we use the Borg pattern to maintain instrument state (and reuse existing connections),
+and we keep the state in a separate module so that it even survives reload of this module.
+I don't know if this is a horrible idea or not, but it seems to suit our purposes very nicely.
 
-Should also find existing connections if already available
+You can create an instance of these classes anywhere in your code, and they will automatically
+reuse a connection if it exists, EVEN IF THE CLASS DEFINITION ITSELF HAS CHANGED.
+One downside is that if you screw up the state somehow, you have to manually delete it to start over.
+But one could add some kind of reset_state flag to __init__ to handle this.
+
+If, in the future, we need multiple instances of the same instrument class, we can implement
+something that detects the appropriate state dict to use.
+
+#TODO make parent class or decorator to implement the borg stuff
+
+Another approach could be to have the module maintain weak references to all instrument instances,
+and have a function that decides whether to instantiate a new instance or return an existing one.
+I tried this for a while and I think it's a worse solution.
 '''
 
-# TODO: Maybe split this up into one file per instrument..
+# TODO: Maybe split this up into one file per instrument
 
 import numpy as np
 import visa
@@ -1037,8 +1049,8 @@ class Eurotherm2408(object):
             self.gid = gid
             self.uid = uid
 
-    def connected(self):
-        return hasattr(self, 'conn')
+    def connected():
+        return hasattr(self, 'conn'):
 
     def write_data(self, mnemonic, data):
         # Select
