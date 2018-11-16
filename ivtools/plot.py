@@ -35,8 +35,13 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         # Don't know if this is a good idea
         y = '[{}, ..., {}]'.format(y[0], y[-1])
 
+    if hasattr(Y, '__iter__'):
+        lenY = len(Y)
+    else:
+        lenY = 1
+
     if x is None:
-        X = np.arange(l)
+        X = np.arange(lenY)
     elif type(x) == str:
         X = iv[x]
     elif hasattr(x, '__call__'):
@@ -46,16 +51,12 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         X = x
         x = '[{}, ..., {}]'.format(x[0], x[-1])
 
-    # X and Y should be the same length, if they are not, truncate one
     if hasattr(X, '__iter__'):
         lenX = len(X)
     else:
         lenX = 1
-    if hasattr(Y, '__iter__'):
-        lenY = len(Y)
-    else:
-        lenY = 1
 
+    # X and Y should be the same length, if they are not, truncate one
     if lenX != lenY:
         print('X and Y arrays are not the same length! Truncating the longer one.')
         if lenX > lenY:
