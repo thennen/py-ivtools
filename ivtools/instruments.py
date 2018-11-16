@@ -444,7 +444,7 @@ class RigolDG5000(object):
             self.ask = self.query
             self.close = self.conn.close
             idn = self.conn.ask('*IDN?').replace('\n', '')
-            print('Rigol connection succeeded. *IDN?: {}'.format(idn))
+            #print('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
 
@@ -788,26 +788,43 @@ class Keithley2600(object):
 
     Here we maintain a separate lua file "Keithley_2600.lua" which defines lua
     functions on the keithley, then we wrap those in python.
+
+    TODO: ResourceManager does not register TCP connections properly, and there
+    does not seem to be an obvious way to tell quickly whether they are connected,
+    because .list_resources() does not show them.
+    This is the only reason Keithley2600 is Borg
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
+            self.__dict__ = persistent_state.keithley_state
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
-        self.conn = visa_rm.get_instrument(addr, open_timeout=0)
-        # Expose a few methods directly to self
-        self.write = self.conn.write
-        self.query = self.conn.query
-        self.ask = self.query
-        self.read = self.conn.read
-        self.read_raw = self.conn.read_raw
-        self.close = self.conn.close
+        if not self.connected():
+            self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+            # Expose a few methods directly to self
+            self.write = self.conn.write
+            self.query = self.conn.query
+            self.ask = self.query
+            self.read = self.conn.read
+            self.read_raw = self.conn.read_raw
+            self.close = self.conn.close
+            # Store up to 100 loops in memory in case you forget to save them to disk
+            self.data= deque(maxlen=100)
+        # Always re-run lua file
         moduledir = os.path.split(__file__)[0]
         self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
-        # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data= deque(maxlen=100)
+
+    def connected(self):
+        if hasattr(self, 'conn'):
+            try:
+                self.idn()
+                return True
+            except:
+                pass
+        return False
 
     def idn(self):
         return self.query('*IDN?').replace('\n', '')
@@ -1050,7 +1067,7 @@ class Eurotherm2408(object):
             self.uid = uid
 
     def connected():
-        return hasattr(self, 'conn'):
+        return hasattr(self, 'conn')
 
     def write_data(self, mnemonic, data):
         # Select

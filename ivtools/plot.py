@@ -14,6 +14,7 @@ from inspect import signature
 import os
 from numbers import Number
 from functools import wraps
+from collections import deque
 
 def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yfunc=None, **kwargs):
     '''
@@ -49,12 +50,16 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     # X and Y should be the same length, if they are not, truncate one
     if hasattr(X, '__iter__'):
         lenX = len(X)
+        Xscalar = False
     else:
         lenX = 1
+        Xscalar = True
     if hasattr(Y, '__iter__'):
         lenY = len(Y)
+        Yscalar = False
     else:
         lenY = 1
+        Yscalar = True
 
     if lenX != lenY:
         print('X and Y arrays are not the same length! Truncating the longer one.')
@@ -120,11 +125,12 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     ax.set_xlabel(xlabel)
     ax.set_ylabel(ylabel)
 
-    if lenX > 1:
-        line = ax.plot(X, Y, **kwargs)[0]
-    else:
-        # Not actually a line
+    if Xscalar and Yscalar:
+        # X and Y were scalars
+        # Not actually a line, might lead to really strange bugs..
         line = ax.scatter(X, Y, **kwargs)
+    else:
+        line = ax.plot(X, Y, **kwargs)[0]
 
     return line
 
@@ -566,11 +572,18 @@ class interactive_figs(object):
                     color = ax.lines[-1].get_color()
                     ax.set_xlabel(ax.get_xlabel(), color=color)
                     ax.set_ylabel(ax.get_ylabel(), color=color)
-                except:
+                except Exception as e:
                     ax.plot([])
-                    print('Plotter number {} failed!'.format(axnum))
+                    print('Plotter number {} failed!: {}'.format(axnum, e))
                 ax.get_figure().canvas.draw()
         mypause(0.05)
+
+    def set_maxlines(self, maxlines=None):
+        for ax in self.axs:
+            if maxlines is None:
+                ax.lines = list(ax.lines)
+            else:
+                ax.lines = deque(ax.lines, maxlen=maxlines)
 
     def updateline(self, data):
         '''
@@ -593,8 +606,8 @@ class interactive_figs(object):
                 # it might even work ..
                 try:
                     plotter(data, ax, color=color)
-                except:
-                    print('Plotter number {} failed!'.format(axnum))
+                except Exception as e:
+                    print('Plotter number {} failed!: {}'.format(axnum, e))
             else:
                 # Simply set the line color after plotting
                 # could mess up the color cycle.
@@ -718,7 +731,7 @@ def plottertemplate(data, ax, **kwargs):
     ax.set_ylabel('y')
 
 def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
-    # Smooth data a bit and give it to plotiv
+    # Maybe smooth data a bit and give it to plotiv
     # Make sure not too much data gets plotted, or it slows down the program a lot.
     # Would be better to smooth before splitting ...
     # kwargs gets passed through to plotiv, which passes them through to plt.plot
@@ -735,8 +748,31 @@ def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
         loopstep = int(nloops / 99)
         data = data[::loopstep]
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    #ax.plot(data['V'], data['I'], **kwargs)
     plotiv(data, ax=ax, maxsamples=5000, **kwargs)
 
+def R_vs_cycle_plotter(data, ax=None, **kwargs):
+    if ax is None:
+        fig, ax = plt.subplots()
+    # Using line plot because that's all interactive_figs knows about
+
+    if len(data['V'] > 1):
+        v0 = np.min(data['V'])
+        v1 = np.max(data['V'])
+        R = analyze.resistance(data, v0, v1)
+    else:
+        R = np.nan
+    # Try to always make a data point after the largest one already on the plot
+    if len(ax.lines) > 0:
+        lastline = ax.lines[-1]
+        lastx = np.max(lastline.get_data()[0])
+    else:
+        lastx = -1
+    ax.plot(lastx + 1, R, marker='.', markersize=12, **kwargs)
+    ax.set_xlabel('Cycle #')
+    ax.xaxis.set_major_locator(mpl.ticker.MaxNLocator(integer=True))
+    ax.set_ylabel('Resistance (from line fit) [$\Omega$]')
+    engformatter('y')
 
 #@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
@@ -816,10 +852,10 @@ def vtplotter(data, ax=None, **kwargs):
 def itplotter(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
-    if 't' not in data:
-        t = analyze.maketimearray(data)
-    else:
+    if 't' in data:
         t = data['t']
+    else:
+        t = analyze.maketimearray(data)
     ax.plot(t, data['I'], **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Current [$\mu$A]', color=color)

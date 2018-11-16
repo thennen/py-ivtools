@@ -84,7 +84,7 @@ if hostname == 'pciwe46':
     connections = [('ps', instruments.Picoscope),
                    ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                    ('daq', instruments.USB2708HS),
-                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                   ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                    #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
 elif hostname == 'pciwe38':
@@ -117,7 +117,7 @@ instrument_varnames = {instruments.Picoscope:'ps',
 for kk,v in instrument_varnames.items():
     globalvars[v] = None
 
-visa_resources = ivtools.persistent_state.visa_rm.list_resources()
+visa_resources = persistent_state.visa_rm.list_resources()
 # Connect to all the instruments
 # TODO: visa does not remember its TCPIP sessions, and will not reconnect properly!
 # TODO: there is currently no way to manage serial connections, will error if you try to connect twice

@@ -1,9 +1,5 @@
 """
 Functions for measuring IV data
-Knows about these instruments
-Picoscope 6403C
-Rigol DG5102 AWG
-Keithley 2636B, 2634B, 2636A
 """
 # Local imports
 from . import plot as ivplot
