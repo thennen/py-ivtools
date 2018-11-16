@@ -1066,7 +1066,7 @@ class Eurotherm2408(object):
             self.gid = gid
             self.uid = uid
 
-    def connected():
+    def connected(self):
         return hasattr(self, 'conn')
 
     def write_data(self, mnemonic, data):
