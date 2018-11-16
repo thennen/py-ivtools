@@ -12,3 +12,5 @@ visa_rm = visa.ResourceManager()
 pico_state = {}
 plotter_state = {}
 metahandler_state = {}
+eurotherm_state = {}
+keithley_state = {}

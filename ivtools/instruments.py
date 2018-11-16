@@ -9,14 +9,26 @@ should be contained.  Also there might be a situation where we would like multip
 
 Should only put instruments here that have an actual data connection to the computer
 
-TODO:
-The module maintains weak references to instrument instances, so that they can be updated on reload in order to
-reuse existing connections
+Right now we use the Borg pattern to maintain instrument state (and reuse existing connections),
+and we keep the state in a separate module so that it even survives reload of this module.
+I don't know if this is a horrible idea or not, but it seems to suit our purposes very nicely.
 
-Should also find existing connections if already available
+You can create an instance of these classes anywhere in your code, and they will automatically
+reuse a connection if it exists, EVEN IF THE CLASS DEFINITION ITSELF HAS CHANGED.
+One downside is that if you screw up the state somehow, you have to manually delete it to start over.
+But one could add some kind of reset_state flag to __init__ to handle this.
+
+If, in the future, we need multiple instances of the same instrument class, we can implement
+something that detects the appropriate state dict to use.
+
+#TODO make parent class or decorator to implement the borg stuff
+
+Another approach could be to have the module maintain weak references to all instrument instances,
+and have a function that decides whether to instantiate a new instance or return an existing one.
+I tried this for a while and I think it's a worse solution.
 '''
 
-# TODO: Maybe split this up into one file per instrument..
+# TODO: Maybe split this up into one file per instrument
 
 import numpy as np
 import visa
@@ -432,7 +444,7 @@ class RigolDG5000(object):
             self.ask = self.query
             self.close = self.conn.close
             idn = self.conn.ask('*IDN?').replace('\n', '')
-            print('Rigol connection succeeded. *IDN?: {}'.format(idn))
+            #print('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
 
@@ -776,26 +788,43 @@ class Keithley2600(object):
 
     Here we maintain a separate lua file "Keithley_2600.lua" which defines lua
     functions on the keithley, then we wrap those in python.
+
+    TODO: ResourceManager does not register TCP connections properly, and there
+    does not seem to be an obvious way to tell quickly whether they are connected,
+    because .list_resources() does not show them.
+    This is the only reason Keithley2600 is Borg
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
+            self.__dict__ = persistent_state.keithley_state
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
-        self.conn = visa_rm.get_instrument(addr, open_timeout=0)
-        # Expose a few methods directly to self
-        self.write = self.conn.write
-        self.query = self.conn.query
-        self.ask = self.query
-        self.read = self.conn.read
-        self.read_raw = self.conn.read_raw
-        self.close = self.conn.close
+        if not self.connected():
+            self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+            # Expose a few methods directly to self
+            self.write = self.conn.write
+            self.query = self.conn.query
+            self.ask = self.query
+            self.read = self.conn.read
+            self.read_raw = self.conn.read_raw
+            self.close = self.conn.close
+            # Store up to 100 loops in memory in case you forget to save them to disk
+            self.data= deque(maxlen=100)
+        # Always re-run lua file
         moduledir = os.path.split(__file__)[0]
         self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
-        # Store up to 100 loops in memory in case you forget to save them to disk
-        self.data= deque(maxlen=100)
+
+    def connected(self):
+        if hasattr(self, 'conn'):
+            try:
+                self.idn()
+                return True
+            except:
+                pass
+        return False
 
     def idn(self):
         return self.query('*IDN?').replace('\n', '')
@@ -1027,9 +1056,19 @@ class Eurotherm2408(object):
     You can also use modbus.
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
-        self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
-        self.gid = gid
-        self.uid = uid
+        # BORG
+        self.__dict__ = persistent_state.eurotherm_state
+        self.connect(addr, gid, uid)
+
+    def connect(self, addr='COM32', gid=0, uid=1):
+        if not self.connected():
+            self.conn = serial.Serial(addr, timeout=1, bytesize=7, parity=serial.PARITY_EVEN)
+            self.gid = gid
+            self.uid = uid
+
+    def connected(self):
+        return hasattr(self, 'conn')
+
     def write_data(self, mnemonic, data):
         # Select
         # C1 C2 are the two characters of the mnemonic
