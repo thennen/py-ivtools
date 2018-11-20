@@ -172,6 +172,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                 cmap = plt.cm.get_cmap(cm)
             elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
                 cmap = cm
+            # TODO: add vmin and vmax arguments to stretch the color map
             if c is None:
                 colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
             elif type(c) is str:
@@ -186,9 +187,13 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                     uvals, category = np.unique(data[c], return_inverse=True)
                     colors = cmap(category / max(category))
             else:
-                # It's probably an array of values?  Map them to colors
-                normc = (c - np.min(c)) / (np.max(c) - np.min(c))
-                colors = cmap(normc)
+                # It should be either a list of colors or a list of values
+                if hasattr(c[0], '__iter__'):
+                    colors = c
+                else:
+                    # It's probably an array of values?  Map them to colors
+                    normc = (c - np.min(c)) / (np.max(c) - np.min(c))
+                    colors = cmap(normc)
 
         if type(labels) is str:
             # label by the column with this name
