@@ -188,7 +188,8 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                     colors = cmap(category / max(category))
             else:
                 # It should be either a list of colors or a list of values
-                if hasattr(c[0], '__iter__'):
+                firstval = next(iter(c))
+                if hasattr(firstval, '__iter__'):
                     colors = c
                 else:
                     # It's probably an array of values?  Map them to colors
