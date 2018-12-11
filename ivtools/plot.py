@@ -36,8 +36,13 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         # Don't know if this is a good idea
         y = '[{}, ..., {}]'.format(y[0], y[-1])
 
+    if hasattr(Y, '__iter__'):
+        lenY = len(Y)
+    else:
+        lenY = 1
+
     if x is None:
-        X = np.arange(l)
+        X = np.arange(lenY)
     elif type(x) == str:
         X = iv[x]
     elif hasattr(x, '__call__'):
@@ -47,7 +52,6 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         X = x
         x = '[{}, ..., {}]'.format(x[0], x[-1])
 
-    # X and Y should be the same length, if they are not, truncate one
     if hasattr(X, '__iter__'):
         lenX = len(X)
         Xscalar = False
@@ -61,6 +65,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         lenY = 1
         Yscalar = True
 
+    # X and Y should be the same length, if they are not, truncate one
     if lenX != lenY:
         print('X and Y arrays are not the same length! Truncating the longer one.')
         if lenX > lenY:
@@ -167,6 +172,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                 cmap = plt.cm.get_cmap(cm)
             elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
                 cmap = cm
+            # TODO: add vmin and vmax arguments to stretch the color map
             if c is None:
                 colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
             elif type(c) is str:
@@ -181,9 +187,14 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                     uvals, category = np.unique(data[c], return_inverse=True)
                     colors = cmap(category / max(category))
             else:
-                # It's probably an array of values?  Map them to colors
-                normc = (c - np.min(c)) / (np.max(c) - np.min(c))
-                colors = cmap(normc)
+                # It should be either a list of colors or a list of values
+                firstval = next(iter(c))
+                if hasattr(firstval, '__iter__'):
+                    colors = c
+                else:
+                    # It's probably an array of values?  Map them to colors
+                    normc = (c - np.min(c)) / (np.max(c) - np.min(c))
+                    colors = cmap(normc)
 
         if type(labels) is str:
             # label by the column with this name
@@ -1241,7 +1252,7 @@ def engformatter(axis='y', ax=None):
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
-        cmap(np.linspace(minval, maxval, n)))
+        cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
 
 

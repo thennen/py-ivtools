@@ -738,21 +738,17 @@ def write_csv(data, filepath, columns=None, overwrite=False):
     elif type(data) in (list, pd.DataFrame):
         # Come up with unique filenames, and pass it back to write_csv one by one
         if type(data) == pd.DataFrame:
-            for i, d in data.iterrows():
-                if hasattr(filepath, '__call__'):
-                    write_csv(d, filepath=filepath, columns=columns, overwrite=overwrite)
-                else:
-                    fn = insert_file_num(filepath, i, 3)
-                    write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
+            iterdata = data.iterrows()
         else:
-            for i, d in enumerate(data):
-                if hasattr(filepath, '__call__'):
-                    write_csv(d, filepath=filepath, columns=columns, overwrite=overwrite)
-                else:
-                    fn = insert_file_num(filepath, i, 3)
-                    write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
+            iterdata = enumerate(data)
+        for i, d in iterdata:
+            if hasattr(filepath, '__call__'):
+                write_csv(d, filepath=filepath, columns=columns, overwrite=overwrite)
+            else:
+                fn = insert_file_num(filepath, i, 3)
+                write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
         # TODO: Don't write thousands of files
-        # Don't write a 10 GB text file
+        # TODO: Don't write a 10 GB text file
 
 def write_csv_multi(data, filepath, columns=None, overwrite=False):
     '''

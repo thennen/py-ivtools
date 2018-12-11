@@ -424,8 +424,10 @@ class RigolDG5000(object):
     or it will just hang forever and need to be manually restarted along with the entire python shell.
     '''
     # TODO: make the SCPI wrapping functions do a query if you pass None
-    def __init__(self, addr='USB0::0x1AB1::0x0640::DG5T155000186::INSTR'):
+    def __init__(self, addr=None):
         try:
+            if addr is None:
+                addr = self.get_visa_addr()
             self.connect(addr)
         except:
             print('Rigol connection failed.')
@@ -434,6 +436,14 @@ class RigolDG5000(object):
         # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
         self.screensaver(False)
         self.volatilewfm = []
+
+    def get_visa_addr(self):
+        # Look for the address of the DG5000 using visa resource manager
+        for resource in visa_rm.list_resources():
+            if 'DG5' in resource:
+                return resource
+        return 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'
+
 
     def connect(self, addr):
         try:
@@ -1066,7 +1076,7 @@ class Eurotherm2408(object):
             self.gid = gid
             self.uid = uid
 
-    def connected():
+    def connected(self):
         return hasattr(self, 'conn')
 
     def write_data(self, mnemonic, data):
