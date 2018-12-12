@@ -77,7 +77,7 @@ module_coords['module_num'] = module_coords['module'].apply(lambda s: int(s[:3])
 # This has information about which dies are on which 2x2 coupon
 die_info = pd.read_excel(r'Lassen.xlsx', sheetname='coupon_die')
 # Join with die location data
-die_info.index = die_coords.index
+die_info.index = die_info.die
 die_info = die_info.join(die_coords)
 #die_info.to_pickle('die_locations.pickle')
 
