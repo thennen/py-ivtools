@@ -728,7 +728,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
             if columns is None:
                 columns = isarray
             directory = os.path.split(filepath)[0]
-            if not os.path.isdir(directory):
+            if (directory != '') and not os.path.isdir(directory):
                 os.makedirs(directory)
             with open(filepath, 'w') as f:
                 f.write(header)
