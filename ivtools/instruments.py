@@ -1056,6 +1056,475 @@ class Keithley2600(object):
             self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
 
 
+
+#########################################################
+# UF2000 Prober #########################################
+#########################################################
+class UF2000Prober(object):
+    '''
+    T Hennen modified 2018-12-11
+
+    UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
+
+    But we also have the option to specify directly positions in micrometers, then we can handle everything else here in the python universe.
+
+    There are two different coordinate systems in use here, which are related by a reflection and a translation:
+        -Prober coordinates
+        -wafer (global) coordinates
+
+    Prober cordinates are what is sent to and received from the prober. You should never have to think about these.
+    Wafer coordinates are the global wafer coordinates -- they span the entire wafer.
+    '''
+
+    def __init__(self, idstring = 'GPIB0::5::INSTR'):
+        self.inst = visa_rm.open_resource(idstring)
+        self.inst.timeout = 3000
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.zDn()
+        #print('Closing UF2000')
+        return False
+
+    ####### Communication ########
+
+    def write_8min(self, message, stbList):
+        #will wait 8 min for stblist, with no breaking for stalls
+        self.inst.write(message)
+        self.errorCheck()
+        return self.waitforStatusByte_8min(stbList)
+
+    def write(self, message, stbList):
+
+        self.inst.write(message)
+        #self.errorCheck()
+        return self.waitForStatusByte(stbList)
+
+    def waitForSRQ_readStatus(self, timeout):
+        self.inst.timeout = timeout
+        self.inst.wait_for_srq()
+        del self.inst.timeout
+        return self.inst.read_stb()
+
+    def waitforStatusByte_8min(self, stb ):
+        #this function has no provision for 'stalls' it will wait for the stb until the for loop completes
+        # this is necessary so that the 'stall' doesn't terminate the loop before the next wafer is loaded
+        if type(stb) == int:
+            stb = [stb]
+        #
+        old_a = 0
+        #
+        for _ in range(int(1E6)):
+            a = self.inst.read_stb()
+
+
+            """
+            if a == 76:
+                #Error!
+                self.errorCheck()
+                self.errorClearanceReq()
+
+            """
+            if a != old_a:
+                #print('STB '+str(a)+': '+self.getSTBMessage(a))
+                old_a = a
+            if a in stb:
+                return a
+
+            time.sleep(.0005)
+            pass
+        else:
+            #this will execute if the above for loop executes sucessfully--that is, 1e6 iterations were completed, and STB
+            raise UF2000ProberError
+
+    def waitForStatusByte(self, stb):
+        if type(stb) == int:
+            stb = [stb]
+        #
+        old_a = 0
+        #
+        for _ in range(int(1E6)):
+            a = self.inst.read_stb()
+
+
+            """
+            if a == 76:
+                #Error!
+                self.errorCheck()
+                self.errorClearanceReq()
+
+            """
+            if a != old_a:
+                #print('STB '+str(a)+': '+self.getSTBMessage(a))
+                old_a = a
+            if (a in stb) :
+                return a
+            if a==3 and _ > 6000:
+                print('**********\n**********\nSTB 3 Stall\n**********\n**********\n')
+                return(a)
+
+            if a==4 and _ >6000:  #ONLY FOR 'makeContact = No --comment out otherwise
+                print('**********\n**********\nSTB 4 Stall\n**********\n**********\n')
+                return(a)
+
+            time.sleep(.0005)
+            pass
+        else:
+            #this will execute if the above for loop executes sucessfully--that is, 1e6 iterations were completed, and STB was never 3 or 4
+            raise UF2000ProberError
+
+    def query(self, queryStr):
+        for retry_nr in range(4):
+            try:
+                result = self.inst.query(queryStr)
+                if result[0] != queryStr and queryStr != 'ms':
+                    raise UF2000ProberError('Return String not well-formed:%s %s' %(queryStr, result))
+                self.errorCheck()
+                return result
+            except pyvisa.errors.VisaIOError as e:
+                #emailData("alexander.elias@gmail.com")
+                traceback.print_exc()
+                time.sleep(10)
+                continue
+
+    def waitForSTB(self):
+        stb1 = str(self.inst.read_stb())
+        #self.inst.wait_for_srq()
+
+        stb2 = str(self.inst.read_stb())
+        return int(stb1)
+
+    def errorCheck(self):
+        errorTypeDict = {'S': 'System Error: ',
+                        'E': 'Error State: ',
+                        'O': 'Operator Call: ',
+                        'W': 'Warning Condition: ',
+                        'I': 'Information: '}
+        errorCodeDict = {'0650' : 'GPIB Receive Error ',
+                         '0651': 'GPIB Transmit Error ',
+                         '0660': 'GPIB Command Format Invalid ',
+                         '0661': 'GPIB Command Execution Error ',
+                         '0665': 'GPIB Stop Command Received ',
+                         '0667': 'GPIB Communication Timeout Error ',
+                         '0669': 'GPIB Timeout Error '}
+        for retry_nr in range(1):
+            try:
+                rawError = self.inst.query('E')
+                break
+            except pyvisa.errors.VisaIOError as e:
+                #emailData("alexander.elias@gmail.com")
+                traceback.print_exc()
+                time.sleep(10)
+                continue
+
+        if rawError[0] != 'E':
+            raise UF2000ProberError('Return String not well-formed:%s %s' %(rawError, 'E'))
+
+        errorTypeCode = rawError[1]
+        errorCode = rawError[2:6]
+        errorString = errorTypeDict.get(errorTypeCode , 'Unknown Type') + errorCodeDict.get(errorCode, 'Unknown Code: ') + errorCode
+        #self.errorClearanceReq()
+        return errorString
+
+    def getID(self):
+        '''returns prober ID string'''
+        return self.query('B')
+    def getSTBMessage(self, stbIntStr):
+        stbDict = {'64': 'GPIB inital setting done',
+                   '65': 'Absolute Value Travel Done',
+                   '66': 'Coordinate Travel Done',
+                   '67': 'Z-Up (Test Start)',
+                   '68': 'Z-Down',
+                   '69': 'Marking Done',
+                   '70': 'Wafer Loading Done',
+                   '71': 'Wafer Unloading Done',
+                   '72': 'Lot End',
+                   '74': 'Out of Probing Area',
+                   '75': 'Prober Initial Setting Done',
+                   '76': 'Error: Lock/Unlock cassette',
+                   '77': 'Index Setting Done',
+                   '78': 'Pass Counting Up/Execution Error',
+                   '79': 'Fail Counting Up Done',
+                   '80': 'Wafer Unloaded',
+                   '81': 'Wafer End',
+                   '82': 'Cassette End',
+                   '84': 'Alignment Rejection Error',
+                   '85': 'Stop Command Received',
+                   '86': 'Print Data Receiving Done',
+                   '87': 'Warning Error',
+                   '88': 'Test Start (Count Not Needed)',
+                   '89': 'Needle Cleaning Done',
+                   '90': 'Probing Stop',
+                   '91': 'Probing Start',
+                   '92': 'Z-Up/Down Done',
+                   '93': 'Hot Chuck Cont. Command Received',
+                   '94': 'Lot Done',
+                   '98': 'Command Normally Done',
+                   '99': 'Command Abnormally Done',
+                   '100': 'Test Done Received',
+                   '101': '(em command correct end)',
+                   '103': 'Map Data Downloading Normally Done',
+                   '104': 'Map Data Downloading Abormally Done',
+                   '105': 'Able To Adjust Needle Height',
+                   '107': 'Binary Data Uploading',
+                   '108': 'Binary Data Uploading Finish',
+                   '110': 'Needle Mark OK',
+                   '111': 'Needle Mark NG',
+                   '112': 'Cassette Sensing Done',
+                   '113': 'Re-Alignment Done',
+                   '114': 'Auto Needle Alignment Normally Done',
+                   '115': 'Auto Needle Alignment Abnormally Done',
+                   '116': 'Chuck Height Setting Done',
+                   '117': 'Continuous Fail Error',
+                   '118': 'Wafer Loading Done',
+                   '119': 'Error Recovery Done (Wafer Centering Complete)',
+                   '120': 'Start Normally Done',
+                   '121': 'Start Abnormally Done',
+                   '122': 'Probe Mark Insapection Finish',
+                   '123': 'Fail Mark Inspection Finish',
+                   '124': 'Preload Done',
+                   '125': 'Probing Stop by GEM Host',
+                   '127': 'Travel Done',
+                   '6': '6: Probing...',
+                   '16': '16: Wafer Loading...',
+                   '17': '17: Wafer Unloading...',
+                   '30': '30: Waiting For New Cassette...',
+                   '34': '34: Cassette Ready...'}
+        return stbDict.get(str(stbIntStr), 'Unknown Status Byte: '+str(stbIntStr))
+
+    def proberStatusReq(self):
+        rawStatus =  self.query('ms')
+        status = rawStatus[2]
+        statusDict = {'W': 'Cassette Process Going on',
+                      ' ':'Status process Not going on',
+                      'I': 'Waiting for Lot Start',
+                      'C': 'Card Replacement Going On',
+                      'R': 'Lot Process Going On',
+                      'E': 'Waiting For Operator\'s Help With an Error '}
+
+        return statusDict[status], status
+
+    def probeClean(self):
+        '''intiate tip clean'''
+        self.write('W', [89])
+
+    def pushStart(self):
+        self.write('st', [120,121])
+
+    def stopTesting(self):
+        self.write('K', [90,85,26])
+
+    def errorClearanceReq(self):
+        self.inst.write('es')
+
+    def lotEndReq(self):
+        self.write('le', [98,99])
+
+    def getWaferID(self):
+        '''returns wafer ID as scanned by prober OCR, removes leading/trailing character'''
+        return self.query('b')[1:-1]
+
+    def pollStatusByte(self, doneResponse):
+        done = False
+        while done == False:
+            response = self.waitForSTB()
+            time.sleep(1)
+            print(response)
+            ent = raw_input
+            if response == doneResponse:
+                done = True
+        return
+
+
+    ######## Wafer loading ########
+    def loadWafer(self):
+        return self.write_8min('L', [70,94])
+        """
+        if self.waitForStatusByte([2,17]) == 2:
+            #print ('Needle Cleaning on Unit...')
+        elif self.waitForStatusByte([2,17]) == 17:
+            #print("Wafer Unloading...")
+        else:
+            #print('Loading Next Wafer...')
+        """
+    def unLoadWafer(self):
+        #TODO increase timeout -- wafer takes a while to unload
+        self.write('U', [71])
+
+    ######## Temperature control ########
+    def getChuckTemp(self):
+        temp = self.inst.query('f1')
+        return float(temp)
+
+    def setChuckTemp(self, temp):
+        if temp < 15 or temp > 150:
+            print('Temperature out of range, must be 15->150C')
+            return
+
+        temp = temp*10 #conver degree C to 0.1 C
+        temp = str(temp).zfill(4)
+        self.write('h{}'.format(temp), 93)
+
+    def waitForTemp(self):
+        self.inst.timeout = None
+        tempStr = self.inst.query('f')
+        if len(tempStr)!=11:
+            print('Hot Chuck not enabled!')
+            raise UF2000ProberError
+
+
+        currTemp =  float(tempStr[1:5])/10.
+        setTemp =   float(tempStr[5:9])/10.
+        spinner = itertools.cycle(['-', '/', '|', '\\'])
+        #sys.stdout.write('Waiting on STB ')
+        #print(('Waiting for Temperature = {}...'.format(setTemp)))
+        while abs(currTemp-setTemp)>0.2:
+
+            time.sleep(10)
+            # sys.stdout.write(spinner.next())  # write the next character
+            # sys.stdout.flush()                # flush stdout buffer (actual character display)
+            # time.sleep(0.33)
+            # sys.stdout.write('\b')            # erase the last written char
+            tempStr = self.inst.query('f')
+            #print(tempStr)
+            currTemp =  float(tempStr[1:5])/10.
+            setTemp =   float(tempStr[5:9])/10.
+            print(('Set Temp: {}, CurrentTemp: {}, Diff: {}'.format(setTemp, currTemp, abs(currTemp-setTemp))))
+        self.inst.timeout = 3000
+        print('Set Temperature Achieved!')
+
+
+    ######## Movement ########
+    def zDn(self):
+        '''moves chuck to NO_CONTACT position'''
+        #hp.shortAll()
+        self.write('D', [68])
+        #self.pollStatusByte(68)
+        #self.waitForSTB()
+        pass
+
+    def zUp(self):
+        '''moves chuck unto CONTACT position'''
+        #hp.shortAll()
+        #print('Zupping...')
+        self.write('Z', [67])
+        #self.pollStatusByte(67)
+        #self.waitForSTB()
+        pass
+
+
+    # Index based
+    # I think it's better not to use these at all ever
+    # TODO: Method names should not use the word "position" or "coords" but instead "index"
+    def Prober_to_Wafer_Coords(self, pX,pY):
+        '''tranforms prober coordinates to Wafer coordinates'''
+        '''
+        #FTTK
+        wX = pY - 37 #pY - 3
+        wY = 320 - pX #318 - pX
+        '''
+        #FTTP
+        wX = pY - 37 #pY - 3
+        wY = 352 - pX #318 - pX
+        return (wX, wY)
+
+    def Wafer_to_Prober_Coords(self, wX, wY):
+        '''transfroms wafer coordinates to prober coordinates'''
+        '''
+        #FTTK
+        pX = 320 - wY
+        pY = 37 + wX
+        '''
+        #FTTP
+        pX = 352 - wY
+        pY = 37 + wX
+
+        return pX, pY
+
+    def getProberPosition(self):
+        '''return position in Prober coords'''
+        rawPosString = self.query('Q')
+        y = rawPosString[2:5]
+        x = rawPosString[6:9]
+        return int(x), int(y)
+
+    def getWaferPosition(self):
+        '''returns position in Wafer Coords'''
+        pX, pY = self.getProberPosition()
+        wX, wY = self.Prober_to_Wafer_Coords(pX, pY)
+        return wX, wY
+
+    def gotoWaferPosition(self, wX, wY):
+        '''moves prober to absolute position in wafer coordinates'''
+        pX, pY = self.Wafer_to_Prober_Coords(wX, wY)
+        self.moveAbsolute(pX,pY)
+        return pX, pY
+
+    def moveAbsolute(self, absX, absY):
+        currentPos = self.getProberPosition()
+        if currentPos == (absX, absY):
+            return currentPos
+        relativeMove = np.subtract((absX, absY), currentPos)
+        rel_X = relativeMove[0]
+        rel_Y = relativeMove[1]
+        self.moveRelativeIndex(rel_X, rel_Y)
+        newPos = self.getProberPosition()
+        return newPos
+
+    def moveRelativeIndex(self, x, y):
+        '''indexes by relative die'''
+        if((x,y) == (0,0)):
+           return
+        strX = '%+04d' % x
+        strY = '%+04d' % y
+        moveString = 'SY'+ strY + 'X' + strX
+        self.write(moveString, [66,67,74])
+        return
+
+
+    # Micron based
+    # TODO: Change horrible names
+    def getAbsoluteWaferPosition_um(self):
+        pos_str = self.query('R')
+        y, x = int(pos_str[2:9]), int(pos_str[10:-2])
+        return x, y
+
+    def gotoRelativeWaferPosition_um(self, xum_rel, yum_rel):
+        str_xum = '{:+07d}'.format(xum_rel*-1)
+        str_yum = '{:+07d}'.format(yum_rel*-1)
+
+        moveString = 'AY{}X{}'.format(str_yum, str_xum)
+        #print(moveString)
+        self.write(moveString,[65,67, 74])
+
+    def gotoAbsoluteWaferPosition_um(self, xum_abs, yum_abs):
+        xum_curr, yum_curr = self.getAbsoluteWaferPosition_um()
+        print(('Current position:     {}, {}'.format(xum_curr, yum_curr)))
+        print(('Destination position: {}, {}'.format(xum_abs, yum_abs)))
+        xum_rel = int(xum_abs - xum_curr)/10
+        yum_rel = int(yum_abs - yum_curr)/10
+        self.gotoRelativeWaferPosition_um(xum_rel, yum_rel)
+
+
+    def gotoDevice(self, dev):
+        '''
+        UF2000 class right now has no concept of what a device is or where they are located
+        This method just lets you send in the wafer coordinates inside a dictionary-like object
+        dev should have the keys wX and wY
+        '''
+        print('***********************************************')
+        #print(("Moving to\n*\tFF:\t"+str(dev.ff)+"\n*\tModule:\t"+str(dev.module)+"\n*\tdevice:\t"+str(dev.deviceNumber)))
+        print(f'Moving to device:')
+        # TODO: print some subset of the information
+        print(dev)
+        print("***********************************************")
+        self.gotoAbsoluteWaferPosition_um(dev.wX, dev.wY)
+        time.sleep(.1) # necessary for proper prober communication?
+
+
+
 #########################################################
 # Eurotherm 2408 -- #################
 #########################################################
