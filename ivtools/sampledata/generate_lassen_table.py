@@ -57,8 +57,8 @@ colmap = {'001': [11506.599999999999, 4000.0], '001B': [11014.459999999999, 4000
           '022': [8267.3499999999985, 6000.0], '023': [6907.1000000000004, 0.0], '024': [6907.1000000000004, 4000.0], '025': [6084.8000000000002, 4000.0], '026': [6084.8000000000002, 0.0], '027': [6084.8000000000002, 6000.0],
           '028': [6907.1000000000004, 6000.0], '029': [7700.8500000000004, 6000.0], '030': [8267.3499999999985, 0.0], '031': [6084.8000000000002, 2000.0], '032': [11506.599999999999, 6000.0], '033': [8267.3499999999985, 4000.0],
           '034': [0.0, 6000.0]}
-# But they are in units of micron/10 for some reason, so convert them
-colmap = {k:(x*10, y*10) for k,(x,y) in colmap.items()}
+# But they are in units of micron/10 for some reason, and y is inverted, so convert them
+colmap = {k:(x*10, -y*10) for k,(x,y) in colmap.items()}
 
 # Turn those dicts into dataframes
 ffcoords = {k:[np.int32(v) for v in values] for k,values in ff_dict.items()}
@@ -114,7 +114,7 @@ die_info['key'] = 1
 module_info['key'] = 1
 wafer_info = pd.merge(die_info, module_info, on='key').drop('key', axis=1)
 
-wafer_info['device_y'] = (wafer_info['device_row'] - 1) * -1600
+wafer_info['device_y'] = (wafer_info['device_row'] - 1) * 1600
 
 wafer_info = wafer_info.sort_values(by=['die', 'module', 'R_series'])
 
