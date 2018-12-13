@@ -3,8 +3,8 @@ import pandas as pd
 
 # Alex got this data by email, locations of dies and of modules relative to die location:
 
-# Locations should be in microns, with some crazy offset
-# We think the offset is to some camera far off the chuck location inside the prober
+# Locations are in tenths of microns, with some crazy offset
+# The offset is to some camera far off the chuck location inside the prober
 # We don't know which point of the die these locations refer to
 # +Y pointing down
 # +X pointing right
@@ -300,6 +300,19 @@ ff_dict = {1: (1244257, 4820926),
            290: (1600123, 3058682),
            291: (1718745, 3058682),
            292: (1837367, 3058682)}
+# Make dataframe
+die_coords = pd.DataFrame.from_dict(ff_dict, orient='index')
+die_coords.columns = ['die_x', 'die_y']
+# Convert to micron
+die_coords['die_x'] /= 10
+die_coords['die_y'] /= 10
+# I dont care about prober coordinates.  Invert y axis and reference to center of mass
+die_coords['die_y'] = -die_coords['die_y']
+wafer_center_x = die_coords['die_x'].mean()
+wafer_center_y = die_coords['die_y'].mean()
+die_coords['die_x'] -= wafer_center_x
+die_coords['die_y'] -= wafer_center_y
+
 
 # Confirm understanding of coordinate system
 #for k,(x,y) in ff_dict.items():
@@ -310,7 +323,7 @@ ff_dict = {1: (1244257, 4820926),
 
 # These are the x,y coordinates of the modules relative to some place on the die
 # In totally different coordinate system and units from ff_dict
-# They are in units of micron/10 for some reason
+# These are in units of microns, whereas ff_dict is in tenths of micron
 # Referenced to the bottom left device (002_1), +x right, +y up
 mod_dict = {'001':  [11506.599999999999, 4000.0],
           '001B': [11014.459999999999, 4000.0],
@@ -368,7 +381,6 @@ mod_dict = {'001':  [11506.599999999999, 4000.0],
           '032':  [11506.599999999999, 6000.0],
           '033':  [8267.3499999999985, 4000.0],
           '034':  [0.0, 6000.0]}
-mod_dict = {k:(x*10, -y*10) for k,(x,y) in mod_dict.items()}
 
 # Confirm understanding of coordinate system
 #plt.figure()
@@ -377,11 +389,6 @@ mod_dict = {k:(x*10, -y*10) for k,(x,y) in mod_dict.items()}
 #gca().invert_yaxis()
 #plt.xlim(-16647.01316746185, 141452.12947821213)
 #plt.ylim(20458.35845360716, -82514.06000031461)
-
-# Turn those dicts into dataframes
-ffcoords = {k:[np.int32(v) for v in values] for k,values in ff_dict.items()}
-die_coords = pd.DataFrame.from_dict(ffcoords, orient='index')
-die_coords.columns = ['die_x', 'die_y']
 
 module_coords = pd.DataFrame.from_dict(mod_dict, orient='index').reset_index()
 module_coords.columns = ['module', 'module_x', 'module_y']
@@ -434,7 +441,7 @@ die_info['key'] = 1
 module_info['key'] = 1
 wafer_info = pd.merge(die_info, module_info, on='key').drop('key', axis=1)
 
-wafer_info['device_y'] = (wafer_info['device_row'] - 1) * -1600
+wafer_info['device_y'] = (wafer_info['device_row'] - 1) * 160
 
 wafer_info = wafer_info.sort_values(by=['die', 'module', 'R_series'])
 
@@ -483,6 +490,5 @@ coupon_info = wafer_info[wafer_info.coupon == 40].drop(['die', 'coupon'], 1)
 home = coupon_info[(coupon_info['module'] == '002') & (coupon_info['device'] == 1) & (coupon_info['die_rel'] == 3)].iloc[0]
 coupon_info['wX'] -= home.wX
 coupon_info['wY'] -= home.wY
-coupon_info['wY'] = -coupon_info['wY']
 coupon_info.to_pickle('lassen_coupon_info.pkl')
 coupon_info.to_excel('lassen_coupon_info.xlsx')
