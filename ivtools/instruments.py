@@ -1066,14 +1066,13 @@ class UF2000Prober(object):
 
     UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
 
-    But we also have the option to specify directly positions in micrometers, then we can handle everything else here in the python universe.
+    But we also have the option to specify directly position in micrometers, then we can handle the positioning here in the python universe.
 
-    There are two different coordinate systems in use here, which are related by a reflection and a translation:
-        -Prober coordinates
-        -wafer (global) coordinates
+    The indexing system is referenced to some home device, but the micron coordinate system is referenced to the chuck and centered god knows where.
 
-    Prober cordinates are what is sent to and received from the prober. You should never have to think about these.
-    Wafer coordinates are the global wafer coordinates -- they span the entire wafer.
+    There are a few ways we can deal with this.  Right now I choose to deal with it outside of the class, so that it does not have any hidden state.
+
+    UF2000Prober right now has no concept of what a device is or where they are located, except if the indexing system is set up on the prober machine.
     '''
 
     def __init__(self, idstring = 'GPIB0::5::INSTR'):
@@ -1414,67 +1413,35 @@ class UF2000Prober(object):
         #self.waitForSTB()
         pass
 
+    def goHome(self):
+        # Prober seems to call home position 128, 128.  Could be wrong!
+        self.moveAbsolute(128, 128)
+
 
     # Index based
-    # I think it's better not to use these at all ever
-    # TODO: Method names should not use the word "position" or "coords" but instead "index"
-    def Prober_to_Wafer_Coords(self, pX,pY):
-        '''tranforms prober coordinates to Wafer coordinates'''
+    # I think it's better not to use these at all
+    def getPosition(self):
         '''
-        #FTTK
-        wX = pY - 37 #pY - 3
-        wY = 320 - pX #318 - pX
+        Get position indices
         '''
-        #FTTP
-        wX = pY - 37 #pY - 3
-        wY = 352 - pX #318 - pX
-        return (wX, wY)
-
-    def Wafer_to_Prober_Coords(self, wX, wY):
-        '''transfroms wafer coordinates to prober coordinates'''
-        '''
-        #FTTK
-        pX = 320 - wY
-        pY = 37 + wX
-        '''
-        #FTTP
-        pX = 352 - wY
-        pY = 37 + wX
-
-        return pX, pY
-
-    def getProberPosition(self):
-        '''return position in Prober coords'''
         rawPosString = self.query('Q')
         y = rawPosString[2:5]
         x = rawPosString[6:9]
         return int(x), int(y)
 
-    def getWaferPosition(self):
-        '''returns position in Wafer Coords'''
-        pX, pY = self.getProberPosition()
-        wX, wY = self.Prober_to_Wafer_Coords(pX, pY)
-        return wX, wY
-
-    def gotoWaferPosition(self, wX, wY):
-        '''moves prober to absolute position in wafer coordinates'''
-        pX, pY = self.Wafer_to_Prober_Coords(wX, wY)
-        self.moveAbsolute(pX,pY)
-        return pX, pY
-
     def moveAbsolute(self, absX, absY):
-        currentPos = self.getProberPosition()
+        currentPos = self.getPosition()
         if currentPos == (absX, absY):
             return currentPos
         relativeMove = np.subtract((absX, absY), currentPos)
         rel_X = relativeMove[0]
         rel_Y = relativeMove[1]
-        self.moveRelativeIndex(rel_X, rel_Y)
-        newPos = self.getProberPosition()
+        self.moveRelative(rel_X, rel_Y)
+        newPos = self.getPosition()
         return newPos
 
-    def moveRelativeIndex(self, x, y):
-        '''indexes by relative die'''
+    def moveRelative(self, x, y):
+        ''''''
         if((x,y) == (0,0)):
            return
         strX = '%+04d' % x
@@ -1485,43 +1452,35 @@ class UF2000Prober(object):
 
 
     # Micron based
-    # TODO: Change horrible names
-    def getAbsoluteWaferPosition_um(self):
+    def getHomePosition_um(self):
+        '''
+        This is to center the micron coordinate system on the home device
+        '''
+        self.goHome()
+        home = self.getPosition_um()
+        return home
+
+    def getPosition_um(self):
+        '''
+        The position UF2000 thinks it is in, in um
+        '''
         pos_str = self.query('R')
         y, x = int(pos_str[2:9]), int(pos_str[10:-2])
         return x, y
 
-    def gotoRelativeWaferPosition_um(self, xum_rel, yum_rel):
-        str_xum = '{:+07d}'.format(xum_rel*-1)
-        str_yum = '{:+07d}'.format(yum_rel*-1)
-
+    def moveRelative_um(self, xum_rel, yum_rel):
+        str_xum = '{:+07d}'.format(xum_rel*-1)/10
+        str_yum = '{:+07d}'.format(yum_rel*-1)/10
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
-        #print(moveString)
-        self.write(moveString,[65,67, 74])
+        self.write(moveString, [65, 67, 74])
 
-    def gotoAbsoluteWaferPosition_um(self, xum_abs, yum_abs):
-        xum_curr, yum_curr = self.getAbsoluteWaferPosition_um()
+    def moveAbsolute_um(self, xum_abs, yum_abs):
+        xum_curr, yum_curr = self.getPosition_um()
         print(('Current position:     {}, {}'.format(xum_curr, yum_curr)))
         print(('Destination position: {}, {}'.format(xum_abs, yum_abs)))
-        xum_rel = int(xum_abs - xum_curr)/10
-        yum_rel = int(yum_abs - yum_curr)/10
-        self.gotoRelativeWaferPosition_um(xum_rel, yum_rel)
-
-
-    def gotoDevice(self, dev):
-        '''
-        UF2000 class right now has no concept of what a device is or where they are located
-        This method just lets you send in the wafer coordinates inside a dictionary-like object
-        dev should have the keys wX and wY
-        '''
-        print('***********************************************')
-        #print(("Moving to\n*\tFF:\t"+str(dev.ff)+"\n*\tModule:\t"+str(dev.module)+"\n*\tdevice:\t"+str(dev.deviceNumber)))
-        print(f'Moving to device:')
-        # TODO: print some subset of the information
-        print(dev)
-        print("***********************************************")
-        self.gotoAbsoluteWaferPosition_um(dev.wX, dev.wY)
-        time.sleep(.1) # necessary for proper prober communication?
+        xum_rel = int(xum_abs - xum_curr)
+        yum_rel = int(yum_abs - yum_curr)
+        self.moveRelative_um(xum_rel, yum_rel)
 
 
 
