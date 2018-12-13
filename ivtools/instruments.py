@@ -1066,10 +1066,17 @@ class UF2000Prober(object):
 
     !!! Important !!!
     There are two ways to move the prober: By index, and by micron
-    These two reference frames are aligned, but centered on different locations
+    These two reference frames are centered on different locations
     indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
     micron system is centered somewhere far away from the chuck
-    !!!           !!!
+	
+	The coordinate systems sound easy, but will confuse you for days
+	in part because the coordinate system and units used for setting
+	and getting the position are sometimes different and sometimes the same!!
+	e.g. when reading the position in microns, the x and y axes are reflected!!
+	
+	I attempted to hide all of this nonsense from the user of this class
+    !!!!!!
 
     UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
     But we also have the option to specify directly position in micrometers, then we can handle the positioning here in the python universe.
@@ -1091,7 +1098,7 @@ class UF2000Prober(object):
         # UF2000 seems to call this position home, could depend on the setup!
         self.home_indices = (128, 128)
         # Very roughly the center of the chuck...
-        self.center_position_um = (1_601_263, 3_882_645)
+        self.center_position_um = (160_126.3, 388_264.5)
 
     def __enter__(self):
         return self
@@ -1444,13 +1451,13 @@ class UF2000Prober(object):
         return xprober, yprober
 
     def prober_to_lab_um(self, xprober, yprober):
-        xlab = -xprober + self.center_position_um[0]
-        ylab = yprober - self.center_position_um[1]
+        xlab = xprober - self.center_position_um[0]
+        ylab = -yprober + self.center_position_um[1]
         return xlab, ylab
 
     def lab_to_prober_um(self, xlab, ylab):
-        xprober = -xlab + self.center_position_um[0]
-        yprober = ylab + self.center_position_um[1]
+        xprober = xlab + self.center_position_um[0]
+        yprober = -ylab + self.center_position_um[1]
         return xprober, yprober
 
     # Index based -- moves by unit cell and has only integer values
@@ -1525,6 +1532,7 @@ class UF2000Prober(object):
         yum_rel_prober = yum_rel
         str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
         str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
+		# manual says the unit is 1e-6 meter
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
@@ -1532,7 +1540,7 @@ class UF2000Prober(object):
         xum_curr, yum_curr = self.getPosition_um()
         print(('Current position:     {}, {}'.format(xum_curr, yum_curr)))
         print(('Destination position: {}, {}'.format(xum_abs, yum_abs)))
-        xumlrel = int(xum_abs - xum_curr)
+        xum_rel = int(xum_abs - xum_curr)
         yum_rel = int(yum_abs - yum_curr)
         self.moveRelative_um(xum_rel, yum_rel)
 
