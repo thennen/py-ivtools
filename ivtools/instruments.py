@@ -1448,7 +1448,7 @@ class UF2000Prober(object):
         ylab = yprober - self.center_position_um[1]
         return xlab, ylab
 
-    def lab_to_prober_um(self, xprober, yprober):
+    def lab_to_prober_um(self, xlab, ylab):
         xprober = -xlab + self.center_position_um[0]
         yprober = ylab + self.center_position_um[1]
         return xprober, yprober
@@ -1478,21 +1478,22 @@ class UF2000Prober(object):
         newPos = self.getPosition()
         return newPos
 
-    def moveRelative(self, x, y):
+    def moveRelative(self, x_rel, y_rel):
         '''
         Moves by whatever the prober thinks is the unit cell distance
         with respect to a view of the top of the wafer from the front of the machine:
         +X moves probe right
         +Y moves probe up
         '''
-        if((x,y) == (0,0)):
-           return
-        Xprober, Yprober = self.lab_to_prober_indices(x, y)
-        strX = '%+04d' % -x
-        strY = '%+04d' % y
+        if((x_rel, y_rel) == (0,0)):
+            return self.getPosition()
+        x_rel_prober = -x_rel
+        y_rel_prober = y_rel
+        strX = '%+04d' % x_rel_prober
+        strY = '%+04d' % y_rel_prober
         moveString = 'SY'+ strY + 'X' + strX
         self.write(moveString, [66,67,74])
-        return
+        return self.getPosition()
 
 
     # Micron based
@@ -1530,7 +1531,7 @@ class UF2000Prober(object):
         xum_curr, yum_curr = self.getPosition_um()
         print(('Current position:     {}, {}'.format(xum_curr, yum_curr)))
         print(('Destination position: {}, {}'.format(xum_abs, yum_abs)))
-        xum_rel = int(xum_abs - xum_curr)
+        xumlrel = int(xum_abs - xum_curr)
         yum_rel = int(yum_abs - yum_curr)
         self.moveRelative_um(xum_rel, yum_rel)
 
