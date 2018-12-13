@@ -1064,20 +1064,34 @@ class UF2000Prober(object):
     '''
     T Hennen modified 2018-12-11
 
-    UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
+    !!! Important !!!
+    There are two ways to move the prober: By index, and by micron
+    These two reference frames are aligned, but centered on different locations
+    indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
+    micron system is centered somewhere far away from the chuck
+    !!!           !!!
 
+    UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
     But we also have the option to specify directly position in micrometers, then we can handle the positioning here in the python universe.
 
     The indexing system is referenced to some home device, but the micron coordinate system is referenced to the chuck and centered god knows where.
 
     There are a few ways we can deal with this.  Right now I choose to deal with it outside of the class, so that it does not have any hidden state.
 
-    UF2000Prober right now has no concept of what a device is or where they are located, except if the indexing system is set up on the prober machine.
+    UF2000Prober has no concept of what a device is or where they are located, except the home position is on the home device.
+
+    Prober coordinate system is not intuitive, because the prober moves the chuck/wafer, not the probe, and has inverted Y axis
+    But I like to think about moving the probe, and +X should be right, +Y should be up, in other words, the lab frame
+    I will attempt to shield the user completely from the probers coordinate system, and always use the lab frame
     '''
 
     def __init__(self, idstring = 'GPIB0::5::INSTR'):
         self.inst = visa_rm.open_resource(idstring)
         self.inst.timeout = 3000
+        # UF2000 seems to call this position home, could depend on the setup!
+        self.home_indices = (128, 128)
+        # Very roughly the center of the chuck...
+        self.center_position_um = (1_601_263, 3_882_645)
 
     def __enter__(self):
         return self
@@ -1415,36 +1429,66 @@ class UF2000Prober(object):
 
     def goHome(self):
         # Prober seems to call home position 128, 128.  Could be wrong!
-        self.moveAbsolute(128, 128)
+        # I think it depends on the set up
+        self.moveAbsolute(*self.home_indices)
 
+    # Reference frame conversion
+    def prober_to_lab_indices(xprober, yprober):
+        xlab = -xprober + self.home_indices[0]
+        ylab = yprober - self.home_indices[1]
+        return xlab, ylab
 
-    # Index based
-    # I think it's better not to use these at all
+    def lab_to_prober_indices(xlab, ylab):
+        xprober = -xlab + self.home_indices[0]
+        yprober = ylab + self.home_indices[1]
+        return xprober, yprober
+
+    def prober_to_lab_um(xprober, yprober):
+        xlab = -xprober + self.center_position_um[0]
+        ylab = yprober - self.center_position_um[1]
+        return xlab, ylab
+
+    def lab_to_prober_um(xprober, yprober):
+        xprober = -xlab + self.center_position_um[0]
+        yprober = ylab + self.center_position_um[1]
+        return xprober, yprober
+
+    # Index based -- moves by unit cell and has only integer values
     def getPosition(self):
         '''
         Get position indices
+        Home position is subtracted
+        converted to +Y up, +X right in the lab frame
         '''
         rawPosString = self.query('Q')
-        y = rawPosString[2:5]
-        x = rawPosString[6:9]
-        return int(x), int(y)
+        y = int(rawPosString[2:5])
+        x = int(rawPosString[6:9])
+        return prober_to_lab_indices(x, y)
 
     def moveAbsolute(self, absX, absY):
-        currentPos = self.getPosition()
-        if currentPos == (absX, absY):
-            return currentPos
-        relativeMove = np.subtract((absX, absY), currentPos)
-        rel_X = relativeMove[0]
-        rel_Y = relativeMove[1]
-        self.moveRelative(rel_X, rel_Y)
+        '''
+        Move to a given index in the lab frame
+        '''
+        X0, Y0 = self.getPosition()
+        if (X0, Y0) == (absX, absY):
+            return (X0, Y0)
+        Xrel = absX - X0
+        Yrel = absY - Y0
+        self.moveRelative(Xrel, Yrel)
         newPos = self.getPosition()
         return newPos
 
     def moveRelative(self, x, y):
-        ''''''
+        '''
+        Moves by whatever the prober thinks is the unit cell distance
+        with respect to a view of the top of the wafer from the front of the machine:
+        +X moves probe right
+        +Y moves probe up
+        '''
         if((x,y) == (0,0)):
            return
-        strX = '%+04d' % x
+        Xprober, Yprober = lab_to_prober_indices(x, y)
+        strX = '%+04d' % -x
         strY = '%+04d' % y
         moveString = 'SY'+ strY + 'X' + strX
         self.write(moveString, [66,67,74])
@@ -1455,6 +1499,7 @@ class UF2000Prober(object):
     def getHomePosition_um(self):
         '''
         This is to center the micron coordinate system on the home device
+        Does not set self.center_position_um, but you could do that
         '''
         self.goHome()
         home = self.getPosition_um()
@@ -1466,11 +1511,18 @@ class UF2000Prober(object):
         '''
         pos_str = self.query('R')
         y, x = int(pos_str[2:9]), int(pos_str[10:-2])
-        return x, y
+        return prober_to_lab_um(x, y)
 
     def moveRelative_um(self, xum_rel, yum_rel):
-        str_xum = '{:+07d}'.format(int(round(-xum_rel)))
-        str_yum = '{:+07d}'.format(int(round(-yum_rel)))
+        '''
+        with respect to a view of the top of the wafer from the front of the machine:
+        +X moves probe right
+        +Y moves probe up
+        '''
+        xum_rel_prober = -xum_rel
+        yum_rel_prober = xum_rel
+        str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
+        str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
