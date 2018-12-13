@@ -1463,7 +1463,7 @@ class UF2000Prober(object):
         rawPosString = self.query('Q')
         y = int(rawPosString[2:5])
         x = int(rawPosString[6:9])
-        return prober_to_lab_indices(x, y)
+        return self.prober_to_lab_indices(x, y)
 
     def moveAbsolute(self, absX, absY):
         '''
@@ -1487,7 +1487,7 @@ class UF2000Prober(object):
         '''
         if((x,y) == (0,0)):
            return
-        Xprober, Yprober = lab_to_prober_indices(x, y)
+        Xprober, Yprober = self.lab_to_prober_indices(x, y)
         strX = '%+04d' % -x
         strY = '%+04d' % y
         moveString = 'SY'+ strY + 'X' + strX
@@ -1511,7 +1511,7 @@ class UF2000Prober(object):
         '''
         pos_str = self.query('R')
         y, x = int(pos_str[2:9]), int(pos_str[10:-2])
-        return prober_to_lab_um(x, y)
+        return self.prober_to_lab_um(x, y)
 
     def moveRelative_um(self, xum_rel, yum_rel):
         '''
