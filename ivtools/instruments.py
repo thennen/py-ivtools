@@ -1511,7 +1511,8 @@ class UF2000Prober(object):
         The position UF2000 thinks it is in, in um
         '''
         pos_str = self.query('R')
-        y, x = int(pos_str[2:9]), int(pos_str[10:-2])
+        # Manual says the unit is 1e-7 meter
+        y, x = int(pos_str[2:9])/10, int(pos_str[10:-2])/10
         return self.prober_to_lab_um(x, y)
 
     def moveRelative_um(self, xum_rel, yum_rel):
