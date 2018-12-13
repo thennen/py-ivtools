@@ -1469,8 +1469,8 @@ class UF2000Prober(object):
         return x, y
 
     def moveRelative_um(self, xum_rel, yum_rel):
-        str_xum = '{:+07d}'.format(int(round(-xum_rel/10)))
-        str_yum = '{:+07d}'.format(int(round(-yum_rel/10)))
+        str_xum = '{:+07d}'.format(int(round(-xum_rel)))
+        str_yum = '{:+07d}'.format(int(round(-yum_rel)))
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
