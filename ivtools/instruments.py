@@ -1430,7 +1430,7 @@ class UF2000Prober(object):
     def goHome(self):
         # Prober seems to call home position 128, 128.  Could be wrong!
         # I think it depends on the set up
-        self.moveAbsolute(*self.home_indices)
+        self.moveAbsolute(0, 0)
 
     # Reference frame conversion
     def prober_to_lab_indices(self, xprober, yprober):
@@ -1520,7 +1520,7 @@ class UF2000Prober(object):
         +Y moves probe up
         '''
         xum_rel_prober = -xum_rel
-        yum_rel_prober = xum_rel
+        yum_rel_prober = yum_rel
         str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
         str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
