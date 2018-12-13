@@ -1433,22 +1433,22 @@ class UF2000Prober(object):
         self.moveAbsolute(*self.home_indices)
 
     # Reference frame conversion
-    def prober_to_lab_indices(xprober, yprober):
+    def prober_to_lab_indices(self, xprober, yprober):
         xlab = -xprober + self.home_indices[0]
         ylab = yprober - self.home_indices[1]
         return xlab, ylab
 
-    def lab_to_prober_indices(xlab, ylab):
+    def lab_to_prober_indices(self, xlab, ylab):
         xprober = -xlab + self.home_indices[0]
         yprober = ylab + self.home_indices[1]
         return xprober, yprober
 
-    def prober_to_lab_um(xprober, yprober):
+    def prober_to_lab_um(self, xprober, yprober):
         xlab = -xprober + self.center_position_um[0]
         ylab = yprober - self.center_position_um[1]
         return xlab, ylab
 
-    def lab_to_prober_um(xprober, yprober):
+    def lab_to_prober_um(self, xprober, yprober):
         xprober = -xlab + self.center_position_um[0]
         yprober = ylab + self.center_position_um[1]
         return xprober, yprober
