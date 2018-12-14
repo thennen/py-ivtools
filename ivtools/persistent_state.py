@@ -8,6 +8,8 @@ import visa
 
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
+MONITOR_PICOCHANNEL = 'A'
+
 visa_rm = visa.ResourceManager()
 pico_state = {}
 plotter_state = {}

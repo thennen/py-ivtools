@@ -101,6 +101,14 @@ elif hostname == 'pciwe34':
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'GPIB0::26::INSTR')]
+elif hostname == 'CHMP2':
+    datafolder = r'C:\data'
+    connections = [('ps', instruments.Picoscope),
+                   ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                   #TEO
+                   ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
 else:
     datafolder = r'C:\data'
     connections = {}

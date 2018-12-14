@@ -82,8 +82,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     if smartrange:
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
     else:
-        # Always smart range channel A
-        smart_range(np.min(wfm), np.max(wfm), ch=['A'])
+        # Always smart range the monitor channel
+        smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL])
 
     # Let pretrig refer to the fraction of a single pulse, not the whole pulsetrain
     pretrig /= n
@@ -291,11 +291,12 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
     # Each range has a maximum possible offset
     max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
 
-    if 'A' in ch:
+    monitor_channel = settings.MONITOR_PICOCHANNEL
+    if monitor_channel in ch:
         # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
         arange, aoffs = ps.best_range((v1, v2))
-        ps.range['A'] = arange
-        ps.offset['A'] = aoffs
+        ps.range[monitor_channel] = arange
+        ps.offset[monitor_channel] = aoffs
 
     if 'B' in ch:
         # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
@@ -573,6 +574,38 @@ def rehan_to_iv(datain, dtype=np.float32):
         dataout['units'].update({'I2':'A'})
 
     return dataout
+	
+def TEO_HFext_to_iv(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    for TEO HF output channels
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    # Volts per amp
+    gainA = 1
+    gainB = 1
+    gainC = 1
+    gainD = -2
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+    C = datain['C']
+    D = datain['D']
+
+    dataout['V'] = C / gainC
+    dataout['I'] = A / gainA
+    dataout['I2'] = B / gainB
+    dataout['I3'] = D / gainD
+    dataout['units'] = {'V':'V', 'I':'A', 'I2':'A', 'I3':'A'}
+    dataout['gain'] = {'A':gainA, 'B':gainB, 'C':gainC, 'D':gainD}
+
+    return dataout
 
 
 def Rext_to_iv(datain, R=50, dtype=np.float32):
@@ -653,8 +686,9 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
 # Change this when you change probing circuits
 #pico_to_iv = rehan_to_iv
-pico_to_iv = ccircuit_to_iv
+#pico_to_iv = ccircuit_to_iv
 #pico_to_iv = partial(Rext_to_iv, R=50)
+pico_to_iv = TEO_HFext_to_iv
 
 def tri(v1, v2, n=None, step=None):
     '''
