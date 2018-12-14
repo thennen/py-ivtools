@@ -1,73 +1,84 @@
-#Trying to clean this up and take the banana out of the gorilla's hand - TH 2018-12-10
+# Trying to clean this up and take the metaphoricaL banana out of the gorilla's hand
+# TH 2018-12-10
+# HJR 2018
 import win32com.client
 from win32com.client import CastTo, WithEvents, Dispatch
-import os
+import np
+from matplotlib import pyplot as plt
 
-
-TEOintHF = False                # do we use TEO's AWG and scope?
-TEOextHF = True                 # do we use external HF things?
-TEOintLF = False                 # do we use TEO's internal LF mode?
-HFgain = 10
-
-TEOattndB = 14
-TEOAttn = 10**(TEOattndB/20)
-
+# Launches program that knows about which TEO boards are connected via usb
 HMan = Dispatch("TSX_HMan")
-DriverID = CastTo(HMan.GetSystem("MEMORY_TESTER"), "ITS_DriverIdentity")
 
-def tryCastTo(name, to=DriverID):
+# Asks the program for a device called MEMORY_TESTER
+MemTester = HMan.GetSystem('MEMORY_TESTER')
+
+def whiningCastTo(name, to):
+    # CastTo that prints a warning if it doesn't work for some reason
     result = CastTo(to, name)
     if result is None: print(f'{name} has failed')
     return result
 
-DeviceID = tryCastTo('ITS_DeviceIdentity')
-DeviceControl = tryCastTo('ITS_DeviceControl')
-LF_Measurement = tryCastTo('ITS_LF_Measurement')
-HF_Measurement = tryCastTo('ITS_HF_Measurement')
-DAC_Control = tryCastTo('ITS_DAC_Control', TS_System_HF_Measurement.HF_Gain)
-AWG_WaveformManager = tryCastTo('ITS_AWG_WaveformManager', TS_System_HF_Measurement.WaveformManager)
+# Access a bunch of classes used to control the TEO board
+DriverID =            whiningCastTo('ITS_DriverIdentity'     , MemTester)
+DeviceID =            whiningCastTo('ITS_DeviceIdentity'     , DriverID)
+DeviceControl =       whiningCastTo('ITS_DeviceControl'      , DriverID)
+LF_Measurement =      whiningCastTo('ITS_LF_Measurement'     , DriverID)
+HF_Measurement =      whiningCastTo('ITS_HF_Measurement'     , DriverID)
+HF_Gain =             whiningCastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
+AWG_WaveformManager = whiningCastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
 
 DeviceControl.StartDevice()
 
-#  === find out current state, DO FOR DEVICE AND SWITCHING = LFMode ===================
+# Get and print some information from the board
 DevName = DeviceID.GetDeviceName()
 DevRev = [DeviceID.GetDeviceMajorRevision(), DeviceID.GetDeviceMinorRevision()]
 DevSN = DeviceID.GetDeviceSerialNumber()
-
-##  ==== HF section. Let it default to full gain. =====================================
-if float(HFgain) > HF_Gain.GetMaxValue():
-    print("Input error: Requested TEO gain too high")
-
-TS_System_HF_Gain.SetValue(HFgain)
-
-if not HF_Measurement.GetHF_Supported():
-    print("Error in TEObox: HF is not reported as supported")
-
-HF_Measurement.SetHF_Mode(0, TEOextHF)      # boolean is whether or not it is external
-
-# collect items that are needed for switching and internal LFmode
-if not LF_Measurement.GetLF_Supported():
-    print("TS_System_LF_Measurement: LF mode not supported")
-
-if TEOintLF:
-    LF_Voltage = LF_Measurement.LF_Voltage
-    LFVolt = LF_Voltage.GetValue()
-    LF_Measure = LF_Measurement.LF_Measure
-
 print ("TEO: Name/SN/Rev=" + DevName + " SN=" + str(DevSN) + " Rev=" + str(DevRev[0]) + "." + str(DevRev[0]))
 
-def Test(self):
-    A = np.sin(np.linspace(0, 100*pi, 1000))
+# Gain settings.  Need to see a schematic to know what this gain actually refers to
+# unit is "steps" and each steps correspond to 1dB
+HFgain = 10
+if float(HFgain) > HF_Gain.GetMaxValue():
+    print("Input error: Requested TEO gain too high")
+HF_Gain.SetValue(HFgain)
+
+HF_Measurement.SetHF_Mode(0, True)      # Call to turn on HF mode, 0 is useless, True for external mode
+
+# How to use LF mode?
+#LF_Voltage = LF_Measurement.LF_Voltage
+#LFVolt = LF_Voltage.GetValue()
+#LF_Measure = LF_Measurement.LF_Measure
+
+def Test():
+    A = np.sin(np.linspace(0, 100*3.141592653589793238462, 100000))
+    trig1 = np.sin(np.linspace(0, 3.1415, 100000)) > .3
 
     wf = AWG_WaveformManager.CreateWaveform("test")
 
-    for a in A:
+    # Have to upload the waveform and triggers in parallel, one point at a time..
+    for a, trig in zip(A, trig1):
         # wfm value, trigger1, trigger2, ?
-        wf.AddSample(a, True, True, 1)
+        wf.AddSample(a, trig, True, 1)
 
     wf_read_length = wf.Length()
     HF_Measurement.SetHF_Mode(0, False)
+    HF_Gain.SetValue(20)
     AWG_WaveformManager.Run("test", 1)
     # We only get waveform samples where trigger1 is True, so these could be shorter than A
+    # Vmonitor waveform
     wf00 = AWG_WaveformManager.GetLastResult(0)
+    # Iout waveform
     wf01 = AWG_WaveformManager.GetLastResult(1)
+    
+    # Have to get the data one point at a time ....  takes forever obviously.
+    # Allocate
+    wflen = wf00.GetWaveformLength()
+    t = np.where(trig1)[0]
+    Vmonitor = np.array([wf00.GetWaveformData(i) for i in range(wflen)])
+    Iout =     np.array([wf01.GetWaveformData(i) for i in range(wflen)])
+    plt.figure()
+    plt.plot(A, label='Input Waveform')
+    plt.plot(trig1, label='Sampling Trigger')
+    plt.plot(t, Vmonitor, label='V monitor [?]')
+    plt.plot(t, Iout, label='Current [?]')
+    plt.legend()
