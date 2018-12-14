@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 ## TEO not working? look here and erase. C:\Users\User\AppData\Local\Temp\gen_py\3.6
 
 class TEObox(object):
-    def __init__(self, mode='intHF', HFgain=10)
+    def __init__(self, mode='intHF', HFgain=10):
         """
         TODO: Explain the different modes of TEO here
         Q: Can we enable more than one mode at a time??  I hope not. What happens if we try?
@@ -21,7 +21,6 @@ class TEObox(object):
         time. Also, inside this box, we make instantiations to all other devices (Scope, AWG, etc) as needed. the caller must provide a list of
         POTENTIAL devices. the Teobox applies its logic ti figure out whether they are actually needed. These are kept alive as well to save time.
         """
-        self.pa = paX
 
         self.TEOintHF = mode == 'intHF'                 # do we use TEO's AWG and scope?
         self.TEOextHF = mode == 'extHF'                 # do we use external HF things?
@@ -49,7 +48,7 @@ class TEObox(object):
         self.TrcFolder = None
         self.RecIDwPathJSON = None
         self.RecIDwPathBIN = None
-        self.RecID = None = None
+        self.RecID = None
         self.Sw = None
 
         self.TEOattndB = 14
