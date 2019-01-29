@@ -19,7 +19,6 @@ from functools import partial
 import pickle
 
 ########### Picoscope - Rigol AWG testing #############
-
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, duration=None,
                               ncycles=10, samplespercycle=None, fs=None):
     rigol = instruments.RigolDG5000()
@@ -61,6 +60,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     data = ps.get_data(ch)
 
     return data
+
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
@@ -157,6 +157,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
             ivdata = analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
     return ivdata
+
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -257,6 +258,7 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
     return data
 
+
 def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
     '''
     Generate n bipolar triangle pulses.
@@ -271,6 +273,7 @@ def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
 
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
+
 def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     '''
     Generate n sine pulses.
@@ -282,6 +285,7 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
 
     rigol.pulse_arbitrary(wfm, duration, n=n)
+
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
     # TODO: don't let this function change the pico state.  Just return the calculated ranges.
