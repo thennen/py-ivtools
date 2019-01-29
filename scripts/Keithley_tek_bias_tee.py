@@ -354,15 +354,20 @@ cc_step = 25e-6):
 
             plt.pause(1)
 
-            k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
-            while not k.done():
-                plt.pause(0.1)
-            k.set_channel_state('A', False)
-            k.set_channel_state('B', False)
-            hrs_data = k.get_data()
+            _, hrs_data = k.read_resistance(start_range = range_hrs, voltage = V_read)
             hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
+
+            # k.read_resistance(start_range = start_range, voltage = V_read, points = points)
+            # while not k.done():
+            #     plt.pause(0.1)
+            # k.set_channel_state('A', False)
+            # k.set_channel_state('B', False)
+            # hrs_data = k.get_data()
+            # hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
+            # data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+            # iplots.updateline(data)
             ### Setting up scope  ################################################################################
 
             ttx.inputstate(1, False)
@@ -417,7 +422,7 @@ cc_step = 25e-6):
                 plt.pause(0.1)
             k.set_channel_state('A', False)
             k.set_channel_state('B', False)
-            lrs_data = k.get_data()
+            _, lrs_data = k.read_resistance(start_range = start_range, voltage = V_read)
             lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
