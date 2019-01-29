@@ -21,6 +21,7 @@ from matplotlib import pyplot
 from matplotlib import pyplot as plt
 from functools import wraps, partial
 import os
+import getpass # to get user name
 import sys
 import time
 import pandas as pd
@@ -69,6 +70,7 @@ if firstrun:
     magic('matplotlib')
 
 hostname = socket.gethostname()
+username = getpass.getuser()
 # TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
@@ -79,7 +81,10 @@ datestr = time.strftime('%Y-%m-%d')
 
 # Hostname specific settings
 if hostname == 'pciwe46':
-    datafolder = r'D:\t\ivdata'
+    if username == 'hennen'
+        datafolder = r'D:\t\ivdata'
+    else:
+        datafolder = r'D:\{}\ivdata'.format(username)
     # Variable name, Instrument class, arguments to pass to init
     connections = [('ps', instruments.Picoscope),
                    ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
