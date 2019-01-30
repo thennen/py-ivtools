@@ -310,8 +310,8 @@ def vcm_pg5_measurement(samplename,
 padname,
 v1,
 v2,
-step = 0.02,
-step2 = 0.02,
+step = 0.01,
+step2 = 0.01,
 V_read = 0.2,
 range_lrs = 1e-3,
 range_hrs = 1e-4,
@@ -326,7 +326,7 @@ two_sweeps = False,
 scale = 0.12,
 position = -3,
 trigger_level = 0.05,
-nplc = 10,
+nplc = 20,
 limitI = 3e-4,
 limitI2 = 3e-4,
 r_window = False,
@@ -354,20 +354,15 @@ cc_step = 25e-6):
 
             plt.pause(1)
 
-            _, hrs_data = k.read_resistance(start_range = range_hrs, voltage = V_read)
+            k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+            while not k.done():
+                plt.pause(0.1)
+            k.set_channel_state('A', False)
+            k.set_channel_state('B', False)
+            hrs_data = k.get_data()
             hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
-
-            # k.read_resistance(start_range = start_range, voltage = V_read, points = points)
-            # while not k.done():
-            #     plt.pause(0.1)
-            # k.set_channel_state('A', False)
-            # k.set_channel_state('B', False)
-            # hrs_data = k.get_data()
-            # hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
-            # data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
-            # iplots.updateline(data)
             ### Setting up scope  ################################################################################
 
             ttx.inputstate(1, False)
@@ -417,12 +412,12 @@ cc_step = 25e-6):
             k.set_channel_voltage(channel = 'A', voltage = V_read)
 
             plt.pause(1)
-            k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points = 15, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
             k.set_channel_state('B', False)
-            _, lrs_data = k.read_resistance(start_range = start_range, voltage = V_read)
+            lrs_data = k.get_data()
             lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
