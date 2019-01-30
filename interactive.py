@@ -81,7 +81,7 @@ datestr = time.strftime('%Y-%m-%d')
 
 # Hostname specific settings
 if hostname == 'pciwe46':
-    if username == 'hennen'
+    if username == 'hennen':
         datafolder = r'D:\t\ivdata'
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
