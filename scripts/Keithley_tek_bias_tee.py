@@ -354,7 +354,7 @@ cc_step = 25e-6):
 
             plt.pause(1)
 
-            k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
@@ -412,7 +412,7 @@ cc_step = 25e-6):
             k.set_channel_voltage(channel = 'A', voltage = V_read)
 
             plt.pause(1)
-            k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points = 10, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
