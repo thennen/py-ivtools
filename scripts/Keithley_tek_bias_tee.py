@@ -326,7 +326,7 @@ two_sweeps = False,
 scale = 0.12,
 position = -3,
 trigger_level = 0.05,
-nplc = 20,
+nplc = 10,
 limitI = 3e-4,
 limitI2 = 3e-4,
 r_window = False,
@@ -354,7 +354,7 @@ cc_step = 25e-6):
 
             plt.pause(1)
 
-            k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
@@ -412,7 +412,7 @@ cc_step = 25e-6):
             k.set_channel_voltage(channel = 'A', voltage = V_read)
 
             plt.pause(1)
-            k.it(sourceVA = V_read, sourceVB = 0, points = 15, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
@@ -1161,7 +1161,10 @@ def determine_resistance(i, v):
     i = np.array(i)
     v = np.array(v)
     r = np.mean(v/i)
-    return r
+    if r < 0:
+        return np.nan
+    else:
+        return r
 
 def deb_to_atten(deb):
     return np.power(10, -deb/20)
