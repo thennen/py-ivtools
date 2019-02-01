@@ -35,6 +35,8 @@ class MetaHandler(object):
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files
     MetaHandler is Borg.  Its state lives in an separate module.
+    This is so if io module is reloaded, Metahandler instance keeps the metadata
+    #TODO make the object itself be the meta dictionary, through subclassing or some other clever means
     '''
     def __init__(self, clear_state=False):
         self.__dict__ = persistent_state.metahandler_state
@@ -255,7 +257,7 @@ class MetaHandler(object):
             dataout = data.join(allmeta)
         else:
             print('MetaHandler does not understand what kind of data you are trying to attach to.')
-            dataout = data.append(meta.meta).append(meta.static)
+            dataout = data.append(self.meta).append(self.static)
         return dataout
 
     def filename(self):
