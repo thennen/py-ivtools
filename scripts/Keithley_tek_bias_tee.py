@@ -505,7 +505,8 @@ cc_step = 25e-6):
 
                     if current_compliance > 1e-3:
                         current_compliance = limitI2
-
+            k.set_channel_state('A', False)
+            k.set_channel_state('B', False)
   
     data['attenuation'] = attenuation
     data['pulse_width'] = pulse_width
