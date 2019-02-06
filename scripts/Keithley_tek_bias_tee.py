@@ -900,7 +900,11 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
             root.destroy()
     return data
 
-def eval_vcm_measurement(data):
+def eval_vcm_measurement(data, 
+hrs_upper = np.nan, 
+hrs_lower = np.nan, 
+lrs_upper = np.nan,
+lrs_lower = np.nan):
     impedance = 50
     setup_vcm_plots()
     if(type(data) == str):
@@ -916,8 +920,18 @@ def eval_vcm_measurement(data):
     ###### Eval Reads ##########################
 
     for I_hrs, V_hrs, I_lrs, V_lrs in zip(data['I_hrs'], data['V_hrs'], data['I_lrs'], data['V_lrs']):
-        R_hrs.append(determine_resistance(v = V_hrs, i = I_hrs)-impedance)
-        R_lrs.append(determine_resistance(v = V_lrs, i = I_lrs)-impedance)
+        r_hrs = determine_resistance(v = V_hrs, i = I_hrs)-impedance
+        r_lrs = determine_resistance(v = V_lrs, i = I_lrs)-impedance
+        if r_hrs > hrs_upper:
+            r_hrs = np.nan
+        if r_lrs > lrs_upper:
+            r_lrs = np.nan
+        if r_hrs < hrs_lower:
+            r_hrs = np.nan
+        if r_lrs < lrs_lower:
+            r_lrs = np.nan
+        R_hrs.append(r_hrs)
+        R_lrs.append(r_lrs)
 
     ##### Eval Pulses ##########################
 
@@ -933,6 +947,7 @@ def eval_vcm_measurement(data):
     data['R_lrs'] = R_lrs
     data['fwhm'] = fwhm_list
     return data
+
 
 
 def eval_all_pcm_measurements(filepath):
@@ -958,7 +973,7 @@ def eval_all_pcm_measurements(filepath):
     plot_pcm_vt(pulse_amplitude, t_threshold)
     return all_data, t_threshold, pulse_amplitude
 
-def eval_all_vcm_measurements(filepath):
+def eval_all_vcm_measurements(filepath, **kwargs):
     ''' executes all eval_vcm_measurements in one directory and bundles the results. Also error propagation is included.'''
     if filepath[-1] != '/':
         filepath = filepath + '/'
@@ -976,7 +991,7 @@ def eval_all_vcm_measurements(filepath):
     for f in files:
         filename = filepath+f
         print(filename)
-        data = eval_vcm_measurement(filename)
+        data = eval_vcm_measurement(filename, **kwargs)
         all_data.append(data)
         R_hrs_mean.append(np.mean(data['R_hrs']))
         R_hrs_std.append(np.std(data['R_hrs']))
@@ -1286,16 +1301,19 @@ def Boxplot_array(all_data):
     R = []
     fwhm = []
     for data in all_data:
-        R.append(data['R_lrs']/data['R_hrs'])
-        fwhm.append(np.mean(data['fwhm']))
+        ratio = np.array(data['R_lrs']/data['R_hrs'])
+        index = where(~np.isnan(ratio))
+        ratio = ratio[index]
+        if np.size(ratio)>0:
+            R.append(ratio)
+            fwhm.append(np.mean(data['fwhm']))
 
     fwhm = np.array(fwhm)
     R = np.array(R)
     sorted_index = np.argsort(np.array(fwhm))
-    fwhm=fwhm[sorted_index]
+    fwhm = fwhm[sorted_index]
     R = R[sorted_index]
-    R= np.ndarray.tolist(R)
-
+    R = np.ndarray.tolist(R)
     fwhm = np.ndarray.tolist(fwhm)
     return fwhm, R
 
