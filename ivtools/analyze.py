@@ -1332,11 +1332,11 @@ def smooth_conv(x, N, mode='valid'):
     return np.convolve(x, np.ones(N, dtype=dtypein)/dtypein(N), mode)
 
 
-@ivfunc
+#@ivfunc
 def convert_to_uA(data):
-    ''' Works in place and returns nothing.  Sorry for inconsistency'''
+    ''' Assumes unit is A. Works in place and returns nothing.  Sorry for inconsistency.'''
     data['I'] *= 1e6
-    data['units']['I'] = '$\mu$A'
+    set_unit(data, 'I', '$\mu$A')
 
 
 @ivfunc
