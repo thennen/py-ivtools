@@ -41,36 +41,39 @@ class MetaHandler(object):
     def __init__(self, clear_state=False):
         self.__dict__ = persistent_state.metahandler_state
         if not self.__dict__ or clear_state:
-            # This stores the currently selected metadata.  It's a dict or a pd.Series
-            # Go ahead and overwrite it if you want
-            self.meta = {}
-            # This is the index of the selected data
-            self.i = 0
-            # This is the dataframe holding all of the metadata -- one row per device
-            self.df = None
-            # These key:values are always appended
-            self.static = {}
-            # This controls which keys will be used to construct a filename
-            self.filenamekeys = []
-            # TODO: This will be called with str.format
-            #self.filenameformatter = None
-            # These keys get printed when you step through the list of metadata
-            self.prettykeys = []
-            self.moduledir = os.path.split(__file__)[0]
+            self.clear()
+
+    def clear(self):
+        ''' Clear all the information from the MetaHandler instance '''
+        # This stores the currently selected metadata.  It's a dict or a pd.Series
+        # Go ahead and overwrite or modify it if you want
+        self.meta = {}
+        # This is the index of the selected data
+        self.i = 0
+        # This is the dataframe holding all of the metadata -- one row per device
+        self.df = None
+        # These key:values are always appended
+        self.static = {}
+        # This controls which keys will be used to construct a filename
+        self.filenamekeys = []
+        # TODO: This will be called with str.format
+        #self.filenameformatter = None
+        # These keys get printed when you step through the list of metadata
+        self.prettykeys = []
+        self.moduledir = os.path.split(__file__)[0]
 
     def __repr__(self):
         #return self.meta.__repr__()
         return pd.Series({**self.meta, **self.static}).__repr__()
 
-    def self_merge(self, columns=None):
-        '''
-        Not implemented
-        Merge meta df with itself, by default on columns which have no missing values
-        '''
-        pass
+    def __getitem__(self, key):
+        return self.meta[key]
+
+    def __setitem__(self, key, value):
+        self.meta[key] = value
 
     def load_from_csv(self, xlspath):
-        ''' Not implemented. '''
+        ''' Not implemented.  Easy to implement. '''
         pass
 
     # TODO: Unified metadata loader that just loads every possible sample
@@ -176,7 +179,7 @@ class MetaHandler(object):
         self.print()
 
     def load_depositions():
-        ''' Load sample information from some deposition sheet '''
+        ''' Load sample information from some deposition sheet  (not implemented)'''
         pass
 
     def step(self, n):
@@ -495,92 +498,110 @@ def read_txts(filepaths, sort=True, **kwargs):
     return pd.DataFrame(datalist)
 
 
-def glob(pattern='*', directory='.', exclude=None):
+def glob(pattern='*', directory='.', subdirs=False, exclude=None):
     pattern = pattern.join('**')
-    fnames = fnmatch.filter(os.listdir(directory), pattern)
-    if exclude is not None:
-        exclude = exclude.join('**')
-        excludefiles = fnmatch.filter(fnames, exclude)
-        fnames = [mf for mf in fnames if mf not in excludefiles]
-    fpaths = [os.path.join(directory, fn) for fn in fnames]
-    abspaths = [os.path.abspath(fp) for fp in fpaths]
+    if subdirs:
+        fpaths = []
+        for root, folders, files in os.walk(directory):
+            fpaths.extend([os.path.join(root, f) for f in files])
+    else:
+        fpaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+    # filter by filename only, but keep absolute path
+    def condition(fpath):
+        filename = os.path.split(fpath)[-1]
+        # Should it be excluded
+        if exclude is not None:
+            if fnmatch.fnmatch(filename, exclude.join('**')):
+                return False
+        # Does it match
+        return fnmatch.fnmatch(filename, pattern)
+    filtfpaths = [fp for fp in fpaths if condition(fp)]
+    abspaths = [os.path.abspath(fp) for fp in filtfpaths]
     return abspaths
 
 
-def read_pandas_files(filepaths, concat=True, dropcols=None):
+def read_pandas(filepaths, concat=True, dropcols=None):
     '''
-    Load in dataframes and/or series in list of filepaths
+    Load in any number of pickled dataframes and/or series
     return concatenated dataframe
-    '''
-    pdlist = []
-    # Try to get pandas to read the files, but don't give up if some fail
-    for f in filepaths:
-        try:
-            # pdlist may have some combination of Series and DataFrames.  Series should be rows
-            pdobject = pd.read_pickle(f)
-        except:
-            print('Failed to interpret {} as a pandas pickle!'.format(f))
-            continue
+    e.g.
+    read_pandas(glob('2019-02*.s'))
+    read_pandas(recentf(n=3))
 
-        if type(pdobject) is pd.DataFrame:
-            if dropcols is not None:
-                realdropcols = [dc for dc in dropcols if dc in pdobject]
-                pdobject = pdobject.drop(realdropcols, 1)
-            if 'filepath' not in pdobject:
-                pdobject['filepath'] = [f] * len(pdobject)
-            pdlist.append(pdobject)
-        elif type(pdobject) is pd.Series:
-            if dropcols is not None:
-                realdropcols = [dc for dc in dropcols if dc in pdobject]
-                pdobject = pdobject.drop(realdropcols)
-            if 'filepath' not in pdobject:
-                pdobject['filepath'] = f
-            # Took me a while to figure out how to convert series into single row dataframe
-            pdlist.append(pd.DataFrame.from_records([pdobject]))
-            # This resets all the datatypes to object !!
-            #pdlist.append(pd.DataFrame(pdobject).transpose())
-        else:
-            print('Do not know wtf this file is:')
-        print('Loaded {}.'.format(f))
-    if concat:
-        return pd.concat(pdlist).reset_index()
+    # TODO I ran short on time, so dropcols is not implemented if you pass a single filepath
+    '''
+    if type(filepaths) is str:
+        # Single series or df
+        return pd.read_pickle(filepaths)
     else:
-        return pdlist
+        # Should be a list of filepaths
+        pdlist = []
+        # Try to get pandas to read the files, but don't give up if some fail
+        for f in filepaths:
+            try:
+                # pdlist may have some combination of Series and DataFrames.  Series should be rows
+                pdobject = pd.read_pickle(f)
+            except:
+                print('Failed to interpret {} as a pickle!'.format(f))
+                continue
 
-def read_pandas_glob(directory='.', pattern='*', exclude=None, concat=True):
+            if type(pdobject) is pd.DataFrame:
+                if dropcols is not None:
+                    realdropcols = [dc for dc in dropcols if dc in pdobject]
+                    pdobject = pdobject.drop(realdropcols, 1)
+                if 'filepath' not in pdobject:
+                    pdobject['filepath'] = [f] * len(pdobject)
+                pdlist.append(pdobject)
+            elif type(pdobject) is pd.Series:
+                if dropcols is not None:
+                    realdropcols = [dc for dc in dropcols if dc in pdobject]
+                    pdobject = pdobject.drop(realdropcols)
+                if 'filepath' not in pdobject:
+                    pdobject['filepath'] = f
+                # Took me a while to figure out how to convert series into single row dataframe
+                pdlist.append(pd.DataFrame.from_records([pdobject]))
+                # This resets all the datatypes to object !!
+                #pdlist.append(pd.DataFrame(pdobject).transpose())
+            else:
+                print('Do not know wtf this file is:')
+            print('Loaded {}.'.format(f))
+        if concat:
+            return pd.concat(pdlist).reset_index()
+        else:
+            return pdlist
+
+# to not break old scripts
+read_pandas_files = read_pandas
+
+
+def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subdirs=False):
     '''
-    Load in all dataframes and series matching a glob pattern
-    return concatenated dataframe
+    Return filepaths of recently created files
+    specify n to limit search to the last n files created
     '''
-    # Put wildcards at the ends of pattern
-    pattern = pattern.join('**')
-    files = os.listdir(directory)
-    matchfiles = fnmatch.filter(files, pattern)
-    if exclude is not None:
-        exclude = exclude.join('**')
-        excludefiles = fnmatch.filter(matchfiles, exclude)
-        matchfiles = [mf for mf in matchfiles if mf not in excludefiles]
-    matchfilepaths = [os.path.join(directory, f) for f in matchfiles]
-
-    return read_pandas_files(matchfilepaths, concat=concat)
-
-def read_pandas_recent(directory='.', pastseconds=None, n=None, len=None, pattern=None, concat=True):
-    ''' Read files in directory which were made in the last pastseconds '''
     now = time.time()
-    filepaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+    if subdirs:
+        filepaths = []
+        for root, folders, files in os.walk(directory):
+            filepaths.extend([os.path.join(root, f) for f in files])
+    else:
+        filepaths = [os.path.join(directory, f) for f in os.listdir(directory)]
     if pattern is not None:
         pattern = pattern.join('**')
         filepaths = fnmatch.filter(filepaths, pattern)
     ctimes = [os.path.getctime(fp) for fp in filepaths]
-    if pastseconds is not None:
-        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
+    # Sort by ctime
+    order = np.argsort(ctimes)
+    ctimes = [ctimes[i] for i in order]
+    filepaths = [filepaths[i] for i in order]
     if n is not None:
-        if len is not None:
-            return read_pandas_files(filepaths[-n:-n+len], concat=concat)
-        else:
-            return read_pandas_files(filepaths[-n:], concat=concat)
-
-    return read_pandas_files(filepaths, concat=concat)
+        filepaths = filepaths[-n:]
+        ctimes = ctimes[-n:]
+    if seconds is not None:
+        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
+    if maxlen is not None:
+        filepaths = filepaths[:maxlen]
+    return [os.path.abspath(fp) for fp in filepaths]
 
 def write_pandas_pickle(data, filepath=None, drop=None):
     ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
@@ -622,6 +643,7 @@ def write_matlab(data, filepath, varname=None, compress=True):
    # Each IV loop is a struct, has to be
    # For multiple IV loops, can either make a cell array of structs (plot(cell{1,1}.V, cell{1,1}.I))
    # Or just dump a whole bunch of structs into the namespace (plot(loop1.V, loop1.I))
+   # There's no DataFrame equivalent in matlab as far as I know, but they might get around to adding one in 2050
    if varname is None:
       varname = validvarname(splitext(os.path.split(filepath)[-1])[0])
       print(varname)
@@ -641,7 +663,7 @@ def read_matlab(filepath):
    # Read matlab file into dataframe or series
    '''
    These functions solve the problem of not properly recovering python dictionaries
-   from mat files. It calls the function check keys to cure all entries
+   from mat files. It calls the function _check_keys to cure all entries
    which are still mat-objects
 
    Stolen from
