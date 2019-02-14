@@ -127,10 +127,10 @@ class MetaHandler(object):
         coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
         non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
         non_coupon_specific = lassen_df[lassen_df.coupon == 42][non_coupon_cols]
-        lassen_df = pd.concat((lassen_df, non_coupon_specific))
+        lassen_df = pd.concat((lassen_df, non_coupon_specific), sort=False)
 
         if any([(k in deposition_df) for k in kwargs.keys()]):
-            meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on)
+            meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on, sort=False)
         else:
             meta_df = lassen_df
 
@@ -150,7 +150,7 @@ class MetaHandler(object):
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
         meta_df = meta_df.dropna(1, 'all')
-        sortby = [k for k in ('coupon', 'module', 'device') if k in meta_df.columns]
+        sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'coupon', 'module', 'device') if k in meta_df.columns]
         meta_df = meta_df.sort_values(by=sortby)
 
         # Try to convert data types
