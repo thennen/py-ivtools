@@ -138,6 +138,16 @@ elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'
     connections = {}
+elif hostname == 'pcluebben2':
+    datafolder = r'C:\data'
+    connections = [#('et', instruments.Eurotherm2408),
+                   #('ps', instruments.Picoscope),
+                   #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                   #('daq', instruments.USB2708HS),
+                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                   ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
+
 elif hostname == 'pciwe34':
     # Mark II
     datafolder = r'F:\Messdaten\hennen'
