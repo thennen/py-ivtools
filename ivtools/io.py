@@ -519,6 +519,15 @@ def glob(pattern='*', directory='.', subdirs=False, exclude=None):
     abspaths = [os.path.abspath(fp) for fp in filtfpaths]
     return abspaths
 
+def multiglob(names, *patterns):
+    ''' filter list of names with potentially multiple glob patterns '''
+    # TODO make it like glob(), so it searches for files
+    filtered = []
+    for patt in patterns:
+        filter = '*' + patt + '*'
+        filtered.extend(fnmatch.filter(names, filter))
+    return filtered
+
 
 def read_pandas(filepaths, concat=True, dropcols=None):
     '''
@@ -828,10 +837,11 @@ def set_readonly(filepath):
     from stat import S_IREAD, S_IRGRP, S_IROTH
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
-def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwrite=False):
+
+def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwrite=False, plotfunc=ivplot.plotiv):
    # Make a plot of all the .s and .df files in a directory
    # Save as pngs with the same name
-   # TODO: Optionally group by sample, making one plot per sample
+   # TODO: Optionally group by sample (or anything else), making one plot for each group
    files = os.listdir(datadir)
    series_fns = [pjoin(datadir, f) for f in files if f.endswith('.s')]
    dataframe_fns = [pjoin(datadir, f) for f in files if f.endswith('.df')]
@@ -846,7 +856,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwri
         s.I *= 1e6
         s.units['I'] = '$\mu$A'
         smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-        ivplot.plotiv(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax)
+        plotfunc(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax, **kwargs)
         if 'width_nm' in s:
             plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
         plt.savefig(pngfp)
@@ -862,7 +872,7 @@ def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwri
         df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
         step = int(np.ceil(len(df) / maxloops))
         smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-        ivplot.plotiv(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax)
+        plotfunc(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax, **kwargs)
         s = df.iloc[0]
         if 'width_nm' in s:
             plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
