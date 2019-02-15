@@ -682,9 +682,9 @@ def eval_pcm_measurement(data, manual_evaluation = False):
             v_max = max(v_pulse)
             v_min = min(v_pulse)
             if v_max > -v_min:
-                pulse_width = fwhm(valuelist = v_pulse, time = t_scope)
+                pulse_width = calc_fwhm(valuelist = v_pulse, time = t_scope)
             else:
-                pulse_width = fwhm(valuelist = -v_pulse, time = t_scope)
+                pulse_width = calc_fwhm(valuelist = -v_pulse, time = t_scope)
             data['pulse_width'].append(pulse_width)
             data['pulse_amplitude'].append(np.mean(v_pulse[pulse_index])*2)
         
@@ -709,9 +709,9 @@ def eval_pcm_measurement(data, manual_evaluation = False):
             v_max = max(v_answer)
             v_min = min(v_answer)
             if v_max > -v_min:
-                pulse_width = fwhm(valuelist = v_answer, time = t_scope)
+                pulse_width = calc_fwhm(valuelist = v_answer, time = t_scope)
             else:
-                pulse_width = fwhm(valuelist = -v_answer, time = t_scope)
+                pulse_width = calc_fwhm(valuelist = -v_answer, time = t_scope)
 
             data['pulse_width'].append(pulse_width)
             data['pulse_amplitude'].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'], bits = data['bits']))
@@ -837,9 +837,9 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                 v_max = max(v_pulse)
                 v_min = min(v_pulse)
                 if v_max > -v_min:
-                    pulse_width = fwhm(valuelist = v_pulse, time = t_scope)
+                    pulse_width = calc_fwhm(valuelist = v_pulse, time = t_scope)
                 else:
-                    pulse_width = fwhm(valuelist = -v_pulse, time = t_scope)
+                    pulse_width = calc_fwhm(valuelist = -v_pulse, time = t_scope)
                 data['pulse_width'][x].append(pulse_width)
                 data['pulse_amplitude'][x].append(np.mean(v_pulse[pulse_index])*2)
             
@@ -936,11 +936,11 @@ lrs_lower = np.nan):
     ##### Eval Pulses ##########################
 
     for t_ttx, V_ttx, pulse_width in zip(data['t_ttx'], data['V_ttx'], data['pulse_width']):
-        fwhm_value = fwhm(valuelist = V_ttx, time = t_ttx)
+        fwhm_value = calc_fwhm(valuelist = V_ttx, time = t_ttx)
         if fwhm_value < pulse_width:
             fwhm_list.append(pulse_width)
         else:
-            fwhm_list.append(fwhm(valuelist = V_ttx, time = t_ttx))
+            fwhm_list.append(calc_fwhm(valuelist = V_ttx, time = t_ttx))
 
    
     data['R_hrs'] = R_hrs
@@ -1131,7 +1131,7 @@ def combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list = np.
         return_frame = pd.concat([hrs_df, lrs_df, scope_df] , axis = 1)
     return return_frame
 
-def fwhm(valuelist, time, peakpos=-1):
+def calc_fwhm(valuelist, time, peakpos=-1):
     """calculates the full width at half maximum (fwhm) of some curve.
     the function will return the fwhm with sub-pixel interpolation. It will start at the maximum position and 'walk' left and right until it approaches the half values.
     INPUT: 
@@ -1228,30 +1228,30 @@ def transition_time(fwhm, R_ratio, upper_limit = 0.9, lower_limit = 0.1, reset =
     if not reset:
         index = where(R_ratio < upper_limit)
         if index.size < 1: 
-            return np.nan
+            return np.nan, np.nan, np.nan
         start_index = index[0]-1    #last entry at which all values are above the upper limit
         index = where(R_ratio > lower_limit)
         if index.size < 1: 
-            return np.nan
+            return np.nan, np.nan, np.nan
         end_index = index[-1] + 1   #first entry at which all values are below the lower limit
     else:
         index = where(R_ratio > lower_limit)
         if index.size < 1: 
-            return np.nan
+            return np.nan, np.nan, np.nan
         start_index = index[0]-1    #last entry at which all values are below the lower limit
         index = where(R_ratio < below_limit)
         if index.size < 1: 
-            return np.nan
+            return np.nan, np.nan, np.nan
         end_index = index[-1] + 1   #first entry at which all values are below the upper limit
     try:    
         t_start = fwhm[start_index]    
         t_end = fwhm[end_index]
     except:
         print('Out of array error => returning nan')
-        return np.nan
+        return np.nan, np.nan, np.nan
 
     transition_time = t_end-t_start
-    return transition_time
+    return transition_time, t_start, t_end
 
 def roundup10(value):
     '''Rounds to the next higher order of magnitude. E.g. for a value of 3.17e-3 this function 
@@ -1289,33 +1289,40 @@ def set_time(fwhm, R_ratio, limit = 0.5, reset = False):
     return t_set
 
 def get_R_median(all_data):
-    R_ratio_median = []
+    R = []
     fwhm_array =  []
     for data in all_data:
-        R_ratio = data['R_lrs']/data['R_hrs']
-        R_ratio_median.append(np.median(R_ratio))
+        ratio = np.array(data['R_lrs']/data['R_hrs'])
+        index = where(~np.isnan(ratio))
+        ratio = ratio[index]
+        R.append(np.median(ratio))
         fwhm_array.append(np.mean(data['fwhm']))
-    return fwhm_array, R_ratio_median
+    fwhm_array = np.array(fwhm_array)
+    R = np.array(R)   
+    sorted_index = np.argsort(np.array(fwhm_array))
+    fwhm_array = fwhm_array[sorted_index]
+    R = R[sorted_index]     
+    return fwhm_array, R
 
 def Boxplot_array(all_data):
     R = []
-    fwhm = []
+    fwhm_array = []
     for data in all_data:
         ratio = np.array(data['R_lrs']/data['R_hrs'])
         index = where(~np.isnan(ratio))
         ratio = ratio[index]
         if np.size(ratio)>0:
             R.append(ratio)
-            fwhm.append(np.mean(data['fwhm']))
+            fwhm_array.append(np.mean(data['fwhm']))
 
-    fwhm = np.array(fwhm)
+    fwhm_array = np.array(fwhm_array)
     R = np.array(R)
-    sorted_index = np.argsort(np.array(fwhm))
-    fwhm = fwhm[sorted_index]
+    sorted_index = np.argsort(np.array(fwhm_array))
+    fwhm_array = fwhm_array[sorted_index]
     R = R[sorted_index]
     R = np.ndarray.tolist(R)
-    fwhm = np.ndarray.tolist(fwhm)
-    return fwhm, R
+    fwhm_array = np.ndarray.tolist(fwhm_array)
+    return fwhm_array, R
 
 def plot_R_threshold(r, t):
     fig, ax = plt.subplots()
@@ -1359,9 +1366,9 @@ def subtract_capacitive_current(v_meas, v_cap, trigger_position = 20):
 def hs(x=0):
     return np.heaviside(x,1)
 
-
 def threshold(time, t_start= 7.7e-9, t_diff = 0.7e-9, r_start = 1e6, r_end = 1200):
     r_diff = r_start-r_end
     t_end = t_start + t_diff
     r_slope = r_diff/t_diff
     return r_start - hs(t_end-time)*hs(time-t_start)*r_slope*(time-t_start)
+
