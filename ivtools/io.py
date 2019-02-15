@@ -145,7 +145,8 @@ class MetaHandler(object):
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
         meta_df = meta_df.dropna(1, 'all')
-        sortby = [k for k in ('coupon', 'module', 'device') if k in meta_df.columns]
+        # Sort values so that they are in the same order as you would probe them
+        sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'module', 'device') if k in meta_df.columns]
         meta_df = meta_df.sort_values(by=sortby)
 
         # Try to convert data types
@@ -168,8 +169,8 @@ class MetaHandler(object):
         self.i = 0
         self.df = meta_df
         self.meta = meta_df.iloc[0]
-        self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
-        self.filenamekeys = ['dep_code', 'sample_number', 'module', 'device']
+        self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die_rel', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+        self.filenamekeys = ['dep_code', 'sample_number', 'die_rel', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
