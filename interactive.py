@@ -21,6 +21,7 @@ from matplotlib import pyplot
 from matplotlib import pyplot as plt
 from functools import wraps, partial
 import os
+import getpass # to get user name
 import sys
 import time
 import pandas as pd
@@ -69,17 +70,63 @@ if firstrun:
     magic('matplotlib')
 
 hostname = socket.gethostname()
+username = getpass.getuser()
 # TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
 datestr = time.strftime('%Y-%m-%d')
+
+meta = io.MetaHandler()
 
 # 2634B : 192.168.11.11
 # 2636A : 192.168.11.12
 # 2636B : 192.168.11.13
 
+######### Plotter configurations
+
+# Make sure %matplotlib has been called! Or else figures will appear and then disappear.
+iplots = ivplot.interactive_figs(n=4)
+
+# Determine the series resistance from meta data
+def R_series():
+    # Check static meta first
+    R_series = meta.static.get('R_series')
+    if R_series is not None:
+        return R_series
+    # Check normal meta
+    R_series = meta.meta.get('R_series')
+    if R_series is not None:
+        # If it is a lassen coupon, then convert to the measured values of series resistors
+        wafer_code = meta.meta.get('wafer_code')
+        if wafer_code == 'Lassen':
+            Rmap = {0:143, 1000:2164, 5000:8197, 9000:12857}
+            if R_series in Rmap:
+                R_series = Rmap[R_series]
+        return R_series
+    else:
+        # Assumption for R_series if there's nothing in the meta data
+        return 0
+
+# For picoscope + rigol
+pico_plotters = [[0, ivplot.ivplotter],
+                 [1, ivplot.chplotter],
+                 [2, ivplot.VoverIplotter],
+                 [3, partial(ivplot.vcalcplotter, R=R_series)]]
+# For keithley
+kargs = {'marker':'.'}
+keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
+                     [1, partial(ivplot.itplotter, **kargs)],
+                     [2, partial(ivplot.VoverIplotter, **kargs)],
+                     [3, partial(ivplot.vtplotter, **kargs)]]
+
+#########
+
+
 # Hostname specific settings
 if hostname == 'pciwe46':
-    datafolder = r'D:\t\ivdata'
+    if username == 'hennen':
+        datafolder = r'D:\t\ivdata'
+    else:
+        datafolder = r'D:\{}\ivdata'.format(username)
     # Variable name, Instrument class, arguments to pass to init
     connections = [('ps', instruments.Picoscope),
                    ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
@@ -91,6 +138,16 @@ elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'
     connections = {}
+elif hostname == 'pcluebben2':
+    datafolder = r'C:\data'
+    connections = [#('et', instruments.Eurotherm2408),
+                   #('ps', instruments.Picoscope),
+                   #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                   #('daq', instruments.USB2708HS),
+                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                   ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
+
 elif hostname == 'pciwe34':
     # Mark II
     datafolder = r'F:\Messdaten\hennen'
@@ -101,7 +158,16 @@ elif hostname == 'pciwe34':
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'GPIB0::26::INSTR')]
+elif hostname == 'CHMP2':
+    datafolder = r'C:\data'
+    connections = [('ps', instruments.Picoscope),
+                   ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                   #TEO
+                   ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
 else:
+    print(f'No Hostname specific settings found for {hostname}')
     datafolder = r'C:\data'
     connections = {}
 
@@ -119,8 +185,8 @@ for kk,v in instrument_varnames.items():
 
 visa_resources = persistent_state.visa_rm.list_resources()
 # Connect to all the instruments
-# TODO: visa does not remember its TCPIP sessions, and will not reconnect properly!
-# TODO: there is currently no way to manage serial connections, will error if you try to connect twice
+# Instrument classes should all be Borg, because the instrument manager cannot be trusted
+# to work properly and reuse existing connections
 for varname, inst_class, *args in connections:
     if len(args) > 0:
         if args[0].startswith('USB') or args[0].startswith('GPIB'):
@@ -132,28 +198,6 @@ for varname, inst_class, *args in connections:
                 continue
     globalvars[varname] = inst_class(*args)
 
-######### Plotter configurations
-def R_series():
-    if 'R_series' in meta.static:
-        return meta.static['R_series']
-    elif 'R_series' in meta.meta:
-        return meta.meta['R_series']
-    else:
-        return 0
-
-# For picoscope + rigol
-pico_plotters = [[0, ivplot.ivplotter],
-                 [1, ivplot.chplotter],
-                 [2, ivplot.VoverIplotter],
-                 [3, partial(ivplot.vcalcplotter, R=R_series)]]
-# For keithley
-kargs = {'marker':'.'}
-keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
-                     [1, partial(ivplot.itplotter, **kargs)],
-                     [2, partial(ivplot.VoverIplotter, **kargs)],
-                     [3, partial(ivplot.vtplotter, **kargs)]]
-
-#########
 
 # Default data subfolder -- will reflect the date of the last time this script ran
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
@@ -167,20 +211,19 @@ io.makefolder(datafolder, subfolder)
 def datadir():
     return os.path.join(datafolder, subfolder)
 
-meta = io.MetaHandler()
-# Make sure %matplotlib has been called!
-iplots = ivplot.interactive_figs(n=4)
+
+# What the plots should do by default
+if not iplots.plotters:
+    if ps is not None:
+        iplots.plotters = pico_plotters
+    elif k is not None:
+        iplots.plotters = keithley_plotters
 
 ### Runs only the first time ###
 if firstrun:
     io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
-    # What the plots should do by default
-    iplots.plotters = pico_plotters
     #iplots.plotters = keithley_plotters
     firstrun = False
-
-
-
 
 if ps is not None:
     ps.print_settings()

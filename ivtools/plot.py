@@ -79,8 +79,8 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         # Down sample data
         print('Downsampling data for plot!!')
         step = int(lenX/maxsamples)
-        X = X[np.arange(0, l, step)]
-        Y = Y[np.arange(0, l, step)]
+        X = X[np.arange(0, lenX, step)]
+        Y = Y[np.arange(0, lenY, step)]
 
     # Name the axes
     defaultunits = {'V':     ('Voltage', 'V'),
@@ -170,7 +170,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             if isinstance(cm, str):
                 # Str refers to the name of a colormap
                 cmap = plt.cm.get_cmap(cm)
-            elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
+            elif type(cm) in (mpl.colors.LinearSegmentedColormap, mpl.colors.ListedColormap):
                 cmap = cm
             # TODO: add vmin and vmax arguments to stretch the color map
             if c is None:
@@ -416,31 +416,6 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
     cb = plt.colorbar(sm, ax=ax, **kwargs)
     return cb
 
-
-    # Fill the whole plot with lines.  Find points to go through
-    if ax.get_yscale() == 'linear':
-        yp = np.linspace(ymin, ymax , n)
-    else:
-        # Sorry if this errors.  Negative axis ranges are possible on a log plot.
-        logymin, logymax = np.log10(ymin), np.log10(ymax)
-        yp = np.logspace(logymin, logymax + np.log10(ymax - ymin), n)
-    if ax.get_xscale() == 'linear':
-        xp = np.linspace(xmin, xmax , n)
-    else:
-        logxmin, logxmax = np.log10(xmin), np.log10(xmax)
-        xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
-
-    # Load lines aren't lines on log scale, so plot many points
-    x = np.linspace(xmin, xmax, 500)
-    # Plot one at a time so you can just label one (for legend)
-    slope = 1 / R / Iscale
-    for xi,yi in zip(xp, yp):
-        ax.plot(x, yi - slope * (x - xi), **plotargs)
-    # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpfunc(R, None)))
-    # Put the limits back
-    ax.set_xlim(*xlims)
-    ax.set_ylim(*ylims)
 
 def mypause(interval):
     ''' plt.pause calls plt.show, which steals focus on some systems.  Use this instead '''
@@ -1186,6 +1161,7 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
+
 
 def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     '''

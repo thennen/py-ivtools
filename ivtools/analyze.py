@@ -1224,9 +1224,23 @@ def downsample_dumb(data, nsamples, columns=None):
     return dataout
 
 
+#### datatype conversion ####
+
+# operations that are easy:
+# dict --> series      (pd.Series(dict))
+# series --> dict      (dict(series))
+# list of dict --> df  (pd.DataFrame(list of dict))
+
 def df_to_listofdicts(df):
     return df.to_dict(orient='records')
 
+def series_to_df(series):
+    # Convert pd.series into single row dataframe
+    return pd.DataFrame.from_records([series])
+
+# TODO: Some others I have struggled with but don't remember at the moment
+
+#### ####
 
 @ivfunc
 def set_dict_kv(data, dictname, key, value):
@@ -1332,11 +1346,11 @@ def smooth_conv(x, N, mode='valid'):
     return np.convolve(x, np.ones(N, dtype=dtypein)/dtypein(N), mode)
 
 
-@ivfunc
+#@ivfunc
 def convert_to_uA(data):
-    ''' Works in place and returns nothing.  Sorry for inconsistency'''
+    ''' Assumes unit is A. Works in place and returns nothing.  Sorry for inconsistency.'''
     data['I'] *= 1e6
-    data['units']['I'] = '$\mu$A'
+    set_unit(data, 'I', '$\mu$A')
 
 
 @ivfunc
