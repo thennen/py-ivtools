@@ -79,8 +79,8 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         # Down sample data
         print('Downsampling data for plot!!')
         step = int(lenX/maxsamples)
-        X = X[np.arange(0, l, step)]
-        Y = Y[np.arange(0, l, step)]
+        X = X[np.arange(0, lenX, step)]
+        Y = Y[np.arange(0, lenY, step)]
 
     # Name the axes
     defaultunits = {'V':     ('Voltage', 'V'),
@@ -170,7 +170,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             if isinstance(cm, str):
                 # Str refers to the name of a colormap
                 cmap = plt.cm.get_cmap(cm)
-            elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
+            elif type(cm) in (mpl.colors.LinearSegmentedColormap, mpl.colors.ListedColormap):
                 cmap = cm
             # TODO: add vmin and vmax arguments to stretch the color map
             if c is None:
