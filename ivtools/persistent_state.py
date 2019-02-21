@@ -8,9 +8,10 @@ TODO: separate settings and persistent state, because we might want to reload se
 I don't know if it's a dumb idea, but it seems to do what I want
 '''
 import visa
+import os
 visa_rm = visa.ResourceManager()
 
-ivtools_dir = os.path.abspath(__file__)
+ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
 
 ### Settings for compliance circuit
