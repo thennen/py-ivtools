@@ -881,7 +881,10 @@ def VoverIplotter(data, ax=None, **kwargs):
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     ax.set_xlabel('Voltage [V]')
     #ax.set_ylabel('V/I [$\Omega$]', color=color)
-    ax.set_ylabel('V/I [$\Omega$]')
+    # Also called Chordal resistance
+    ax.set_ylabel('Static Resistance (V/I) [$\Omega$]')
+
+# TODO differential resistance plotter
 
 def vcalcplotter(data, ax=None, R=None, **kwargs):
     '''

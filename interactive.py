@@ -126,6 +126,9 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
 #########
 
 
+# Default settings, that may get overwritten
+datafolder = r'C:\data'
+connections = {}
 # Hostname specific settings
 if hostname == 'pciwe46':
     if username == 'hennen':
@@ -172,8 +175,6 @@ elif hostname == 'CHMP2':
                    ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
 else:
     print(f'No Hostname specific settings found for {hostname}')
-    datafolder = r'C:\data'
-    connections = {}
 
 globalvars = globals()
 instrument_varnames = {instruments.Picoscope:'ps',
@@ -235,6 +236,7 @@ class autocaller():
     '''
     Ugly hack to make a function call itself without the parenthesis.
     There's an ipython magic for this, but I only want it to apply to certain functions
+    This is only for interactive convenience! Don't use it in a program or a script.
     '''
     def __init__(self, function):
         self.function = function
@@ -270,7 +272,7 @@ del_plotters = iplots.del_plotters
 
 def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
     '''
-    Save data with metadata attached.
+    Save data with metadata attached, as determined by the state of the global MetaHandler instance
     if no data is passed, try to use the global variable d
     filepath automatic by default.
     can drop columns to save disk space.
@@ -289,6 +291,8 @@ s = autocaller(savedata)
 
 
 #############################################################
+
+###### Interactive measurement functions #######
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
@@ -328,9 +332,10 @@ picoiv = interactive_wrapper(measure.picoiv)
 
 # If keithley is connected ...
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
-if k is not None and hasattr(k, 'query'):
+if k and hasattr(k, 'query'):
     live = True
     if '2636A' in k.idn():
+        # This POS doesn't support live plotting
         live = False
     kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True)
     kiv_4pt = interactive_wrapper(k.iv_4pt, k.get_data, donefunc=k.done, live=live, autosave=True)
