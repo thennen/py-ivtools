@@ -56,24 +56,29 @@ from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
 
-# Define this on the first run only
-try:
-    firstrun
-except:
-    firstrun = True
 
 magic = get_ipython().magic
+
+# Define this on the first run only
+try:
+    # Will cause exception if firstrun not defined
+    firstrun
+    # If it didn't it should be false
+    firstrun = False
+except:
+    firstrun = True
 
 if firstrun:
     # Don't run this more than once, or all the existing plots will get de-registered from the
     # matplotlib state machine or whatever and nothing will update anymore
+    # TODO find out whether it has been called already
     magic('matplotlib')
 
 hostname = socket.gethostname()
 username = getpass.getuser()
+datestr = time.strftime('%Y-%m-%d')
 # TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
-datestr = time.strftime('%Y-%m-%d')
 
 meta = io.MetaHandler()
 
@@ -147,7 +152,6 @@ elif hostname == 'pcluebben2':
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
-
 elif hostname == 'pciwe34':
     # Mark II
     datafolder = r'F:\Messdaten\hennen'
@@ -223,7 +227,6 @@ if not iplots.plotters:
 if firstrun:
     io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
     #iplots.plotters = keithley_plotters
-    firstrun = False
 
 if ps is not None:
     ps.print_settings()
@@ -333,3 +336,5 @@ if k is not None and hasattr(k, 'query'):
     kiv_4pt = interactive_wrapper(k.iv_4pt, k.get_data, donefunc=k.done, live=live, autosave=True)
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
+
+# TODO def reload_settings, def reset_state

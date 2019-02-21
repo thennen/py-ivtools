@@ -113,7 +113,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     chdata = ps.get_data(channels, raw=True)
     print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
-    ivdata = pico_to_iv(chdata)
+    ivdata = settings.pico_to_iv(chdata)
 
     ivdata['nshots'] = n
 
@@ -298,7 +298,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
     monitor_channel = settings.MONITOR_PICOCHANNEL
     if monitor_channel in ch:
         # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-        arange, aoffs = ps.best_range((v1, v2))
+        arange, aoffs = ps.best_range((v1, v2), atten=ps.atten[monitor_channel])
         ps.range[monitor_channel] = arange
         ps.offset[monitor_channel] = aoffs
 
@@ -367,7 +367,7 @@ def set_compliance(cc_value):
     daq = instruments.USB2708HS()
     if cc_value > 1e-3:
         raise Exception('Compliance value out of range! Max 1 mA.')
-    fn = 'c:/t/py-ivtools/compliance_calibration.pkl'
+    fn = settings.COMPLIANCE_CALIBRATION_FILE
     print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
@@ -384,7 +384,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     Set and measure some compliance values throughout the range, and save a calibration look up table
     Need picoscope channel B connected to circuit output
     and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
-    This takes some time..
+    This takes a minute..
     '''
 
     ps = instruments.Picoscope()
@@ -415,7 +415,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         for v,cv in zip(dacvals, compensations):
             daq.analog_out(1, volts=cv)
             daq.analog_out(0, v)
-            time.sleep(.1)
+            ivplot.mypause(.1)
+            #plt.pause(.1)
             cc, offs = measure_compliance()
             ccurrent.append(cc)
             offsets.append(offs)
@@ -428,7 +429,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         ax2.set_xlabel('DAC0 value')
         ax2.set_ylabel('Input offset')
         ax2.legend()
-        plt.pause(.1)
+        ivplot.mypause(.1)
+        #plt.pause(.1)
     output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
               'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
     calibrationfile = 'compliance_calibration.pkl'
@@ -458,7 +460,6 @@ def plot_compliance_calibration():
     return cc
 
 def measure_compliance():
-
     '''
     Our circuit does not yet compensate the output for different current compliance levels
     Right now current compliance is set by a physical knob, not by the computer.  This will change.
@@ -468,6 +469,7 @@ def measure_compliance():
     There is a second complication because the input is not always at zero volts, because it is not compensated fully.
     This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
     '''
+    gain = settings.CCIRCUIT_GAIN
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
     # Put AWG in hi-Z mode (output channel off)
@@ -475,11 +477,13 @@ def measure_compliance():
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
     ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
     rigol.outputstate(False)
-    time.sleep(.1)
+    ivplot.mypause(.1)
+    #plt.pause(.1)
     # Immediately capture some samples on channels A and B
     # Use these channel settings for the capture -- does not modify global settings
+    # TODO pick the channel settings better or make it complain when the signal is out of range
     picosettings = {'chrange': {'A':.2, 'B':2},
-                    'choffset': {'A':0, 'B':-2},
+                    'choffset': {'A':0, 'B':np.sign(gain)*2},
                     'chatten': {'A':.2, 'B':1},
                     'chcoupling': {'A':'DC', 'B':'DC'}}
     ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
@@ -494,12 +498,9 @@ def measure_compliance():
 
     # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
 
-    # Circuit parameters
-    gain = 1
-    R = 2e3
     # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
     #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
-    ccurrent = Bmean / (R * gain)
+    ccurrent =  Bmean / (gain)
     settings.COMPLIANCE_CURRENT = ccurrent
     print('Measured compliance current: {} A'.format(ccurrent))
 
@@ -524,25 +525,22 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     A = datain['A']
     B = datain['B']
     #C = datain['C']
-    gain = 1
-    # Common base resistor
-    R = 2e3
-    dataout['V'] = A - dtype(IO)
+    gain = settings.CCIRCUIT_GAIN
+    dataout['V'] = dtype(A - IO)
     #dataout['V_formula'] = 'CHA - IO'
     dataout['INPUT_OFFSET'] = IO
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    dataout['I'] = -1 * B / dtype(R * gain) + dtype(CC)
+    dataout['I'] = dtype(B / gain + CC)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
     dataout['units'] = {'V':'V', 'I':'A'}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
     #dataout['Rout_conv'] = R
     dataout['CC'] = CC
-    dataout['gain'] = gain * R
+    dataout['gain'] = gain
     return dataout
-
 
 def rehan_to_iv(datain, dtype=np.float32):
     '''
@@ -578,7 +576,7 @@ def rehan_to_iv(datain, dtype=np.float32):
         dataout['units'].update({'I2':'A'})
 
     return dataout
-	
+
 def TEO_HFext_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -688,11 +686,6 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 
-# Change this when you change probing circuits
-#pico_to_iv = rehan_to_iv
-#pico_to_iv = ccircuit_to_iv
-#pico_to_iv = partial(Rext_to_iv, R=50)
-pico_to_iv = TEO_HFext_to_iv
 
 def tri(v1, v2, n=None, step=None):
     '''
