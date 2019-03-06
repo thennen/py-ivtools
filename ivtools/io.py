@@ -874,8 +874,8 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
                 df = pd.read_pickle(fn)
-                if type(df) is pd.Series:
-                    df = analyze.series_to_df(df)
+                #if type(df) is pd.Series:
+                    #df = analyze.series_to_df(df)
                 df = processgroup(df)
                 plotgroup(df)
                 writefig(pngfp)

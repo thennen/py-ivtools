@@ -359,6 +359,12 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 
 
 ########### Compliance circuit ###################
+
+# Voltage dividers
+# (Compliance control voltage)      DAC0 - 12kohm - 12kohm
+# (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
+
+
 def set_compliance(cc_value):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
@@ -483,8 +489,8 @@ def measure_compliance():
     # Use these channel settings for the capture -- does not modify global settings
     # TODO pick the channel settings better or make it complain when the signal is out of range
     picosettings = {'chrange': {'A':.2, 'B':2},
-                    'choffset': {'A':0, 'B':np.sign(gain)*2},
-                    'chatten': {'A':.2, 'B':1},
+                    'choffset': {'A':0, 'B':np.sign(gain)*-2},
+                    'chatten': {'A':1, 'B':1},
                     'chcoupling': {'A':'DC', 'B':'DC'}}
     ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
     picodata = ps.get_data(['A', 'B'])
@@ -532,7 +538,8 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     #dataout['I'] = 1e3 * (B - C) / R
     # Current circuit has 0V output in compliance, and positive output under compliance
     # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    dataout['I'] = dtype(B / gain + CC)
+    # TODO: Figure out if/why this works
+    dataout['I'] = dtype(-B / gain + CC)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
     dataout['units'] = {'V':'V', 'I':'A'}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}

@@ -1348,9 +1348,10 @@ def smooth_conv(x, N, mode='valid'):
 
 #@ivfunc
 def convert_to_uA(data):
-    ''' Assumes unit is A. Works in place and returns nothing.  Sorry for inconsistency.'''
+    ''' Assumes unit is A. Works in place but also returns the data.  Sorry for inconsistency.'''
     data['I'] *= 1e6
     set_unit(data, 'I', '$\mu$A')
+    return data
 
 
 @ivfunc
