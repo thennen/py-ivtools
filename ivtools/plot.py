@@ -891,34 +891,64 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
     Subtract internal series resistance voltage drop
     For Lassen R = 143, 2164, 8197, 12857
     '''
+    # Sorry this is shitty ...
+    dtype = type(data)
+    Rmap = {0:143, 1000:2164, 5000:8197, 9000:12857}
     if ax is None:
         fig, ax = plt.subplots()
+    if hasattr(R, '__call__'):
+        R = R()
     if R is None:
         # Look for R in the meta data
         # Check normal meta
         R = data.get('R_series')
         if R is not None:
             # If it is a lassen coupon, then convert to the measured values of series resistors
-            wafer_code = data.get('wafer_code')
-            if len(wafer_code) > 1:
-                wafer_code = wafer_code[0]
+            if dtype is list:
+                # Fuck
+                wafer_code = data.get('wafer_code')[0]
+            elif dtype is pd.DataFrame:
+                wafer_code = data.get('wafer_code').iloc[0]
+            else:
+                wafer_code = data.get('wafer_code')
+
             if wafer_code == 'Lassen':
-                Rmap = {0:143, 1000:2164, 5000:8197, 9000:12857}
-                if (len(R) == 1) and (R in Rmap):
+                if (dtype == pd.Series) or (not hasattr(R, '__iter__')):
+                    R = int(R)
+                if R in Rmap:
                     R = Rmap[R]
-                # TODO: handle lists of data better
+                else:
+                # lol
+                    R = np.array([Rmap[r] if r in Rmap else r for r in R])
         else:
             # Assumption for R_series if there's nothing in the meta data
             R = 0
-    if hasattr(R, '__call__'):
-        R = R()
     # wtf modifies the input data?  Shouldn't do that.
-    # TODO determine if current is in uA by checking units
+
+    # Determine the units of I data.  Assume the units are uniform.
+    Iunit = None
+    # This is STUPID
+    if dtype is list:
+        representative = data[0]
+    elif dtype is pd.DataFrame:
+        representative = data.iloc[0]
+    elif dtype in (pd.Series, dict):
+        representative = data
+    if 'units' in representative:
+        if 'I' in representative['units']:
+            Iunit = representative['units']['I']
+    if Iunit == '$\mu$A':
+        Iunit = 1e-6
+    else:
+        Iunit = 1
+
     if type(data) is list:
         for d in data:
-            d['Vcalc'] = d['V'] - R * d['I']
+            d['Vcalc'] = d['V'] - R * d['I'] * Iunit
     else:
-        data['Vcalc'] = data['V'] - R * data['I']
+        # Works for Series, dict, DataFrame
+        data['Vcalc'] = data['V'] - R * data['I'] * Iunit
+
     plotiv(data, ax=ax, x='Vcalc', **kwargs)
     if hasattr(R, '__iter__'):
         R = R[0]
