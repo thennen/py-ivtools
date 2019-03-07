@@ -33,10 +33,23 @@ logger = None
 class MetaHandler(object):
     '''
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
-    for attaching sample information to data files
+    for attaching sample information to data files, with interactive use in mind.
+
+    Can generate filenames
+
+    df attribute holds the list of metadata as a list-of-dicts or pandas dataframe
+    meta holds the currently selected row of metadata
+    static holds additional metadata which will not cycle
+    static values will override meta values if the keys collide
+
+    __repr__ will print the concatenated meta and static
+
+    you can set/get items directly on the MetaHandler instance instead of on its meta attribute
+
+    Attach the currently selected meta data and the static meta data with the attach() function
+
     MetaHandler is Borg.  Its state lives in an separate module.
     This is so if io module is reloaded, Metahandler instance keeps the metadata
-    #TODO make the object itself be the meta dictionary, through subclassing or some other clever means
     '''
     def __init__(self, clear_state=False):
         self.__dict__ = persistent_state.metahandler_state
@@ -71,6 +84,9 @@ class MetaHandler(object):
 
     def __setitem__(self, key, value):
         self.meta[key] = value
+
+    def __delitem__(self, key):
+        self.meta[key].__delitem__
 
     def load_from_csv(self, xlspath):
         ''' Not implemented.  Easy to implement. '''
@@ -234,8 +250,10 @@ class MetaHandler(object):
     def attach(self, data):
         '''
         Attach the currently selected metadata to input data
+        If the data is a "list" of data, this will append the metadata to all the elements
         Might overwrite existing keys!
         May modify the input data in addition to returning it
+        # TODO make it always modify the input data, or never
         '''
         if len(self.meta) > 0:
             print('Attaching the following metadata:')
@@ -773,7 +791,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
             with open(filepath, 'w') as f:
                 f.write(header)
                 f.write('\n')
-                pd.DataFrame({k:data[k] for k in columns}).to_csv(f, sep='\t', index=False)
+            pd.DataFrame({k:data[k] for k in columns}).to_csv(filepath, sep='\t', index=False, mode='a')
                 #np.savetxt(f, np.vstack([data[c] for c in columns]).T, delimiter='\t', header=header)
     elif type(data) in (list, pd.DataFrame):
         # Come up with unique filenames, and pass it back to write_csv one by one
