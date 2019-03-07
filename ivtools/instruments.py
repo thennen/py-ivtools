@@ -254,16 +254,16 @@ class Picoscope(object):
                 self.range[c] = rang
                 self.offset[c] = offs
 
-    def best_range(self, data):
+    def best_range(self, data, atten=1):
         '''
         Return the best RANGE and OFFSET values to use for a particular input signal (array)
         Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
         Don't pass int8 signals, would then need channel information to convert to V
         '''
-        # TODO: consider the attenuation!
-        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        # Consider the attenuation!
+        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
         # Sadly, each range has a different maximum possible offset
-        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)) * atten
         minimum = np.min(data)
         maximum = np.max(data)
         amplitude = abs(maximum - minimum) / 2
@@ -1034,6 +1034,7 @@ class Keithley2600(object):
         else:
             empty = np.array([])
             out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
+            out['units'] = {'I':'A', 'V':'V', 't':'s', 'Vmeasured':'V'}
         if history:
             self.data.append(out)
         return out
@@ -1662,6 +1663,7 @@ class USB2708HS(object):
         I found a USB-1208HS so this is how you use it I guess.
         Pass a digital value between 0 and 2**12 - 1
         0 is -10V, 2**12 - 1 is 10V
+        Can also pass volts instead of dacval
         Voltage values that don't make sense for my current set up are disallowed.
         '''
         board_num = 0
@@ -1669,12 +1671,14 @@ class USB2708HS(object):
 
         # Can pass dacval or volts.  Prefer dacval.
         if dacval is None:
-            # Better have passed volts...
+            # You better have passed volts...
             dacval = self.ul.from_eng_units(board_num, ao_range, volts)
         else:
+            dacval = int(dacval)
             volts = self.ul.to_eng_units(board_num, ao_range, dacval)
 
         # Just protect against doing something that doesn't make sense
+        # TODO: remove this restriction from this part of the code, should go in the application part
         if ch == 0 and volts > 0:
             print('I disallow voltage value {} for analog output {}'.format(volts, ch))
             return
@@ -1685,7 +1689,7 @@ class USB2708HS(object):
             print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
 
         try:
-            self.ul.a_out(board_num, ch, ao_range, dacval)
+            self.ul.a_out(board_num, ch, ao_range, int(dacval))
         except ULError as e:
             # Display the error
             print("A UL error occurred. Code: " + str(e.errorcode)

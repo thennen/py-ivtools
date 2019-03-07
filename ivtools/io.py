@@ -857,49 +857,59 @@ def set_readonly(filepath):
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwrite=False, plotfunc=ivplot.plotiv):
-   # Make a plot of all the .s and .df files in a directory
-   # Save as pngs with the same name
-   # TODO: Optionally group by sample (or anything else), making one plot for each group
-   files = os.listdir(datadir)
-   series_fns = [pjoin(datadir, f) for f in files if f.endswith('.s')]
-   dataframe_fns = [pjoin(datadir, f) for f in files if f.endswith('.df')]
+def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
+    # Make a plot of all the .s and .df files in a directory
+    # Save as pngs with the same name
+    # kwargs go to plotfunc
+    # TODO: move to plot.py
+    files = glob('*.[s,df]', datadir)
 
-   fig, ax = plt.subplots()
+    fig, ax = plt.subplots()
 
-   for sfn in series_fns:
-      pngfn = sfn[:-2] + '.png'
-      pngfp = os.path.join(datadir, pngfn)
-      if overwrite or not os.path.isfile(pngfp):
-        s = pd.read_pickle(sfn)
-        s.I *= 1e6
-        s.units['I'] = '$\mu$A'
-        smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-        plotfunc(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax, **kwargs)
-        if 'width_nm' in s:
-            plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
+    def processgroup(g):
+        if smoothpercent > 0:
+            smoothn = max(int(smoothpercent * len(g.iloc[0].V) / 100), 1)
+            g = analyze.moving_avg(g, smoothn)
+        if 'R_series' in g:
+            g['Vd'] = g['V'] - g['R_series'] * g['I']
+        analyze.convert_to_uA(g)
+        return g
+
+    def plotgroup(g):
+        fig, ax = plt.subplots()
+        step = int(np.ceil(len(g) / maxloops))
+        plotfunc(g[::step], alpha=.6, ax=ax, **kwargs)
+        ivplot.auto_title(g)
+
+    def writefig(pngfp):
         plt.savefig(pngfp)
         print('Wrote {}'.format(pngfp))
-        ax.cla()
 
-   for dffn in dataframe_fns:
-      pngfn = dffn[:-3] + '.png'
-      pngfp = os.path.join(datadir, pngfn)
-      if overwrite or not os.path.isfile(pngfp):
-        df = pd.read_pickle(dffn)
-        df.I *= 1e6
-        df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
-        step = int(np.ceil(len(df) / maxloops))
-        smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-        plotfunc(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax, **kwargs)
-        s = df.iloc[0]
-        if 'width_nm' in s:
-            plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
-        plt.savefig(pngfp)
-        print('Wrote {}'.format(pngfp))
-        ax.cla()
+    if groupby is None:
+        # Load each file individually and plot
+        for fn in files:
+            pngfn = os.path.splitext(fn)[0] + '.png'
+            pngfp = os.path.join(datadir, pngfn)
+            if overwrite or not os.path.isfile(pngfp):
+                df = pd.read_pickle(fn)
+                #if type(df) is pd.Series:
+                    #df = analyze.series_to_df(df)
+                df = processgroup(df)
+                plotgroup(df)
+                writefig(pngfp)
+    else:
+        # Read all the data in the directory into memory at once
+        df = read_pandas(files)
+        for k,g in df.groupby(groupby):
+            pngfn = 'group_' + '_'.join(format(val) for pair in zip(groupby, k) for val in pair) + '.png'
+            pngfp = os.path.join(datadir, pngfn)
+            if overwrite or not os.path.isfile(pngfp):
+                processgroup(g)
+                plotgroup(g)
+                # Maybe title with the thing you grouped by
+                writefig(pngfp)
 
-   plt.close(fig)
+    plt.close(fig)
 
 def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
