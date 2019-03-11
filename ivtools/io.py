@@ -33,10 +33,23 @@ logger = None
 class MetaHandler(object):
     '''
     Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
-    for attaching sample information to data files
+    for attaching sample information to data files, with interactive use in mind.
+
+    Can generate filenames
+
+    df attribute holds the list of metadata as a list-of-dicts or pandas dataframe
+    meta holds the currently selected row of metadata
+    static holds additional metadata which will not cycle
+    static values will override meta values if the keys collide
+
+    __repr__ will print the concatenated meta and static
+
+    you can set/get items directly on the MetaHandler instance instead of on its meta attribute
+
+    Attach the currently selected meta data and the static meta data with the attach() function
+
     MetaHandler is Borg.  Its state lives in an separate module.
     This is so if io module is reloaded, Metahandler instance keeps the metadata
-    #TODO make the object itself be the meta dictionary, through subclassing or some other clever means
     '''
     def __init__(self, clear_state=False):
         self.__dict__ = persistent_state.metahandler_state
@@ -71,6 +84,9 @@ class MetaHandler(object):
 
     def __setitem__(self, key, value):
         self.meta[key] = value
+
+    def __delitem__(self, key):
+        self.meta[key].__delitem__
 
     def load_from_csv(self, xlspath):
         ''' Not implemented.  Easy to implement. '''
@@ -234,8 +250,10 @@ class MetaHandler(object):
     def attach(self, data):
         '''
         Attach the currently selected metadata to input data
+        If the data is a "list" of data, this will append the metadata to all the elements
         Might overwrite existing keys!
         May modify the input data in addition to returning it
+        # TODO make it always modify the input data, or never
         '''
         if len(self.meta) > 0:
             print('Attaching the following metadata:')
@@ -773,7 +791,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
             with open(filepath, 'w') as f:
                 f.write(header)
                 f.write('\n')
-                pd.DataFrame({k:data[k] for k in columns}).to_csv(f, sep='\t', index=False)
+            pd.DataFrame({k:data[k] for k in columns}).to_csv(filepath, sep='\t', index=False, mode='a')
                 #np.savetxt(f, np.vstack([data[c] for c in columns]).T, delimiter='\t', header=header)
     elif type(data) in (list, pd.DataFrame):
         # Come up with unique filenames, and pass it back to write_csv one by one
@@ -839,49 +857,59 @@ def set_readonly(filepath):
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500, x='V', y='I', smoothpercent=1, overwrite=False, plotfunc=ivplot.plotiv):
-   # Make a plot of all the .s and .df files in a directory
-   # Save as pngs with the same name
-   # TODO: Optionally group by sample (or anything else), making one plot for each group
-   files = os.listdir(datadir)
-   series_fns = [pjoin(datadir, f) for f in files if f.endswith('.s')]
-   dataframe_fns = [pjoin(datadir, f) for f in files if f.endswith('.df')]
+def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
+    # Make a plot of all the .s and .df files in a directory
+    # Save as pngs with the same name
+    # kwargs go to plotfunc
+    # TODO: move to plot.py
+    files = glob('*.[s,df]', datadir)
 
-   fig, ax = plt.subplots()
+    fig, ax = plt.subplots()
 
-   for sfn in series_fns:
-      pngfn = sfn[:-2] + '.png'
-      pngfp = os.path.join(datadir, pngfn)
-      if overwrite or not os.path.isfile(pngfp):
-        s = pd.read_pickle(sfn)
-        s.I *= 1e6
-        s.units['I'] = '$\mu$A'
-        smoothn = max(int(smoothpercent * len(s.V) / 100), 1)
-        plotfunc(analyze.moving_avg(s, smoothn, columns=None), x=x, y=y, ax=ax, **kwargs)
-        if 'width_nm' in s:
-            plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
+    def processgroup(g):
+        if smoothpercent > 0:
+            smoothn = max(int(smoothpercent * len(g.iloc[0].V) / 100), 1)
+            g = analyze.moving_avg(g, smoothn)
+        if 'R_series' in g:
+            g['Vd'] = g['V'] - g['R_series'] * g['I']
+        analyze.convert_to_uA(g)
+        return g
+
+    def plotgroup(g):
+        fig, ax = plt.subplots()
+        step = int(np.ceil(len(g) / maxloops))
+        plotfunc(g[::step], alpha=.6, ax=ax, **kwargs)
+        ivplot.auto_title(g)
+
+    def writefig(pngfp):
         plt.savefig(pngfp)
         print('Wrote {}'.format(pngfp))
-        ax.cla()
 
-   for dffn in dataframe_fns:
-      pngfn = dffn[:-3] + '.png'
-      pngfp = os.path.join(datadir, pngfn)
-      if overwrite or not os.path.isfile(pngfp):
-        df = pd.read_pickle(dffn)
-        df.I *= 1e6
-        df['units'] = len(df) * [{'V':'V', 'I':'$\mu$A'}]
-        step = int(np.ceil(len(df) / maxloops))
-        smoothn = max(int(smoothpercent * len(df.iloc[0].V) / 100), 1)
-        plotfunc(analyze.moving_avg(df[::step], smoothn), alpha=.6, ax=ax, **kwargs)
-        s = df.iloc[0]
-        if 'width_nm' in s:
-            plt.title('{}, Width={}nm, Thickness={}nm'.format(s['layer_1'], s['width_nm'], s['thickness_1']))
-        plt.savefig(pngfp)
-        print('Wrote {}'.format(pngfp))
-        ax.cla()
+    if groupby is None:
+        # Load each file individually and plot
+        for fn in files:
+            pngfn = os.path.splitext(fn)[0] + '.png'
+            pngfp = os.path.join(datadir, pngfn)
+            if overwrite or not os.path.isfile(pngfp):
+                df = pd.read_pickle(fn)
+                #if type(df) is pd.Series:
+                    #df = analyze.series_to_df(df)
+                df = processgroup(df)
+                plotgroup(df)
+                writefig(pngfp)
+    else:
+        # Read all the data in the directory into memory at once
+        df = read_pandas(files)
+        for k,g in df.groupby(groupby):
+            pngfn = 'group_' + '_'.join(format(val) for pair in zip(groupby, k) for val in pair) + '.png'
+            pngfp = os.path.join(datadir, pngfn)
+            if overwrite or not os.path.isfile(pngfp):
+                processgroup(g)
+                plotgroup(g)
+                # Maybe title with the thing you grouped by
+                writefig(pngfp)
 
-   plt.close(fig)
+    plt.close(fig)
 
 def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
