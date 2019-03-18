@@ -91,9 +91,10 @@ class Picoscope(object):
                 # TODO: methods of PS6000 to expose?
                 self.getAllUnitInfo = self.ps.getAllUnitInfo
                 self.getUnitInfo = self.ps.getUnitInfo
-            except:
+            except Exception as e:
                 self.ps = None
                 print('Connection to picoscope failed. There could be an unclosed session.')
+                print(e)
 
     def connected(self):
         if hasattr(self, 'ps'):
