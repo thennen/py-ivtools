@@ -1034,7 +1034,7 @@ class Keithley2600(object):
         else:
             empty = np.array([])
             out = dict(t=empty, V=empty, I=empty, Vmeasured=empty)
-            out['units'] = {'I':'A', 'V':'V', 't':'s', 'Vmeasured':'V'}
+            out['units'] = {}
         if history:
             self.data.append(out)
         return out
