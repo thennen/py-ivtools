@@ -286,7 +286,7 @@ class Picoscope(object):
         return (max(possible_ranges), 0)
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
-                trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='rising',
+                trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
                 pretrig=0.0, chrange=None, choffset=None, chcoupling=None, chatten=None):
         '''
         Set up picoscope to capture from specified channel(s).
