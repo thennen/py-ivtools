@@ -286,8 +286,8 @@ class Picoscope(object):
         return (max(possible_ranges), 0)
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
-                trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, pretrig=0.0,
-                chrange=None, choffset=None, chcoupling=None, chatten=None):
+                trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='rising',
+                pretrig=0.0, chrange=None, choffset=None, chcoupling=None, chatten=None):
         '''
         Set up picoscope to capture from specified channel(s).
 
@@ -363,7 +363,7 @@ class Picoscope(object):
                                VOffset=choffset[c],
                                enabled=True)
         # Set up the trigger.  Will timeout in 30s
-        self.ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
+        self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, timeout_ms=timeout_ms)
         self.ps.runBlock(pretrig)
         return actualfreq
 
@@ -637,7 +637,7 @@ class RigolDG5000(object):
         Data will be normalized.  Use self.amplitude() to set the amplitude.
         Make sure that the output is off, because the command switches out of burst mode
         and otherwise will start outputting immediately.
-        UNTESTED!  convert to integers so that we can send more data points!
+        convert to integers so that we can send more data points!
         Supposedly gets to about 40,000 samples
         '''
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
@@ -926,7 +926,6 @@ class Keithley2600(object):
         # works with smua.measure.overlappediv()
         donemeasuring = not bool(float(self.query('print(status.operation.measuring.condition)')))
         # works with both
-
         return donesweeping & donemeasuring
 
     def waitready(self):
@@ -1071,12 +1070,12 @@ class UF2000Prober(object):
     These two reference frames are centered on different locations
     indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
     micron system is centered somewhere far away from the chuck
-	
+
 	The coordinate systems sound easy, but will confuse you for days
 	in part because the coordinate system and units used for setting
 	and getting the position are sometimes different and sometimes the same!!
 	e.g. when reading the position in microns, the x and y axes are reflected!!
-	
+
 	I attempted to hide all of this nonsense from the user of this class
     !!!!!!
 
