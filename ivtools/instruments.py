@@ -138,13 +138,13 @@ class Picoscope(object):
             self.set('B', value)
         @property
         def c(self):
-            return self['B']
+            return self['C']
         @c.setter
         def c(self, value):
             self.set('C', value)
         @property
         def d(self):
-            return self['B']
+            return self['D']
         @d.setter
         def d(self, value):
             self.set('D', value)
