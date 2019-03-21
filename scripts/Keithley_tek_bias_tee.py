@@ -384,7 +384,7 @@ cc_step = 25e-6):
 
             plt.pause(0.1)
 
-            ttx.arm(source = 3, level = trigger_level, edge = 'e')
+            ttx.arm(source = 3, level = trigger_level, edge = 'r')
 
 
             ### Applying pulse and reading scope data #############################################################
