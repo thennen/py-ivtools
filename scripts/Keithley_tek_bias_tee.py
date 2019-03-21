@@ -354,7 +354,7 @@ cc_step = 25e-6):
 
             plt.pause(1)
 
-            k.it(sourceVA = V_read, sourceVB = 0, points =5, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
@@ -366,12 +366,12 @@ cc_step = 25e-6):
             ### Setting up scope  ################################################################################
 
             ttx.inputstate(1, False)
-            ttx.inputstate(2, True)
-            ttx.inputstate(3, False)
+            ttx.inputstate(2, False)
+            ttx.inputstate(3, True)
             ttx.inputstate(4, False)
 
-            ttx.scale(2, scale)
-            ttx.position(2, position)
+            ttx.scale(3, scale)
+            ttx.position(3, position)
 
 
             ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
@@ -384,7 +384,7 @@ cc_step = 25e-6):
 
             plt.pause(0.1)
 
-            ttx.arm(source = 2, level = trigger_level, edge = 'e')
+            ttx.arm(source = 3, level = trigger_level, edge = 'r')
 
 
             ### Applying pulse and reading scope data #############################################################
@@ -399,7 +399,7 @@ cc_step = 25e-6):
                 plt.pause(0.1)
             if not ttx.triggerstate:
                 plt.pause(0.1)
-            scope_list.append(ttx.get_curve(2))
+            scope_list.append(ttx.get_curve(3))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
 
@@ -412,7 +412,7 @@ cc_step = 25e-6):
             k.set_channel_voltage(channel = 'A', voltage = V_read)
 
             plt.pause(1)
-            k.it(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+            k.it(sourceVA = V_read, sourceVB = 0, points = 10, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
             while not k.done():
                 plt.pause(0.1)
             k.set_channel_state('A', False)
@@ -505,7 +505,8 @@ cc_step = 25e-6):
 
                     if current_compliance > 1e-3:
                         current_compliance = limitI2
-
+            k.set_channel_state('A', False)
+            k.set_channel_state('B', False)
   
     data['attenuation'] = attenuation
     data['pulse_width'] = pulse_width
