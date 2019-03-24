@@ -1305,11 +1305,14 @@ def get_R_median(all_data):
     R = R[sorted_index]     
     return fwhm_array, R
 
-def Boxplot_array(all_data):
+def Boxplot_array(all_data, Reset = False):
     R = []
     fwhm_array = []
     for data in all_data:
-        ratio = np.array(data['R_lrs']/data['R_hrs'])
+        if not Reset:
+            ratio = np.array(data['R_lrs']/data['R_hrs'])
+        else:
+            ratio = np.array(data['R_hrs']/data['R_lrs'])
         index = where(~np.isnan(ratio))
         ratio = ratio[index]
         if np.size(ratio)>0:
