@@ -487,6 +487,10 @@ cc_step = 25e-6):
                         current_compliance += cc_step
                         u += 1
                         d = 0
+
+                    if current_compliance < cc_step:
+                        current_compliance =cc_step
+                        
                     if u > 51 or d > 51:
                         print('Failed hitting resistance window, aborting measurement')
                         window_hit = True
