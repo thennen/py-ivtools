@@ -36,6 +36,8 @@ import time
 import os
 import pandas as pd
 import serial
+import matplotlib as mpl
+from matplotlib import pyplot as plt
 from collections import deque
 from . import persistent_state
 visa_rm = persistent_state.visa_rm
@@ -318,8 +320,7 @@ class Picoscope(object):
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
         # Enable only the channels being used, disable the rest
         for c in ['A', 'B', 'C', 'D']:
-            if c not in ch:
-                self.ps.setChannel(c, enabled=False)
+            self.ps.setChannel(c, enabled=c in ch)
 
         # If freq and duration are passed, take as many samples as it takes to sample for duration
         # If duration and nsamples are passed, sample with frequency as near as possible to nsamples/duration (nsamples will vary)
@@ -386,17 +387,22 @@ class Picoscope(object):
         if not hasattr(ch, '__iter__'):
             ch = [ch]
         for c in ch:
+            rawint16, _, overflow = self.ps.getDataRaw(c)
+            if overflow:
+                print(f'!! Picoscope overflow on Ch {c} !!')
             if raw:
                 # For some reason pico-python gives the values as int16
                 # Probably because some scopes have 16 bit resolution
                 # The 6403c is only 8 bit, and I'm looking to save memory here
-                rawint16, _, _ = self.ps.getDataRaw(c)
                 data[c] = np.int8(rawint16 / 2**8)
             else:
                 # I added dtype argument to pico-python
-                data[c] = self.ps.getDataV(c, dtype=dtype)
-
+                data[c] = self.ps.rawToV(c, rawint16, dtype=dtype)
+                #data[c] = self.ps.getDataV(c, dtype=dtype)
         Channels = ['A', 'B', 'C', 'D']
+        # Unfortunately, picopython updates these when you use ps.setChannel
+        # So don't setChannel again before get_data, or the following metadata could be wrong!
+        # picopython SHOULD return the metadata for each capture with ps.getDataV
         data['RANGE'] = {ch:chr for ch, chr in zip(Channels, self.ps.CHRange)}
         data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, self.ps.CHOffset)}
         data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, self.ps.ProbeAttenuation)}
@@ -411,6 +417,66 @@ class Picoscope(object):
         # Sample frequency?
         self.data = data
         return data
+
+    def measure(self, ch='A', freq=None, duration=None, nsamples=None, trigsource='TriggerAux', triglevel=0.1,
+                timeout_ms=1000, direction='Rising', pretrig=0.0, chrange=None, choffset=None, chcoupling=None,
+                chatten=None, raw=False, dtype=np.float32, plot=True, ax=None):
+        '''
+        Just capture and get_data in one step
+        good for interactive use
+        '''
+        self.capture(ch, freq=freq, duration=duration, nsamples=nsamples, trigsource=trigsource,
+                     triglevel=triglevel, timeout_ms=timeout_ms, direction=direction, pretrig=pretrig,
+                     chrange=chrange, choffset=choffset, chcoupling=chcoupling, chatten=chatten)
+        # Hopefully this doesn't timeout or something
+        data = self.get_data(ch, raw=raw, dtype=dtype)
+        if plot:
+            self.plot(data, ax=ax)
+        return data
+
+    def plot(self, chdata=None, ax=None, alpha=.9):
+        '''
+        Plot the channel data of picoscope
+        Includes an indication of the measurement range used
+        uses self.data (most recent data) if chdata is not passed
+        '''
+        if ax is None:
+            fig, ax = plt.subplots()
+        if chdata is None:
+            if self.data is None:
+                print('No data to plot')
+            else:
+                chdata = self.data
+        # Colors match the code on the picoscope
+        # Yellow is too hard to see
+        colors = dict(A='Blue', B='Red', C='Green', D='Gold')
+        channels = ['A', 'B', 'C', 'D']
+        # Remove any previous range indicators that might exist on the plot
+        ax.collections = []
+        for c in channels:
+            if c in chdata.keys():
+                if chdata[c].dtype == np.int8:
+                # Convert to voltage for plot
+                    chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
+                else:
+                    chplotdata = chdata[c]
+                if 'sample_rate' in chdata:
+                    # If sample rate is available, plot vs time
+                    x = np.arange(len(chdata[c])) * 1/chdata['sample_rate']
+                    if 'downsampling' in chdata:
+                        x *= chdata['downsampling']
+                    ax.set_xlabel('Time [s]')
+                    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+                else:
+                    x = range(len(chdata[c]))
+                    ax.set_xlabel('Data Point')
+                ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha)
+                # lightly indicate the channel range
+                choffset = chdata['OFFSET'][c]
+                chrange = chdata['RANGE'][c]
+                ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+        ax.legend(title='Channel')
+        ax.set_ylabel('Voltage [V]')
 
 
 #########################################################
@@ -780,6 +846,11 @@ class RigolDG5000(object):
         self.outputstate(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
+
+    def DC(self, value, ch=1):
+        # Only way that I know to make the rigol do DC
+        # Might be a better way
+        self.pulse_arbitrary([value, value], 1e-3, ch=ch)
 
 
 #########################################################
