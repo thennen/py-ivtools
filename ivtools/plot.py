@@ -370,7 +370,7 @@ def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
     ax.set_ylabel(y)
     return fig, ax
 
-def plot_channels(chdata, ax=None):
+def plot_channels(chdata, ax=None, alpha=.8):
     '''
     Plot the channel data of picoscope
     Includes an indication of the measurement range used
@@ -398,7 +398,7 @@ def plot_channels(chdata, ax=None):
             else:
                 x = range(len(chdata[c]))
                 ax.set_xlabel('Data Point')
-            ax.plot(x, chplotdata, color=colors[c], label=c)
+            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
