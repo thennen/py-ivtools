@@ -1174,6 +1174,8 @@ def calc_fwhm(valuelist, time, peakpos=-1):
     ### calculate pulse widht
     time_step = time[1]-time[0]
     fwhm = width*time_step
+    if np.isinf(fwhm):
+        return np.nan 
     return fwhm
 
 def determine_resistance(i, v):
