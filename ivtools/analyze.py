@@ -442,7 +442,6 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
 
 @ivfunc
 def maketimearray(data):
-    # TODO: need to account for any possible downsampling!
     # Don't know what data columns exist
     columns = find_data_arrays(data)
     t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']

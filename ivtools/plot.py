@@ -139,6 +139,16 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
 
     return line
 
+def arrowplot(data, x, y, ax, **kwargs):
+    # Needed by plotiv to make a quiver style plot
+    # pass this function to plotiv as plotfunc=arrowplot
+    xd = data[x]
+    yd = data[y]
+    qkwargs = {}
+    if 'c' in kwargs:
+        qkwargs['color'] = kwargs['c']
+    ax.quiver(xd[:-1], yd[:-1], xd[1:]-xd[:-1], yd[1:]-yd[:-1], scale_units='xy', angles='xy', scale=1, width=.005, **qkwargs)
+
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=_plot_single_iv, autotitle=False, labels=None, colorbyval=True, **kwargs):
     '''
@@ -1293,7 +1303,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     if c is None:
-        c = arange(len(x))
+        c = np.arange(len(x))
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
