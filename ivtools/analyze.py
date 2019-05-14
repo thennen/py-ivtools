@@ -1518,11 +1518,13 @@ def replace_nanvals(array):
 
 
 ### Interactive
+# TODO: dig up some other interactive stuff you have written
 
-def hand_select(df, groupby=None, **kwargs):
+def filter_byhand(df, groupby=None, **kwargs):
     '''
     Select a subset of loops by hand.
-    Right now it selects one loop from each group
+    Can also truncate each loop with the up/down arrows
+    Can select one or zero per group
     '''
     print('\n\n')
     print('left arrow: previous loop')
@@ -1530,7 +1532,8 @@ def hand_select(df, groupby=None, **kwargs):
     print('down arrow: truncate n data points')
     print('left arrow: untruncate n data points')
     print('[1-9]: Set n')
-    print('Enter: select loop and')
+    print('Enter: select loop and move to the next')
+    print('q: discard')
     print('\n\n')
 
     # Shitty manual loop selection written as fast as I could
@@ -1543,6 +1546,7 @@ def hand_select(df, groupby=None, **kwargs):
                 self.n = 0
                 self.l = None
                 self.step = 1
+                self.select = False
             def press(self, event):
                 print('press', event.key)
                 if event.key == 'right':
@@ -1555,6 +1559,7 @@ def hand_select(df, groupby=None, **kwargs):
                     self.n = (self.n - self.step) % len(data)
                 elif event.key == 'enter':
                     # select the loop and return
+                    self.select = True
                     plt.close(fig)
                     return
                 elif event.key == 'down':
@@ -1593,14 +1598,19 @@ def hand_select(df, groupby=None, **kwargs):
         while plt.fignum_exists(fignum):
             plt.pause(.1)
 
-        return sliceiv(data.iloc[thing.n], stop=thing.l)
+        if thing.select:
+            return sliceiv(data.iloc[thing.n], stop=thing.l)
+        else:
+            return None
 
     if groupby is None:
         return selectloop(df)
     else:
         selected = []
         for k,g in df.groupby(groupby):
-            selected.append(selectloop(g))
+            s = selectloop(g)
+            if s is not None:
+                selected.append(s)
         return pd.DataFrame(selected)
 
 

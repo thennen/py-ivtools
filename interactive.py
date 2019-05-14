@@ -270,7 +270,7 @@ plotters = iplots.plotters
 add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
-def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
+def savedata(data=None, filepath=None, drop=None):
     '''
     Save data with metadata attached, as determined by the state of the global MetaHandler instance
     if no data is passed, try to use the global variable d
