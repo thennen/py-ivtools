@@ -617,7 +617,7 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
     return dataout
 
 
-def Rext_to_iv(datain, R=50, dtype=np.float32):
+def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     This is for the configuration where you are using a series resistor
@@ -633,7 +633,7 @@ def Rext_to_iv(datain, R=50, dtype=np.float32):
 
     # Use channel A and C as input, because simultaneous sampling is faster than using A and B
     A = datain['A']
-    C = datain['C']
+    C = datain[Ichannel]
 
     # V device
     dataout['V'] = A - C
@@ -701,14 +701,41 @@ def tri(v1, v2, n=None, step=None):
     Can optionally pass number of data points you want, or the voltage step between points.
 
     If neither n or step is passed, return the shortest waveform which reaches v1 and v2.
+
+    Building these waveforms has some unexpected nuances.  Check the code if unsure.
     '''
+    # How this waveform is constructed depends on our value system.
+    # For example, when we pass n, do we care most that the waveform:
+    # 1. actually has n points?
+    # 2. has constant datapoint spacing?
+    # 3. contains the extrema?
+
+    # For IV sweeps I would say containing the extrema is important,
+    # In order to make sure the waveform actually contains 0, v1 and v2, we need to allow
+    # uneven spacing for the extreme points (v1, v2, last 0).
+    # I think this is better than strictly enforcing equal sweep rate, because you can then get
+    # deformed undersampled triangle waveforms
+
+    # Within this scheme, there does not necessarily exist a step size that leads to n data points.
+    # (e.g. going from zero to one extreme and back to zero can't be done in an even number of data points)
+    # When a step size does exist, it is not unique.
+    # What to do when a step size doesn't exist, and how to find the optimum step size when it does exist?
+    # It's a fun problem to think about, but hard to solve.
+
+    #nulls = sum(np.array((v1, v2-v1, v2)) == 0)
+    #endpts = 3 - nulls
     if n is not None:
         dv = abs(v1) + abs(v2 - v1) + abs(v2)
-        step = dv / n
+        step = dv / (n - 1)
+        # If I take the above step, I will end up between 1 and "endpts" extra points
+        # Dumb stuff below
+        #sstart = dv / (n-1)
+        #sstop = dv / (n-endpts-1)
+        #stest = np.linspace(sstart, sstop, 1024)
+        # number of points you will end up with
+        #ntest = abs(v1)//stest + (abs(v2-v1))//stest + abs(v2)//stest + 1 + endpts
+        #step = stest[np.where(ntest == n)[0][0]]
     if step is not None:
-        # I could choose here to either make sure the waveform surely contains v1 and v2
-        # or to make sure the waveform really has a constant sweep rate
-        # I choose the former..
         def sign(num):
             npsign = np.sign(num)
             return npsign if npsign !=0 else 1
@@ -718,8 +745,8 @@ def tri(v1, v2, n=None, step=None):
                              [0]))
         return wfm
     else:
-        # Find the shortest waveform that truly reaches v1 and v2 with constant sweep rate
-        # Don't think we need better than 1 mV resolution
+        # Find the shortest waveform that truly reaches v1 and v2 with constant spacing
+        # I don't think we need better than 1 mV resolution
         v1 = round(v1, 3)
         v2 = round(v2, 3)
         f1 = Fraction(str(v1))

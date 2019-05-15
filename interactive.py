@@ -315,12 +315,12 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
                     if live:
                         data = getdatafunc()
                         iplots.updateline(data)
-                    plt.pause(0.1)
+                    mypause(0.1)
                 data = getdatafunc()
                 iplots.updateline(data)
             else:
                 while not donefunc():
-                    plt.pause(0.1)
+                    mypause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
             if autosave:
