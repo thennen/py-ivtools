@@ -995,8 +995,8 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
             if wafer_code == 'Lassen':
                 if (dtype == pd.Series) or (not hasattr(R, '__iter__')):
                     R = int(R)
-                if R in Rmap:
-                    R = Rmap[R]
+                    if R in Rmap:
+                        R = Rmap[R]
                 else:
                 # lol
                     R = np.array([Rmap[r] if r in Rmap else r for r in R])

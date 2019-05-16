@@ -111,7 +111,8 @@ class MetaHandler(object):
                 devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
             else:
                 devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
-        filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        #filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        filenamekeys = ['id']
         if 'sample_name' in kwargs:
             filenamekeys = ['sample_name'] + filenamekeys
         meta_i = 0
@@ -901,6 +902,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
         # Read all the data in the directory into memory at once
         df = read_pandas(files)
         for k,g in df.groupby(groupby):
+            # Fukken thing errors if you are only grouping by one key
             pngfn = 'group_' + '_'.join(format(val) for pair in zip(groupby, k) for val in pair) + '.png'
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
