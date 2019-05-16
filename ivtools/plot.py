@@ -164,6 +164,9 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
 
     Can pass an arbitrary plotting function, which defaults to _plot_single_iv, haven't tested it yet
     Could then define some other plots that take IV data and reuse plotiv functionality.
+
+    # TODO: What if you want to plot a function of more than one variable contained in data?
+    # Right now you have to define a new variable like data['G'] = data['I']/data['V']
     '''
     if ax is None:
         fig, ax = plt.subplots()
@@ -268,6 +271,72 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     # should I really return this?  usually I don't assign the values and then they get cached by ipython forever
     # I have never actually used the return value.
     # return ax, line
+
+## Linearized plots for conduction mechanisms
+def schottky_plot(data, V='V', I='I', T=None):
+    # Linearizes schottky mechanism
+    # log(I) or log(I)/T^2 vs sqrt(v)
+    # Should I use ln on the data or use the log scale?
+    fig, ax = plt.subplots()
+    ax.set_yscale('log')
+    if T is not None:
+        # Assuming data is a dataframe.  Will kick myself later.
+        data = data.assign(**{'I/T2': data['I'] / data['T']**2})
+        plotiv(data, V, 'I/T2', xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel(f'{I} / {T}$^2$')
+    else:
+        plotiv(data, V, I, xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel(f'{I}')
+    ax.set_xlabel(f'sqrt({V})')
+
+def poole_frenkel_plot(data, V='V', I='I', T=None):
+    # Linearizes P-F mechanism
+    # log(G) or log(G)/T^2 vs sqrt(v)
+    # Should I use ln on the data or use the log scale?
+    data = data.assign(G=data[I]/data[V])
+    fig, ax = plt.subplots()
+    ax.set_yscale('log')
+    if T is not None:
+        # Assuming data is a dataframe.  Will kick myself later.
+        data = data.assign(**{'G/T2': data['G'] / data['T']**2})
+        plotiv(data, V, 'G/T2', xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel(f'G / {T}$^2$')
+    else:
+        plotiv(data, V, 'G', xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel('G')
+    ax.set_xlabel(f'sqrt({V})')
+
+def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=plt.cm.viridis, **kwargs):
+    # Thermal activation plot -- needs some work though
+    # log(I) or log(G) vs 1000/T
+    # This is a little tricky because voltage values need to be interpolated in general
+    # If I is multi-valued in voltage then it can be a pain in the ass to interpolate
+    # for each interpolated value of V, we plot a line
+    # Not using plotiv because I couldn't think of the smart way to "pivot" the nested dataframe
+    # Should output the "interpolated pivot" data for fitting
+    plt.figure()
+    if maxv is None:
+        maxv =  np.max(data[V].apply(np.max))
+    if minv is None:
+        minv = 0.05
+    vs = np.linspace(minv, maxv, numv)
+    colors = cm(np.linspace(0, 1, len(vs)))
+    fits = []
+    for v,c in zip(vs, colors):
+        it = analyze.interpiv(data, v, column=V, left=np.nan, right=np.nan, findmonotonic=True)
+        plt.plot(1000/it['T'], np.log(it[I]), marker='.', color=c, label=format(v, '.2f'), **kwargs)
+        #notnan = ~it['I'].isnull()
+        #fits.append(polyfit(1/it['T'][notnan], log(it['G'][notnan]), 1))
+        #fitx = np.linspace(1/300, 1/81)
+        #color = ax.lines[-1].get_color()
+        #plt.plot(fitx, np.polyval(fits[-1], fitx), color=color, alpha=.7)
+        #ax.lines[-1].set_label(None)
+    #plt.legend(title='Device Voltage')
+    colorbar_manual(minv, maxv, cmap=cm, label='Applied Voltage [V]')
+    plt.xlabel('Temperature [K] (scale 1/T)')
+    plt.ylabel('log(I)')
+    formatter = mpl.ticker.FuncFormatter(lambda x, y: format(1000/x, '.0f'))
+    plt.gca().xaxis.set_major_formatter(formatter)
 
 def auto_title(data, keys=None, ax=None):
     '''
@@ -425,6 +494,7 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
     sm.set_array([])
     cb = plt.colorbar(sm, ax=ax, **kwargs)
     return cb
+
 
 
 def mypause(interval):
@@ -1268,6 +1338,8 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     ax.set_ylim(y0, y1)
 
 
+### Other kinds of plotting utilities
+
 def metric_prefix(x):
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
@@ -1287,15 +1359,11 @@ def engformatter(axis='y', ax=None):
         axis = ax.yaxis
     axis.set_major_formatter(mpl.ticker.EngFormatter())
 
-
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
-
-
-### Other kinds of plotting utilities
 
 def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
     ''' line plot whose color changes along its length '''
@@ -1314,3 +1382,15 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
 
     ax.add_collection(lc)
     ax.autoscale()
+
+def xylim():
+    # return the command to set a plot xlim,ylim to the xlim and ylim of the current plot
+    # also put it on the clipboard
+    # got sick of repeating this over and over
+    xlim = plt.xlim()
+    ylim = plt.ylim()
+    cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
+    print(cmd)
+    # I don't know how to copy a new line onto the clipboard
+    df=pd.DataFrame([cmd.replace('\n', ';')])
+    df.to_clipboard(index=False,header=False)

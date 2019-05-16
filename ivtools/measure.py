@@ -139,6 +139,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         print('Smoothimating data with window {}, factor {}'.format(window, factor))
+        # TODO: What if we want to retain a copy of the non-smoothed data?
+        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
+        # Maybe only smoothimate I and V?
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit:
