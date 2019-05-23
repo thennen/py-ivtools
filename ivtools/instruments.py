@@ -61,7 +61,7 @@ class Picoscope(object):
     This class will basically extend the colinoflynn picoscope module
     Has some higher level functionality, and it stores/manipulates the channel settings.
     '''
-    def __init__(self):
+    def __init__(self, connect=True):
         self.__dict__ = persistent_state.pico_state
         from picoscope import ps6000
         self.ps6000 = ps6000
@@ -71,11 +71,12 @@ class Picoscope(object):
         self.data = None
         # Store channel settings in this class
         if not hasattr(self, 'range'):
-            self.range = self._PicoRange(self)
             self.offset = self._PicoOffset(self)
             self.atten = self._PicoAttenuation(self)
             self.coupling = self._PicoCoupling(self)
-        self.connect()
+            self.range = self._PicoRange(self)
+        if connect:
+            self.connect()
 
     def connect(self):
         # We are borg, so might already be connected!
@@ -113,6 +114,10 @@ class Picoscope(object):
 
     # Settings are a class mainly because I wanted a convenient syntax for typing in repeatedly
     class _PicoSetting(dict):
+        possible_ranges_1M = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        max_offsets_1M = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+        possible_ranges_50 = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
+        max_offsets_50 = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 2.5))
         def __init__(self, parent):
             self._parent = parent
 
@@ -152,13 +157,20 @@ class Picoscope(object):
             self.set('D', value)
 
     class _PicoRange(_PicoSetting):
-        # Holds the values for picoscope channel ranges.  Enforces valid values.
+        # Holds the values for picoscope channel ranges.
+        # Tries to enforce valid values, though I have not extensively tested that it is correct.
+        # Trying to comprehensively determine which settings are allowed and
+        # figuring out how to handle all the setting changes is logically NON-TRIVIAL
+        # Should changing one setting ever affect another setting?
+        # You would think not,
+        # But what if e.g. you change the attenuation but want to keep looking at the same range?
+        # The set of possible ranges changes, so it may only be possible to make the change simultaneously
+        # If a non-valid value is passed, should the closest valid one be used? or always the lower or higher setting?
+        #
         # TODO: add increment and decrement?
+        # TODO: add gui?
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
-            # TODO: I think the possible ranges also depends on the input coupling
-            self.possible = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
-            self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
             self['A'] = 1.0
             self['B'] = 1.0
             self['C'] = 1.0
@@ -167,49 +179,67 @@ class Picoscope(object):
         def set(self, channel, value):
             offset = self._parent.offset[channel]
             atten = self._parent.atten[channel]
-            newvalue = self[channel]
+            coupling = self._parent.coupling[channel]
+            # Default value for new setting (no change)
+            oldvalue = self[channel]
+            newvalue = oldvalue
 
-            if value in self.possible * atten:
-                newvalue = value
+            if coupling == 'DC50':
+                possible_ranges = self.possible_ranges_50 * atten
+                max_offsets = self.max_offsets_50 * atten
             else:
-                argclosest = np.argmin(np.abs(self.possible * atten - value))
-                closest = self.possible[argclosest] * atten
-                print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
-                newvalue = closest
+                possible_ranges = self.possible_ranges_1M * atten
+                max_offsets = self.max_offsets_1M * atten
 
-            # Forgive me
-            diffs = self.max_offsets - offset/atten
-            leastabove = self.max_offsets[diffs > 0][0]
-            firstleastabove = np.where(self.max_offsets == leastabove)[0][0]
-            min_range = self.possible[firstleastabove] * atten
-            if newvalue < min_range:
-                print('Range {} is too low for current offset {}. Using closest valid range setting {}.'.format(newvalue, offset, min_range))
-                newvalue = min_range
+            # Check if the offset is too high for any of these settings
+            possible_ranges = np.array([pr for pr, mo in zip(possible_ranges, max_offsets) if mo >= np.abs(offset)])
+
+            # Choose the next higher possible value, unless value is higher than all possible values
+            if value > possible_ranges[-1]:
+                newvalue = possible_ranges[-1]
+            else:
+                newvalue = possible_ranges[np.where(possible_ranges - value >= 0)][0]
+
+            if value != newvalue:
+                print(f'Range {value}V is not possible for offset: {offset}, atten: {atten}, coupling: {coupling}. Using range {newvalue}V.')
 
             self[channel] = newvalue
 
     class _PicoOffset(_PicoSetting):
-        # _PicoOffset needs to be aware of the range setting in order to determine valid values
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
-            self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
-            self.max_offsets = (.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)
             self['A'] = 0.0
             self['B'] = 0.0
             self['C'] = 0.0
             self['D'] = 0.0
 
         def set(self, channel, value):
-            channelrange = self._parent.range[channel]
-            channelatten = self._parent.atten[channel]
-            maxoffset = self.max_offsets[self.possible_ranges.index(channelrange / channelatten)] * channelatten
-            if abs(value) < maxoffset:
-                self[channel] = value
+            vrange = self._parent.range[channel]
+            atten = self._parent.atten[channel]
+            coupling = self._parent.coupling[channel]
+            # Default value for new setting (no change)
+            oldvalue = self[channel]
+            newvalue = oldvalue
+
+            if coupling == 'DC50':
+                possible_ranges = self.possible_ranges_50 * atten
+                max_offsets = self.max_offsets_50 * atten
             else:
-                clippedvalue = np.sign(value) * maxoffset
-                print(('{} is above the maximum offset for channel {} with range {} V. '
-                    'Setting offset to {}.').format(value, channel, channelrange, clippedvalue))
-                self[channel] = clippedvalue
+                possible_ranges = self.possible_ranges_1M * atten
+                max_offsets = self.max_offsets_1M * atten
+
+            # I assume we are currently set to a possible range
+            max_offset = max_offsets[np.where(vrange == possible_ranges)][0]
+
+            if np.abs(value) <= max_offset:
+                newvalue = value
+            else:
+                newvalue = np.sign(value) * max_offset
+
+            if value != newvalue:
+                print(f'Offset {value}V is not possible for range: {vrange}, atten: {atten}, coupling: {coupling}. Using offset {newvalue}V.')
+
+            self[channel] = newvalue
 
     class _PicoAttenuation(_PicoSetting):
         def __init__(self, parent):
@@ -218,8 +248,24 @@ class Picoscope(object):
             self['B'] = 1.0
             self['C'] = 1.0
             self['D'] = 1.0
-            # I am not sure what the possible values of this setting are ..
-            #self.possible =
+
+        def set(self, channel, value):
+            # It's a little different to set this setting, because it changes the possible values
+            # of other settings, and therefore must modify them at the same time
+            # You could either try to keep the same ranges/offsets as before the attenuation change
+            # Or you could just scale the ranges/offsets with the attenuation
+            # The latter is simpler, so we'll do that.
+            # ALL attenuation settings are possible.  I don't know whether this is ok.
+            vrange = self._parent.range[channel]
+            offset = self._parent.offset[channel]
+            coupling = self._parent.coupling[channel]
+            oldvalue = self[channel]
+            self[channel] = value
+
+            print('Scaling the range and offset settings by the new attenuation setting')
+            # Don't use the set methods, because they can assume that other settings are already valid
+            self._parent.range[channel] *= value/oldvalue
+            self._parent.offset[channel] *= value/oldvalue
 
     class _PicoCoupling(_PicoSetting):
         def __init__(self, parent):
@@ -228,13 +274,30 @@ class Picoscope(object):
             self['B'] = 'DC'
             self['C'] = 'DC'
             self['D'] = 'DC'
-            self.possible = ('DC', 'AC', 'DC50')  # I think?
 
         def set(self, channel, value):
-            if value in self.possible:
-                self[channel] = value
+            # Don't allow it if the range and offset are not compatible
+            # Could also coerce to valid values, but I am tired of writing all this stuff
+            vrange = self._parent.range[channel]
+            offset = self._parent.offset[channel]
+            atten = self._parent.atten[channel]
+
+            if value == 'DC50':
+                possible_ranges = self.possible_ranges_50 * atten
+                max_offsets = self.max_offsets_50 * atten
             else:
-                print('{} is not a valid coupling setting.'.format(value))
+                possible_ranges = self.possible_ranges_1M * atten
+                max_offsets = self.max_offsets_1M * atten
+
+            if vrange in possible_ranges:
+                where = np.where(vrange == possible_ranges)[0][0]
+                if np.abs(offset) <= max_offsets[where]:
+                    self[channel] = value
+
+            # Fukken logic structures
+            if self[channel] != value:
+                # If we didn't make it to the bottom of the last set of conditions
+                print(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
 
 
     def squeeze_range(self, data, ch=['A', 'B', 'C', 'D']):
@@ -263,6 +326,7 @@ class Picoscope(object):
         Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
         Don't pass int8 signals, would then need channel information to convert to V
         '''
+        # TODO: Consider coupling!
         # Consider the attenuation!
         possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
         # Sadly, each range has a different maximum possible offset
@@ -740,7 +804,7 @@ class RigolDG5000(object):
 
     ### These use the wrapped SCPI commands to accomplish something useful
 
-    def load_volatile_wfm(self, waveform, duration, ch=1, interp=True):
+    def load_volatile_wfm(self, waveform, duration, offset=0, ch=1, interp=True):
         '''
         Load waveform into volatile memory, but don't trigger
         NOTICE: This will leave burst mode as a side-effect!  Thank RIGOL.
@@ -778,6 +842,8 @@ class RigolDG5000(object):
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
         self.amplitude(2*maxamp, ch=ch)
+        # Apparently offset affects the arbitrary waveforms, too
+        self.offset(offset, ch)
         # Turn on interpolation for IVs, off for steps
         self.interp(interp)
 
@@ -827,13 +893,13 @@ class RigolDG5000(object):
         # Trigger rigol
         self.trigger(ch=ch)
 
-    def continuous_arbitrary(self, waveform, duration=None, ch=1):
-        self.load_volatile_wfm(waveform, duration=duration, ch=ch)
+    def continuous_arbitrary(self, waveform, duration=None, offset=0, ch=1):
+        self.load_volatile_wfm(waveform, duration=duration, offset=offset, ch=ch)
         # Get out of burst mode
         self.burst(False, ch=ch)
         self.outputstate(True)
 
-    def pulse_arbitrary(self, waveform, duration, n=1, ch=1, interp=True):
+    def pulse_arbitrary(self, waveform, duration, n=1, ch=1, offset=0, interp=True):
         '''
         Generate n pulses of the input waveform on Rigol AWG.
         Trigger immediately.
@@ -841,7 +907,7 @@ class RigolDG5000(object):
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
         '''
         # Load waveform
-        self.load_volatile_wfm(waveform=waveform, duration=duration, ch=ch, interp=interp)
+        self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
         self.setup_burstmode(n=n)
         self.outputstate(True, ch=ch)
         # Trigger rigol
