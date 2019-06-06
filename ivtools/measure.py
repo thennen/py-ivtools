@@ -558,13 +558,14 @@ def rehan_to_iv(datain, dtype=np.float32):
     for Rehan amplifier
     Careful! Scope input couplings will affect the gain!
     if x10 channel has 50 ohm termination, then gain of x200 channel reduced by 2!
+    everything should be terminated with 50 ohms obviously
     '''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
     # Volts per amp
-    gainC = 524
-    gainD = 11151 / 2
+    gainC = 10.6876 * 50
+    gainD = 113.32 * 50
     # 1 Meg, 33,000
 
     dataout = datain
