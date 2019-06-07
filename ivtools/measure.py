@@ -19,8 +19,8 @@ from functools import partial
 import pickle
 
 ########### Picoscope - Rigol AWG testing #############
-def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, duration=None,
-                              ncycles=10, samplespercycle=None, fs=None):
+def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
+                              ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -34,15 +34,15 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, dura
     if freq is None:
         freq = 1. / duration
 
-    ps.capture(ch=ch, freq=fs, duration=ncycles/freq)
+    ps.capture(ch=ch, freq=fs, duration=(ncycles+extrasample)/freq, **kwargs)
 
-    rigol.pulse_builtin(freq=freq, amp=amp, shape=shape, n=ncycles)
+    rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, phase=phase, shape=shape, n=ncycles)
 
     data = ps.get_data(ch)
 
     return data
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True,
+def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, extrasample=0,
                       **kwargs):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
@@ -53,7 +53,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
-    ps.capture(ch, freq=fs, duration=n*duration, **kwargs)
+    ps.capture(ch, freq=fs, duration=(n+extrasample)*duration, **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
 

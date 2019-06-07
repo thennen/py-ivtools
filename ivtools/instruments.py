@@ -554,7 +554,6 @@ class RigolDG5000(object):
     Do not send anything to the Rigol that differs in any way from what it expects,
     or it will just hang forever and need to be manually restarted along with the entire python shell.
     '''
-    # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr=None):
         try:
             if addr is None:
@@ -589,76 +588,112 @@ class RigolDG5000(object):
         except:
             print('Connection to Rigol AWG failed.')
 
+    def set_or_query(self, cmd, setting=None):
+        # Sets or returns the current setting
+        if setting is None:
+            reply = self.query(cmd + '?').strip()
+            # Convert to numeric?
+            replymap = {'ON': 1, 'OFF': 0}
+
+            def will_it_float(value):
+                try:
+                    float(value)
+                    return True
+                except ValueError:
+                    return False
+
+            if reply in replymap.keys():
+                return replymap[reply]
+            elif reply.isnumeric():
+                return int(reply)
+            elif will_it_float(reply):
+                return float(reply)
+            else:
+                return reply
+        else:
+            self.write(f'{cmd} {setting}')
+            return None
+
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 
-    def shape(self, shape='SIN', ch=1):
+    def shape(self, shape=None, ch=1):
         '''
         Change the waveform shape to a built-in value. Possible values are:
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|
         GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
         '''
-        self.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
+        return self.set_or_query(f'SOURCE{ch}:FUNC:SHAPE', shape)
 
     def outputstate(self, state=None, ch=1):
         ''' Turn output state on or off '''
-        if state is None:
-            return self.query(':OUTPUT{}:STATE?'.format(ch)).strip() == 'ON'
-        else:
-            statestr = 'ON' if state else 'OFF'
-            self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+        return self.set_or_query(f':OUTPUT{ch}:STATE', state)
 
-    def frequency(self, freq, ch=1):
+    def frequency(self, freq=None, ch=1):
         ''' Set frequency of AWG waveform.  Not the sample rate! '''
-        self.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
+        return self.set_or_query(f':SOURCE{ch}:FREQ:FIX', freq)
 
-    def amplitude(self, amp, ch=1):
+    def phase(self, phase=None, ch=1):
+        ''' Set phase offset of AWG waveform '''
+        if phase is not None:
+            phase = phase % 360
+        return self.set_or_query(f':SOURCE{ch}:PHASe:ADJust', phase)
+
+    def amplitude(self, amp=None, ch=1):
         ''' Set amplitude of AWG waveform '''
-        self.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, amp))
+        return self.set_or_query(f':SOURCE{ch}:VOLTAGE:AMPL', amp)
 
     def offset(self, offset, ch=1):
         ''' Set offset of AWG waveform '''
-        self.write(':SOURCE{}:VOLT:OFFS {}'.format(ch, offset))
+        return self.set_or_query(f':SOURCE{ch}:VOLT:OFFS', offset)
 
-    def output_resistance(self, r=50, ch=1):
-        ''' Manual says you can change output resistance from 1 to 10k'''
+    def output_resistance(self, r=None, ch=1):
+        '''
+        Manual says you can change output resistance from 1ohm to 10kohm
+        I think this is just mistranslated chinese meaning the resistance of the load
+        '''
         # Default is infinity??
-        self.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
+        return self.set_or_query(f'OUTPUT{ch}:IMPEDANCE', r)
 
-    def sync(self, state=True):
+    def sync(self, state=None):
         ''' Can turn on/off the sync output (on rear) '''
-        statestr = 'ON' if state else 'OFF'
-        self.write('OUTPUT{}:SYNC ' + statestr)
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+        return self.set_or_query(f'OUTPUT{ch}:SYNC', state)
 
-    def screensaver(self, state=False):
+    def screensaver(self, state=None):
         ''' Turn the screensaver on or off.
         Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
-        statestr = 'ON' if state else 'OFF'
-        self.write(':DISP:SAV ' + statestr)
+        if state is None:
+            state = 'ON' if state else 'OFF'
+        return self.set_or_query(':DISP:SAV', state)
 
-    def ramp_symmetry(self, percent=50, ch=1):
+    def ramp_symmetry(self, percent=None, ch=1):
         ''' Change the symmetry of a ramp output.
         Refers to the sweep rates of increasing/decreasing ramps. '''
-        self.write('SOURCE{}:FUNC:RAMP:SYMM {}'.format(ch, percent))
+        return self.set_or_query(f'SOURCE{ch}:FUNC:RAMP:SYMM', percent)
 
-    def dutycycle(self, percent=50, ch=1):
+    def dutycycle(self, percent=None, ch=1):
         ''' Change the duty cycle of a square output. '''
-        self.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
+        return self.set_or_query(f'SOURCE{ch}:FUNC:SQUare:DCYCle', percent)
 
-    def error(self, ):
+    def error(self):
         ''' Get error message from rigol '''
-        return self.query(':SYSTem:ERRor?')
+        return self.query(':SYSTem:ERRor?').strip()
 
     # <<<<< For burst mode
-    def ncycles(self, n, ch=1):
+    def ncycles(self, n=None, ch=1):
         ''' Set number of cycles that will be output in burst mode '''
         if n > 1000000:
+            # Rigol does not give error, leaving you to waste a bunch of time discovering this
             raise Exception('Rigol can only pulse maximum 1,000,000 cycles')
         else:
-            self.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
+            return self.set_or_query(f':SOURCE{ch}:BURST:NCYCLES', n)
 
-    def trigsource(self, source='MAN', ch=1):
+    def trigsource(self, source=None, ch=1):
         ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
-        self.write(':SOURCE{}:BURST:TRIG:SOURCE {}'.format(ch, source))
+        return self.set_or_query(f':SOURCE{ch}:BURST:TRIG:SOURCE', source)
 
     def trigger(self, ch=1):
         '''
@@ -667,28 +702,28 @@ class RigolDG5000(object):
         '''
         self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
 
-    def burstmode(self, mode='TRIG', ch=1):
-        '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
-        self.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
+    def burstmode(self, mode=None, ch=1):
+        '''Set the mode of burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
+        return self.set_or_query(f':SOURCE{ch}:BURST:MODE', mode)
 
     def burst(self, state=None, ch=1):
         ''' Turn the burst mode on or off '''
         # I think rigol is retarded, so it doesn't always turn off the burst mode on the first command
         # It switches something else off instead, but only if you set up a waveform after entering burstmode
         # The fix is to just issue the command twice..
-        statestr = 'ON' if state else 'OFF'
-        self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
-        self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+            self.set_or_query(f':SOURCE{ch}:BURST:STATE', state)
+        return self.set_or_query(f':SOURCE{ch}:BURST:STATE', state)
 
     # End for burst mode >>>>>
 
 
-    def writebinary(self, scpicmd, values):
-
+    def writebinary(self, message, values):
         ##self.inst.write_binary_values(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i], datatype='H', is_big_endian=False)
-        self.inst.write_binary_values(scpicmd, values, datatype='H', is_big_endian=False)
+        self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
 
-    def WriteWF2AWGBinary(self, dt, A):
+    def WriteWF2AWGBinary(self, dt, A, ch=1):
         """
         This absolutely will not work!  copy pasted from Hans code, for reference if one ever decides to implement this
         :param dt: time interval
@@ -697,7 +732,6 @@ class RigolDG5000(object):
         This is derived from a working example and has been verified to always work. Reprogramming always required.
         Method #3: Binary transfer. Needs to happen in batches of 16384 where the number of allowed batches is: 1, 2, 4, 8, 16 and 32
         len(A) is NOT len(A) = # of points programmed"""
-
         CHUNK = 16384
         CHUNK1 = CHUNK - 1
         CHUNK2 = round(CHUNK /2)
@@ -722,17 +756,17 @@ class RigolDG5000(object):
         self.NptsProg = len(A)
         A2send = [A[i:i + CHUNK] for i in range(0, self.NptsProg, CHUNK)]
 
-        if MONITORCMDS or nA > 50000:
+        if nA > 50000:
             print("Programming Rigol by method 3: want " + str(nA) + " points, sending " + str(self.NptsProg))
         period = dt * (self.NptsProg - 1)
-        self.write(":SOURC{}:PER {}".format(self.Ch, period))
+        self.write(":SOURC{}:PER {}".format(ch, period))
         self.write(":DATA:POIN VOLATILE, " + str(CHUNK1 * (len(A2send))))## to send arb this way it must always be a multiple of 16383 points.
 
         for i in range(len(A2send) - 1):
-            self.writeBinary(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i])
-            if self.IsUSB: time.sleep(USBWAIT)
+            self.writebinary(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i])
+            if self.IsUSB: time.sleep(0.02)
 
-        self.writeBinary(":TRAC:DATA:DAC16 VOLATILE,END,", A2send[-1])
+        self.writebinary(":TRAC:DATA:DAC16 VOLATILE,END,", A2send[-1])
 
     def load_wfm(self, waveform):
         '''
@@ -773,6 +807,7 @@ class RigolDG5000(object):
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
         # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
         # Construct a string out of the waveform
+        # TODO: Maybe also detect an offset to use?  Then we can make full use of the 12 bit resolution
         waveform = np.array(waveform, dtype=np.float32)
         maxamp = np.max(np.abs(waveform))
         if maxamp != 0:
@@ -854,7 +889,7 @@ class RigolDG5000(object):
         self.ncycles(n, ch=ch)
         self.burst(True, ch=ch)
 
-    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
+    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, phase=0, ch=1):
         '''
         Set up a built-in waveform to pulse n times
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
@@ -873,6 +908,9 @@ class RigolDG5000(object):
         self.amplitude(2*amp, ch=ch)
         self.offset(offset, ch=ch)
         self.frequency(freq, ch=ch)
+        # Necessary because Rigol is terrible?
+        self.phase(0, ch=ch)
+        self.phase(phase, ch=ch)
 
 
     def continuous_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
@@ -881,14 +919,15 @@ class RigolDG5000(object):
         self.burst(False, ch=ch)
         self.outputstate(True)
 
-    def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
+    def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, phase=0, n=1, ch=1):
         '''
         Pulse a built-in waveform n times
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
         HAVersine|LORentz|ARBPULSE|DUAltone
+        TODO: I think some of these waveforms have additional options.  Add them
         '''
         self.setup_burstmode(n=n)
-        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
+        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, phase=phase, ch=ch)
         self.outputstate(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)

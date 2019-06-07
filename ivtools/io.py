@@ -889,6 +889,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
     if groupby is None:
         # Load each file individually and plot
         for fn in files:
+            print(f'Reading {fn}')
             pngfn = os.path.splitext(fn)[0] + '.png'
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
