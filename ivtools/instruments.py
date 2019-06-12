@@ -552,9 +552,13 @@ class RigolDG5000(object):
     But we spent a lot of time learning its quirks and are kind of stuck with it.
 
     Do not send anything to the Rigol that differs in any way from what it expects,
-    or it will just hang forever and need to be manually restarted along with the entire python shell.
+    or it will just hang forever and need to be manually restarted along with the entire python kernel.
+
+    Certain commands just randomly cause the machine to crash in the same way.  Such as when you try
+    to query the number of points stored in the NV memory
     '''
     def __init__(self, addr=None):
+        self.verbose = False
         try:
             if addr is None:
                 addr = self.get_visa_addr()
@@ -565,6 +569,8 @@ class RigolDG5000(object):
         # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
         # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
         self.screensaver(False)
+        # Store here the last waveform that was programmed, so that we can skip uploading it if it
+        # hasn't changed
         self.volatilewfm = []
 
     def get_visa_addr(self):
@@ -591,6 +597,7 @@ class RigolDG5000(object):
     def set_or_query(self, cmd, setting=None):
         # Sets or returns the current setting
         if setting is None:
+            if self.verbose: print(cmd + '?')
             reply = self.query(cmd + '?').strip()
             # Convert to numeric?
             replymap = {'ON': 1, 'OFF': 0}
@@ -611,8 +618,10 @@ class RigolDG5000(object):
             else:
                 return reply
         else:
+            if self.verbose: print(f'{cmd} {setting}')
             self.write(f'{cmd} {setting}')
             return None
+
 
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 
@@ -624,7 +633,7 @@ class RigolDG5000(object):
         '''
         return self.set_or_query(f'SOURCE{ch}:FUNC:SHAPE', shape)
 
-    def outputstate(self, state=None, ch=1):
+    def output(self, state=None, ch=1):
         ''' Turn output state on or off '''
         if state is not None:
             state = 'ON' if state else 'OFF'
@@ -633,6 +642,12 @@ class RigolDG5000(object):
     def frequency(self, freq=None, ch=1):
         ''' Set frequency of AWG waveform.  Not the sample rate! '''
         return self.set_or_query(f':SOURCE{ch}:FREQ:FIX', freq)
+
+        self.write(":SOURC{}:PER {}".format(ch, period))
+
+    def period(self, period=None, ch=1):
+        ''' Set period of AWG waveform.  Not the sample period! '''
+        return self.set_or_query(f':SOURCE{ch}:PERiod:FIX', period)
 
     def phase(self, phase=None, ch=1):
         ''' Set phase offset of AWG waveform '''
@@ -665,18 +680,22 @@ class RigolDG5000(object):
     def screensaver(self, state=None):
         ''' Turn the screensaver on or off.
         Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
-        if state is None:
+        if state is not None:
             state = 'ON' if state else 'OFF'
         return self.set_or_query(':DISP:SAV', state)
 
     def ramp_symmetry(self, percent=None, ch=1):
-        ''' Change the symmetry of a ramp output.
+        ''' The symmetry of a ramp output.
         Refers to the sweep rates of increasing/decreasing ramps. '''
         return self.set_or_query(f'SOURCE{ch}:FUNC:RAMP:SYMM', percent)
 
     def dutycycle(self, percent=None, ch=1):
-        ''' Change the duty cycle of a square output. '''
+        ''' The duty cycle of a square output. '''
         return self.set_or_query(f'SOURCE{ch}:FUNC:SQUare:DCYCle', percent)
+
+    def interpolate(self, mode=None):
+        ''' Interpolation mode of volatile waveform.  LINear, SINC, OFF '''
+        return self.set_or_query('TRACe:DATA:POINts:INTerpolate', mode)
 
     def error(self):
         ''' Get error message from rigol '''
@@ -700,7 +719,10 @@ class RigolDG5000(object):
         Send signal to rigol to trigger immediately.  Make sure that trigsource is set to MAN:
         trigsource('MAN')
         '''
-        self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
+        if self.trigsource() != 'MAN':
+            raise Exception('You must first set trigsource to MANual')
+        else:
+            self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
 
     def burstmode(self, mode=None, ch=1):
         '''Set the mode of burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
@@ -720,55 +742,73 @@ class RigolDG5000(object):
 
 
     def writebinary(self, message, values):
-        ##self.inst.write_binary_values(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i], datatype='H', is_big_endian=False)
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
 
-    def WriteWF2AWGBinary(self, dt, A, ch=1):
+    def load_wfm_binary(self, dt, wfm, ch=1):
         """
-        This absolutely will not work!  copy pasted from Hans code, for reference if one ever decides to implement this
         :param dt: time interval
         :param A: Waveform 0<=A<=1 or -1<=A<=0
         :return: nothing
         This is derived from a working example and has been verified to always work. Reprogramming always required.
         Method #3: Binary transfer. Needs to happen in batches of 16384 where the number of allowed batches is: 1, 2, 4, 8, 16 and 32
-        len(A) is NOT len(A) = # of points programmed"""
-        CHUNK = 16384
-        CHUNK1 = CHUNK - 1
-        CHUNK2 = round(CHUNK /2)
-        nA = len(A)
-        nFullChunks, LastLen = int(np.floor(nA / CHUNK)), int(np.fmod(nA, CHUNK))
-        if LastLen == 0:
-            nFullChunks = nFullChunks - 1
+        len(A) is NOT len(A) = # of points programmed
+        I have seen these waveforms simply fail to trigger unless you wait a second after enabling the channel output
+        You need to wait after loading this waveform and after turning the output on, sometimes an obscene amount of time?
+        the "idle level" in burst mode will be the first value of the waveform ??
+        """
+        CHUNK = 2**14
+        # vertical resolution
+        VRES = 2**14
+        # pad with zero value
+        PADVAL = 2**13
 
-        A = np.array(A)
-        A = (((A + 1) / 2 * CHUNK1).astype(int)).tolist()
+        nA = len(wfm)
+        A = np.array(wfm)
 
-        Pads = (nFullChunks + 1) * CHUNK - nA                            # length is CHUNK = 16384
-        A.extend([CHUNK2] * Pads)
-        self.NptsProg = len(A)
+        print(f'You are trying to program {nA} pts')
 
-        MAGICLENGTHS = [16384, 32768, 65536, 131072, 262144, 524288]
-        if self.NptsProg not in MAGICLENGTHS:
-            Amagic = next(x for x in MAGICLENGTHS if x > self.NptsProg)
-            MorePads = Amagic - self.NptsProg
-            A.extend([CHUNK2] * MorePads)
+        if np.any(np.abs(A) > 1):
+            print('Waveform must be in [-1, 1].  Clipping it!')
+            A = np.clip(A, -1, 1)
 
-        self.NptsProg = len(A)
-        A2send = [A[i:i + CHUNK] for i in range(0, self.NptsProg, CHUNK)]
+        # change from float interval [-1, 1] to int interval [0, 2^14-1]
+        # Better to round than to floor
+        A = np.int32(np.round(((A + 1) / 2 * (VRES - 1))))
 
-        if nA > 50000:
-            print("Programming Rigol by method 3: want " + str(nA) + " points, sending " + str(self.NptsProg))
-        period = dt * (self.NptsProg - 1)
-        self.write(":SOURC{}:PER {}".format(ch, period))
-        self.write(":DATA:POIN VOLATILE, " + str(CHUNK1 * (len(A2send))))## to send arb this way it must always be a multiple of 16383 points.
+        # Pad A to a magic length
+        MAGICLENGTHS = np.array([2**14, 2**15, 2**16, 2**17, 2**18, 2**19])
+        Nptsprog = MAGICLENGTHS[np.where(MAGICLENGTHS >= nA)[0][0]]
+        A = np.append(A, PADVAL * np.ones(Nptsprog - nA, dtype='int32'))
 
-        for i in range(len(A2send) - 1):
-            self.writebinary(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i])
-            if self.IsUSB: time.sleep(0.02)
+        NptsProg = len(A)
+        Nchunks = int(NptsProg / CHUNK)
+        print(f'I am sending {NptsProg} points in {Nchunks} chunks')
+
+        nptsProg = len(A)
+
+        A2send = [A[i:i + CHUNK].tolist() for i in range(0, nptsProg, CHUNK)]
+
+        #period = dt * (NptsProg - 1)
+        period = dt * nptsProg
+        self.period(period, ch)
+
+        # This command doesn't seem to be necessary?
+        # Does it hurt?
+        self.write(":DATA:POIN VOLATILE, " + str(nptsProg))
+
+        for chunk in A2send[:-1]:
+            self.writebinary(":TRAC:DATA:DAC16 VOLATILE,CON,", chunk)
+            # What the manual says to do:
+            #self.writebinary(":TRAC:DATA:DAC16 VOLATILE,CON,#532768", chunk)
+
+            # Apparently need for USB (trial and error)
+            #time.sleep(0.02)
+            time.sleep(0.1)
 
         self.writebinary(":TRAC:DATA:DAC16 VOLATILE,END,", A2send[-1])
 
-    def load_wfm(self, waveform):
+
+    def load_wfm_strings(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
         Data will be normalized.  Use self.amplitude() to set the amplitude.
@@ -795,6 +835,7 @@ class RigolDG5000(object):
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
 
+
     def load_wfm_ints(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
@@ -803,6 +844,10 @@ class RigolDG5000(object):
         and otherwise will start outputting immediately.
         convert to integers so that we can send more data points!
         Supposedly gets to about 40,000 samples
+        I have seen it interpolate to only ~10,000 points, which is very unexpected!
+        it should interpolate to the entire size of the waveform memory
+        or at the very least, 2**14 = 16k samples!
+        Maybe we need to issue a :TRACe:DATA:POINTs VOLATILE, <value> command to "set the number of initial points"
         '''
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
         # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
@@ -837,12 +882,42 @@ class RigolDG5000(object):
     def idn(self):
         return self.query('*IDN?').replace('\n', '')
 
+    def read_volatile_wfm(self):
+        '''
+        Sometimes rigol outputs bizarre unaccountable waveforms.
+        Use this to see what is in the volatile memory
+
+        Takes a really long time
+        Might fail outright
+        Rigol is quite happy to randomly not respond to these kinds of commands
+        '''
+        numpackets = int(self.query(':TRACE:DATA:LOAD? VOLATILE'))
+        numpoints = 2**14 * numpackets
+
+        # from the programming guide:
+        # This command is only available when the current output waveform is arbitrary waveform
+        # and the type of the arbitrary waveform is volatile.
+
+        # Otherwise it just gives a parameter error and doesn't reply..
+        # In fact it can do that even when you ARE outputting a volatile arb. waveform..
+        # Seems it only works when the packet size is 1
+
+        values = []
+        for i in range(1, numpoints + 1):
+            # Takes about 5 ms, but I think much longer for different parts of the memory..
+            val = int(self.query(f':TRACE:DATA:VAL? VOLATILE,{i}'))
+            print(val)
+            values.append(val)
+            #time.sleep(.05)
+
     ### These use the wrapped SCPI commands to accomplish something useful
 
     def load_volatile_wfm(self, waveform, duration, offset=0, ch=1, interp=True):
         '''
         Load waveform into volatile memory, but don't trigger
-        NOTICE: This will leave burst mode as a side-effect!  Thank RIGOL.
+        NOTICE: This will momentarily leave burst mode as a side-effect!  Thank RIGOL.
+        The output will be toggled off to prevent output of free-running waveform before
+        we turn burst mode back on.
         '''
         # toggling output state is slow, clunky, annoying, and should not be necessary.
         # it might also cause some spikes that could damage the device.
@@ -855,24 +930,24 @@ class RigolDG5000(object):
         if len(waveform) > 512e3:
             raise Exception('Too many samples requested for rigol AWG (probably?)')
 
-        burst_state = self.query(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
+        burst_state = self.burst(ch=ch)
         # Only update waveform if necessary
         if np.any(waveform != self.volatilewfm):
             if burst_state:
-                output_state = self.outputstate(None, ch=ch)
+                output_state = self.output(None, ch=ch)
                 if output_state:
-                    self.outputstate(False, ch=ch)
+                    self.output(False, ch=ch)
                 # This command switches out of burst mode for some stupid reason
                 self.load_wfm_ints(waveform)
                 self.burst(True, ch=ch)
                 if output_state:
-                    self.outputstate(True, ch=ch)
+                    self.output(True, ch=ch)
             else:
                 self.load_wfm_ints(waveform)
             self.volatilewfm = waveform
         else:
             # Just switch to the arbitrary waveform that is already in memory
-            self.write(':SOURce{}:FUNC:SHAPe USER'.format(ch))
+            self.shape('USER', ch)
         freq = 1. / duration
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
@@ -917,7 +992,7 @@ class RigolDG5000(object):
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
         # Get out of burst mode
         self.burst(False, ch=ch)
-        self.outputstate(True)
+        self.output(True)
 
     def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, phase=0, n=1, ch=1):
         '''
@@ -928,7 +1003,7 @@ class RigolDG5000(object):
         '''
         self.setup_burstmode(n=n)
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, phase=phase, ch=ch)
-        self.outputstate(True, ch=ch)
+        self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 
@@ -936,7 +1011,7 @@ class RigolDG5000(object):
         self.load_volatile_wfm(waveform, duration=duration, offset=offset, ch=ch)
         # Get out of burst mode
         self.burst(False, ch=ch)
-        self.outputstate(True)
+        self.output(True)
 
     def pulse_arbitrary(self, waveform, duration, n=1, ch=1, offset=0, interp=True):
         '''
@@ -948,7 +1023,7 @@ class RigolDG5000(object):
         # Load waveform
         self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
         self.setup_burstmode(n=n)
-        self.outputstate(True, ch=ch)
+        self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 

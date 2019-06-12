@@ -698,7 +698,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 
 
 
-def tri(v1, v2, n=None, step=None):
+def tri(v1, v2, n=None, step=None, repeat=1):
     '''
     Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
 
@@ -781,6 +781,13 @@ def tri(v1, v2, n=None, step=None):
         #wfm = np.interp(x, xp, wfm)
 
         # Let AWG do the interpolation
+
+        if repeat > 1:
+            def lol():
+                for i in range(repeat-1):
+                    yield wfm[:-1]
+                yield wfm
+            wfm = np.concatenate([*lol()])
         return wfm
 
 def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
