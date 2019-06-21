@@ -471,7 +471,7 @@ def plot_channels(chdata, ax=None, alpha=.8):
                 chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
-                x = analyze.maketimearray(chdata)
+                x = analyze.maketimearray(chdata, c)
                 ax.set_xlabel('Time [s]')
                 ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
             else:
@@ -739,6 +739,7 @@ class interactive_figs(object):
 # They should take the data and an axis to plot on
 # Should handle single or multiple loops
 # TODO: Can I make a wrapper that makes that easier?
+# TODO: don't have each plot function downsample themselves, just do it once and share the result
 def parametrized(dec):
     ''' This is a meta-decorator to create a parametrized decorator.  You got a better idea? '''
     def layer(*args, **kwargs):
@@ -842,6 +843,7 @@ def R_vs_cycle_plotter(data, ax=None, **kwargs):
 
 #@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
+    # basically just plot_channels with downsampling
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
@@ -852,7 +854,10 @@ def chplotter(data, ax=None, **kwargs):
         lendata = len(data[channels[0]])
         if lendata > 100000:
             print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
-            plotdata = analyze.sliceiv(data, step=10)
+            step = lendata // 50000
+            #plotdata = analyze.decimate(data, step, columns=channels)
+            plotdata = analyze.sliceiv(data, step=step, columns=channels)
+            plotdata['downsampling']= step
         else:
             plotdata = data
         plot_channels(plotdata, ax=ax)

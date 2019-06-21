@@ -62,7 +62,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     return data
 
 
-def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
+def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
            savewfm=False, pretrig=0, interpwfm=True, **kwargs):
     '''
@@ -79,10 +79,11 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     if fs is None:
         fs = nsamples / duration
 
-    if smartrange:
+    if smartrange == 2:
+        # Smart range for the compliance circuit
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    else:
-        # Always smart range the monitor channel
+    elif smartrange:
+        # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL])
 
     # Let pretrig refer to the fraction of a single pulse, not the whole pulsetrain
@@ -556,6 +557,7 @@ def rehan_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for Rehan amplifier
+    Assumes constant gain vs frequency.  This isn't right.
     Careful! Scope input couplings will affect the gain!
     if x10 channel has 50 ohm termination, then gain of x200 channel reduced by 2!
     everything should be terminated with 50 ohms obviously
@@ -568,6 +570,10 @@ def rehan_to_iv(datain, dtype=np.float32):
     gainD = 113.32 * 50
     # 1 Meg, 33,000
 
+    # I think these depend a lot on the scope input range/offset..
+    offsD = 0.073988
+    offsC = 0.006025
+
     dataout = datain
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:
@@ -576,15 +582,37 @@ def rehan_to_iv(datain, dtype=np.float32):
     C = datain['C']
 
     dataout['V'] = A
-    dataout['I'] = C / gainC
+    dataout['I'] = (C - offsC) / gainC
     dataout['units'] = {'V':'V', 'I':'A'}
     dataout['Cgain'] = gainC
+    dataout['Coffs'] = offsC
 
     if 'D' in datain:
         D = datain['D']
-        dataout['I2'] = D / gainD
+        dataout['I2'] = (D - offsD) / gainD
         dataout['Dgain'] = gainD
+        dataout['Doffs'] = offsD
         dataout['units'].update({'I2':'A'})
+
+    return dataout
+
+def femto_log_to_iv(datain, dtype=np.float32):
+    # Adjust output offset so that 0.1V in --> 1V out on the 2V input setting
+    # Then 0.1V in --> 1.25V out on the 200mV setting
+    # Input offset also important. should minimize the output signal when input is zero
+    dataout = datain
+
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+
+    dataout['V'] = A
+    # 2V setting
+    #dataout['I'] = 10**((B - 1) / 0.25) * 0.1 / 50
+    dataout['I'] = 10**((B - 1) / 0.25) * 0.01 / 50
+    dataout['units'] = {'V':'V', 'I':'A'}
 
     return dataout
 
