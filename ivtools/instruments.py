@@ -622,6 +622,25 @@ class RigolDG5000(object):
             self.write(f'{cmd} {setting}')
             return None
 
+    @staticmethod
+    def write_wfm_file(wfm, filepath='wfm.RAF'):
+        '''
+        The only way to get anywhere near the advertised number of samples
+        theoretically works up to 16 MPts = 2**24 samples
+        wfm should be between -1 and 1, this will convert it to uint16
+        '''
+        # Needs extension RAF!
+        filepath = os.path.splitext(filepath)[0] + '.RAF'
+
+        if np.any(np.abs(wfm) > 1):
+            print('Waveform must be in [-1, 1].  Clipping it!')
+            A = np.clip(A, -1, 1)
+        wfm = ((wfm + 1)/2 * (2**14 - 1))
+        wfm = np.round(wfm).astype(np.dtype('H'))
+        print(f'Writing binary waveform to {filepath}')
+        with open(filepath, 'wb') as f:
+            f.write(wfm.tobytes())
+
 
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 
@@ -693,8 +712,12 @@ class RigolDG5000(object):
         ''' The duty cycle of a square output. '''
         return self.set_or_query(f'SOURCE{ch}:FUNC:SQUare:DCYCle', percent)
 
-    def interpolate(self, mode=None):
+    def interp(self, mode=None):
         ''' Interpolation mode of volatile waveform.  LINear, SINC, OFF '''
+        if mode is not None:
+            if not isinstance(mode, str):
+                # Use the boolean value of whatever the heck you passed
+                mode = 'LIN' if mode else 'OFF'
         return self.set_or_query('TRACe:DATA:POINts:INTerpolate', mode)
 
     def error(self):
@@ -740,18 +763,29 @@ class RigolDG5000(object):
 
     # End for burst mode >>>>>
 
+    def load_wfm_usbdrive(self, filename='wfm.RAF', wait=True):
+        '''
+        Load waveform from usb drive.  Should be a binary sequence of unsigned shorts.
+        File needs to have extension .RAF
+        This is the only way to reach the advertised number of waveform samples, or anywhere near it
+        Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
+        '''
+        self.write(':MMEMory:CDIR "D:\"')
+        self.write(f':MMEMory:LOAD "{filename}"')
+        if wait:
+            oldtimeout = self.conn.timeout
+            # set timeout to a minute!
+            self.conn.timeout = 60000
+            # Rigol won't reply to this until it is done loading the waveform
+            self.idn()
+            self.conn.timeout = oldtimeout
 
     def writebinary(self, message, values):
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
 
-    def load_wfm_binary(self, dt, wfm, ch=1):
+    def load_wfm_binary(self, wfm, ch=1):
         """
-        :param dt: time interval
-        :param A: Waveform 0<=A<=1 or -1<=A<=0
-        :return: nothing
-        This is derived from a working example and has been verified to always work. Reprogramming always required.
-        Method #3: Binary transfer. Needs to happen in batches of 16384 where the number of allowed batches is: 1, 2, 4, 8, 16 and 32
-        len(A) is NOT len(A) = # of points programmed
+        TODO: write about all the bullshit involved with this
         I have seen these waveforms simply fail to trigger unless you wait a second after enabling the channel output
         You need to wait after loading this waveform and after turning the output on, sometimes an obscene amount of time?
         the "idle level" in burst mode will be the first value of the waveform ??
@@ -787,10 +821,6 @@ class RigolDG5000(object):
         nptsProg = len(A)
 
         A2send = [A[i:i + CHUNK].tolist() for i in range(0, nptsProg, CHUNK)]
-
-        #period = dt * (NptsProg - 1)
-        period = dt * nptsProg
-        self.period(period, ch)
 
         # This command doesn't seem to be necessary?
         # Does it hurt?
@@ -866,11 +896,6 @@ class RigolDG5000(object):
             raise Exception('There is no way to know for sure, but I think Rigol will have a problem with the length of waveform you want to use.  Therefore I refuse to send it.')
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA:DAC VOLATILE,{}'.format(wfm_str))
-
-    def interp(self, interp=True):
-        ''' Set AWG datapoint interpolation mode '''
-        modestr = 'LIN' if interp else 'OFF'
-        self.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
 
     def color(self, c='RED'):
         '''
@@ -1797,7 +1822,6 @@ class UF2000Prober(object):
         self.moveRelative_um(xum_rel, yum_rel)
 
 
-
 #########################################################
 # Eurotherm 2408 -- #################
 #########################################################
@@ -2080,6 +2104,107 @@ class TektronixDPO73304D(object):
 
     def trigger_position(self, position):
         self.write('HORIZONTAL:POSITION ' + str(position))
+
+
+#########################################################
+# Erik Wichmann's Digipot circuit ###################
+#########################################################
+class WichmannDigipot(object):
+    '''
+    Probing circuit developed by Erik Wichmann to provide remote series resistance switching
+    There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
+    There are 31 ~log spaced resistance values per digipot
+
+    TODO: Change arduino command system to not need entire state in one chunk
+    should be three commands, for setting wiper1, wiper2, and relay
+
+    TODO: Is there a way to poll the current state from the microcontroller?
+    The class instance might not be aware of it when we first connect.
+
+    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
+    '''
+    def __init__(self, addr='COM10'):
+        # BORG
+        self.__dict__ = persistent_state.digipot_state
+        self.connect(addr)
+        # map from setting to resistance -- needs to be measured by source meter
+        # TODO: does the second digipot have a different calibration?
+        self.Rvals = { 0: 46616, 1: 41490, 2: 37070, 3: 33032, 4: 29503,
+                      5: 26299, 6: 23519, 7: 20954, 8: 18755, 9: 16697, 10: 14931,
+                      11: 13311, 12: 11909, 13: 9512, 14: 7631, 15: 6101, 16: 4886,
+                      17: 3935, 18: 3178, 19: 2589, 20: 2107, 21: 1714, 22: 1412,
+                      23: 1170, 24: 972, 25: 767, 26: 616, 27: 510, 28: 461, 29: 407,
+                      30: 370, 31: 343, 32: 324, 33: 323}
+
+    def connect(self, addr='COM10'):
+        if not self.connected():
+            self.conn = serial.Serial(addr, timeout=1)
+            self.write = self.conn.write
+            self.close = self.conn.close
+            # We don't know what state we are in initially
+            # For now we will just set them all to 1 when we connect
+            self.reedstate = 1
+            self.wiper1state = 1
+            self.wiper2state = 1
+            self.write('1 1 1'.encode())
+
+    def connected(self):
+        # Not a very smart way to determine if we are connected
+        return hasattr(self, 'conn')
+
+    def set_reed(self, state):
+        # Keep current wiper state, set the reed relay state
+        w1 = self.wiper1state
+        w2 = self.wiper2state
+        state_towrite = 0 if state else 1
+        self.write(f'{w1} {w2} {state_towrite}'.encode())
+        self.reedstate = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_wiper(self, state, n=1):
+        # Change the digipot wiper setting
+        reed = self.reedstate
+        if n==1:
+            w2 = self.wiper2state
+            self.write(f'{state} {w2} {reed}'.encode())
+            self.wiper1state = state
+        elif n == 2:
+            w1 = self.wiper1state
+            self.write(f'{w1} {state} {reed}'.encode())
+            self.wiper2state = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_R(self, R, n=1):
+        if R == 0:
+            self.set_reed(1)
+            # TODO: Should we switch the pot to the highest value??
+            return 0
+        else:
+            # Find closest resistance value
+            # I hope the dictionary returns values and keys in the same order
+            Rvals = list(self.Rvals.values())
+            wvals= list(self.Rvals.keys())
+            i_closest = np.argmin(np.abs(R - np.array(Rvals)))
+            R_closest = Rvals[i_closest]
+            w_closest = wvals[i_closest]
+            self.set_wiper(w_closest, n)
+            # Could have sent one command, but I'm sending two
+            self.set_reed(0)
+            time.sleep(1e-3)
+            return R_closest
+
+    def set_series_R(self, R):
+        # TODO calculate nearest series value
+        pass
+
+    def set_parallel_R(self, R):
+        # TODO calculate nearest parallel value
+        pass
+
 
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
