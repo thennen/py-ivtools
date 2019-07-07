@@ -2209,7 +2209,6 @@ class WichmannDigipot(object):
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
 #########################################################
-
 class PG5(object):
     def __init__(self, addr='ASRL3::INSTR'):
         try:
@@ -2263,4 +2262,97 @@ class PG5(object):
     def trigger(self):
         '''Executes a pulse'''
         self.write(':INIT')
+        
+
+#########################################################
+# Temperature PID-Control ###############################
+#########################################################
+class EugenTempStage(object):
+    def __init__(self, addr='COM7', baudrate=9600):
+        # BORG
+        self.__dict__ = persistent_state.tempstage_state
+        try:
+            self.connect(addr, baudrate)
+        except:
+            print('Arduino connection failed at {}'.format(addr))
+
+    def connect(self, addr, baudrate):
+        if not self.connected():
+            self.conn = serial.Serial(addr, baudrate)
+            self.write = self.conn.write
+            self.close = self.conn.close
+
+    def connected(self):
+        return hasattr(self, 'conn')
+
+    def analogOut(self, voltage):
+        ''' Tell arduino to output a voltage on pin 9 '''
+        # Arduino will take the set voltage in bits.
+        vmax = 5
+        numbits = 12
+        # Find the closest value that can be output.
+        vstep = vmax / (2**numbits - 1)  # 5 /4095
+        value = voltage / vstep  # exact value for analogWrite()-function
+        cmd_str = '0,9,{};'.format(value).encode()
+        self.write(cmd_str)
+        actualvoltage = vstep * value
+        return actualvoltage
+
+    def analogIn(self, channel):
+        # Function to get max Voltage for Bridge
+        # Arduino will return the voltage in bits
+        vmax = 5
+        numbits = 10
+        vstep = round(vmax / (2**numbits - 1), 5)# 5 /1023
+        cmd_str = '1,{};'.format(channel).encode()
+        self.write(cmd_str)
+        reply = self.conn.readline().decode()
+        adc_value = float(reply.split(',')[-1].strip().strip(';'))
+        voltage = adc_value * vstep
+        # print('Sent command to read analog input on pin {}'.format(channel))
+        return voltage
+
+    def set_temperature(self, temp):
+        # Resistor-Values bridge
+        r_1 = 9975
+        r_3 = 9976
+        r_4 = 1001
+        # Gain from instrumental-opamp
+        opamp_gain = 12.55
+        # Voltage Bridge
+        volt_now = 10
+
+        ''' Temperature Setpoint Function, should be between 0-100Celsius  '''
+
+        if temp > 100:
+            print('Its too HOT! DANGERZONE!')
+
+        if temp <= 100 and temp >= 0:
+            pt_res = round((1000 * (1.00385**temp)), 1)
+            volt_zaehler = volt_now * (pt_res * (r_3 + r_4) - r_4 * (r_1 + pt_res))
+            volt_nenner = (r_4 + r_3) * r_1 + (r_3 + r_4) * pt_res
+            volt_bruch = volt_zaehler / volt_nenner
+            volt_set = volt_bruch * opamp_gain
+            temp_set = self.analogOut(volt_set)
+            print('Sent command to output {0:.3f} Volt'.format(temp_set))
+            print('Temperature is set to {0:.2f} \u00b0C'.format(temp))
+        else:
+            print('Its too COLD! Can not do that :-/')
+
+    def read_temperature(self):
+        # Resistor-Values bridge
+        r_1 = 9975
+        r_3 = 9976
+        r_4 = 1001
+        # Gain from instrumental-opamp
+        opamp_gain = 12.55
+        # Voltage Bridge
+        volt_now = 10
+        volt_bridge = self.analogIn(1) / opamp_gain
+        pt_zaehler = (((r_3 + r_4) * volt_bridge) + (volt_now * r_4)) * r_1
+        pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4) * volt_now)
+        pt_res = round((pt_zaehler / pt_nenner), 1)
+        temp_read = np.log(pt_res / 1000) / np.log(1.00385)
+        print('Temperature: %.1f \u00b0C' % temp_read)
+
     
