@@ -16,6 +16,8 @@ import sys
 # TODO make some functions that index/iterate rows of dataframe AND list, because they have different syntax
 #      this would avoid testing for the datatype in many different parts of the code
 
+# TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
+
 def ivfunc(func):
     '''
     Decorator which allows the same function to be used on a single loop, as
@@ -335,6 +337,19 @@ def select_from_func():
 def thresholds_byval(data, value):
     pindex(data, 'I', value)
 '''
+
+@ivfunc
+def arrayfun(func, columns=None):
+    ''' Apply a function to all the data arrays in the structure, return new structure'''
+    # TODO: Make all the other functions that do some version of this just call arrayfun
+    # name inspired by MATLAB's cellfun
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    funarrays = [func(ar) for ar in arrays]
+    dataout = {c:fa for c,fa in zip(columns, funarrays)}
+    add_missing_keys(data, dataout)
+    return dataout
 
 @ivfunc
 def moving_avg(data, window=5, columns=None):
