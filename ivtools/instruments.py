@@ -2209,7 +2209,6 @@ class WichmannDigipot(object):
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
 #########################################################
-
 class PG5(object):
     def __init__(self, addr='ASRL3::INSTR'):
         try:
@@ -2264,19 +2263,14 @@ class PG5(object):
         '''Executes a pulse'''
         self.write(':INIT')
         
+
 #########################################################
-# Temperature PID-Control ###################
+# Temperature PID-Control ###############################
 #########################################################
-import math
-
-state = {}
-
-
-class pidcontrol(object):
-
+class EugenTempStage(object):
     def __init__(self, addr='COM7', baudrate=9600):
         # BORG
-        self.__dict__ = state
+        self.__dict__ = persistent_state.tempstage_state
         try:
             self.connect(addr, baudrate)
         except:
@@ -2358,7 +2352,7 @@ class pidcontrol(object):
         pt_zaehler = (((r_3 + r_4) * volt_bridge) + (volt_now * r_4)) * r_1
         pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4) * volt_now)
         pt_res = round((pt_zaehler / pt_nenner), 1)
-        temp_read = math.log(pt_res / 1000) / math.log(1.00385)
+        temp_read = np.log(pt_res / 1000) / np.log(1.00385)
         print('Temperature: %.1f \u00b0C' % temp_read)
 
     
