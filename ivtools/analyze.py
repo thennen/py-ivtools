@@ -1522,6 +1522,11 @@ def freq_analysis(data):
     '''
     pass
 
+
+def subtract_phase(phase1, phase2):
+    # bizarre things happen when you subtract two arrays of phases
+    pass
+
 def replace_nanvals(array):
     # Keithley returns this special value when the measurement is out of range
     # replace it with a nan so it doesn't mess up the plots

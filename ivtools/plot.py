@@ -581,8 +581,10 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
-            # doesn't do anything yet
+            # if False, disables updateline, newline
             self.enable = True
+            # Put a list of functions here to pass the data through before plotting
+            self.preprocessing = []
 
     def createfig(self, n):
         '''
@@ -628,21 +630,27 @@ class interactive_figs(object):
 
     def newline(self, data=None):
         ''' Update the plots with new data. '''
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if data is None:
-                ax.plot([])
-            else:
-                try:
-                    plotter(data, ax=ax)
-                    color = ax.lines[-1].get_color()
-                    ax.set_xlabel(ax.get_xlabel(), color=color)
-                    ax.set_ylabel(ax.get_ylabel(), color=color)
-                except Exception as e:
+        if self.enable:
+            if data is not None:
+                if any(self.preprocessing):
+                    for pp in self.preprocessing:
+                        # Just run the data through all the functions
+                        data = pp(data)
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if data is None:
                     ax.plot([])
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-                ax.get_figure().canvas.draw()
-        mypause(0.05)
+                else:
+                    try:
+                        plotter(data, ax=ax)
+                        color = ax.lines[-1].get_color()
+                        ax.set_xlabel(ax.get_xlabel(), color=color)
+                        ax.set_ylabel(ax.get_ylabel(), color=color)
+                    except Exception as e:
+                        ax.plot([])
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                    ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def set_maxlines(self, maxlines=None):
         for ax in self.axs:
@@ -659,31 +667,36 @@ class interactive_figs(object):
         # function again, this works by deleting the last line and plotting a new one with
         # the same colors
         # I am assuming for now that the plot functions each produce one line.
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if any(ax.lines):
-                color = ax.lines[-1].get_color()
-                del ax.lines[-1]
-            else:
-                color = None
-            argspec = inspect.getfullargspec(plotter)
-            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
-                # plotter won't error if we pass this keyword argument
-                # it might even work ..
-                try:
-                    plotter(data, ax, color=color)
-                except Exception as e:
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-            else:
-                # Simply set the line color after plotting
-                # could mess up the color cycle.
-                try:
-                    plotter(data, ax)
-                    ax.lines[-1].set_color(color)
-                except:
-                    print('Plotter number {} failed!'.format(axnum))
-            ax.get_figure().canvas.draw()
-        mypause(0.05)
+        if self.enable:
+            if any(self.preprocessing):
+                for pp in self.preprocessing:
+                    # Just run the data through all the functions
+                    data = pp(data)
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if any(ax.lines):
+                    color = ax.lines[-1].get_color()
+                    del ax.lines[-1]
+                else:
+                    color = None
+                argspec = inspect.getfullargspec(plotter)
+                if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
+                    # plotter won't error if we pass this keyword argument
+                    # it might even work ..
+                    try:
+                        plotter(data, ax, color=color)
+                    except Exception as e:
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                else:
+                    # Simply set the line color after plotting
+                    # could mess up the color cycle.
+                    try:
+                        plotter(data, ax)
+                        ax.lines[-1].set_color(color)
+                    except:
+                        print('Plotter number {} failed!'.format(axnum))
+                ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def clear(self):
         ''' Clear all the axes '''
@@ -857,7 +870,10 @@ def chplotter(data, ax=None, **kwargs):
             step = lendata // 50000
             #plotdata = analyze.decimate(data, step, columns=channels)
             plotdata = analyze.sliceiv(data, step=step, columns=channels)
-            plotdata['downsampling']= step
+            if 'downsampling' in plotdata:
+                plotdata['downsampling'] *= step
+            else:
+                plotdata['downsampling'] = step
         else:
             plotdata = data
         plot_channels(plotdata, ax=ax)

@@ -181,6 +181,7 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
         # I don't know what the optimum sampling conditions for the sine curve fitting method.
         # Probably takes longer for big datasets.  And you need a good guess for the number of cycles contained in the dataset.
+        # (Actually is much faster, surprisingly)
 
         # How many cycles you want to have per frequency
         target_cycles = 100
@@ -190,7 +191,6 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
         max_time_per_freq = 10
         # Capture at least this many cycles
         minimum_cycles = 1
-
 
         # Can sample 5 MS/s, divided among the channels
         # ** To achieve 2.5 GS/s sampling rate in 2-channel mode, use channel A or B and channel C or D.
@@ -252,13 +252,16 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
         #ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=triglevel, trigsource=trigsource)
         #rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
         rigol.continuous_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', ch=1)
-        time.sleep(.1)
+        #time.sleep(.1)
+        # I have seen this take a while on the first shot
+        time.sleep(.5)
         ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=triglevel, trigsource=trigsource)
         d = ps.get_data(ch)
         d['ncycles'] = ncycles
         data.append(d)
 
         # TODO: make some plots that show when debug=True is passed
+        rigol.output(False, ch=1)
 
     return data
 
