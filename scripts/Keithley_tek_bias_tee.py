@@ -388,15 +388,15 @@ cc_step = 25e-6):
 
 
             ### Applying pulse and reading scope data #############################################################
-
+            pg5.set_pulse_width(pulse_width)
             if not automatic_measurement:
                 input('Connect the RF probes and press enter')
                 plt.pause(0.5)
             else:
-                pg5.set_pulse_width(pulse_width)
                 plt.pause(0.1)
-                pg5.trigger()
-                plt.pause(0.1)
+                
+            pg5.trigger()
+            plt.pause(0.1)
             if not ttx.triggerstate:
                 plt.pause(0.1)
             scope_list.append(ttx.get_curve(3))
@@ -1321,7 +1321,6 @@ def Boxplot_array(all_data):
         if np.size(ratio)>0:
             R.append(ratio)
             fwhm_array.append(np.mean(data['fwhm']))
-
     fwhm_array = np.array(fwhm_array)
     R = np.array(R)
     sorted_index = np.argsort(np.array(fwhm_array))
@@ -1329,6 +1328,7 @@ def Boxplot_array(all_data):
     R = R[sorted_index]
     R = np.ndarray.tolist(R)
     fwhm_array = np.ndarray.tolist(fwhm_array)
+
     return fwhm_array, R
 
 def plot_R_threshold(r, t):
