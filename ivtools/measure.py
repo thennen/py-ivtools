@@ -519,6 +519,40 @@ def measure_compliance():
 
     return (ccurrent, Amean)
 
+
+########### Digipot ####################
+
+def test_digipot(plot=True):
+    # Short the needles, this rapidly makes sure everything is working properly
+    # Use these settings but don't change the state of picoscope
+    coupling = dict(A='DC', B='DC50', C='DC50')
+    ranges = dict(A=5, B=5, C=0.05)
+    ps = instruments.Picoscope()
+    dp = instruments.WichmannDigipot()
+    rigol = instruments.RigolDG5000()
+    dur = 1e-2
+    if plot:
+        fig, ax = plt.subplots()
+    data = []
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        channels = ['A', 'B', 'C']
+        ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+        # Put a milliwatt through each resistor
+        A = np.sqrt(1e-3 * Rnom)
+        rigol.pulse_builtin('SIN', duration=dur, amp=A)
+        d = ps.get_data(channels)
+        d = digipot_to_iv(d)
+        data.append(d)
+        if plot:
+            #ax.plot(d['V'], d['I'], label=w)
+            #ax.plot(d['V'], d['V']/Rnom, label=w)
+            # Or
+            ax.plot(d['V'], d['V']/d['I'], label=w)
+            ax.plot(d['V'], [Rnom]*len(d['V']), label=w)
+            plt.pause(.1)
+    return data
+
 ########### Conversion from picoscope channel data to IV data ###################
 
 def ccircuit_to_iv(datain, dtype=np.float32):
@@ -675,6 +709,34 @@ def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
     dataout['I'] = C / R
     dataout['units'] = {'V':'V', 'I':'A'}
     dataout['Rs_ext'] = R
+
+    return dataout
+
+def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    for digipot circuit with device voltage probe
+    gain is in A/V, in case you put an amplifier on the output
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+
+    # Use channel A and C as input, because simultaneous sampling is faster than using A and B
+    V = datain['A']
+    Vd = datain[Vd_channel]
+    I = datain[I_channel] * gain
+
+    # V device
+    dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
+    dataout['I'] = I
+    dataout['Vd'] = Vd
+    dataout['units'] = {'V':'V', 'I':'A'}
+    dataout['Igain'] = gain
 
     return dataout
 

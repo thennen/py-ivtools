@@ -675,7 +675,7 @@ class RigolDG5000(object):
         return self.set_or_query(f':SOURCE{ch}:PHASe:ADJust', phase)
 
     def amplitude(self, amp=None, ch=1):
-        ''' Set amplitude of AWG waveform '''
+        ''' Set amplitude of AWG waveform.  Rigol defines this as peak-to-peak. '''
         return self.set_or_query(f':SOURCE{ch}:VOLTAGE:AMPL', amp)
 
     def offset(self, offset, ch=1):
@@ -1186,7 +1186,7 @@ class Keithley2600(object):
             Irange = np.max(np.abs(ilist))
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
 
-    def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1):
+    def it(self, sourceVA=0, sourceVB=0, points=10, interval=.1, rangeI=0, limitI=0, nplc=1):
         '''Wraps the constantVoltageMeasI lua function defined on keithley'''
         # Call constantVoltageMeasI
         # TODO: make sure the inputs are valid
@@ -2122,6 +2122,8 @@ class WichmannDigipot(object):
     The class instance might not be aware of it when we first connect.
 
     TODO: Shouldn't relay = 1 mean that the input is connected to the output?
+
+    TODO: make a test routine that takes a few seconds to measure that everything is working properly
     '''
     def __init__(self, addr='COM10'):
         # BORG
@@ -2129,12 +2131,11 @@ class WichmannDigipot(object):
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
-        self.Rvals = { 0: 46616, 1: 41490, 2: 37070, 3: 33032, 4: 29503,
-                      5: 26299, 6: 23519, 7: 20954, 8: 18755, 9: 16697, 10: 14931,
-                      11: 13311, 12: 11909, 13: 9512, 14: 7631, 15: 6101, 16: 4886,
-                      17: 3935, 18: 3178, 19: 2589, 20: 2107, 21: 1714, 22: 1412,
-                      23: 1170, 24: 972, 25: 767, 26: 616, 27: 510, 28: 461, 29: 407,
-                      30: 370, 31: 343, 32: 324, 33: 323}
+        self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
+                      15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
+                      2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
+                      324, 306, 306]
+        self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
 
     def connect(self, addr='COM10'):
         if not self.connected():
@@ -2153,6 +2154,11 @@ class WichmannDigipot(object):
         return hasattr(self, 'conn')
 
     def set_reed(self, state):
+        '''
+        State:
+        True = connected
+        False = not connected
+        '''
         # Keep current wiper state, set the reed relay state
         w1 = self.wiper1state
         w2 = self.wiper2state
@@ -2186,10 +2192,10 @@ class WichmannDigipot(object):
         else:
             # Find closest resistance value
             # I hope the dictionary returns values and keys in the same order
-            Rvals = list(self.Rvals.values())
-            wvals= list(self.Rvals.keys())
-            i_closest = np.argmin(np.abs(R - np.array(Rvals)))
-            R_closest = Rvals[i_closest]
+            Rmap = list(self.Rmap.values())
+            wvals= list(self.Rmap.keys())
+            i_closest = np.argmin(np.abs(R - np.array(Rmap)))
+            R_closest = Rmap[i_closest]
             w_closest = wvals[i_closest]
             self.set_wiper(w_closest, n)
             # Could have sent one command, but I'm sending two
@@ -2334,8 +2340,8 @@ class EugenTempStage(object):
             volt_bruch = volt_zaehler / volt_nenner
             volt_set = volt_bruch * opamp_gain
             temp_set = self.analogOut(volt_set)
-            print('Sent command to output {0:.3f} Volt'.format(temp_set))
-            print('Temperature is set to {0:.2f} \u00b0C'.format(temp))
+            #print('Sent command to output {0:.3f} Volt'.format(temp_set))
+            print('Temperature set to {0:.2f} \u00b0C'.format(temp))
         else:
             print('Its too COLD! Can not do that :-/')
 
@@ -2353,6 +2359,4 @@ class EugenTempStage(object):
         pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4) * volt_now)
         pt_res = round((pt_zaehler / pt_nenner), 1)
         temp_read = np.log(pt_res / 1000) / np.log(1.00385)
-        print('Temperature: %.1f \u00b0C' % temp_read)
-
-    
+        return temp_read
