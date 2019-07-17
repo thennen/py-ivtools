@@ -2123,7 +2123,8 @@ class WichmannDigipot(object):
 
     TODO: Shouldn't relay = 1 mean that the input is connected to the output?
 
-    TODO: make a test routine that takes a few seconds to measure that everything is working properly
+    TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
+    TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
     '''
     def __init__(self, addr='COM10'):
         # BORG

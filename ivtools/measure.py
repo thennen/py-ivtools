@@ -371,7 +371,6 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 # (Compliance control voltage)      DAC0 - 12kohm - 12kohm
 # (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
 
-
 def set_compliance(cc_value):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
