@@ -488,7 +488,7 @@ def measure_compliance():
     # Then current at compliance circuit input has to be ~zero
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
     ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol.outputstate(False)
+    rigol.output(False)
     ivplot.mypause(.1)
     #plt.pause(.1)
     # Immediately capture some samples on channels A and B
