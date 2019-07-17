@@ -2145,50 +2145,59 @@ class WichmannDigipot(object):
             self.close = self.conn.close
             # We don't know what state we are in initially
             # For now we will just set them all to 1 when we connect
-            self.reedstate = 1
-            self.wiper1state = 1
-            self.wiper2state = 1
-            self.write('1 1 1'.encode())
+            self.bypassstate = 1
+            self.wiper1state = 0
+            self.wiper2state = 0
+            self.write('0 0 1'.encode())
 
     def connected(self):
         # Not a very smart way to determine if we are connected
-        return hasattr(self, 'conn')
+        if hasattr(self,'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
 
-    def set_reed(self, state):
+
+
+    def set_bypass(self, state):
         '''
         State:
         True = connected
         False = not connected
         '''
-        # Keep current wiper state, set the reed relay state
+        # Keep current wiper state, set the bypass relay state
         w1 = self.wiper1state
         w2 = self.wiper2state
-        state_towrite = 0 if state else 1
-        self.write(f'{w1} {w2} {state_towrite}'.encode())
-        self.reedstate = state
+        self.write(f'{w1} {w2} {state}'.encode())
+        self.bypassstate = state
         #Wait until the AVR has sent a message Back
         time.sleep(5e-3)
         return self.conn.read_all().decode()
 
-    def set_wiper(self, state, n=1):
-        # Change the digipot wiper setting
-        reed = self.reedstate
+    def set_wiper(self, state, n=2):
+        '''
+        Change the digipot wiper setting
+        n=2 is main potentiometer on chip
+        '''
+        bypass = self.bypassstate
+
         if n==1:
             w2 = self.wiper2state
-            self.write(f'{state} {w2} {reed}'.encode())
+            self.write(f'{state} {w2} {bypass}'.encode())
             self.wiper1state = state
         elif n == 2:
             w1 = self.wiper1state
-            self.write(f'{w1} {state} {reed}'.encode())
+            self.write(f'{w1} {state} {bypass}'.encode())
             self.wiper2state = state
         #Wait until the AVR has sent a message Back
         time.sleep(5e-3)
         return self.conn.read_all().decode()
 
-    def set_R(self, R, n=1):
+    def set_R(self, R, n=2):
         if R == 0:
-            self.set_reed(1)
-            # TODO: Should we switch the pot to the highest value??
+            self.set_bypass(1)
+            #Set wiper to highest value
+            self.set_wiper(0)
             return 0
         else:
             # Find closest resistance value
@@ -2198,9 +2207,10 @@ class WichmannDigipot(object):
             i_closest = np.argmin(np.abs(R - np.array(Rmap)))
             R_closest = Rmap[i_closest]
             w_closest = wvals[i_closest]
+            print(i_closest)
             self.set_wiper(w_closest, n)
             # Could have sent one command, but I'm sending two
-            self.set_reed(0)
+            self.set_bypass(0)
             time.sleep(1e-3)
             return R_closest
 
