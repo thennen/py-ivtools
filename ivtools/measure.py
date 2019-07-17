@@ -521,54 +521,90 @@ def measure_compliance():
 
 ########### Digipot ####################
 
-def test_digipot(plot=True):
+def digipot_test(plot=True):
     # Short the needles, this rapidly makes sure everything is working properly
     # Use these settings but don't change the state of picoscope
     coupling = dict(A='DC', B='DC50', C='DC50')
-    ranges = dict(A=5, B=5, C=0.05)
+    ranges = dict(A=5, B=5, C=1)
     ps = instruments.Picoscope()
     dp = instruments.WichmannDigipot()
     rigol = instruments.RigolDG5000()
     dur = 1e-2
     if plot:
         fig, ax = plt.subplots()
+        ax.set_yscale('log')
+        plt.show()
     data = []
-    
-    #TODO improve this
     channels = ['A', 'B', 'C']
+
+    # Check Bypass first
     dp.set_bypass(1)
     ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
-    rigol.pulse_builtin('SQU', duration=1, amp=0.05)
+    rigol.pulse_builtin('SIN', duration=dur, amp=1)
     d = ps.get_data(channels)
     d = digipot_to_iv(d)
     d = analyze.moving_avg(d,1000)
+    data.append(d)
+    if plot:
+        #ax.plot(d['V'], d['I'])
+        ax.plot(d['V'], d['V']/d['I'], color='black')
 
-    V_bypass = np.mean(np.abs(d['V']))
-    I_bypass = np.mean(np.abs(d['I']))
-    R_bypass = V_bypass/I_bypass    
+    dp.set_bypass(0)
 
-    ax.plot(d['V'], d['I'])
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        # Put 10 milliwatt through each resistor
+        #A = np.sqrt(10e-3 * Rnom)
+        #A = min(A, 5)
+        A = 3
+        Iexpected = A/Rnom
+        ranges['C'] = ps.best_range([-Iexpected*50, Iexpected*50])[0]
+        ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+        rigol.pulse_builtin('SIN', duration=dur, amp=A)
+        d = ps.get_data(channels)
+        d = digipot_to_iv(d)
+        d = analyze.moving_avg(d,100)
+        data.append(d)
+        if plot:
+            #ax.plot(d['V'], d['I'], label=w)
+            #color = ax.lines[-1].get_color()
+            #ax.plot(d['V'], d['V']/Rnom, label=w, linestyle='--', alpha=.2, color=color)
+            # Or
+            ax.plot(d['V'], d['V']/d['I'], label=w)
+            color = ax.lines[-1].get_color()
+            ax.plot([-5,5], [Rnom, Rnom], label=w, linestyle='--', alpha=.2, color=color)
+            plt.pause(.1)
+            plt.xlim(-3, 3)
+            plt.ylim(40, 60000)
 
-    print('Bypass Resistance = {} Ohm'.format(R_bypass))
+    return data
 
+def digipot_calibrate(plot=True):
+    # Connect keithley to digipot to measure the resistance values
+    dp = instruments.WichmannDigipot()
+    k = instruments.Keithley2600()
+    if plot:
+        fig, ax = plt.subplots()
+        ax.set_yscale('log')
+        plt.show()
+        ax.plot(np.arange(34), dp.Rlist, marker='.')
 
-        # for w,Rnom in dp.Rmap.items():
-        #     dp.set_wiper(w) # Should have the necessary delay built in
-        #     ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
-        #     # Put a milliwatt through each resistor
-        #     A = np.sqrt(1e-3 * Rnom)
-        #     rigol.pulse_builtin('SIN', duration=dur, amp=A)
-        #     d = ps.get_data(channels)
-        #     d = digipot_to_iv(d)
-        #     d = analyze.moving_avg(d,100)
-        #     data.append(d)
-        #     if plot:
-        #         ax.plot(d['V'], d['I'], label=w)
-        #         ax.plot(d['V'], d['V']/Rnom, label=w)
-        #         # Or
-        #         #ax.plot(d['V'], d['V']/d['I'], label=w)
-        #         #ax.plot(d['V'], [Rnom]*len(d['V']), label=w)
-        #         plt.pause(.1)
+    dp.set_bypass(0)
+    data = []
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        # Apply a volt, measure current
+        k.iv([1], Irange=0, Ilimit=10e-3, nplc=10)
+        while not k.done():
+            plt.pause(.1)
+        d = k.get_data()
+        d['R'] = d['V']/d['I']
+        data.append(d)
+        if plot:
+            plt.scatter(w, d['R'])
+            plt.pause(.1)
+
+    print([d['R'][0].round(2) for d in data])
     return data
 
 ########### Conversion from picoscope channel data to IV data ###################
