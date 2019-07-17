@@ -534,23 +534,42 @@ def test_digipot(plot=True):
     if plot:
         fig, ax = plt.subplots()
     data = []
-    for w,Rnom in dp.Rmap.items():
-        dp.set_wiper(w) # Should have the necessary delay built in
-        channels = ['A', 'B', 'C']
-        ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
-        # Put a milliwatt through each resistor
-        A = np.sqrt(1e-3 * Rnom)
-        rigol.pulse_builtin('SIN', duration=dur, amp=A)
-        d = ps.get_data(channels)
-        d = digipot_to_iv(d)
-        data.append(d)
-        if plot:
-            #ax.plot(d['V'], d['I'], label=w)
-            #ax.plot(d['V'], d['V']/Rnom, label=w)
-            # Or
-            ax.plot(d['V'], d['V']/d['I'], label=w)
-            ax.plot(d['V'], [Rnom]*len(d['V']), label=w)
-            plt.pause(.1)
+    
+    #TODO improve this
+    channels = ['A', 'B', 'C']
+    dp.set_bypass(1)
+    ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+    rigol.pulse_builtin('SQU', duration=1, amp=0.05)
+    d = ps.get_data(channels)
+    d = digipot_to_iv(d)
+    d = analyze.moving_avg(d,1000)
+
+    V_bypass = np.mean(np.abs(d['V']))
+    I_bypass = np.mean(np.abs(d['I']))
+    R_bypass = V_bypass/I_bypass    
+
+    ax.plot(d['V'], d['I'])
+
+    print('Bypass Resistance = {} Ohm'.format(R_bypass))
+
+
+        # for w,Rnom in dp.Rmap.items():
+        #     dp.set_wiper(w) # Should have the necessary delay built in
+        #     ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+        #     # Put a milliwatt through each resistor
+        #     A = np.sqrt(1e-3 * Rnom)
+        #     rigol.pulse_builtin('SIN', duration=dur, amp=A)
+        #     d = ps.get_data(channels)
+        #     d = digipot_to_iv(d)
+        #     d = analyze.moving_avg(d,100)
+        #     data.append(d)
+        #     if plot:
+        #         ax.plot(d['V'], d['I'], label=w)
+        #         ax.plot(d['V'], d['V']/Rnom, label=w)
+        #         # Or
+        #         #ax.plot(d['V'], d['V']/d['I'], label=w)
+        #         #ax.plot(d['V'], [Rnom]*len(d['V']), label=w)
+        #         plt.pause(.1)
     return data
 
 ########### Conversion from picoscope channel data to IV data ###################
