@@ -29,6 +29,8 @@ from . import measure
 pico_to_iv = measure.ccircuit_to_iv
 #pico_to_iv = partial(measure.Rext_to_iv, R=50)
 #pico_to_iv = measure.TEO_HFext_to_iv
+#pico_to_iv = measure.no_ccircuit_to_iv
+
 
 #TODO: figure out how to handle settings all in one dedicated file, such that git doesn't mess it up
 # maybe do a "switch statement" on hostname here, to override the defaults above

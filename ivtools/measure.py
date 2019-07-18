@@ -644,6 +644,19 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
+def no_ccircuit_to_iv(datain, dtype=np.float32):
+
+    dataout = datain
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+    dataout['V'] = dtype(A)
+    dataout['I'] = dtype(B/50)
+    dataout['units'] = {'V':'V', 'I':'A'}
+    return dataout
+
+
 def rehan_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
