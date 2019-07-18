@@ -144,6 +144,12 @@ if hostname == 'pciwe46':
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                    #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
+elif hostname == 'IFF1053':
+    datafolder = r'E:\transfer\{}'.format(username)
+    # Variable name, Instrument class, arguments to pass to init
+    connections = [('ps', instruments.Picoscope),
+                   ('rigol', instruments.RigolDG5000),
+                   ('daq', instruments.USB2708HS)]
 elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'
