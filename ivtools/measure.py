@@ -53,6 +53,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
+    # TODO make pulse and capture for builtin waveforms
     ps.capture(ch, freq=fs, duration=(n+extrasample)*duration, **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
@@ -145,9 +146,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         # Maybe only smoothimate I and V?
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
-    if autosplit:
+    if autosplit and (n > 1):
         print('Splitting data into individual pulses')
-        if n > 1 and (splitbylevel is None):
+        if splitbylevel is None:
             nsamples = duration * actual_fs
             if 'downsampling' in ivdata:
                 # Not exactly correct but I hope it's close enough
@@ -380,7 +381,11 @@ def set_compliance(cc_value):
     if cc_value > 1e-3:
         raise Exception('Compliance value out of range! Max 1 mA.')
     fn = settings.COMPLIANCE_CALIBRATION_FILE
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+    abspath = os.path.abspath(fn)
+    if os.path.isfile(abspath):
+        print('Reading calibration from file {abspath}'.format())
+    else:
+        raise Exception('No compliance calibration.  Run calibrate_compliance().')
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
     DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
@@ -409,12 +414,20 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     offsets_list = []
     dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
 
+    fn = settings.COMPLIANCE_CALIBRATION_FILE
+    abspath = os.path.abspath(fn)
+    fdir = os.path.split(abspath)[0]
+    if not os.path.isdir(fdir):
+        os.makedirs(fdir)
+    if startfromfile and not os.path.isfile(fn):
+        print(f'No calibration file exists at {abspath}')
+        startfromfile = False
+
     for it in range(iterations):
         ccurrent = []
         offsets = []
         if len(offsets_list) == 0:
             if startfromfile:
-                fn = 'compliance_calibration.pkl'
                 print('Reading calibration from file {}'.format(os.path.abspath(fn)))
                 with open(fn, 'rb') as f:
                     cc = pickle.load(f)
@@ -445,10 +458,10 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         #plt.pause(.1)
     output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
               'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
-    calibrationfile = 'compliance_calibration.pkl'
-    with open(calibrationfile, 'wb') as f:
+
+    with open(fn, 'wb') as f:
         pickle.dump(output, f)
-    print('Wrote calibration to ' + calibrationfile)
+    print('Wrote calibration to ' + fn)
 
     return compensations
 
