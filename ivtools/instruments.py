@@ -1047,7 +1047,7 @@ class RigolDG5000(object):
         '''
         # Load waveform
         self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
-        self.setup_burstmode(n=n)
+        self.setup_burstmode(n=n, ch=ch)
         self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
@@ -1347,12 +1347,12 @@ class UF2000Prober(object):
     indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
     micron system is centered somewhere far away from the chuck
 
-	The coordinate systems sound easy, but will confuse you for days
-	in part because the coordinate system and units used for setting
-	and getting the position are sometimes different and sometimes the same!!
-	e.g. when reading the position in microns, the x and y axes are reflected!!
+    The coordinate systems sound easy, but will confuse you for days
+    in part because the coordinate system and units used for setting
+    and getting the position are sometimes different and sometimes the same!!
+    e.g. when reading the position in microns, the x and y axes are reflected!!
 
-	I attempted to hide all of this nonsense from the user of this class
+    I attempted to hide all of this nonsense from the user of this class
     !!!!!!
 
     UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
@@ -1809,7 +1809,7 @@ class UF2000Prober(object):
         yum_rel_prober = yum_rel
         str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
         str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
-		# manual says the unit is 1e-6 meter
+        # manual says the unit is 1e-6 meter
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
@@ -2156,14 +2156,18 @@ class WichmannDigipot(object):
             self.wiper2state = 0
             self.write('0 0 1'.encode())
 
+    @property
+    def Rstate(self):
+        # Returns the current set resistance state
+        # TODO: depends on the configuration (single, series, parallel)
+        return self.Rmap[self.wiper2state]
+
     def connected(self):
         # Not a very smart way to determine if we are connected
         if hasattr(self,'conn'):
             return self.conn.isOpen()
         else:
             return False
-
-
 
     def set_bypass(self, state):
         '''
@@ -2285,7 +2289,7 @@ class PG5(object):
     def trigger(self):
         '''Executes a pulse'''
         self.write(':INIT')
-        
+
 
 #########################################################
 # Temperature PID-Control ###############################
@@ -2329,6 +2333,7 @@ class EugenTempStage(object):
         vstep = round(vmax / (2**numbits - 1), 5)# 5 /1023
         cmd_str = '1,{};'.format(channel).encode()
         self.write(cmd_str)
+
         reply = self.conn.readline().decode()
         adc_value = float(reply.split(',')[-1].strip().strip(';'))
         voltage = adc_value * vstep
