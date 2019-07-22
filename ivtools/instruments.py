@@ -2121,12 +2121,10 @@ class WichmannDigipot(object):
     TODO: Is there a way to poll the current state from the microcontroller?
     The class instance might not be aware of it when we first connect.
 
-    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
-
     TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
     TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
     '''
-    def __init__(self, addr='COM14'):
+    def __init__(self, addr='COM10'):
         # BORG
         self.__dict__ = persistent_state.digipot_state
         self.connect(addr)
@@ -2144,23 +2142,41 @@ class WichmannDigipot(object):
                       316.79, 299.09, 299.06]
         self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
 
-    def connect(self, addr='COM14'):
+    def connect(self, addr='COM10'):
         if not self.connected():
             self.conn = serial.Serial(addr, timeout=1)
             self.write = self.conn.write
+            self.open = self.conn.open
             self.close = self.conn.close
-            # We don't know what state we are in initially
-            # For now we will just set them all to 1 when we connect
-            self.bypassstate = 1
-            self.wiper1state = 0
-            self.wiper2state = 0
-            self.write('0 0 1'.encode())
+            self.bypassstate
+            self.wiper0state
+            self.wiper1state
 
     @property
     def Rstate(self):
         # Returns the current set resistance state
         # TODO: depends on the configuration (single, series, parallel)
-        return self.Rmap[self.wiper2state]
+        return self.Rmap[self.wiper1state]
+
+    @Rstate.setter
+    def Rstate(self, val):
+        self.set_R(val)
+
+    @property
+    def wiper0state(self):
+        self.write(f'get_wiper 0 \n'.encode())
+        time.sleep(5e-3)
+        return int(self.conn.read_all().decode())
+
+    @property
+    def wiper1state(self):
+        self.write(f'get_wiper 1 \n'.encode())
+        time.sleep(5e-3)
+        return int(self.conn.read_all().decode())
+
+    @property
+    def read(self):
+         return self.conn.read_all().decode()
 
     def connected(self):
         # Not a very smart way to determine if we are connected
@@ -2169,15 +2185,14 @@ class WichmannDigipot(object):
         else:
             return False
 
-    def writeRead(self,textstr):
-        # Simple send serial Command and print returned answer
+    def writeCMD(self,textstr):
+        ''' 
+        Debugging tool. 
+        Send serial Command and print returned answer like a Serial monitor
+        '''
+        self.write((textstr+' \n').encode())
         time.sleep(5e-3)
-        print(self.conn.read_all())
-        self.write(textstr)
-        time.sleep(5e-3)
-        print(self.conn.read_all())
-        time.sleep(5e-3)
-        print(self.conn.read_all())
+        print(self.conn.read_all().decode())
 
     def set_bypass(self, state):
         '''
@@ -2185,35 +2200,24 @@ class WichmannDigipot(object):
         True = connected
         False = not connected
         '''
-        # Keep current wiper state, set the bypass relay state
-        w1 = self.wiper1state
-        w2 = self.wiper2state
-        self.write(f'{w1} {w2} {state}'.encode())
+        self.write(f'bypass {int(state)} \n'.encode())
         self.bypassstate = state
         #Wait until the AVR has sent a message Back
         time.sleep(5e-3)
-        return self.conn.read_all().decode()
+        self.conn.read_all().decode()
 
-    def set_wiper(self, state, n=2):
+    def set_wiper(self, state, n=1):
         '''
-        Change the digipot wiper setting
-        n=2 is main potentiometer on chip
+        Change the digipot wiper setting 
+        n=1 is main potentiometer on chip 
+        0 ist only used in parallel/series Mode
         '''
-        bypass = self.bypassstate
-
-        if n==1:
-            w2 = self.wiper2state
-            self.write(f'{state} {w2} {bypass}'.encode())
-            self.wiper1state = state
-        elif n == 2:
-            w1 = self.wiper1state
-            self.write(f'{w1} {state} {bypass}'.encode())
-            self.wiper2state = state
+        self.write(f'wiper {n} {state}'.encode())
         #Wait until the AVR has sent a message Back
         time.sleep(5e-3)
-        return self.conn.read_all().decode()
+        self.conn.read_all().decode()
 
-    def set_R(self, R, n=2):
+    def set_R(self, R, n=1):
         if R == 0:
             self.set_bypass(1)
             #Set wiper to highest value
@@ -2228,6 +2232,7 @@ class WichmannDigipot(object):
             R_closest = Rmap[i_closest]
             w_closest = wvals[i_closest]
             print(i_closest)
+            print(self.Rmap[i_closest])
             self.set_wiper(w_closest, n)
             # Could have sent one command, but I'm sending two
             self.set_bypass(0)
