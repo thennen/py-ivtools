@@ -2125,7 +2125,7 @@ class WichmannDigipot(object):
 
     TODO: make a test routine that takes a few seconds to measure that everything is working properly
     '''
-    def __init__(self, addr='COM10'):
+    def __init__(self, addr='COM14'):
         # BORG
         self.__dict__ = persistent_state.digipot_state
         self.connect(addr)
@@ -2137,7 +2137,7 @@ class WichmannDigipot(object):
                       324, 306, 306]
         self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
 
-    def connect(self, addr='COM10'):
+    def connect(self, addr='COM14'):
         if not self.connected():
             self.conn = serial.Serial(addr, timeout=1)
             self.write = self.conn.write
@@ -2156,7 +2156,15 @@ class WichmannDigipot(object):
         else:
             return False
 
-
+    def writeRead(self,textstr):
+        # Simple send serial Command and print returned answer
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+        self.write(textstr)
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+        time.sleep(5e-3)
+        print(self.conn.read_all())
 
     def set_bypass(self, state):
         '''
