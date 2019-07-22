@@ -79,6 +79,19 @@ class MetaHandler(object):
         #return self.meta.__repr__()
         return pd.Series({**self.meta, **self.static}).__repr__()
 
+    def asdict(self):
+        '''
+        meta.meta has the steppable metadata
+        meta.static has the constant metadata
+        this returns the combined one
+        '''
+        return {**self.meta, **self.static}
+
+    def __iter__(self):
+        # Implementing this because then you can just write dict(meta)
+        for k,v in self.asdict().items():
+            yield k,v
+
     def __getitem__(self, key):
         return self.meta[key]
 
@@ -115,7 +128,7 @@ class MetaHandler(object):
         filenamekeys = ['id']
         if 'sample_name' in kwargs:
             filenamekeys = ['sample_name'] + filenamekeys
-        meta_i = 0
+        self.i = 0
         self.df = devicemetalist
         self.meta = devicemetalist.iloc[0]
         self.prettykeys = filenamekeys
@@ -258,6 +271,7 @@ class MetaHandler(object):
         '''
         if len(self.meta) > 0:
             print('Attaching the following metadata:')
+            # TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
             self.print()
         dtype = type(data)
         if dtype is dict:
