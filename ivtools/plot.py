@@ -583,8 +583,9 @@ class interactive_figs(object):
             self.plotters = []
             # if False, disables updateline, newline
             self.enable = True
-            # Put a list of functions here to pass the data through before plotting
+            # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
             self.preprocessing = []
+            self.processed_data = None
 
     def createfig(self, n):
         '''
@@ -636,6 +637,8 @@ class interactive_figs(object):
                     for pp in self.preprocessing:
                         # Just run the data through all the functions
                         data = pp(data)
+                    # In case you want to access it without running the processing again
+                    self.processed_data = data
             for axnum, plotter in self.plotters:
                 ax = self.axs[axnum]
                 if data is None:

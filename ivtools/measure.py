@@ -53,6 +53,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
+    # TODO make pulse and capture for builtin waveforms
     ps.capture(ch, freq=fs, duration=(n+extrasample)*duration, **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
@@ -145,9 +146,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         # Maybe only smoothimate I and V?
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
-    if autosplit:
+    if autosplit and (n > 1):
         print('Splitting data into individual pulses')
-        if n > 1 and (splitbylevel is None):
+        if splitbylevel is None:
             nsamples = duration * actual_fs
             if 'downsampling' in ivdata:
                 # Not exactly correct but I hope it's close enough
@@ -371,7 +372,6 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 # (Compliance control voltage)      DAC0 - 12kohm - 12kohm
 # (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
 
-
 def set_compliance(cc_value):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
@@ -381,7 +381,11 @@ def set_compliance(cc_value):
     if cc_value > 1e-3:
         raise Exception('Compliance value out of range! Max 1 mA.')
     fn = settings.COMPLIANCE_CALIBRATION_FILE
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+    abspath = os.path.abspath(fn)
+    if os.path.isfile(abspath):
+        print('Reading calibration from file {abspath}'.format())
+    else:
+        raise Exception('No compliance calibration.  Run calibrate_compliance().')
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
     DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
@@ -410,12 +414,20 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     offsets_list = []
     dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
 
+    fn = settings.COMPLIANCE_CALIBRATION_FILE
+    abspath = os.path.abspath(fn)
+    fdir = os.path.split(abspath)[0]
+    if not os.path.isdir(fdir):
+        os.makedirs(fdir)
+    if startfromfile and not os.path.isfile(fn):
+        print(f'No calibration file exists at {abspath}')
+        startfromfile = False
+
     for it in range(iterations):
         ccurrent = []
         offsets = []
         if len(offsets_list) == 0:
             if startfromfile:
-                fn = 'compliance_calibration.pkl'
                 print('Reading calibration from file {}'.format(os.path.abspath(fn)))
                 with open(fn, 'rb') as f:
                     cc = pickle.load(f)
@@ -446,10 +458,10 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         #plt.pause(.1)
     output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
               'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
-    calibrationfile = 'compliance_calibration.pkl'
-    with open(calibrationfile, 'wb') as f:
+
+    with open(fn, 'wb') as f:
         pickle.dump(output, f)
-    print('Wrote calibration to ' + calibrationfile)
+    print('Wrote calibration to ' + fn)
 
     return compensations
 
@@ -489,7 +501,7 @@ def measure_compliance():
     # Then current at compliance circuit input has to be ~zero
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
     ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol.outputstate(False)
+    rigol.output(False)
     ivplot.mypause(.1)
     #plt.pause(.1)
     # Immediately capture some samples on channels A and B
@@ -522,54 +534,90 @@ def measure_compliance():
 
 ########### Digipot ####################
 
-def test_digipot(plot=True):
+def digipot_test(plot=True):
     # Short the needles, this rapidly makes sure everything is working properly
     # Use these settings but don't change the state of picoscope
     coupling = dict(A='DC', B='DC50', C='DC50')
-    ranges = dict(A=5, B=5, C=0.05)
+    ranges = dict(A=5, B=5, C=1)
     ps = instruments.Picoscope()
     dp = instruments.WichmannDigipot()
     rigol = instruments.RigolDG5000()
     dur = 1e-2
     if plot:
         fig, ax = plt.subplots()
+        ax.set_yscale('log')
+        plt.show()
     data = []
-    
-    #TODO improve this
     channels = ['A', 'B', 'C']
+
+    # Check Bypass first
     dp.set_bypass(1)
     ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
-    rigol.pulse_builtin('SQU', duration=1, amp=0.05)
+    rigol.pulse_builtin('SIN', duration=dur, amp=1)
     d = ps.get_data(channels)
     d = digipot_to_iv(d)
     d = analyze.moving_avg(d,1000)
+    data.append(d)
+    if plot:
+        #ax.plot(d['V'], d['I'])
+        ax.plot(d['V'], d['V']/d['I'], color='black')
 
-    V_bypass = np.mean(np.abs(d['V']))
-    I_bypass = np.mean(np.abs(d['I']))
-    R_bypass = V_bypass/I_bypass    
+    dp.set_bypass(0)
 
-    ax.plot(d['V'], d['I'])
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        # Put 10 milliwatt through each resistor
+        #A = np.sqrt(10e-3 * Rnom)
+        #A = min(A, 5)
+        A = 3
+        Iexpected = A/Rnom
+        ranges['C'] = ps.best_range([-Iexpected*50, Iexpected*50])[0]
+        ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+        rigol.pulse_builtin('SIN', duration=dur, amp=A)
+        d = ps.get_data(channels)
+        d = digipot_to_iv(d)
+        d = analyze.moving_avg(d,100)
+        data.append(d)
+        if plot:
+            #ax.plot(d['V'], d['I'], label=w)
+            #color = ax.lines[-1].get_color()
+            #ax.plot(d['V'], d['V']/Rnom, label=w, linestyle='--', alpha=.2, color=color)
+            # Or
+            ax.plot(d['V'], d['V']/d['I'], label=w)
+            color = ax.lines[-1].get_color()
+            ax.plot([-5,5], [Rnom, Rnom], label=w, linestyle='--', alpha=.2, color=color)
+            plt.pause(.1)
+            plt.xlim(-3, 3)
+            plt.ylim(40, 60000)
 
-    print('Bypass Resistance = {} Ohm'.format(R_bypass))
+    return data
 
+def digipot_calibrate(plot=True):
+    # Connect keithley to digipot to measure the resistance values
+    dp = instruments.WichmannDigipot()
+    k = instruments.Keithley2600()
+    if plot:
+        fig, ax = plt.subplots()
+        ax.set_yscale('log')
+        plt.show()
+        ax.plot(np.arange(34), dp.Rlist, marker='.')
 
-        # for w,Rnom in dp.Rmap.items():
-        #     dp.set_wiper(w) # Should have the necessary delay built in
-        #     ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
-        #     # Put a milliwatt through each resistor
-        #     A = np.sqrt(1e-3 * Rnom)
-        #     rigol.pulse_builtin('SIN', duration=dur, amp=A)
-        #     d = ps.get_data(channels)
-        #     d = digipot_to_iv(d)
-        #     d = analyze.moving_avg(d,100)
-        #     data.append(d)
-        #     if plot:
-        #         ax.plot(d['V'], d['I'], label=w)
-        #         ax.plot(d['V'], d['V']/Rnom, label=w)
-        #         # Or
-        #         #ax.plot(d['V'], d['V']/d['I'], label=w)
-        #         #ax.plot(d['V'], [Rnom]*len(d['V']), label=w)
-        #         plt.pause(.1)
+    dp.set_bypass(0)
+    data = []
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        # Apply a volt, measure current
+        k.iv([1], Irange=0, Ilimit=10e-3, nplc=10)
+        while not k.done():
+            plt.pause(.1)
+        d = k.get_data()
+        d['R'] = d['V']/d['I']
+        data.append(d)
+        if plot:
+            plt.scatter(w, d['R'])
+            plt.pause(.1)
+
+    print([d['R'][0].round(2) for d in data])
     return data
 
 ########### Conversion from picoscope channel data to IV data ###################

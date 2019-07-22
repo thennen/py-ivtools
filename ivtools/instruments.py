@@ -1047,7 +1047,7 @@ class RigolDG5000(object):
         '''
         # Load waveform
         self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
-        self.setup_burstmode(n=n)
+        self.setup_burstmode(n=n, ch=ch)
         self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
@@ -1347,12 +1347,12 @@ class UF2000Prober(object):
     indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
     micron system is centered somewhere far away from the chuck
 
-	The coordinate systems sound easy, but will confuse you for days
-	in part because the coordinate system and units used for setting
-	and getting the position are sometimes different and sometimes the same!!
-	e.g. when reading the position in microns, the x and y axes are reflected!!
+    The coordinate systems sound easy, but will confuse you for days
+    in part because the coordinate system and units used for setting
+    and getting the position are sometimes different and sometimes the same!!
+    e.g. when reading the position in microns, the x and y axes are reflected!!
 
-	I attempted to hide all of this nonsense from the user of this class
+    I attempted to hide all of this nonsense from the user of this class
     !!!!!!
 
     UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
@@ -1809,7 +1809,7 @@ class UF2000Prober(object):
         yum_rel_prober = yum_rel
         str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
         str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
-		# manual says the unit is 1e-6 meter
+        # manual says the unit is 1e-6 meter
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
@@ -2123,7 +2123,8 @@ class WichmannDigipot(object):
 
     TODO: Shouldn't relay = 1 mean that the input is connected to the output?
 
-    TODO: make a test routine that takes a few seconds to measure that everything is working properly
+    TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
+    TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
     '''
     def __init__(self, addr='COM14'):
         # BORG
@@ -2131,10 +2132,16 @@ class WichmannDigipot(object):
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
-        self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
-                      15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
-                      2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
-                      324, 306, 306]
+        #self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
+        #              15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
+        #              2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
+        #              324, 306, 306]
+        # Keithley calibration at 1V applied 2019-07-17
+        self.Rlist = [43158.62, 38438.63, 34301.27, 30596.64, 27306.63, 24354.61, 21752.65,
+                      19413.07, 17336.84, 15461.77, 13818.91, 12338.34, 11033.65, 8812.41,
+                      7064.97, 5672.71, 4539.82, 3666.53, 2961.41, 2412.55, 1960.89, 1591.29,
+                      1307.28, 1083.48, 902.42, 711.69, 570.92, 472.24, 426.55, 377.22, 342.16,
+                      316.79, 299.09, 299.06]
         self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
 
     def connect(self, addr='COM14'):
@@ -2148,6 +2155,12 @@ class WichmannDigipot(object):
             self.wiper1state = 0
             self.wiper2state = 0
             self.write('0 0 1'.encode())
+
+    @property
+    def Rstate(self):
+        # Returns the current set resistance state
+        # TODO: depends on the configuration (single, series, parallel)
+        return self.Rmap[self.wiper2state]
 
     def connected(self):
         # Not a very smart way to determine if we are connected
@@ -2286,7 +2299,7 @@ class PG5(object):
     def trigger(self):
         '''Executes a pulse'''
         self.write(':INIT')
-        
+
 
 #########################################################
 # Temperature PID-Control ###############################
@@ -2330,6 +2343,7 @@ class EugenTempStage(object):
         vstep = round(vmax / (2**numbits - 1), 5)# 5 /1023
         cmd_str = '1,{};'.format(channel).encode()
         self.write(cmd_str)
+
         reply = self.conn.readline().decode()
         adc_value = float(reply.split(',')[-1].strip().strip(';'))
         voltage = adc_value * vstep
