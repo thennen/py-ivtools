@@ -2295,6 +2295,16 @@ class PG5(object):
 # Temperature PID-Control ###############################
 #########################################################
 class EugenTempStage(object):
+    # Global Variables
+    # Resistor-Values bridge
+    r_1 = 9975
+    r_3 = 9976
+    r_4 = 1001
+    # Gain from instrumental-opamp
+    opamp_gain = 12.55
+    # Voltage Bridge
+    volt_now = 10
+    
     def __init__(self, addr='COM7', baudrate=9600):
         # BORG
         self.__dict__ = persistent_state.tempstage_state
@@ -2320,13 +2330,13 @@ class EugenTempStage(object):
         # Find the closest value that can be output.
         vstep = vmax / (2**numbits - 1)  # 5 /4095
         value = voltage / vstep  # exact value for analogWrite()-function
-        cmd_str = '0,9,{};'.format(value).encode()
+        cmd_str = '0,{};'.format(value).encode()
         self.write(cmd_str)
         actualvoltage = vstep * value
         return actualvoltage
 
     def analogIn(self, channel):
-        # Function to get max Voltage for Bridge
+        # Function to get Voltage from Bridge
         # Arduino will return the voltage in bits
         vmax = 5
         numbits = 10
@@ -2341,26 +2351,17 @@ class EugenTempStage(object):
         return voltage
 
     def set_temperature(self, temp):
-        # Resistor-Values bridge
-        r_1 = 9975
-        r_3 = 9976
-        r_4 = 1001
-        # Gain from instrumental-opamp
-        opamp_gain = 12.55
-        # Voltage Bridge
-        volt_now = 10
-
-        ''' Temperature Setpoint Function, should be between 0-100Celsius  '''
+        #Temperature Setpoint Function, should be between 0-100Celsius
 
         if temp > 100:
             print('Its too HOT! DANGERZONE!')
 
         if temp <= 100 and temp >= 0:
             pt_res = round((1000 * (1.00385**temp)), 1)
-            volt_zaehler = volt_now * (pt_res * (r_3 + r_4) - r_4 * (r_1 + pt_res))
-            volt_nenner = (r_4 + r_3) * r_1 + (r_3 + r_4) * pt_res
+            volt_zaehler = self.volt_now * (pt_res * (self.r_3 + self.r_4) - self.r_4 * (self.r_1 + pt_res))
+            volt_nenner = (self.r_4 + self.r_3) * self.r_1 + (self.r_3 + self.r_4) * pt_res
             volt_bruch = volt_zaehler / volt_nenner
-            volt_set = volt_bruch * opamp_gain
+            volt_set = volt_bruch * self.opamp_gain
             temp_set = self.analogOut(volt_set)
             #print('Sent command to output {0:.3f} Volt'.format(temp_set))
             print('Temperature set to {0:.2f} \u00b0C'.format(temp))
@@ -2368,17 +2369,10 @@ class EugenTempStage(object):
             print('Its too COLD! Can not do that :-/')
 
     def read_temperature(self):
-        # Resistor-Values bridge
-        r_1 = 9975
-        r_3 = 9976
-        r_4 = 1001
-        # Gain from instrumental-opamp
-        opamp_gain = 12.55
-        # Voltage Bridge
-        volt_now = 10
-        volt_bridge = self.analogIn(1) / opamp_gain
-        pt_zaehler = (((r_3 + r_4) * volt_bridge) + (volt_now * r_4)) * r_1
-        pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4) * volt_now)
+
+        volt_bridge = self.analogIn(1) / self.opamp_gain
+        pt_zaehler = (((self.r_3 + self.r_4) * volt_bridge) + (self.volt_now * self.r_4)) * self.r_1
+        pt_nenner = ((self.r_3 + self.r_4) * self.volt_now) - (volt_bridge * (self.r_3 + self.r_4) + (self.r_4 * volt_now))
         pt_res = round((pt_zaehler / pt_nenner), 1)
         temp_read = np.log(pt_res / 1000) / np.log(1.00385)
         return temp_read
