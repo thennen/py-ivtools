@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import inspect
-from matplotlib.widgets import SpanSelector
+from matplotlib.widgets import SpanSelector, RectangleSelector
 from inspect import signature
 import os
 from numbers import Number
@@ -1043,11 +1043,10 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     To use selector, just make sure you don't have any other gui widgets active
     Will remain active as long as the return value is not garbage collected
     Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
-    # TODO pass the plotting function (could be different than plotiv)
     '''
     if data is None:
         # Check for global variables ...
-        # Sorry if this offends you ..
+        # Sorry if this offends you ..  it offends me
         print('No data passed. Looking for global variable d')
         try:
             data = d
@@ -1071,6 +1070,62 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
     return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
+
+# Data selector
+def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
+    '''
+    Plot all the data, x vs y
+    Select 2D range from plot of x vs y.
+    print the data indices that have data in the range selected
+    # Or should it return the data subset?
+
+    # TODO: use lasso tool instead
+
+    Will remain active as long as the return value is not garbage collected
+    Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
+    '''
+    if data is None:
+        # Check for global variables ...
+        # Sorry if this offends you ..  it offends me
+        print('No data passed. Looking for global variable d')
+        try:
+            data = d
+        except:
+            print('No global variable d. Looking for global variable df')
+            try:
+                data = df
+            except:
+                raise Exception('No data can be found')
+
+    if ax is None:
+        ax = plt.gca()
+
+    plotfunc(data, x=x, y=y, ax=ax)
+    def onselect(eclick, erelease):
+        x1, y1 = eclick.xdata, eclick.ydata
+        x2, y2 = erelease.xdata, erelease.ydata
+
+        xmin = min(x1, x2)
+        xmax = max(x1, x2)
+        ymin = min(y1, y2)
+        ymax = max(y1, y2)
+
+        #print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        #print("The button you used were: %s %s" % (eclick.button, erelease.button))
+        # Find the data that has values in the selected range
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+        def inside(d):
+            X = d[x]
+            Y = d[y]
+            return np.any((X > xmin) & (X < xmax) & (Y > ymin) & (Y < ymax))
+        if type(data) is pd.DataFrame:
+            print(data.index[data.apply(inside, 1)])
+        else:
+            # Should be a list of dicts/Series
+            print([i for i,d in enumerate(data) if inside(d)])
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
+    return RS
 
 
 ### Animation

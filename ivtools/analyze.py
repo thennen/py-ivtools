@@ -559,7 +559,7 @@ def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
     else:
         trigger = np.where((crossings[hyspts-1:] == -1) & (side[:-hyspts] == True))[0] + hyspts
     # Put the endpoints in
-    trigger = np.concatenate(([0], trigger, [len(data['V'])]))
+    trigger = np.concatenate(([0], trigger, [len(data[column])]))
     # Delete triggers that are too close to each other
     # This is not perfect.
     trigthresh = np.diff(trigger) > hyspts
