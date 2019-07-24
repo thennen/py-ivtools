@@ -471,7 +471,7 @@ def plot_channels(chdata, ax=None, alpha=.8):
                 chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
-                x = analyze.maketimearray(chdata)
+                x = analyze.maketimearray(chdata, c)
                 ax.set_xlabel('Time [s]')
                 ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
             else:
@@ -581,8 +581,11 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
-            # doesn't do anything yet
+            # if False, disables updateline, newline
             self.enable = True
+            # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
+            self.preprocessing = []
+            self.processed_data = None
 
     def createfig(self, n):
         '''
@@ -628,21 +631,29 @@ class interactive_figs(object):
 
     def newline(self, data=None):
         ''' Update the plots with new data. '''
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if data is None:
-                ax.plot([])
-            else:
-                try:
-                    plotter(data, ax=ax)
-                    color = ax.lines[-1].get_color()
-                    ax.set_xlabel(ax.get_xlabel(), color=color)
-                    ax.set_ylabel(ax.get_ylabel(), color=color)
-                except Exception as e:
+        if self.enable:
+            if data is not None:
+                if any(self.preprocessing):
+                    for pp in self.preprocessing:
+                        # Just run the data through all the functions
+                        data = pp(data)
+                    # In case you want to access it without running the processing again
+                    self.processed_data = data
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if data is None:
                     ax.plot([])
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-                ax.get_figure().canvas.draw()
-        mypause(0.05)
+                else:
+                    try:
+                        plotter(data, ax=ax)
+                        color = ax.lines[-1].get_color()
+                        ax.set_xlabel(ax.get_xlabel(), color=color)
+                        ax.set_ylabel(ax.get_ylabel(), color=color)
+                    except Exception as e:
+                        ax.plot([])
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                    ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def set_maxlines(self, maxlines=None):
         for ax in self.axs:
@@ -659,31 +670,36 @@ class interactive_figs(object):
         # function again, this works by deleting the last line and plotting a new one with
         # the same colors
         # I am assuming for now that the plot functions each produce one line.
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if any(ax.lines):
-                color = ax.lines[-1].get_color()
-                del ax.lines[-1]
-            else:
-                color = None
-            argspec = inspect.getfullargspec(plotter)
-            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
-                # plotter won't error if we pass this keyword argument
-                # it might even work ..
-                try:
-                    plotter(data, ax, color=color)
-                except Exception as e:
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-            else:
-                # Simply set the line color after plotting
-                # could mess up the color cycle.
-                try:
-                    plotter(data, ax)
-                    ax.lines[-1].set_color(color)
-                except:
-                    print('Plotter number {} failed!'.format(axnum))
-            ax.get_figure().canvas.draw()
-        mypause(0.05)
+        if self.enable:
+            if any(self.preprocessing):
+                for pp in self.preprocessing:
+                    # Just run the data through all the functions
+                    data = pp(data)
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if any(ax.lines):
+                    color = ax.lines[-1].get_color()
+                    del ax.lines[-1]
+                else:
+                    color = None
+                argspec = inspect.getfullargspec(plotter)
+                if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
+                    # plotter won't error if we pass this keyword argument
+                    # it might even work ..
+                    try:
+                        plotter(data, ax, color=color)
+                    except Exception as e:
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                else:
+                    # Simply set the line color after plotting
+                    # could mess up the color cycle.
+                    try:
+                        plotter(data, ax)
+                        ax.lines[-1].set_color(color)
+                    except:
+                        print('Plotter number {} failed!'.format(axnum))
+                ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def clear(self):
         ''' Clear all the axes '''
@@ -739,6 +755,7 @@ class interactive_figs(object):
 # They should take the data and an axis to plot on
 # Should handle single or multiple loops
 # TODO: Can I make a wrapper that makes that easier?
+# TODO: don't have each plot function downsample themselves, just do it once and share the result
 def parametrized(dec):
     ''' This is a meta-decorator to create a parametrized decorator.  You got a better idea? '''
     def layer(*args, **kwargs):
@@ -842,6 +859,7 @@ def R_vs_cycle_plotter(data, ax=None, **kwargs):
 
 #@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
+    # basically just plot_channels with downsampling
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
@@ -852,7 +870,13 @@ def chplotter(data, ax=None, **kwargs):
         lendata = len(data[channels[0]])
         if lendata > 100000:
             print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
-            plotdata = analyze.sliceiv(data, step=10)
+            step = lendata // 50000
+            #plotdata = analyze.decimate(data, step, columns=channels)
+            plotdata = analyze.sliceiv(data, step=step, columns=channels)
+            if 'downsampling' in plotdata:
+                plotdata['downsampling'] *= step
+            else:
+                plotdata['downsampling'] = step
         else:
             plotdata = data
         plot_channels(plotdata, ax=ax)
@@ -1404,6 +1428,16 @@ def metric_prefix(x):
     for v, p in zip(values, prefix):
         if abs(x) >= v:
             return '{:n}{}'.format(x/v, p)
+
+def metric_prefix_longname(x):
+    longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
+    if abs(x) < min(values):
+        return '{:n}'.format(x)
+    for v, p in zip(values, longnames):
+        if abs(x) >= v:
+            return '{:n} {}'.format(x/v, p)
 
 def engformatter(axis='y', ax=None):
     if ax is None:

@@ -16,6 +16,8 @@ import sys
 # TODO make some functions that index/iterate rows of dataframe AND list, because they have different syntax
 #      this would avoid testing for the datatype in many different parts of the code
 
+# TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
+
 def ivfunc(func):
     '''
     Decorator which allows the same function to be used on a single loop, as
@@ -337,6 +339,19 @@ def thresholds_byval(data, value):
 '''
 
 @ivfunc
+def arrayfun(func, columns=None):
+    ''' Apply a function to all the data arrays in the structure, return new structure'''
+    # TODO: Make all the other functions that do some version of this just call arrayfun
+    # name inspired by MATLAB's cellfun
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    funarrays = [func(ar) for ar in arrays]
+    dataout = {c:fa for c,fa in zip(columns, funarrays)}
+    add_missing_keys(data, dataout)
+    return dataout
+
+@ivfunc
 def moving_avg(data, window=5, columns=None):
     ''' Smooth data arrays with moving avg '''
     if columns is None:
@@ -377,7 +392,10 @@ def medfilt(data, window=5, columns=('I', 'V')):
 
 @ivfunc
 def decimate(data, factor=5, columns=('I', 'V')):
-    ''' Decimate data arrays '''
+    '''
+    Decimate data arrays
+    This is not just a downsampling, there's some filtering
+    '''
     if columns is None:
         columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
@@ -386,6 +404,8 @@ def decimate(data, factor=5, columns=('I', 'V')):
         raise Exception('Arrays to be decimated have different lengths!')
     if lens[0] == 0:
         raise Exception('No data to decimate')
+    # Have seen Future warning on this command.  Hopefully they fix it.
+    # This converts the datatype to float64
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
     dataout = {c:dec for c,dec in zip(columns, decarrays)}
     add_missing_keys(data, dataout)
@@ -398,7 +418,10 @@ def decimate(data, factor=5, columns=('I', 'V')):
 
 @ivfunc
 def smoothimate(data, window=10, factor=2, passes=1, columns=None):
-    ''' Smooth with moving avg and then decimate the data'''
+    '''
+    Smooth with moving avg and then decimate the data
+    by decimate I mean a simple downsample
+    '''
     if columns is None:
         columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
@@ -441,9 +464,13 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
 
 
 @ivfunc
-def maketimearray(data):
-    # Don't know what data columns exist
-    columns = find_data_arrays(data)
+def maketimearray(data, basedon=None):
+    ''' Make the time array based on number of samples, sample rate, and downsampling'''
+    if basedon is None:
+        # Don't know what data columns exist
+        columns = find_data_arrays(data)
+    else:
+        columns = [basedon]
     t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
     if 'downsampling' in data:
         t *= data['downsampling']
@@ -478,13 +505,16 @@ def indexiv(data, index):
 
 
 @ivfunc
-def sliceiv(data, stop=None, start=0, step=1):
+def sliceiv(data, stop=None, start=0, step=1, columns=None):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start, stop can be functions that take the iv loop as argument
     if those functions return nan, start defaults to 0 and stop to -1
     '''
-    slicekeys = find_data_arrays(data)
+    if columns is None:
+        slicekeys = find_data_arrays(data)
+    else:
+        slicekeys = columns
     if callable(start):
         start = start(data)
         if np.isnan(start): start = 0
@@ -1522,6 +1552,11 @@ def freq_analysis(data):
     Input data (e.g. collected by freq_response function) containing sinusoid arrays.
     This will use curve fitting and fft methods to determine amplitude and phase.
     '''
+    pass
+
+
+def subtract_phase(phase1, phase2):
+    # bizarre things happen when you subtract two arrays of phases
     pass
 
 def replace_nanvals(array):

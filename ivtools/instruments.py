@@ -61,7 +61,7 @@ class Picoscope(object):
     This class will basically extend the colinoflynn picoscope module
     Has some higher level functionality, and it stores/manipulates the channel settings.
     '''
-    def __init__(self):
+    def __init__(self, connect=True):
         self.__dict__ = persistent_state.pico_state
         from picoscope import ps6000
         self.ps6000 = ps6000
@@ -71,11 +71,12 @@ class Picoscope(object):
         self.data = None
         # Store channel settings in this class
         if not hasattr(self, 'range'):
-            self.range = self._PicoRange(self)
             self.offset = self._PicoOffset(self)
             self.atten = self._PicoAttenuation(self)
             self.coupling = self._PicoCoupling(self)
-        self.connect()
+            self.range = self._PicoRange(self)
+        if connect:
+            self.connect()
 
     def connect(self):
         # We are borg, so might already be connected!
@@ -113,6 +114,10 @@ class Picoscope(object):
 
     # Settings are a class mainly because I wanted a convenient syntax for typing in repeatedly
     class _PicoSetting(dict):
+        possible_ranges_1M = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+        max_offsets_1M = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
+        possible_ranges_50 = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
+        max_offsets_50 = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 2.5))
         def __init__(self, parent):
             self._parent = parent
 
@@ -152,13 +157,20 @@ class Picoscope(object):
             self.set('D', value)
 
     class _PicoRange(_PicoSetting):
-        # Holds the values for picoscope channel ranges.  Enforces valid values.
+        # Holds the values for picoscope channel ranges.
+        # Tries to enforce valid values, though I have not extensively tested that it is correct.
+        # Trying to comprehensively determine which settings are allowed and
+        # figuring out how to handle all the setting changes is logically NON-TRIVIAL
+        # Should changing one setting ever affect another setting?
+        # You would think not,
+        # But what if e.g. you change the attenuation but want to keep looking at the same range?
+        # The set of possible ranges changes, so it may only be possible to make the change simultaneously
+        # If a non-valid value is passed, should the closest valid one be used? or always the lower or higher setting?
+        #
         # TODO: add increment and decrement?
+        # TODO: add gui?
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
-            # TODO: I think the possible ranges also depends on the input coupling
-            self.possible = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
-            self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
             self['A'] = 1.0
             self['B'] = 1.0
             self['C'] = 1.0
@@ -167,49 +179,67 @@ class Picoscope(object):
         def set(self, channel, value):
             offset = self._parent.offset[channel]
             atten = self._parent.atten[channel]
-            newvalue = self[channel]
+            coupling = self._parent.coupling[channel]
+            # Default value for new setting (no change)
+            oldvalue = self[channel]
+            newvalue = oldvalue
 
-            if value in self.possible * atten:
-                newvalue = value
+            if coupling == 'DC50':
+                possible_ranges = self.possible_ranges_50 * atten
+                max_offsets = self.max_offsets_50 * atten
             else:
-                argclosest = np.argmin(np.abs(self.possible * atten - value))
-                closest = self.possible[argclosest] * atten
-                print('{} is an impossible range setting. Using closest valid setting {}.'.format(value, closest))
-                newvalue = closest
+                possible_ranges = self.possible_ranges_1M * atten
+                max_offsets = self.max_offsets_1M * atten
 
-            # Forgive me
-            diffs = self.max_offsets - offset/atten
-            leastabove = self.max_offsets[diffs > 0][0]
-            firstleastabove = np.where(self.max_offsets == leastabove)[0][0]
-            min_range = self.possible[firstleastabove] * atten
-            if newvalue < min_range:
-                print('Range {} is too low for current offset {}. Using closest valid range setting {}.'.format(newvalue, offset, min_range))
-                newvalue = min_range
+            # Check if the offset is too high for any of these settings
+            possible_ranges = np.array([pr for pr, mo in zip(possible_ranges, max_offsets) if mo >= np.abs(offset)])
+
+            # Choose the next higher possible value, unless value is higher than all possible values
+            if value > possible_ranges[-1]:
+                newvalue = possible_ranges[-1]
+            else:
+                newvalue = possible_ranges[np.where(possible_ranges - value >= 0)][0]
+
+            if value != newvalue:
+                print(f'Range {value}V is not possible for offset: {offset}, atten: {atten}, coupling: {coupling}. Using range {newvalue}V.')
 
             self[channel] = newvalue
 
     class _PicoOffset(_PicoSetting):
-        # _PicoOffset needs to be aware of the range setting in order to determine valid values
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
-            self.possible_ranges = (0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)
-            self.max_offsets = (.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)
             self['A'] = 0.0
             self['B'] = 0.0
             self['C'] = 0.0
             self['D'] = 0.0
 
         def set(self, channel, value):
-            channelrange = self._parent.range[channel]
-            channelatten = self._parent.atten[channel]
-            maxoffset = self.max_offsets[self.possible_ranges.index(channelrange / channelatten)] * channelatten
-            if abs(value) < maxoffset:
-                self[channel] = value
+            vrange = self._parent.range[channel]
+            atten = self._parent.atten[channel]
+            coupling = self._parent.coupling[channel]
+            # Default value for new setting (no change)
+            oldvalue = self[channel]
+            newvalue = oldvalue
+
+            if coupling == 'DC50':
+                possible_ranges = self.possible_ranges_50 * atten
+                max_offsets = self.max_offsets_50 * atten
             else:
-                clippedvalue = np.sign(value) * maxoffset
-                print(('{} is above the maximum offset for channel {} with range {} V. '
-                    'Setting offset to {}.').format(value, channel, channelrange, clippedvalue))
-                self[channel] = clippedvalue
+                possible_ranges = self.possible_ranges_1M * atten
+                max_offsets = self.max_offsets_1M * atten
+
+            # I assume we are currently set to a possible range
+            max_offset = max_offsets[np.where(vrange == possible_ranges)][0]
+
+            if np.abs(value) <= max_offset:
+                newvalue = value
+            else:
+                newvalue = np.sign(value) * max_offset
+
+            if value != newvalue:
+                print(f'Offset {value}V is not possible for range: {vrange}, atten: {atten}, coupling: {coupling}. Using offset {newvalue}V.')
+
+            self[channel] = newvalue
 
     class _PicoAttenuation(_PicoSetting):
         def __init__(self, parent):
@@ -218,8 +248,24 @@ class Picoscope(object):
             self['B'] = 1.0
             self['C'] = 1.0
             self['D'] = 1.0
-            # I am not sure what the possible values of this setting are ..
-            #self.possible =
+
+        def set(self, channel, value):
+            # It's a little different to set this setting, because it changes the possible values
+            # of other settings, and therefore must modify them at the same time
+            # You could either try to keep the same ranges/offsets as before the attenuation change
+            # Or you could just scale the ranges/offsets with the attenuation
+            # The latter is simpler, so we'll do that.
+            # ALL attenuation settings are possible.  I don't know whether this is ok.
+            vrange = self._parent.range[channel]
+            offset = self._parent.offset[channel]
+            coupling = self._parent.coupling[channel]
+            oldvalue = self[channel]
+            self[channel] = value
+
+            print('Scaling the range and offset settings by the new attenuation setting')
+            # Don't use the set methods, because they can assume that other settings are already valid
+            self._parent.range[channel] *= value/oldvalue
+            self._parent.offset[channel] *= value/oldvalue
 
     class _PicoCoupling(_PicoSetting):
         def __init__(self, parent):
@@ -228,13 +274,30 @@ class Picoscope(object):
             self['B'] = 'DC'
             self['C'] = 'DC'
             self['D'] = 'DC'
-            self.possible = ('DC', 'AC', 'DC50')  # I think?
 
         def set(self, channel, value):
-            if value in self.possible:
-                self[channel] = value
+            # Don't allow it if the range and offset are not compatible
+            # Could also coerce to valid values, but I am tired of writing all this stuff
+            vrange = self._parent.range[channel]
+            offset = self._parent.offset[channel]
+            atten = self._parent.atten[channel]
+
+            if value == 'DC50':
+                possible_ranges = self.possible_ranges_50 * atten
+                max_offsets = self.max_offsets_50 * atten
             else:
-                print('{} is not a valid coupling setting.'.format(value))
+                possible_ranges = self.possible_ranges_1M * atten
+                max_offsets = self.max_offsets_1M * atten
+
+            if vrange in possible_ranges:
+                where = np.where(vrange == possible_ranges)[0][0]
+                if np.abs(offset) <= max_offsets[where]:
+                    self[channel] = value
+
+            # Fukken logic structures
+            if self[channel] != value:
+                # If we didn't make it to the bottom of the last set of conditions
+                print(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
 
 
     def squeeze_range(self, data, ch=['A', 'B', 'C', 'D']):
@@ -263,6 +326,7 @@ class Picoscope(object):
         Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
         Don't pass int8 signals, would then need channel information to convert to V
         '''
+        # TODO: Consider coupling!
         # Consider the attenuation!
         possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
         # Sadly, each range has a different maximum possible offset
@@ -488,10 +552,13 @@ class RigolDG5000(object):
     But we spent a lot of time learning its quirks and are kind of stuck with it.
 
     Do not send anything to the Rigol that differs in any way from what it expects,
-    or it will just hang forever and need to be manually restarted along with the entire python shell.
+    or it will just hang forever and need to be manually restarted along with the entire python kernel.
+
+    Certain commands just randomly cause the machine to crash in the same way.  Such as when you try
+    to query the number of points stored in the NV memory
     '''
-    # TODO: make the SCPI wrapping functions do a query if you pass None
     def __init__(self, addr=None):
+        self.verbose = False
         try:
             if addr is None:
                 addr = self.get_visa_addr()
@@ -502,6 +569,8 @@ class RigolDG5000(object):
         # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
         # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
         self.screensaver(False)
+        # Store here the last waveform that was programmed, so that we can skip uploading it if it
+        # hasn't changed
         self.volatilewfm = []
 
     def get_visa_addr(self):
@@ -525,152 +594,251 @@ class RigolDG5000(object):
         except:
             print('Connection to Rigol AWG failed.')
 
+    def set_or_query(self, cmd, setting=None):
+        # Sets or returns the current setting
+        if setting is None:
+            if self.verbose: print(cmd + '?')
+            reply = self.query(cmd + '?').strip()
+            # Convert to numeric?
+            replymap = {'ON': 1, 'OFF': 0}
+
+            def will_it_float(value):
+                try:
+                    float(value)
+                    return True
+                except ValueError:
+                    return False
+
+            if reply in replymap.keys():
+                return replymap[reply]
+            elif reply.isnumeric():
+                return int(reply)
+            elif will_it_float(reply):
+                return float(reply)
+            else:
+                return reply
+        else:
+            if self.verbose: print(f'{cmd} {setting}')
+            self.write(f'{cmd} {setting}')
+            return None
+
+    @staticmethod
+    def write_wfm_file(wfm, filepath='wfm.RAF'):
+        '''
+        The only way to get anywhere near the advertised number of samples
+        theoretically works up to 16 MPts = 2**24 samples
+        wfm should be between -1 and 1, this will convert it to uint16
+        '''
+        # Needs extension RAF!
+        filepath = os.path.splitext(filepath)[0] + '.RAF'
+
+        if np.any(np.abs(wfm) > 1):
+            print('Waveform must be in [-1, 1].  Clipping it!')
+            A = np.clip(A, -1, 1)
+        wfm = ((wfm + 1)/2 * (2**14 - 1))
+        wfm = np.round(wfm).astype(np.dtype('H'))
+        print(f'Writing binary waveform to {filepath}')
+        with open(filepath, 'wb') as f:
+            f.write(wfm.tobytes())
+
+
     ### These directly wrap SCPI commands that can be sent to the rigol AWG
 
-    def shape(self, shape='SIN', ch=1):
+    def shape(self, shape=None, ch=1):
         '''
         Change the waveform shape to a built-in value. Possible values are:
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|
         GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
         '''
-        self.write('SOURCE{}:FUNC:SHAPE {}'.format(ch, shape))
+        return self.set_or_query(f'SOURCE{ch}:FUNC:SHAPE', shape)
 
-    def outputstate(self, state=None, ch=1):
+    def output(self, state=None, ch=1):
         ''' Turn output state on or off '''
-        if state is None:
-            return self.query(':OUTPUT{}:STATE?'.format(ch)).strip() == 'ON'
-        else:
-            statestr = 'ON' if state else 'OFF'
-            self.write(':OUTPUT{}:STATE {}'.format(ch, statestr))
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+        return self.set_or_query(f':OUTPUT{ch}:STATE', state)
 
-    def frequency(self, freq, ch=1):
+    def frequency(self, freq=None, ch=1):
         ''' Set frequency of AWG waveform.  Not the sample rate! '''
-        self.write(':SOURCE{}:FREQ:FIX {}'.format(ch, freq))
+        return self.set_or_query(f':SOURCE{ch}:FREQ:FIX', freq)
 
-    def amplitude(self, amp, ch=1):
-        ''' Set amplitude of AWG waveform '''
-        self.write(':SOURCE{}:VOLTAGE:AMPL {}'.format(ch, amp))
+        self.write(":SOURC{}:PER {}".format(ch, period))
+
+    def period(self, period=None, ch=1):
+        ''' Set period of AWG waveform.  Not the sample period! '''
+        return self.set_or_query(f':SOURCE{ch}:PERiod:FIX', period)
+
+    def phase(self, phase=None, ch=1):
+        ''' Set phase offset of AWG waveform '''
+        if phase is not None:
+            phase = phase % 360
+        return self.set_or_query(f':SOURCE{ch}:PHASe:ADJust', phase)
+
+    def amplitude(self, amp=None, ch=1):
+        ''' Set amplitude of AWG waveform.  Rigol defines this as peak-to-peak. '''
+        return self.set_or_query(f':SOURCE{ch}:VOLTAGE:AMPL', amp)
 
     def offset(self, offset, ch=1):
         ''' Set offset of AWG waveform '''
-        self.write(':SOURCE{}:VOLT:OFFS {}'.format(ch, offset))
+        return self.set_or_query(f':SOURCE{ch}:VOLT:OFFS', offset)
 
-    def output_resistance(self, r=50, ch=1):
-        ''' Manual says you can change output resistance from 1 to 10k'''
+    def output_resistance(self, r=None, ch=1):
+        '''
+        Manual says you can change output resistance from 1ohm to 10kohm
+        I think this is just mistranslated chinese meaning the resistance of the load
+        '''
         # Default is infinity??
-        self.write('OUTPUT{}:IMPEDANCE {}'.format(ch, r))
+        return self.set_or_query(f'OUTPUT{ch}:IMPEDANCE', r)
 
-    def sync(self, state=True):
+    def sync(self, state=None):
         ''' Can turn on/off the sync output (on rear) '''
-        statestr = 'ON' if state else 'OFF'
-        self.write('OUTPUT{}:SYNC ' + statestr)
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+        return self.set_or_query(f'OUTPUT{ch}:SYNC', state)
 
-    def screensaver(self, state=False):
+    def screensaver(self, state=None):
         ''' Turn the screensaver on or off.
         Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
-        statestr = 'ON' if state else 'OFF'
-        self.write(':DISP:SAV ' + statestr)
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+        return self.set_or_query(':DISP:SAV', state)
 
-    def ramp_symmetry(self, percent=50, ch=1):
-        ''' Change the symmetry of a ramp output.
+    def ramp_symmetry(self, percent=None, ch=1):
+        ''' The symmetry of a ramp output.
         Refers to the sweep rates of increasing/decreasing ramps. '''
-        self.write('SOURCE{}:FUNC:RAMP:SYMM {}'.format(ch, percent))
+        return self.set_or_query(f'SOURCE{ch}:FUNC:RAMP:SYMM', percent)
 
-    def dutycycle(self, percent=50, ch=1):
-        ''' Change the duty cycle of a square output. '''
-        self.write('SOURCE{}:FUNC:SQUare:DCYCle {}'.format(ch, percent))
+    def dutycycle(self, percent=None, ch=1):
+        ''' The duty cycle of a square output. '''
+        return self.set_or_query(f'SOURCE{ch}:FUNC:SQUare:DCYCle', percent)
 
-    def error(self, ):
+    def interp(self, mode=None):
+        ''' Interpolation mode of volatile waveform.  LINear, SINC, OFF '''
+        if mode is not None:
+            if not isinstance(mode, str):
+                # Use the boolean value of whatever the heck you passed
+                mode = 'LIN' if mode else 'OFF'
+        return self.set_or_query('TRACe:DATA:POINts:INTerpolate', mode)
+
+    def error(self):
         ''' Get error message from rigol '''
-        return self.query(':SYSTem:ERRor?')
+        return self.query(':SYSTem:ERRor?').strip()
 
     # <<<<< For burst mode
-    def ncycles(self, n, ch=1):
+    def ncycles(self, n=None, ch=1):
         ''' Set number of cycles that will be output in burst mode '''
         if n > 1000000:
+            # Rigol does not give error, leaving you to waste a bunch of time discovering this
             raise Exception('Rigol can only pulse maximum 1,000,000 cycles')
         else:
-            self.write(':SOURCE{}:BURST:NCYCLES {}'.format(ch, n))
+            return self.set_or_query(f':SOURCE{ch}:BURST:NCYCLES', n)
 
-    def trigsource(self, source='MAN', ch=1):
+    def trigsource(self, source=None, ch=1):
         ''' Change trigger source for burst mode. INTernal|EXTernal|MANual '''
-        self.write(':SOURCE{}:BURST:TRIG:SOURCE {}'.format(ch, source))
+        return self.set_or_query(f':SOURCE{ch}:BURST:TRIG:SOURCE', source)
 
     def trigger(self, ch=1):
         '''
         Send signal to rigol to trigger immediately.  Make sure that trigsource is set to MAN:
         trigsource('MAN')
         '''
-        self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
+        if self.trigsource() != 'MAN':
+            raise Exception('You must first set trigsource to MANual')
+        else:
+            self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
 
-    def burstmode(self, mode='TRIG', ch=1):
-        '''Set the burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
-        self.write(':SOURCE{}:BURST:MODE {}'.format(ch, mode))
+    def burstmode(self, mode=None, ch=1):
+        '''Set the mode of burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
+        return self.set_or_query(f':SOURCE{ch}:BURST:MODE', mode)
 
     def burst(self, state=None, ch=1):
         ''' Turn the burst mode on or off '''
         # I think rigol is retarded, so it doesn't always turn off the burst mode on the first command
         # It switches something else off instead, but only if you set up a waveform after entering burstmode
         # The fix is to just issue the command twice..
-        statestr = 'ON' if state else 'OFF'
-        self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
-        self.write(':SOURCE{}:BURST:STATE {}'.format(ch, statestr))
+        if state is not None:
+            state = 'ON' if state else 'OFF'
+            self.set_or_query(f':SOURCE{ch}:BURST:STATE', state)
+        return self.set_or_query(f':SOURCE{ch}:BURST:STATE', state)
 
     # End for burst mode >>>>>
 
+    def load_wfm_usbdrive(self, filename='wfm.RAF', wait=True):
+        '''
+        Load waveform from usb drive.  Should be a binary sequence of unsigned shorts.
+        File needs to have extension .RAF
+        This is the only way to reach the advertised number of waveform samples, or anywhere near it
+        Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
+        '''
+        self.write(':MMEMory:CDIR "D:\"')
+        self.write(f':MMEMory:LOAD "{filename}"')
+        if wait:
+            oldtimeout = self.conn.timeout
+            # set timeout to a minute!
+            self.conn.timeout = 60000
+            # Rigol won't reply to this until it is done loading the waveform
+            self.idn()
+            self.conn.timeout = oldtimeout
 
-    def writebinary(self, scpicmd, values):
+    def writebinary(self, message, values):
+        self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
 
-        ##self.inst.write_binary_values(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i], datatype='H', is_big_endian=False)
-        self.inst.write_binary_values(scpicmd, values, datatype='H', is_big_endian=False)
-
-    def WriteWF2AWGBinary(self, dt, A):
+    def load_wfm_binary(self, wfm, ch=1):
         """
-        This absolutely will not work!  copy pasted from Hans code, for reference if one ever decides to implement this
-        :param dt: time interval
-        :param A: Waveform 0<=A<=1 or -1<=A<=0
-        :return: nothing
-        This is derived from a working example and has been verified to always work. Reprogramming always required.
-        Method #3: Binary transfer. Needs to happen in batches of 16384 where the number of allowed batches is: 1, 2, 4, 8, 16 and 32
-        len(A) is NOT len(A) = # of points programmed"""
+        TODO: write about all the bullshit involved with this
+        I have seen these waveforms simply fail to trigger unless you wait a second after enabling the channel output
+        You need to wait after loading this waveform and after turning the output on, sometimes an obscene amount of time?
+        the "idle level" in burst mode will be the first value of the waveform ??
+        """
+        CHUNK = 2**14
+        # vertical resolution
+        VRES = 2**14
+        # pad with zero value
+        PADVAL = 2**13
 
-        CHUNK = 16384
-        CHUNK1 = CHUNK - 1
-        CHUNK2 = round(CHUNK /2)
-        nA = len(A)
-        nFullChunks, LastLen = int(np.floor(nA / CHUNK)), int(np.fmod(nA, CHUNK))
-        if LastLen == 0:
-            nFullChunks = nFullChunks - 1
+        nA = len(wfm)
+        A = np.array(wfm)
 
-        A = np.array(A)
-        A = (((A + 1) / 2 * CHUNK1).astype(int)).tolist()
+        print(f'You are trying to program {nA} pts')
 
-        Pads = (nFullChunks + 1) * CHUNK - nA                            # length is CHUNK = 16384
-        A.extend([CHUNK2] * Pads)
-        self.NptsProg = len(A)
+        if np.any(np.abs(A) > 1):
+            print('Waveform must be in [-1, 1].  Clipping it!')
+            A = np.clip(A, -1, 1)
 
-        MAGICLENGTHS = [16384, 32768, 65536, 131072, 262144, 524288]
-        if self.NptsProg not in MAGICLENGTHS:
-            Amagic = next(x for x in MAGICLENGTHS if x > self.NptsProg)
-            MorePads = Amagic - self.NptsProg
-            A.extend([CHUNK2] * MorePads)
+        # change from float interval [-1, 1] to int interval [0, 2^14-1]
+        # Better to round than to floor
+        A = np.int32(np.round(((A + 1) / 2 * (VRES - 1))))
 
-        self.NptsProg = len(A)
-        A2send = [A[i:i + CHUNK] for i in range(0, self.NptsProg, CHUNK)]
+        # Pad A to a magic length
+        MAGICLENGTHS = np.array([2**14, 2**15, 2**16, 2**17, 2**18, 2**19])
+        Nptsprog = MAGICLENGTHS[np.where(MAGICLENGTHS >= nA)[0][0]]
+        A = np.append(A, PADVAL * np.ones(Nptsprog - nA, dtype='int32'))
 
-        if MONITORCMDS or nA > 50000:
-            print("Programming Rigol by method 3: want " + str(nA) + " points, sending " + str(self.NptsProg))
-        period = dt * (self.NptsProg - 1)
-        self.write(":SOURC{}:PER {}".format(self.Ch, period))
-        self.write(":DATA:POIN VOLATILE, " + str(CHUNK1 * (len(A2send))))## to send arb this way it must always be a multiple of 16383 points.
+        NptsProg = len(A)
+        Nchunks = int(NptsProg / CHUNK)
+        print(f'I am sending {NptsProg} points in {Nchunks} chunks')
 
-        for i in range(len(A2send) - 1):
-            self.writeBinary(":TRAC:DATA:DAC16 VOLATILE,CON,", A2send[i])
-            if self.IsUSB: time.sleep(USBWAIT)
+        nptsProg = len(A)
 
-        self.writeBinary(":TRAC:DATA:DAC16 VOLATILE,END,", A2send[-1])
+        A2send = [A[i:i + CHUNK].tolist() for i in range(0, nptsProg, CHUNK)]
 
-    def load_wfm(self, waveform):
+        # This command doesn't seem to be necessary?
+        # Does it hurt?
+        self.write(":DATA:POIN VOLATILE, " + str(nptsProg))
+
+        for chunk in A2send[:-1]:
+            self.writebinary(":TRAC:DATA:DAC16 VOLATILE,CON,", chunk)
+            # What the manual says to do:
+            #self.writebinary(":TRAC:DATA:DAC16 VOLATILE,CON,#532768", chunk)
+
+            # Apparently need for USB (trial and error)
+            #time.sleep(0.02)
+            time.sleep(0.1)
+
+        self.writebinary(":TRAC:DATA:DAC16 VOLATILE,END,", A2send[-1])
+
+
+    def load_wfm_strings(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
         Data will be normalized.  Use self.amplitude() to set the amplitude.
@@ -697,6 +865,7 @@ class RigolDG5000(object):
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA VOLATILE,{}'.format(wfm_str))
 
+
     def load_wfm_ints(self, waveform):
         '''
         Load some data as an arbitrary waveform to be output.
@@ -705,10 +874,15 @@ class RigolDG5000(object):
         and otherwise will start outputting immediately.
         convert to integers so that we can send more data points!
         Supposedly gets to about 40,000 samples
+        I have seen it interpolate to only ~10,000 points, which is very unexpected!
+        it should interpolate to the entire size of the waveform memory
+        or at the very least, 2**14 = 16k samples!
+        Maybe we need to issue a :TRACe:DATA:POINTs VOLATILE, <value> command to "set the number of initial points"
         '''
         # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
         # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
         # Construct a string out of the waveform
+        # TODO: Maybe also detect an offset to use?  Then we can make full use of the 12 bit resolution
         waveform = np.array(waveform, dtype=np.float32)
         maxamp = np.max(np.abs(waveform))
         if maxamp != 0:
@@ -723,11 +897,6 @@ class RigolDG5000(object):
         # This command switches out of burst mode for some stupid reason
         self.write(':TRAC:DATA:DAC VOLATILE,{}'.format(wfm_str))
 
-    def interp(self, interp=True):
-        ''' Set AWG datapoint interpolation mode '''
-        modestr = 'LIN' if interp else 'OFF'
-        self.write('TRACe:DATA:POINts:INTerpolate {}'.format(modestr))
-
     def color(self, c='RED'):
         '''
         Change the highlighting color on rigol screen for some reason
@@ -738,12 +907,42 @@ class RigolDG5000(object):
     def idn(self):
         return self.query('*IDN?').replace('\n', '')
 
+    def read_volatile_wfm(self):
+        '''
+        Sometimes rigol outputs bizarre unaccountable waveforms.
+        Use this to see what is in the volatile memory
+
+        Takes a really long time
+        Might fail outright
+        Rigol is quite happy to randomly not respond to these kinds of commands
+        '''
+        numpackets = int(self.query(':TRACE:DATA:LOAD? VOLATILE'))
+        numpoints = 2**14 * numpackets
+
+        # from the programming guide:
+        # This command is only available when the current output waveform is arbitrary waveform
+        # and the type of the arbitrary waveform is volatile.
+
+        # Otherwise it just gives a parameter error and doesn't reply..
+        # In fact it can do that even when you ARE outputting a volatile arb. waveform..
+        # Seems it only works when the packet size is 1
+
+        values = []
+        for i in range(1, numpoints + 1):
+            # Takes about 5 ms, but I think much longer for different parts of the memory..
+            val = int(self.query(f':TRACE:DATA:VAL? VOLATILE,{i}'))
+            print(val)
+            values.append(val)
+            #time.sleep(.05)
+
     ### These use the wrapped SCPI commands to accomplish something useful
 
-    def load_volatile_wfm(self, waveform, duration, ch=1, interp=True):
+    def load_volatile_wfm(self, waveform, duration, offset=0, ch=1, interp=True):
         '''
         Load waveform into volatile memory, but don't trigger
-        NOTICE: This will leave burst mode as a side-effect!  Thank RIGOL.
+        NOTICE: This will momentarily leave burst mode as a side-effect!  Thank RIGOL.
+        The output will be toggled off to prevent output of free-running waveform before
+        we turn burst mode back on.
         '''
         # toggling output state is slow, clunky, annoying, and should not be necessary.
         # it might also cause some spikes that could damage the device.
@@ -756,28 +955,30 @@ class RigolDG5000(object):
         if len(waveform) > 512e3:
             raise Exception('Too many samples requested for rigol AWG (probably?)')
 
-        burst_state = self.query(':SOURCE{}:BURST:STATE?'.format(ch)).strip() == 'ON'
+        burst_state = self.burst(ch=ch)
         # Only update waveform if necessary
         if np.any(waveform != self.volatilewfm):
             if burst_state:
-                output_state = self.outputstate(None, ch=ch)
+                output_state = self.output(None, ch=ch)
                 if output_state:
-                    self.outputstate(False, ch=ch)
+                    self.output(False, ch=ch)
                 # This command switches out of burst mode for some stupid reason
                 self.load_wfm_ints(waveform)
                 self.burst(True, ch=ch)
                 if output_state:
-                    self.outputstate(True, ch=ch)
+                    self.output(True, ch=ch)
             else:
                 self.load_wfm_ints(waveform)
             self.volatilewfm = waveform
         else:
             # Just switch to the arbitrary waveform that is already in memory
-            self.write(':SOURce{}:FUNC:SHAPe USER'.format(ch))
+            self.shape('USER', ch)
         freq = 1. / duration
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))
         self.amplitude(2*maxamp, ch=ch)
+        # Apparently offset affects the arbitrary waveforms, too
+        self.offset(offset, ch)
         # Turn on interpolation for IVs, off for steps
         self.interp(interp)
 
@@ -788,7 +989,7 @@ class RigolDG5000(object):
         self.ncycles(n, ch=ch)
         self.burst(True, ch=ch)
 
-    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
+    def load_builtin_wfm(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, phase=0, ch=1):
         '''
         Set up a built-in waveform to pulse n times
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
@@ -807,33 +1008,37 @@ class RigolDG5000(object):
         self.amplitude(2*amp, ch=ch)
         self.offset(offset, ch=ch)
         self.frequency(freq, ch=ch)
+        # Necessary because Rigol is terrible?
+        self.phase(0, ch=ch)
+        self.phase(phase, ch=ch)
 
 
     def continuous_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
         # Get out of burst mode
         self.burst(False, ch=ch)
-        self.outputstate(True)
+        self.output(True)
 
-    def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, n=1, ch=1):
+    def pulse_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, phase=0, n=1, ch=1):
         '''
         Pulse a built-in waveform n times
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
         HAVersine|LORentz|ARBPULSE|DUAltone
+        TODO: I think some of these waveforms have additional options.  Add them
         '''
         self.setup_burstmode(n=n)
-        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
-        self.outputstate(True, ch=ch)
+        self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, phase=phase, ch=ch)
+        self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 
-    def continuous_arbitrary(self, waveform, duration=None, ch=1):
-        self.load_volatile_wfm(waveform, duration=duration, ch=ch)
+    def continuous_arbitrary(self, waveform, duration=None, offset=0, ch=1):
+        self.load_volatile_wfm(waveform, duration=duration, offset=offset, ch=ch)
         # Get out of burst mode
         self.burst(False, ch=ch)
-        self.outputstate(True)
+        self.output(True)
 
-    def pulse_arbitrary(self, waveform, duration, n=1, ch=1, interp=True):
+    def pulse_arbitrary(self, waveform, duration, n=1, ch=1, offset=0, interp=True):
         '''
         Generate n pulses of the input waveform on Rigol AWG.
         Trigger immediately.
@@ -841,9 +1046,9 @@ class RigolDG5000(object):
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
         '''
         # Load waveform
-        self.load_volatile_wfm(waveform=waveform, duration=duration, ch=ch, interp=interp)
-        self.setup_burstmode(n=n)
-        self.outputstate(True, ch=ch)
+        self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
+        self.setup_burstmode(n=n, ch=ch)
+        self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 
@@ -981,7 +1186,7 @@ class Keithley2600(object):
             Irange = np.max(np.abs(ilist))
         self.write('SweepIList(sweeplist, {}, {}, {}, {}, {})'.format(Vrange, Vlimit, nplc, delay, Irange))
 
-    def it(self, sourceVA, sourceVB, points, interval, rangeI, limitI, nplc=1):
+    def it(self, sourceVA=0, sourceVB=0, points=10, interval=.1, rangeI=0, limitI=0, nplc=1):
         '''Wraps the constantVoltageMeasI lua function defined on keithley'''
         # Call constantVoltageMeasI
         # TODO: make sure the inputs are valid
@@ -1142,12 +1347,12 @@ class UF2000Prober(object):
     indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
     micron system is centered somewhere far away from the chuck
 
-	The coordinate systems sound easy, but will confuse you for days
-	in part because the coordinate system and units used for setting
-	and getting the position are sometimes different and sometimes the same!!
-	e.g. when reading the position in microns, the x and y axes are reflected!!
+    The coordinate systems sound easy, but will confuse you for days
+    in part because the coordinate system and units used for setting
+    and getting the position are sometimes different and sometimes the same!!
+    e.g. when reading the position in microns, the x and y axes are reflected!!
 
-	I attempted to hide all of this nonsense from the user of this class
+    I attempted to hide all of this nonsense from the user of this class
     !!!!!!
 
     UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
@@ -1604,7 +1809,7 @@ class UF2000Prober(object):
         yum_rel_prober = yum_rel
         str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
         str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
-		# manual says the unit is 1e-6 meter
+        # manual says the unit is 1e-6 meter
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
@@ -1615,7 +1820,6 @@ class UF2000Prober(object):
         xum_rel = int(xum_abs - xum_curr)
         yum_rel = int(yum_abs - yum_curr)
         self.moveRelative_um(xum_rel, yum_rel)
-
 
 
 #########################################################
@@ -1901,10 +2105,137 @@ class TektronixDPO73304D(object):
     def trigger_position(self, position):
         self.write('HORIZONTAL:POSITION ' + str(position))
 
+
+#########################################################
+# Erik Wichmann's Digipot circuit ###################
+#########################################################
+class WichmannDigipot(object):
+    '''
+    Probing circuit developed by Erik Wichmann to provide remote series resistance switching
+    There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
+    There are 31 ~log spaced resistance values per digipot
+
+    TODO: Change arduino command system to not need entire state in one chunk
+    should be three commands, for setting wiper1, wiper2, and relay
+
+    TODO: Is there a way to poll the current state from the microcontroller?
+    The class instance might not be aware of it when we first connect.
+
+    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
+
+    TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
+    TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
+    '''
+    def __init__(self, addr='COM10'):
+        # BORG
+        self.__dict__ = persistent_state.digipot_state
+        self.connect(addr)
+        # map from setting to resistance -- needs to be measured by source meter
+        # TODO: does the second digipot have a different calibration?
+        #self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
+        #              15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
+        #              2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
+        #              324, 306, 306]
+        # Keithley calibration at 1V applied 2019-07-17
+        self.Rlist = [43158.62, 38438.63, 34301.27, 30596.64, 27306.63, 24354.61, 21752.65,
+                      19413.07, 17336.84, 15461.77, 13818.91, 12338.34, 11033.65, 8812.41,
+                      7064.97, 5672.71, 4539.82, 3666.53, 2961.41, 2412.55, 1960.89, 1591.29,
+                      1307.28, 1083.48, 902.42, 711.69, 570.92, 472.24, 426.55, 377.22, 342.16,
+                      316.79, 299.09, 299.06]
+        self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
+
+    def connect(self, addr='COM10'):
+        if not self.connected():
+            self.conn = serial.Serial(addr, timeout=1)
+            self.write = self.conn.write
+            self.close = self.conn.close
+            # We don't know what state we are in initially
+            # For now we will just set them all to 1 when we connect
+            self.bypassstate = 1
+            self.wiper1state = 0
+            self.wiper2state = 0
+            self.write('0 0 1'.encode())
+
+    @property
+    def Rstate(self):
+        # Returns the current set resistance state
+        # TODO: depends on the configuration (single, series, parallel)
+        return self.Rmap[self.wiper2state]
+
+    def connected(self):
+        # Not a very smart way to determine if we are connected
+        if hasattr(self,'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
+
+    def set_bypass(self, state):
+        '''
+        State:
+        True = connected
+        False = not connected
+        '''
+        # Keep current wiper state, set the bypass relay state
+        w1 = self.wiper1state
+        w2 = self.wiper2state
+        self.write(f'{w1} {w2} {state}'.encode())
+        self.bypassstate = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_wiper(self, state, n=2):
+        '''
+        Change the digipot wiper setting
+        n=2 is main potentiometer on chip
+        '''
+        bypass = self.bypassstate
+
+        if n==1:
+            w2 = self.wiper2state
+            self.write(f'{state} {w2} {bypass}'.encode())
+            self.wiper1state = state
+        elif n == 2:
+            w1 = self.wiper1state
+            self.write(f'{w1} {state} {bypass}'.encode())
+            self.wiper2state = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_R(self, R, n=2):
+        if R == 0:
+            self.set_bypass(1)
+            #Set wiper to highest value
+            self.set_wiper(0)
+            return 0
+        else:
+            # Find closest resistance value
+            # I hope the dictionary returns values and keys in the same order
+            Rmap = list(self.Rmap.values())
+            wvals= list(self.Rmap.keys())
+            i_closest = np.argmin(np.abs(R - np.array(Rmap)))
+            R_closest = Rmap[i_closest]
+            w_closest = wvals[i_closest]
+            print(i_closest)
+            self.set_wiper(w_closest, n)
+            # Could have sent one command, but I'm sending two
+            self.set_bypass(0)
+            time.sleep(1e-3)
+            return R_closest
+
+    def set_series_R(self, R):
+        # TODO calculate nearest series value
+        pass
+
+    def set_parallel_R(self, R):
+        # TODO calculate nearest parallel value
+        pass
+
+
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
 #########################################################
-
 class PG5(object):
     def __init__(self, addr='ASRL3::INSTR'):
         try:
@@ -1958,4 +2289,90 @@ class PG5(object):
     def trigger(self):
         '''Executes a pulse'''
         self.write(':INIT')
+
+
+#########################################################
+# Temperature PID-Control ###############################
+#########################################################
+class EugenTempStage(object):
+    # Global Variables
+    # Resistor-Values bridge
+    r_1 = 9975
+    r_3 = 9976
+    r_4 = 1001
+    # Gain from instrumental-opamp
+    opamp_gain = 12.55
+    # Voltage Bridge
+    volt_now = 10
     
+    def __init__(self, addr='COM7', baudrate=9600):
+        # BORG
+        self.__dict__ = persistent_state.tempstage_state
+        try:
+            self.connect(addr, baudrate)
+        except:
+            print('Arduino connection failed at {}'.format(addr))
+
+    def connect(self, addr, baudrate):
+        if not self.connected():
+            self.conn = serial.Serial(addr, baudrate)
+            self.write = self.conn.write
+            self.close = self.conn.close
+
+    def connected(self):
+        return hasattr(self, 'conn')
+
+    def analogOut(self, voltage):
+        ''' Tell arduino to output a voltage on pin 9 '''
+        # Arduino will take the set voltage in bits.
+        vmax = 5
+        numbits = 12
+        # Find the closest value that can be output.
+        vstep = vmax / (2**numbits - 1)  # 5 /4095
+        value = voltage / vstep  # exact value for analogWrite()-function
+        cmd_str = '0,{};'.format(value).encode()
+        self.write(cmd_str)
+        actualvoltage = vstep * value
+        return actualvoltage
+
+    def analogIn(self, channel):
+        # Function to get Voltage from Bridge
+        # Arduino will return the voltage in bits
+        vmax = 5
+        numbits = 10
+        vstep = round(vmax / (2**numbits - 1), 5)# 5 /1023
+        cmd_str = '1,{};'.format(channel).encode()
+        self.write(cmd_str)
+
+        reply = self.conn.readline().decode()
+        adc_value = float(reply.split(',')[-1].strip().strip(';'))
+        voltage = adc_value * vstep
+        # print('Sent command to read analog input on pin {}'.format(channel))
+        return voltage
+
+    def set_temperature(self, temp):
+        #Temperature Setpoint Function, should be between 0-100Celsius
+
+        if temp > 100:
+            print('Its too HOT! DANGERZONE!')
+
+        if temp <= 100 and temp >= 0:
+            pt_res = round((1000 * (1.00385**temp)), 1)
+            volt_zaehler = self.volt_now * (pt_res * (self.r_3 + self.r_4) - self.r_4 * (self.r_1 + pt_res))
+            volt_nenner = (self.r_4 + self.r_3) * self.r_1 + (self.r_3 + self.r_4) * pt_res
+            volt_bruch = volt_zaehler / volt_nenner
+            volt_set = volt_bruch * self.opamp_gain
+            temp_set = self.analogOut(volt_set)
+            #print('Sent command to output {0:.3f} Volt'.format(temp_set))
+            print('Temperature set to {0:.2f} \u00b0C'.format(temp))
+        else:
+            print('Its too COLD! Can not do that :-/')
+
+    def read_temperature(self):
+
+        volt_bridge = self.analogIn(1) / self.opamp_gain
+        pt_zaehler = (((self.r_3 + self.r_4) * volt_bridge) + (self.volt_now * self.r_4)) * self.r_1
+        pt_nenner = ((self.r_3 + self.r_4) * self.volt_now) - (volt_bridge * (self.r_3 + self.r_4) + (self.r_4 * volt_now))
+        pt_res = round((pt_zaehler / pt_nenner), 1)
+        temp_read = np.log(pt_res / 1000) / np.log(1.00385)
+        return temp_read
