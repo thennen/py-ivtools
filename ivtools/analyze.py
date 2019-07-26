@@ -1322,6 +1322,43 @@ def apply(data, func, column):
     return dataout
 
 
+@ivfunc
+def subtract_offset(data, x='V', y='I', percentile=1, debug=False):
+    '''
+    Subtract an offset from y by looking at data points with small values of x
+
+    Possibilities for data selection:
+    1. Certain low percentile of x data? (fixed percentile or data dependent?)
+    2. Fixed number of datapoints nearest to x=0?
+    3. Values below a fixed threshold of abs(x)?
+    then:
+    4. Subtract the average of the selected y values
+    5. Do a linear fit to the selected x,y values and subtract the y intercept
+
+    4 is better than 5 in the case that you don't have symmetric data
+    '''
+    X = data[x]
+    lenX = len(X)
+    absX = np.abs(X)
+    Y = data[y]
+    ### Select datapoints close to x=0
+    # Need at least two datapoints, so change the percentile if necessary
+    percentile = max(percentile, 2*100/lenX)
+    p = np.percentile(absX, percentile)
+    mask = absX < p
+    line = np.polyfit(X[mask], Y[mask], 1)
+    slope, intercept = line
+    #print(intercept)
+    out = data.copy()
+    out['I'] = out['I'] - intercept
+    if debug:
+        plt.figure()
+        plt.scatter(X, Y)
+        plt.scatter(X[mask], Y[mask])
+        xfit = np.linspace(np.min(X), np.max(X), 10)
+        plt.plot(xfit, np.polyval(line, xfit))
+    return out
+
 def insert(data, key, vals):
     '''
     Insert key:values into list of dicts

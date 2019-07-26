@@ -391,8 +391,9 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.scatter(cycle1, resist1, c='royalblue', **scatterargs)
     ax.scatter(cycle2, resist2,  c='seagreen', **scatterargs)
     #ax.legend(['HRS', 'LRS'], loc=0)
+    engformatter('y', ax)
     ax.set_xlabel('Cycle #')
-    ax.set_ylabel('Resistance / $\\Omega$')
+    ax.set_ylabel('Resistance [$\\Omega$]')
 
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
