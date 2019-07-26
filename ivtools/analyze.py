@@ -589,7 +589,7 @@ def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
     else:
         trigger = np.where((crossings[hyspts-1:] == -1) & (side[:-hyspts] == True))[0] + hyspts
     # Put the endpoints in
-    trigger = np.concatenate(([0], trigger, [len(data['V'])]))
+    trigger = np.concatenate(([0], trigger, [len(data[column])]))
     # Delete triggers that are too close to each other
     # This is not perfect.
     trigthresh = np.diff(trigger) > hyspts
@@ -1494,11 +1494,12 @@ def fft_iv(data, columns=None):
     return dataout
 
 @ivfunc
-def largest_fft_component(data):
+def largest_fft_component(data, columns=None):
     ''' Find the amplitude and phase of the largest single frequency component'''
     # Calculate fft
     fftdata = fft_iv(data)
-    columns = find_data_arrays(fftdata)
+    if columns is None:
+        columns = find_data_arrays(fftdata)
 
     dataout = {}
     for c in columns:
@@ -1508,7 +1509,8 @@ def largest_fft_component(data):
         mag = np.abs(fftdata[c][:halfl])
         phase = np.angle(fftdata[c][:halfl])
         # Find which harmonic is the largest
-        fundi = np.argmax(mag)
+        # NOT DC
+        fundi = np.argmax(mag[1:]) + 1
         #Want a single index dataframe.  Name the columns like this:
         dataout[c + '_freq'] = fundi
         if 'sample_rate' in data:
@@ -1537,7 +1539,22 @@ def fit_sine(data, columns=None, guess_ncycles=None, debug=False):
         guess_ncycles = data['ncycles']
     elif guess_ncycles is None:
         # TODO: could guess based on fft or something, but could be slow
-        raise Exception('If data does not contain ncycles key, then guess_ncycles must be passed!')
+        # !!! SHIT BELOW DOESN'T WORK YET!!!
+        #raise Exception('If data does not contain ncycles key, then guess_ncycles must be passed!')
+        fftdata = fft_iv(data, columns=columns)
+        l = len(fftdata[c])
+        halfl = int(l/2)
+        mag = np.abs(fftdata[c][:halfl])
+        phase = np.angle(fftdata[c][:halfl])
+        # Find which harmonic is the largest
+        # NOT DC
+        fundi = np.argmax(mag[1:]) + 1
+        if 'sample_rate' in data:
+            sample_rate = data['sample_rate']
+        else:
+            # if this doesn't work, then fuck it
+            sample_rate = data['t'][1] - data['t'][0]
+        guess_cycles = 1 / (fundi * 2 / l)
 
     guess_freq = guess_ncycles / dt
 
