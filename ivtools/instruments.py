@@ -36,6 +36,7 @@ import time
 import os
 import pandas as pd
 import serial
+from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
@@ -1843,7 +1844,10 @@ class Eurotherm2408(object):
             self.uid = uid
 
     def connected(self):
-        return hasattr(self, 'conn')
+        if hasattr(self,'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
 
     def write_data(self, mnemonic, data):
         # Select
@@ -2109,7 +2113,7 @@ class TektronixDPO73304D(object):
 #########################################################
 # Erik Wichmann's Digipot circuit ###################
 #########################################################
-class WichmannDigipot(object):
+class WichmannDigipot_new(object):
     '''
     Probing circuit developed by Erik Wichmann to provide remote series resistance switching
     There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
@@ -2124,7 +2128,7 @@ class WichmannDigipot(object):
     TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
     TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
     '''
-    def __init__(self, addr='COM10'):
+    def __init__(self, addr=None):
         # BORG
         self.__dict__ = persistent_state.digipot_state
         self.connect(addr)
@@ -2142,15 +2146,22 @@ class WichmannDigipot(object):
                       316.79, 299.09, 299.06]
         self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
 
-    def connect(self, addr='COM10'):
+    def connect(self, addr=None):
         if not self.connected():
+            if addr is None:
+                # Connect to the first thing you see that has Leonardo in the description
+                matches = list(comgrep('Leonardo'))
+                if any(matches):
+                    addr = matches[0].device
+                else:
+                    print('WichmannDigipot could not find Leonardo')
+                    return
             self.conn = serial.Serial(addr, timeout=1)
             self.write = self.conn.write
             self.open = self.conn.open
             self.close = self.conn.close
-            self.bypassstate
-            self.wiper0state
-            self.wiper1state
+            if self.connected():
+                print(f'Connected to digipot on {addr}')
 
     @property
     def Rstate(self):
@@ -2179,7 +2190,6 @@ class WichmannDigipot(object):
          return self.conn.read_all().decode()
 
     def connected(self):
-        # Not a very smart way to determine if we are connected
         if hasattr(self,'conn'):
             return self.conn.isOpen()
         else:
@@ -2247,6 +2257,147 @@ class WichmannDigipot(object):
         # TODO calculate nearest parallel value
         pass
 
+class WichmannDigipot(object):
+    '''
+    Probing circuit developed by Erik Wichmann to provide remote series resistance switching
+    There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
+    There are 31 ~log spaced resistance values per digipot
+
+    TODO: Change arduino command system to not need entire state in one chunk
+    should be three commands, for setting wiper1, wiper2, and relay
+
+    TODO: Is there a way to poll the current state from the microcontroller?
+    The class instance might not be aware of it when we first connect.
+
+    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
+
+    TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
+    TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
+    '''
+    def __init__(self, addr=None):
+        # BORG
+        self.__dict__ = persistent_state.digipot_state
+        self.connect(addr)
+        # map from setting to resistance -- needs to be measured by source meter
+        # TODO: does the second digipot have a different calibration?
+        #self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
+        #              15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
+        #              2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
+        #              324, 306, 306]
+        # Keithley calibration at 1V applied 2019-07-17
+        self.Rlist = [43158.62, 38438.63, 34301.27, 30596.64, 27306.63, 24354.61, 21752.65,
+                      19413.07, 17336.84, 15461.77, 13818.91, 12338.34, 11033.65, 8812.41,
+                      7064.97, 5672.71, 4539.82, 3666.53, 2961.41, 2412.55, 1960.89, 1591.29,
+                      1307.28, 1083.48, 902.42, 711.69, 570.92, 472.24, 426.55, 377.22, 342.16,
+                      316.79, 299.09, 299.06]
+        self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
+
+    def connect(self, addr=None):
+        if not self.connected():
+            if addr is None:
+                # Connect to the first thing you see that has Leonardo in the description
+                matches = list(comgrep('Leonardo'))
+                if any(matches):
+                    addr = matches[0].device
+                else:
+                    print('WichmannDigipot could not find Leonardo')
+                    return
+            self.conn = serial.Serial(addr, timeout=1)
+            self.write = self.conn.write
+            self.close = self.conn.close
+            # We don't know what state we are in initially
+            # For now we will just set them all to 1 when we connect
+            self.bypassstate = 1
+            self.wiper1state = 0
+            self.wiper2state = 0
+            self.write('0 0 1'.encode())
+            if self.connected():
+                print(f'Connected to digipot on {addr}')
+
+    @property
+    def Rstate(self):
+        # Returns the current set resistance state
+        # TODO: depends on the configuration (single, series, parallel)
+        return self.Rmap[self.wiper2state]
+
+    def connected(self):
+        if hasattr(self,'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
+
+    def writeRead(self,textstr):
+        # Simple send serial Command and print returned answer
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+        self.write(textstr)
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+
+    def set_bypass(self, state):
+        '''
+        State:
+        True = connected
+        False = not connected
+        '''
+        # Keep current wiper state, set the bypass relay state
+        w1 = self.wiper1state
+        w2 = self.wiper2state
+        self.write(f'{w1} {w2} {state}'.encode())
+        self.bypassstate = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_wiper(self, state, n=2):
+        '''
+        Change the digipot wiper setting
+        n=2 is main potentiometer on chip
+        '''
+        bypass = self.bypassstate
+
+        if n==1:
+            w2 = self.wiper2state
+            self.write(f'{state} {w2} {bypass}'.encode())
+            self.wiper1state = state
+        elif n == 2:
+            w1 = self.wiper1state
+            self.write(f'{w1} {state} {bypass}'.encode())
+            self.wiper2state = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_R(self, R, n=2):
+        if R == 0:
+            self.set_bypass(1)
+            #Set wiper to highest value
+            self.set_wiper(0)
+            return 0
+        else:
+            # Find closest resistance value
+            # I hope the dictionary returns values and keys in the same order
+            Rmap = list(self.Rmap.values())
+            wvals= list(self.Rmap.keys())
+            i_closest = np.argmin(np.abs(R - np.array(Rmap)))
+            R_closest = Rmap[i_closest]
+            w_closest = wvals[i_closest]
+            print(i_closest)
+            self.set_wiper(w_closest, n)
+            # Could have sent one command, but I'm sending two
+            self.set_bypass(0)
+            time.sleep(1e-3)
+            return R_closest
+
+    def set_series_R(self, R):
+        # TODO calculate nearest series value
+        pass
+
+    def set_parallel_R(self, R):
+        # TODO calculate nearest parallel value
+        pass
 
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
@@ -2319,8 +2470,8 @@ class EugenTempStage(object):
     opamp_gain = 12.55
     # Voltage Bridge
     volt_now = 10
-    
-    def __init__(self, addr='COM7', baudrate=9600):
+
+    def __init__(self, addr=None, baudrate=9600):
         # BORG
         self.__dict__ = persistent_state.tempstage_state
         try:
@@ -2328,14 +2479,27 @@ class EugenTempStage(object):
         except:
             print('Arduino connection failed at {}'.format(addr))
 
-    def connect(self, addr, baudrate):
+    def connect(self, addr=None, baudrate=9600):
         if not self.connected():
-            self.conn = serial.Serial(addr, baudrate)
+            if addr is None:
+                # Connect to the first thing you see that has Leonardo in the description
+                matches = list(comgrep('Arduino Micro'))
+                if any(matches):
+                    addr = matches[0].device
+                else:
+                    print('WichmannDigipot could not find Leonardo')
+                    return
+            self.conn = serial.Serial(addr, baudrate, timeout=1)
             self.write = self.conn.write
             self.close = self.conn.close
+            if self.connected():
+                print(f'Connected to PID controller on {addr}')
 
     def connected(self):
-        return hasattr(self, 'conn')
+        if hasattr(self, 'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
 
     def analogOut(self, voltage):
         ''' Tell arduino to output a voltage on pin 9 '''
@@ -2387,7 +2551,12 @@ class EugenTempStage(object):
 
         volt_bridge = self.analogIn(1) / self.opamp_gain
         pt_zaehler = (((self.r_3 + self.r_4) * volt_bridge) + (self.volt_now * self.r_4)) * self.r_1
-        pt_nenner = ((self.r_3 + self.r_4) * self.volt_now) - (volt_bridge * (self.r_3 + self.r_4) + (self.r_4 * volt_now))
+        pt_nenner = ((self.r_3 + self.r_4) * self.volt_now) - (volt_bridge * (self.r_3 + self.r_4) + (self.r_4 * self.volt_now))
         pt_res = round((pt_zaehler / pt_nenner), 1)
         temp_read = np.log(pt_res / 1000) / np.log(1.00385)
         return temp_read
+
+
+
+def com_port_info():
+    comports = serial.tools.list_ports.comports()
