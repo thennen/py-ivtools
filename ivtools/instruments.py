@@ -2548,10 +2548,15 @@ class EugenTempStage(object):
             print('Its too COLD! Can not do that :-/')
 
     def read_temperature(self):
+        r_1 = self.r_1
+        r_3 = self.r_3
+        r_4 = self.r_4
+        volt_now = self.volt_now
+        opamp_gain = self.opamp_gain
 
-        volt_bridge = self.analogIn(1) / self.opamp_gain
-        pt_zaehler = (((self.r_3 + self.r_4) * volt_bridge) + (self.volt_now * self.r_4)) * self.r_1
-        pt_nenner = ((self.r_3 + self.r_4) * self.volt_now) - (volt_bridge * (self.r_3 + self.r_4) + (self.r_4 * self.volt_now))
+        volt_bridge = self.analogIn(1) / opamp_gain
+        pt_zaehler = (((r_3 + r_4) * volt_bridge) + (volt_now * r_4)) * r_1
+        pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4 * volt_now))
         pt_res = round((pt_zaehler / pt_nenner), 1)
         temp_read = np.log(pt_res / 1000) / np.log(1.00385)
         return temp_read
