@@ -2482,12 +2482,12 @@ class EugenTempStage(object):
     def connect(self, addr=None, baudrate=9600):
         if not self.connected():
             if addr is None:
-                # Connect to the first thing you see that has Leonardo in the description
+                # Connect to the first thing you see that has Arduino Micro in the description
                 matches = list(comgrep('Arduino Micro'))
                 if any(matches):
                     addr = matches[0].device
                 else:
-                    print('WichmannDigipot could not find Leonardo')
+                    print('EugenTempStage could not find Arduino Micro')
                     return
             self.conn = serial.Serial(addr, baudrate, timeout=1)
             self.write = self.conn.write
