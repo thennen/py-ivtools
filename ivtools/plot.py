@@ -486,14 +486,15 @@ def plot_channels(chdata, ax=None, alpha=.8):
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
     ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
     if ax is None:
         ax = plt.gca()
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cb = plt.colorbar(sm, ax=ax, **kwargs)
+    # Sometimes you want to specify the axis for the colorbar itelf.
+    cb = plt.colorbar(sm, ax=ax, cax=cax, **kwargs)
     return cb
 
 
