@@ -2469,6 +2469,7 @@ class EugenTempStage(object):
     # Gain from instrumental-opamp
     opamp_gain = 12.55
     # Voltage Bridge
+    # TODO: do a sample of this voltage to make sure the voltage supply is on, otherwise return an error that says to turn it on!
     volt_now = 10
 
     def __init__(self, addr=None, baudrate=9600):

@@ -18,6 +18,8 @@ import sys
 
 # TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
 
+# TODO make a small file with test data (single iv and multiple iv) and load them here, so we can test the functions
+
 def ivfunc(func):
     '''
     Decorator which allows the same function to be used on a single loop, as
@@ -1127,10 +1129,11 @@ def normalize(data):
 
 
 def add_missing_keys(datain, dataout):
+    # kind of like dataout.update(datain) but doesn't overwrite values
+    # TODO: return the new dict instead of modifying the input
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
-
 
 @ivfunc
 def resistance(data, v0=0.5, v1=None, x='V', y='I'):
@@ -1592,9 +1595,56 @@ def freq_analysis(data):
     pass
 
 
-def subtract_phase(phase1, phase2):
-    # bizarre things happen when you subtract two arrays of phases
-    pass
+@ivfunc
+def time_shift(data, column='I', dt=13e-9):
+    '''
+    For many common setups, the current signal lags behind the voltage signal because of difference in cable length.
+    This offsets a column by dt and resamples it
+    delay will be about 5ns per meter of cable
+    '''
+    if 't' in data:
+        t = data['t']
+    else:
+        t = maketimearray(data)
+
+    # Interpolate the array to get its past value
+    colinterp = np.interp(data[column], t - dt, t)
+
+    dataout = {column:colinterp}
+    add_missing_keys(data, dataout)
+    return dataout
+
+def correct_phase(phase, test=False):
+    '''
+    Phase shift sequences can have steps because of modular arithmetic / ambiguity in phase detection
+    if the phase shift ever exceeds pi, you might need to put the result through this function to restore continuity
+    strategy is to detect large steps in the phase array and add or subtract 2pi at those points.
+    '''
+    # Get it in between -pi, pi
+    phase = (phase + pi) % 2*pi - pi
+    diff = np.diff(phase)
+    direction = np.sign(diff)
+    steps = np.where(np.abs(diff) > 3*pi/2)[0]
+    if any(steps):
+        newphase = phase.copy()
+        for i in steps:
+            newphase[i+1:] -= direction[i]*2*pi
+    else:
+        newphase = phase
+    return newphase
+    if test:
+        # Here's how it works:
+        plt.figure()
+        phase = 3*pi/2 * np.sin(linspace(0, 4*pi, 50))
+        dphase = (phase + pi)%(2*pi) - pi
+        plot(phase, '.')
+        hlines([-pi, pi], 0, 50)
+        plot(dphase, '.-')
+        plot(correct_phase(dphase, test=False), '--')
+        plt.xlabel('datapoint')
+        plt.ylabel('phase shift')
+        plt.legend(['real phase shift', 'calculated phase shift', 'corrected'])
+        plt.show()
 
 def replace_nanvals(array):
     # Keithley returns this special value when the measurement is out of range
