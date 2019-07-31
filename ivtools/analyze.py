@@ -1606,10 +1606,8 @@ def time_shift(data, column='I', dt=13e-9):
         t = data['t']
     else:
         t = maketimearray(data)
-
     # Interpolate the array to get its past value
-    colinterp = np.interp(data[column], t - dt, t)
-
+    colinterp = np.interp(t - dt, t, data[column])
     dataout = {column:colinterp}
     add_missing_keys(data, dataout)
     return dataout
@@ -1621,17 +1619,16 @@ def correct_phase(phase, test=False):
     strategy is to detect large steps in the phase array and add or subtract 2pi at those points.
     '''
     # Get it in between -pi, pi
-    phase = (phase + pi) % 2*pi - pi
+    phase = (phase + pi) % (2*pi) - pi
     diff = np.diff(phase)
     direction = np.sign(diff)
-    steps = np.where(np.abs(diff) > 3*pi/2)[0]
+    steps = np.where(np.abs(diff) > pi)[0]
     if any(steps):
         newphase = phase.copy()
         for i in steps:
             newphase[i+1:] -= direction[i]*2*pi
     else:
         newphase = phase
-    return newphase
     if test:
         # Here's how it works:
         plt.figure()
@@ -1645,6 +1642,7 @@ def correct_phase(phase, test=False):
         plt.ylabel('phase shift')
         plt.legend(['real phase shift', 'calculated phase shift', 'corrected'])
         plt.show()
+    return newphase
 
 def replace_nanvals(array):
     # Keithley returns this special value when the measurement is out of range

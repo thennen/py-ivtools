@@ -1054,6 +1054,10 @@ class RigolDG5000(object):
         self.trigger(ch=ch)
 
     def DC(self, value, ch=1):
+        '''
+        Do not rely heavily on this working.  It's unpredictable.
+        Don't know if you are even supposed to be able to set a DC level
+        '''
         # Only way that I know to make the rigol do DC
         # Might be a better way
         self.pulse_arbitrary([value, value], 1e-3, ch=ch)
