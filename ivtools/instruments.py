@@ -1026,6 +1026,7 @@ class RigolDG5000(object):
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
         HAVersine|LORentz|ARBPULSE|DUAltone
         TODO: I think some of these waveforms have additional options.  Add them
+        !! Will idle at the offset level in between pulses !!
         '''
         self.setup_burstmode(n=n)
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, phase=phase, ch=ch)
@@ -1045,6 +1046,7 @@ class RigolDG5000(object):
         Trigger immediately.
         Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
+        !! will idle at the FIRST VALUE of waveform after the pulse is over !!
         '''
         # Load waveform
         self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
