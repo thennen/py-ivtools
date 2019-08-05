@@ -72,6 +72,10 @@ class Picoscope(object):
         self.data = None
         # Store channel settings in this class
         if not hasattr(self, 'range'):
+            # TODO somehow contain these in a settings attribute,
+            #      so you can easily assign all settings to one variable to switch between them
+            #      should be compatible with dict
+            #      But also expose these attributes for easy syntax i.e. ps.offset.a = 1
             self.offset = self._PicoOffset(self)
             self.atten = self._PicoAttenuation(self)
             self.coupling = self._PicoCoupling(self)
@@ -790,8 +794,11 @@ class RigolDG5000(object):
             # set timeout to a minute!
             self.conn.timeout = 60000
             # Rigol won't reply to this until it is done loading the waveform
-            self.idn()
+            err = self.error()
+            #self.idn()
             self.conn.timeout = oldtimeout
+            if err != '0,"No error"':
+                raise Exception(err)
 
     def writebinary(self, message, values):
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)

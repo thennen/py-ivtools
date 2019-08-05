@@ -641,7 +641,7 @@ def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subd
         filepaths = filepaths[-n:]
         ctimes = ctimes[-n:]
     if seconds is not None:
-        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
+        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < seconds]
     if maxlen is not None:
         filepaths = filepaths[:maxlen]
     return [os.path.abspath(fp) for fp in filepaths]
