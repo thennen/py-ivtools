@@ -1055,12 +1055,22 @@ class RigolDG5000(object):
 
     def DC(self, value, ch=1):
         '''
-        Do not rely heavily on this working.  It's unpredictable.
+        Do not rely heavily on this working.  It can be unpredictable.
         Don't know if you are even supposed to be able to set a DC level
         '''
-        # Only way that I know to make the rigol do DC
-        # Might be a better way
-        self.pulse_arbitrary([value, value], 1e-3, ch=ch)
+        # One way that I know to make the rigol do DC..
+        # Doesn't go straight to the DC level from where it was, because it has to turn off the output to load
+        # a waveform.  this makes the annoying relay click
+        # also beeps when you use value=0, but seems to work anyway
+        #self.pulse_arbitrary([value, value], 1e-3, ch=ch)
+        # This might be a better way
+        # Goes directily to the next voltage
+        # UNLESS you transition from abs(value) <= 2 t abs(value) > 2
+        # then it will click and briefly output zero volts
+        self.setup_burstmode(ch=ch)
+        self.amplitude(.01, ch=ch)
+        # Limited to +- 9.995
+        self.offset(value, ch=ch)
 
 
 #########################################################
