@@ -301,50 +301,62 @@ class Picoscope(object):
                 print(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
 
 
-    def squeeze_range(self, data, ch=['A', 'B', 'C', 'D']):
+    def squeeze_range(self, data, padpercent=0, ch=['A', 'B', 'C', 'D']):
         '''
         Find the best range for given input data (can be any number of channels)
         Set the range and offset to the lowest required to fit the data
         '''
         for c in ch:
             if c in data:
+                usedatten = data['ATTENUATION'][c]
+                usedcoupling = data['COUPLINGS'][c]
+                usedrange = data['RANGE'][c]
+                usedoffset = data['OFFSET'][c]
                 if type(data[c][0]) is np.int8:
                     # Need to convert to float
-                    usedrange = data['RANGE'][c]
-                    usedoffset = data['OFFSET'][c]
+                    # TODO: consider attenuation
                     maximum = np.max(data[c]) / 2**8 * usedrange * 2 - usedoffset
                     minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
-                    rang, offs = self.best_range((minimum, maximum))
+                    rang, offs = self.best_range((minimum, maximum), padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
                 else:
-                    rang, offs = self.best_range(data[c])
+                    rang, offs = self.best_range(data[c], padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
                 print('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
                 self.range[c] = rang
                 self.offset[c] = offs
 
-    def best_range(self, data, atten=1):
+    def best_range(self, data, padpercent=0, atten=1, coupling='DC'):
         '''
         Return the best RANGE and OFFSET values to use for a particular input signal (array)
         Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
         Don't pass int8 signals, would then need channel information to convert to V
+        TODO: Use an offset that includes zero if it doesn't require increasing the range
         '''
-        # TODO: Consider coupling!
+        # Consider coupling!
         # Consider the attenuation!
-        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
+        if coupling in ['DC', 'AC']:
+            possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
+            max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)) * atten
+        elif coupling == 'DC50':
+            possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0)) * atten
+            max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 2.5)) * atten
+
         # Sadly, each range has a different maximum possible offset
-        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)) * atten
         minimum = np.min(data)
         maximum = np.max(data)
         amplitude = abs(maximum - minimum) / 2
+        padamp = amplitude * (1 + padpercent / 100)
         middle = round((maximum + minimum) / 2, 3)
+        padmin = minimum - amplitude * padpercent / 2 / 100
+        padmax = maximum + amplitude * padpercent / 2 / 100
         # Mask of possible ranges that fit the signal
-        mask = possible_ranges >= amplitude
+        mask = possible_ranges >= padamp
         for selectedrange, max_offset in zip(possible_ranges[mask], max_offsets[mask]):
             # Is middle an acceptable offset?
             if middle < max_offset:
                 return (selectedrange, -middle)
                 break
             # Can we reduce the offset without the signal going out of range?
-            elif (max_offset + selectedrange >= maximum) and (-max_offset - selectedrange <= minimum):
+            elif (max_offset + selectedrange >= padmax) and (-max_offset - selectedrange <= padmin):
                 return(selectedrange, np.clip(-middle, -max_offset, max_offset))
                 break
             # Neither worked, try increasing the range ...
