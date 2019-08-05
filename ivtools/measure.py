@@ -62,7 +62,6 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     return data
 
-
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
            savewfm=False, pretrig=0, interpwfm=True, **kwargs):
@@ -74,6 +73,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     '''
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
+
+    if not type(wfm) == np.ndarray:
+        wfm = np.array(wfm)
 
     if not (bool(fs) ^ bool(nsamples)):
         raise Exception('Must pass either fs or nsamples, and not both')
@@ -163,7 +165,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     return ivdata
 
-
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
     rigol = instruments.RigolDG5000()
@@ -172,7 +173,7 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
     if fend > 1e8:
         raise Exception('Rigol can only output up to 100MHz')
 
-    freqs = np.logspace(np.log10(fstart), np.log10(fend), n)
+    freqs = np.geomspace(fstart, fend, n)
     data = []
     for freq in freqs:
         # Figure out how many cycles to sample and at which sample rate.
@@ -196,7 +197,7 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
         # Can sample 5 MS/s, divided among the channels
         # ** To achieve 2.5 GS/s sampling rate in 2-channel mode, use channel A or B and channel C or D.
         if len(ch) == 1:
-            maxrate = 5e9 / len(ch)
+            maxrate = 5e9
         elif len(ch) == 2:
             # 4 channel combinations allow 2.5 GS/s sampling rate
             if set(ch) in (set(('A', 'B')), set(('C', 'D'))):
@@ -243,7 +244,6 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
         # TODO: Should I apply the signal for a while before sampling?  Here I am sampling immediately from the first cycle.
         # The aux trigger has a delay and jitter for some reason.  Maybe triggering directly on the channel is better?
-        # 
         if trigsource == 'TriggerAux':
             triglevel = 0.05
         else:
@@ -266,7 +266,6 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
     return data
 
-
 def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
     '''
     Generate n bipolar triangle pulses.
@@ -281,7 +280,6 @@ def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
 
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
-
 def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     '''
     Generate n sine pulses.
@@ -293,7 +291,6 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
 
     rigol.pulse_arbitrary(wfm, duration, n=n)
-
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
     # TODO: don't let this function change the pico state.  Just return the calculated ranges.
@@ -364,6 +361,55 @@ def _rate_duration(v1, v2, rate=None, duration=None):
         duration = 2 * (v1 - v2) / rate
 
     return rate, duration
+
+def measure_dc_gain(Vin=1, ch='C', R=10e3):
+    # Measure dc gain of rehan amplifier
+    # Apply voltage
+    rigol = instruments.RigolDG5000()
+
+    print('Outputting {} volts on Rigol CH1'.format(Vin))
+    rigol.pulse_arbitrary(np.repeat(Vin, 100), 1e-3)
+    time.sleep(1)
+    # Measure output
+    measurechannels = ['A', ch]
+    ps.capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
+    time.sleep(.1)
+    chdata = ps.get_data(measurechannels)
+    ivplot.plot_channels(chdata)
+    chvalue = np.mean(chdata[ch])
+    print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
+
+    gain = R * chvalue / Vin
+    # Set output back to zero
+    rigol.pulse_arbitrary([Vin, 0,0,0,0], 1e-3)
+    return gain
+
+def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
+    # Probably an obsolete function
+    # Send a test pulse to determine better range to use
+    arange, aoffset = best_range([outamp, -outamp])
+    RANGE = {}
+    OFFSET = {}
+    RANGE['A'] = arange
+    OFFSET['A'] = aoffset
+    # Power supply is 5V, so this should cover the whole range
+    RANGE[ch] = 5
+    OFFSET[ch] = 0
+    sinwave = outamp * sin(np.linspace(0, 1, 2**12)*2*pi)
+    chs = ['A', ch]
+    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
+    data = ps.get_data(chs)
+    ivplot.plot_channels(data)
+
+    # will change the range and offset after all
+    squeeze_range(data, [ch])
+
+    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
+    data = ps.get_data(chs)
+
+    ivplot.plot_channels(data)
+
+    return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 
 ########### Compliance circuit ###################
@@ -752,7 +798,6 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-
 def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -807,57 +852,8 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
 
     return dataout
 
-def measure_dc_gain(Vin=1, ch='C', R=10e3):
-    # Measure dc gain of rehan amplifier
-    # Apply voltage
-    rigol = instruments.RigolDG5000()
 
-    print('Outputting {} volts on Rigol CH1'.format(Vin))
-    rigol.pulse_arbitrary(np.repeat(Vin, 100), 1e-3)
-    time.sleep(1)
-    # Measure output
-    measurechannels = ['A', ch]
-    ps.capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
-    time.sleep(.1)
-    chdata = ps.get_data(measurechannels)
-    ivplot.plot_channels(chdata)
-    chvalue = np.mean(chdata[ch])
-    print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
-
-    gain = R * chvalue / Vin
-    # Set output back to zero
-    rigol.pulse_arbitrary([Vin, 0,0,0,0], 1e-3)
-    return gain
-
-def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
-    # Probably an obsolete function
-    # Send a test pulse to determine better range to use
-    arange, aoffset = best_range([outamp, -outamp])
-    RANGE = {}
-    OFFSET = {}
-    RANGE['A'] = arange
-    OFFSET['A'] = aoffset
-    # Power supply is 5V, so this should cover the whole range
-    RANGE[ch] = 5
-    OFFSET[ch] = 0
-    sinwave = outamp * sin(np.linspace(0, 1, 2**12)*2*pi)
-    chs = ['A', ch]
-    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
-    data = ps.get_data(chs)
-    ivplot.plot_channels(data)
-
-    # will change the range and offset after all
-    squeeze_range(data, [ch])
-
-    pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
-    data = ps.get_data(chs)
-
-    ivplot.plot_channels(data)
-
-    return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
-
-
-
+############# Waveforms ###########################
 def tri(v1, v2, n=None, step=None, repeat=1):
     '''
     Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
