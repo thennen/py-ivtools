@@ -12,6 +12,8 @@ from scipy.optimize import curve_fit
 import pandas as pd
 from matplotlib import pyplot as plt
 import sys
+from scipy.signal import savgol_filter as savgol
+
 
 # TODO make some functions that index/iterate rows of dataframe AND list, because they have different syntax
 #      this would avoid testing for the datatype in many different parts of the code
@@ -1593,6 +1595,100 @@ def freq_analysis(data):
     This will use curve fitting and fft methods to determine amplitude and phase.
     '''
     pass
+
+
+def osc_analyze(data, x='V', y='I', ithresh=200e-6, hys=25, debug=False):
+    '''
+    Split an oscillatory signal into cycles
+    by interpolative level crossing
+    return a dataframe of all the split cycles, along with interpolated crossing points
+    TODO use a different way of thresholding (moving avg??)
+    i: indices of positive threshold crossing (except the last one)
+    t_interp: interpolated time at the crossing
+    V_interp: interpolated voltage at the crossing
+    freq: frequency of each cycle
+    '''
+    if 't' in data:
+        t = data['t']
+    else:
+        t = maketimearray(data)
+        # sorry for potential side effect
+        data['t'] = t
+    V = data[x]
+    I = data[y]
+    # Indices where signal crosses ithresh in positive direction
+    i = np.where(np.diff(np.int8(I > ithresh)) == 1)[0]
+    # number of datapoints to ignore after each trigger
+    i = i[np.insert(np.diff(i), 0, 0) > hys]
+    if len(i) > 1:
+        units = data.get('units')
+        ti = t[i]
+        vi = V[i]
+        # Interpolation for the time of ithresh crossing
+        t0 = t[i]
+        t1 = t[i+1]
+        i0 = I[i]
+        i1 = I[i+1]
+        t_interp = [np.interp(ithresh, (ii0, ii1), (tt0, tt1)) for ii0, ii1, tt0, tt1 in zip(i0, i1, t0, t1)]
+        t_interp = np.array(t_interp)
+        period = np.diff(t_interp)
+        freq = 1/period
+        # Also interpolate V array
+        # But both t and V are discretized, so we don't want nearest neighbor linear interpolation
+        # (would also be ~digitized)
+        V_interp = np.interp(t_interp, t, savgol(V, 5, 1))
+        # calculate frequency and amplitudes of every cycle
+        # Split into the cycles
+        #Icycle = np.split(I, i)[1:-1]
+        #tcycle = np.split(t, i)[1:-1]
+        #Vcycle = np.split(V, i)[1:-1]
+        #zp = zip(tcycle, Icycle, Vcycle)
+        #dfcycle = pd.DataFrame({'t':t, 'I':I, 'V':V, 'units':units} for t,I,V in zp)
+        #Imin = np.array([np.min(c) for c in Icycle])
+        #Imax = np.array([np.max(c) for c in Icycle])
+        #Iamp = Imax - Imin
+        # ivtools way -- retains the metadata
+        dfcycle = pd.DataFrame(splitiv(dict(data), indices=i)[1:-1])
+        dfcycle['t2'] = dfcycle['t'].apply(lambda x: x - x[0])
+        Imin = dfcycle.I.apply(np.min)
+        Imax = dfcycle.I.apply(np.max)
+        Iamp = Imax - Imin
+        if debug:
+            # Are we actually crossing ithresh?
+            plt.figure()
+            plt.plot(t, I, alpha=.2)
+            plt.plot([t0, t1], [i0, i1])
+            # interpolations
+            plt.vlines(t_interp, *plt.ylim(), alpha=.5)
+            plt.hlines(ithresh, *plt.xlim(), alpha=.5)
+
+        # Use the input units, convert frequency to MHz
+        if units:
+            tunit = units.get('t')
+            if tunit == 'ns':
+                freq *= 1e3
+            else:
+                # assume units are seconds
+                freq /= 1e6
+            data['units']['freq'] = 'MHz'
+        else:
+            # Make assumptions about units
+            # t is in seconds
+            freq /= 1e6
+
+        dfcycle['Imin'] = Imin
+        dfcycle['Imax'] = Imax
+        dfcycle['Iamp'] = Iamp
+        dfcycle['freq'] = freq
+        dfcycle['period'] = period
+        # There are n cycles and n+1 endpoints.  cut off the last end point
+        dfcycle['t_interp'] = t_interp[:-1]
+        dfcycle['V_interp'] = V_interp[:-1]
+        dfcycle['i'] = i[:-1]
+        return dfcycle
+    else:
+        print('No cycles detected!')
+        return {}
 
 
 @ivfunc
