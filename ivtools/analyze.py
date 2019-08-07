@@ -12,11 +12,15 @@ from scipy.optimize import curve_fit
 import pandas as pd
 from matplotlib import pyplot as plt
 import sys
+from scipy.signal import savgol_filter as savgol
+
 
 # TODO make some functions that index/iterate rows of dataframe AND list, because they have different syntax
 #      this would avoid testing for the datatype in many different parts of the code
 
 # TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
+
+# TODO make a small file with test data (single iv and multiple iv) and load them here, so we can test the functions
 
 def ivfunc(func):
     '''
@@ -589,7 +593,7 @@ def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
     else:
         trigger = np.where((crossings[hyspts-1:] == -1) & (side[:-hyspts] == True))[0] + hyspts
     # Put the endpoints in
-    trigger = np.concatenate(([0], trigger, [len(data['V'])]))
+    trigger = np.concatenate(([0], trigger, [len(data[column])]))
     # Delete triggers that are too close to each other
     # This is not perfect.
     trigthresh = np.diff(trigger) > hyspts
@@ -1127,10 +1131,11 @@ def normalize(data):
 
 
 def add_missing_keys(datain, dataout):
+    # kind of like dataout.update(datain) but doesn't overwrite values
+    # TODO: return the new dict instead of modifying the input
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
-
 
 @ivfunc
 def resistance(data, v0=0.5, v1=None, x='V', y='I'):
@@ -1322,6 +1327,43 @@ def apply(data, func, column):
     return dataout
 
 
+@ivfunc
+def subtract_offset(data, x='V', y='I', percentile=1, debug=False):
+    '''
+    Subtract an offset from y by looking at data points with small values of x
+
+    Possibilities for data selection:
+    1. Certain low percentile of x data? (fixed percentile or data dependent?)
+    2. Fixed number of datapoints nearest to x=0?
+    3. Values below a fixed threshold of abs(x)?
+    then:
+    4. Subtract the average of the selected y values
+    5. Do a linear fit to the selected x,y values and subtract the y intercept
+
+    4 is better than 5 in the case that you don't have symmetric data
+    '''
+    X = data[x]
+    lenX = len(X)
+    absX = np.abs(X)
+    Y = data[y]
+    ### Select datapoints close to x=0
+    # Need at least two datapoints, so change the percentile if necessary
+    percentile = max(percentile, 2*100/lenX)
+    p = np.percentile(absX, percentile)
+    mask = absX < p
+    line = np.polyfit(X[mask], Y[mask], 1)
+    slope, intercept = line
+    #print(intercept)
+    out = data.copy()
+    out['I'] = out['I'] - intercept
+    if debug:
+        plt.figure()
+        plt.scatter(X, Y)
+        plt.scatter(X[mask], Y[mask])
+        xfit = np.linspace(np.min(X), np.max(X), 10)
+        plt.plot(xfit, np.polyval(line, xfit))
+    return out
+
 def insert(data, key, vals):
     '''
     Insert key:values into list of dicts
@@ -1457,11 +1499,12 @@ def fft_iv(data, columns=None):
     return dataout
 
 @ivfunc
-def largest_fft_component(data):
+def largest_fft_component(data, columns=None):
     ''' Find the amplitude and phase of the largest single frequency component'''
     # Calculate fft
     fftdata = fft_iv(data)
-    columns = find_data_arrays(fftdata)
+    if columns is None:
+        columns = find_data_arrays(fftdata)
 
     dataout = {}
     for c in columns:
@@ -1471,7 +1514,8 @@ def largest_fft_component(data):
         mag = np.abs(fftdata[c][:halfl])
         phase = np.angle(fftdata[c][:halfl])
         # Find which harmonic is the largest
-        fundi = np.argmax(mag)
+        # NOT DC
+        fundi = np.argmax(mag[1:]) + 1
         #Want a single index dataframe.  Name the columns like this:
         dataout[c + '_freq'] = fundi
         if 'sample_rate' in data:
@@ -1500,7 +1544,22 @@ def fit_sine(data, columns=None, guess_ncycles=None, debug=False):
         guess_ncycles = data['ncycles']
     elif guess_ncycles is None:
         # TODO: could guess based on fft or something, but could be slow
-        raise Exception('If data does not contain ncycles key, then guess_ncycles must be passed!')
+        # !!! SHIT BELOW DOESN'T WORK YET!!!
+        #raise Exception('If data does not contain ncycles key, then guess_ncycles must be passed!')
+        fftdata = fft_iv(data, columns=columns)
+        l = len(fftdata[c])
+        halfl = int(l/2)
+        mag = np.abs(fftdata[c][:halfl])
+        phase = np.angle(fftdata[c][:halfl])
+        # Find which harmonic is the largest
+        # NOT DC
+        fundi = np.argmax(mag[1:]) + 1
+        if 'sample_rate' in data:
+            sample_rate = data['sample_rate']
+        else:
+            # if this doesn't work, then fuck it
+            sample_rate = data['t'][1] - data['t'][0]
+        guess_cycles = 1 / (fundi * 2 / l)
 
     guess_freq = guess_ncycles / dt
 
@@ -1538,9 +1597,148 @@ def freq_analysis(data):
     pass
 
 
-def subtract_phase(phase1, phase2):
-    # bizarre things happen when you subtract two arrays of phases
-    pass
+def osc_analyze(data, x='V', y='I', ithresh=200e-6, hys=25, debug=False):
+    '''
+    Split an oscillatory signal into cycles
+    by interpolative level crossing
+    return a dataframe of all the split cycles, along with interpolated crossing points
+    TODO use a different way of thresholding (moving avg??)
+    i: indices of positive threshold crossing (except the last one)
+    t_interp: interpolated time at the crossing
+    V_interp: interpolated voltage at the crossing
+    freq: frequency of each cycle
+    '''
+    if 't' in data:
+        t = data['t']
+    else:
+        t = maketimearray(data)
+        # sorry for potential side effect
+        data['t'] = t
+    V = data[x]
+    I = data[y]
+    # Indices where signal crosses ithresh in positive direction
+    i = np.where(np.diff(np.int8(I > ithresh)) == 1)[0]
+    # number of datapoints to ignore after each trigger
+    i = i[np.insert(np.diff(i), 0, 0) > hys]
+    if len(i) > 1:
+        units = data.get('units')
+        ti = t[i]
+        vi = V[i]
+        # Interpolation for the time of ithresh crossing
+        t0 = t[i]
+        t1 = t[i+1]
+        i0 = I[i]
+        i1 = I[i+1]
+        t_interp = [np.interp(ithresh, (ii0, ii1), (tt0, tt1)) for ii0, ii1, tt0, tt1 in zip(i0, i1, t0, t1)]
+        t_interp = np.array(t_interp)
+        period = np.diff(t_interp)
+        freq = 1/period
+        # Also interpolate V array
+        # But both t and V are discretized, so we don't want nearest neighbor linear interpolation
+        # (would also be ~digitized)
+        V_interp = np.interp(t_interp, t, savgol(V, 5, 1))
+        # calculate frequency and amplitudes of every cycle
+        # Split into the cycles
+        #Icycle = np.split(I, i)[1:-1]
+        #tcycle = np.split(t, i)[1:-1]
+        #Vcycle = np.split(V, i)[1:-1]
+        #zp = zip(tcycle, Icycle, Vcycle)
+        #dfcycle = pd.DataFrame({'t':t, 'I':I, 'V':V, 'units':units} for t,I,V in zp)
+        #Imin = np.array([np.min(c) for c in Icycle])
+        #Imax = np.array([np.max(c) for c in Icycle])
+        #Iamp = Imax - Imin
+        # ivtools way -- retains the metadata
+        dfcycle = pd.DataFrame(splitiv(dict(data), indices=i)[1:-1])
+        dfcycle['t2'] = dfcycle['t'].apply(lambda x: x - x[0])
+        Imin = dfcycle.I.apply(np.min)
+        Imax = dfcycle.I.apply(np.max)
+        Iamp = Imax - Imin
+        if debug:
+            # Are we actually crossing ithresh?
+            plt.figure()
+            plt.plot(t, I, alpha=.2)
+            plt.plot([t0, t1], [i0, i1])
+            # interpolations
+            plt.vlines(t_interp, *plt.ylim(), alpha=.5)
+            plt.hlines(ithresh, *plt.xlim(), alpha=.5)
+
+        # Use the input units, convert frequency to MHz
+        if units:
+            tunit = units.get('t')
+            if tunit == 'ns':
+                freq *= 1e3
+            else:
+                # assume units are seconds
+                freq /= 1e6
+            data['units']['freq'] = 'MHz'
+        else:
+            # Make assumptions about units
+            # t is in seconds
+            freq /= 1e6
+
+        dfcycle['Imin'] = Imin
+        dfcycle['Imax'] = Imax
+        dfcycle['Iamp'] = Iamp
+        dfcycle['freq'] = freq
+        dfcycle['period'] = period
+        # There are n cycles and n+1 endpoints.  cut off the last end point
+        dfcycle['t_interp'] = t_interp[:-1]
+        dfcycle['V_interp'] = V_interp[:-1]
+        dfcycle['i'] = i[:-1]
+        return dfcycle
+    else:
+        print('No cycles detected!')
+        return {}
+
+
+@ivfunc
+def time_shift(data, column='I', dt=13e-9):
+    '''
+    For many common setups, the current signal lags behind the voltage signal because of difference in cable length.
+    This offsets a column by dt and resamples it
+    delay will be about 5ns per meter of cable
+    '''
+    if 't' in data:
+        t = data['t']
+    else:
+        t = maketimearray(data)
+    # Interpolate the array to get its past value
+    colinterp = np.interp(t - dt, t, data[column])
+    dataout = {column:colinterp}
+    add_missing_keys(data, dataout)
+    return dataout
+
+def correct_phase(phase, test=False):
+    '''
+    Phase shift sequences can have steps because of modular arithmetic / ambiguity in phase detection
+    if the phase shift ever exceeds pi, you might need to put the result through this function to restore continuity
+    strategy is to detect large steps in the phase array and add or subtract 2pi at those points.
+    '''
+    # Get it in between -pi, pi
+    phase = (phase + pi) % (2*pi) - pi
+    diff = np.diff(phase)
+    direction = np.sign(diff)
+    steps = np.where(np.abs(diff) > pi)[0]
+    if any(steps):
+        newphase = phase.copy()
+        for i in steps:
+            newphase[i+1:] -= direction[i]*2*pi
+    else:
+        newphase = phase
+    if test:
+        # Here's how it works:
+        plt.figure()
+        phase = 3*pi/2 * np.sin(linspace(0, 4*pi, 50))
+        dphase = (phase + pi)%(2*pi) - pi
+        plot(phase, '.')
+        hlines([-pi, pi], 0, 50)
+        plot(dphase, '.-')
+        plot(correct_phase(dphase, test=False), '--')
+        plt.xlabel('datapoint')
+        plt.ylabel('phase shift')
+        plt.legend(['real phase shift', 'calculated phase shift', 'corrected'])
+        plt.show()
+    return newphase
 
 def replace_nanvals(array):
     # Keithley returns this special value when the measurement is out of range

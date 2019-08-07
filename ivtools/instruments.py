@@ -36,6 +36,7 @@ import time
 import os
 import pandas as pd
 import serial
+from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
@@ -71,6 +72,10 @@ class Picoscope(object):
         self.data = None
         # Store channel settings in this class
         if not hasattr(self, 'range'):
+            # TODO somehow contain these in a settings attribute,
+            #      so you can easily assign all settings to one variable to switch between them
+            #      should be compatible with dict
+            #      But also expose these attributes for easy syntax i.e. ps.offset.a = 1
             self.offset = self._PicoOffset(self)
             self.atten = self._PicoAttenuation(self)
             self.coupling = self._PicoCoupling(self)
@@ -300,50 +305,62 @@ class Picoscope(object):
                 print(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
 
 
-    def squeeze_range(self, data, ch=['A', 'B', 'C', 'D']):
+    def squeeze_range(self, data, padpercent=0, ch=['A', 'B', 'C', 'D']):
         '''
         Find the best range for given input data (can be any number of channels)
         Set the range and offset to the lowest required to fit the data
         '''
         for c in ch:
             if c in data:
+                usedatten = data['ATTENUATION'][c]
+                usedcoupling = data['COUPLINGS'][c]
+                usedrange = data['RANGE'][c]
+                usedoffset = data['OFFSET'][c]
                 if type(data[c][0]) is np.int8:
                     # Need to convert to float
-                    usedrange = data['RANGE'][c]
-                    usedoffset = data['OFFSET'][c]
+                    # TODO: consider attenuation
                     maximum = np.max(data[c]) / 2**8 * usedrange * 2 - usedoffset
                     minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
-                    rang, offs = self.best_range((minimum, maximum))
+                    rang, offs = self.best_range((minimum, maximum), padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
                 else:
-                    rang, offs = self.best_range(data[c])
+                    rang, offs = self.best_range(data[c], padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
                 print('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
                 self.range[c] = rang
                 self.offset[c] = offs
 
-    def best_range(self, data, atten=1):
+    def best_range(self, data, padpercent=0, atten=1, coupling='DC'):
         '''
         Return the best RANGE and OFFSET values to use for a particular input signal (array)
         Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
         Don't pass int8 signals, would then need channel information to convert to V
+        TODO: Use an offset that includes zero if it doesn't require increasing the range
         '''
-        # TODO: Consider coupling!
+        # Consider coupling!
         # Consider the attenuation!
-        possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
+        if coupling in ['DC', 'AC']:
+            possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0)) * atten
+            max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)) * atten
+        elif coupling == 'DC50':
+            possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0)) * atten
+            max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 2.5)) * atten
+
         # Sadly, each range has a different maximum possible offset
-        max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20)) * atten
         minimum = np.min(data)
         maximum = np.max(data)
         amplitude = abs(maximum - minimum) / 2
+        padamp = amplitude * (1 + padpercent / 100)
         middle = round((maximum + minimum) / 2, 3)
+        padmin = minimum - amplitude * padpercent / 2 / 100
+        padmax = maximum + amplitude * padpercent / 2 / 100
         # Mask of possible ranges that fit the signal
-        mask = possible_ranges >= amplitude
+        mask = possible_ranges >= padamp
         for selectedrange, max_offset in zip(possible_ranges[mask], max_offsets[mask]):
             # Is middle an acceptable offset?
             if middle < max_offset:
                 return (selectedrange, -middle)
                 break
             # Can we reduce the offset without the signal going out of range?
-            elif (max_offset + selectedrange >= maximum) and (-max_offset - selectedrange <= minimum):
+            elif (max_offset + selectedrange >= padmax) and (-max_offset - selectedrange <= padmin):
                 return(selectedrange, np.clip(-middle, -max_offset, max_offset))
                 break
             # Neither worked, try increasing the range ...
@@ -777,8 +794,11 @@ class RigolDG5000(object):
             # set timeout to a minute!
             self.conn.timeout = 60000
             # Rigol won't reply to this until it is done loading the waveform
-            self.idn()
+            err = self.error()
+            #self.idn()
             self.conn.timeout = oldtimeout
+            if err != '0,"No error"':
+                raise Exception(err)
 
     def writebinary(self, message, values):
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
@@ -1025,6 +1045,7 @@ class RigolDG5000(object):
         SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|GAUSsian|
         HAVersine|LORentz|ARBPULSE|DUAltone
         TODO: I think some of these waveforms have additional options.  Add them
+        !! Will idle at the offset level in between pulses !!
         '''
         self.setup_burstmode(n=n)
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, phase=phase, ch=ch)
@@ -1044,18 +1065,33 @@ class RigolDG5000(object):
         Trigger immediately.
         Manual says you can use up to 128 Mpts, ~2^27, but for some reason you can't.
         Another part of the manual says it is limited to 512 kpts, but can't seem to do that either.
+        !! will idle at the FIRST VALUE of waveform after the pulse is over !!
         '''
         # Load waveform
         self.load_volatile_wfm(waveform=waveform, duration=duration, offset=offset, ch=ch, interp=interp)
-        self.setup_burstmode(n=n)
+        self.setup_burstmode(n=n, ch=ch)
         self.output(True, ch=ch)
         # Trigger rigol
         self.trigger(ch=ch)
 
     def DC(self, value, ch=1):
-        # Only way that I know to make the rigol do DC
-        # Might be a better way
-        self.pulse_arbitrary([value, value], 1e-3, ch=ch)
+        '''
+        Do not rely heavily on this working.  It can be unpredictable.
+        Don't know if you are even supposed to be able to set a DC level
+        '''
+        # One way that I know to make the rigol do DC..
+        # Doesn't go straight to the DC level from where it was, because it has to turn off the output to load
+        # a waveform.  this makes the annoying relay click
+        # also beeps when you use value=0, but seems to work anyway
+        #self.pulse_arbitrary([value, value], 1e-3, ch=ch)
+        # This might be a better way
+        # Goes directily to the next voltage
+        # UNLESS you transition from abs(value) <= 2 t abs(value) > 2
+        # then it will click and briefly output zero volts
+        self.setup_burstmode(ch=ch)
+        self.amplitude(.01, ch=ch)
+        # Limited to +- 9.995
+        self.offset(value, ch=ch)
 
 
 #########################################################
@@ -1347,12 +1383,12 @@ class UF2000Prober(object):
     indexing system is centered on a home device, so depends on how the wafer/coupon is loaded
     micron system is centered somewhere far away from the chuck
 
-	The coordinate systems sound easy, but will confuse you for days
-	in part because the coordinate system and units used for setting
-	and getting the position are sometimes different and sometimes the same!!
-	e.g. when reading the position in microns, the x and y axes are reflected!!
+    The coordinate systems sound easy, but will confuse you for days
+    in part because the coordinate system and units used for setting
+    and getting the position are sometimes different and sometimes the same!!
+    e.g. when reading the position in microns, the x and y axes are reflected!!
 
-	I attempted to hide all of this nonsense from the user of this class
+    I attempted to hide all of this nonsense from the user of this class
     !!!!!!
 
     UF2000 has its own device indexing system which requires some probably horrible setup that you need to do for each wafer.
@@ -1809,7 +1845,7 @@ class UF2000Prober(object):
         yum_rel_prober = yum_rel
         str_xum = '{:+07d}'.format(int(round(xum_rel_prober)))
         str_yum = '{:+07d}'.format(int(round(yum_rel_prober)))
-		# manual says the unit is 1e-6 meter
+        # manual says the unit is 1e-6 meter
         moveString = 'AY{}X{}'.format(str_yum, str_xum)
         self.write(moveString, [65, 67, 74])
 
@@ -1843,7 +1879,10 @@ class Eurotherm2408(object):
             self.uid = uid
 
     def connected(self):
-        return hasattr(self, 'conn')
+        if hasattr(self,'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
 
     def write_data(self, mnemonic, data):
         # Select
@@ -2109,7 +2148,7 @@ class TektronixDPO73304D(object):
 #########################################################
 # Erik Wichmann's Digipot circuit ###################
 #########################################################
-class WichmannDigipot(object):
+class WichmannDigipot_new(object):
     '''
     Probing circuit developed by Erik Wichmann to provide remote series resistance switching
     There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
@@ -2121,12 +2160,10 @@ class WichmannDigipot(object):
     TODO: Is there a way to poll the current state from the microcontroller?
     The class instance might not be aware of it when we first connect.
 
-    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
-
     TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
     TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
     '''
-    def __init__(self, addr='COM10'):
+    def __init__(self, addr=None):
         # BORG
         self.__dict__ = persistent_state.digipot_state
         self.connect(addr)
@@ -2144,8 +2181,162 @@ class WichmannDigipot(object):
                       316.79, 299.09, 299.06]
         self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
 
-    def connect(self, addr='COM10'):
+    def connect(self, addr=None):
         if not self.connected():
+            if addr is None:
+                # Connect to the first thing you see that has Leonardo in the description
+                matches = list(comgrep('Leonardo'))
+                if any(matches):
+                    addr = matches[0].device
+                else:
+                    print('WichmannDigipot could not find Leonardo')
+                    return
+            self.conn = serial.Serial(addr, timeout=1)
+            self.write = self.conn.write
+            self.open = self.conn.open
+            self.close = self.conn.close
+            if self.connected():
+                print(f'Connected to digipot on {addr}')
+
+    @property
+    def Rstate(self):
+        # Returns the current set resistance state
+        # TODO: depends on the configuration (single, series, parallel)
+        return self.Rmap[self.wiper1state]
+
+    @Rstate.setter
+    def Rstate(self, val):
+        self.set_R(val)
+
+    @property
+    def wiper0state(self):
+        self.write(f'get_wiper 0 \n'.encode())
+        time.sleep(5e-3)
+        return int(self.conn.read_all().decode())
+
+    @property
+    def wiper1state(self):
+        self.write(f'get_wiper 1 \n'.encode())
+        time.sleep(5e-3)
+        return int(self.conn.read_all().decode())
+
+    @property
+    def read(self):
+         return self.conn.read_all().decode()
+
+    def connected(self):
+        if hasattr(self,'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
+
+    def writeCMD(self,textstr):
+        ''' 
+        Debugging tool. 
+        Send serial Command and print returned answer like a Serial monitor
+        '''
+        self.write((textstr+' \n').encode())
+        time.sleep(5e-3)
+        print(self.conn.read_all().decode())
+
+    def set_bypass(self, state):
+        '''
+        State:
+        True = connected
+        False = not connected
+        '''
+        self.write(f'bypass {int(state)} \n'.encode())
+        self.bypassstate = state
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        self.conn.read_all().decode()
+
+    def set_wiper(self, state, n=1):
+        '''
+        Change the digipot wiper setting 
+        n=1 is main potentiometer on chip 
+        0 ist only used in parallel/series Mode
+        '''
+        self.write(f'wiper {n} {state}'.encode())
+        #Wait until the AVR has sent a message Back
+        time.sleep(5e-3)
+        self.conn.read_all().decode()
+
+    def set_R(self, R, n=1):
+        if R == 0:
+            self.set_bypass(1)
+            #Set wiper to highest value
+            self.set_wiper(0)
+            return 0
+        else:
+            # Find closest resistance value
+            # I hope the dictionary returns values and keys in the same order
+            Rmap = list(self.Rmap.values())
+            wvals= list(self.Rmap.keys())
+            i_closest = np.argmin(np.abs(R - np.array(Rmap)))
+            R_closest = Rmap[i_closest]
+            w_closest = wvals[i_closest]
+            print(i_closest)
+            print(self.Rmap[i_closest])
+            self.set_wiper(w_closest, n)
+            # Could have sent one command, but I'm sending two
+            self.set_bypass(0)
+            time.sleep(1e-3)
+            return R_closest
+
+    def set_series_R(self, R):
+        # TODO calculate nearest series value
+        pass
+
+    def set_parallel_R(self, R):
+        # TODO calculate nearest parallel value
+        pass
+
+class WichmannDigipot(object):
+    '''
+    Probing circuit developed by Erik Wichmann to provide remote series resistance switching
+    There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
+    There are 31 ~log spaced resistance values per digipot
+
+    TODO: Change arduino command system to not need entire state in one chunk
+    should be three commands, for setting wiper1, wiper2, and relay
+
+    TODO: Is there a way to poll the current state from the microcontroller?
+    The class instance might not be aware of it when we first connect.
+
+    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
+
+    TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
+    TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
+    '''
+    def __init__(self, addr=None):
+        # BORG
+        self.__dict__ = persistent_state.digipot_state
+        self.connect(addr)
+        # map from setting to resistance -- needs to be measured by source meter
+        # TODO: does the second digipot have a different calibration?
+        #self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
+        #              15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
+        #              2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
+        #              324, 306, 306]
+        # Keithley calibration at 1V applied 2019-07-17
+        self.Rlist = [43158.62, 38438.63, 34301.27, 30596.64, 27306.63, 24354.61, 21752.65,
+                      19413.07, 17336.84, 15461.77, 13818.91, 12338.34, 11033.65, 8812.41,
+                      7064.97, 5672.71, 4539.82, 3666.53, 2961.41, 2412.55, 1960.89, 1591.29,
+                      1307.28, 1083.48, 902.42, 711.69, 570.92, 472.24, 426.55, 377.22, 342.16,
+                      316.79, 299.09, 299.06]
+        self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
+
+    def connect(self, addr=None):
+        if not self.connected():
+            if addr is None:
+                # Connect to the first thing you see that has Leonardo in the description
+                matches = list(comgrep('Leonardo'))
+                if any(matches):
+                    addr = matches[0].device
+                else:
+                    print('WichmannDigipot could not find Leonardo')
+                    return
             self.conn = serial.Serial(addr, timeout=1)
             self.write = self.conn.write
             self.close = self.conn.close
@@ -2155,15 +2346,30 @@ class WichmannDigipot(object):
             self.wiper1state = 0
             self.wiper2state = 0
             self.write('0 0 1'.encode())
+            if self.connected():
+                print(f'Connected to digipot on {addr}')
+
+    @property
+    def Rstate(self):
+        # Returns the current set resistance state
+        # TODO: depends on the configuration (single, series, parallel)
+        return self.Rmap[self.wiper2state]
 
     def connected(self):
-        # Not a very smart way to determine if we are connected
         if hasattr(self,'conn'):
             return self.conn.isOpen()
         else:
             return False
 
-
+    def writeRead(self,textstr):
+        # Simple send serial Command and print returned answer
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+        self.write(textstr)
+        time.sleep(5e-3)
+        print(self.conn.read_all())
+        time.sleep(5e-3)
+        print(self.conn.read_all())
 
     def set_bypass(self, state):
         '''
@@ -2228,7 +2434,6 @@ class WichmannDigipot(object):
         # TODO calculate nearest parallel value
         pass
 
-
 #########################################################
 # PG5 (Picosecond Pulse generator) ######################
 #########################################################
@@ -2285,13 +2490,24 @@ class PG5(object):
     def trigger(self):
         '''Executes a pulse'''
         self.write(':INIT')
-        
+
 
 #########################################################
 # Temperature PID-Control ###############################
 #########################################################
 class EugenTempStage(object):
-    def __init__(self, addr='COM7', baudrate=9600):
+    # Global Variables
+    # Resistor-Values bridge
+    r_1 = 9975
+    r_3 = 9976
+    r_4 = 1001
+    # Gain from instrumental-opamp
+    opamp_gain = 12.55
+    # Voltage Bridge
+    # TODO: do a sample of this voltage to make sure the voltage supply is on, otherwise return an error that says to turn it on!
+    volt_now = 10
+
+    def __init__(self, addr=None, baudrate=9600):
         # BORG
         self.__dict__ = persistent_state.tempstage_state
         try:
@@ -2299,14 +2515,27 @@ class EugenTempStage(object):
         except:
             print('Arduino connection failed at {}'.format(addr))
 
-    def connect(self, addr, baudrate):
+    def connect(self, addr=None, baudrate=9600):
         if not self.connected():
-            self.conn = serial.Serial(addr, baudrate)
+            if addr is None:
+                # Connect to the first thing you see that has Arduino Micro in the description
+                matches = list(comgrep('Arduino Micro'))
+                if any(matches):
+                    addr = matches[0].device
+                else:
+                    print('EugenTempStage could not find Arduino Micro')
+                    return
+            self.conn = serial.Serial(addr, baudrate, timeout=1)
             self.write = self.conn.write
             self.close = self.conn.close
+            if self.connected():
+                print(f'Connected to PID controller on {addr}')
 
     def connected(self):
-        return hasattr(self, 'conn')
+        if hasattr(self, 'conn'):
+            return self.conn.isOpen()
+        else:
+            return False
 
     def analogOut(self, voltage):
         ''' Tell arduino to output a voltage on pin 9 '''
@@ -2316,19 +2545,20 @@ class EugenTempStage(object):
         # Find the closest value that can be output.
         vstep = vmax / (2**numbits - 1)  # 5 /4095
         value = voltage / vstep  # exact value for analogWrite()-function
-        cmd_str = '0,9,{};'.format(value).encode()
+        cmd_str = '0,{};'.format(value).encode()
         self.write(cmd_str)
         actualvoltage = vstep * value
         return actualvoltage
 
     def analogIn(self, channel):
-        # Function to get max Voltage for Bridge
+        # Function to get Voltage from Bridge
         # Arduino will return the voltage in bits
         vmax = 5
         numbits = 10
         vstep = round(vmax / (2**numbits - 1), 5)# 5 /1023
         cmd_str = '1,{};'.format(channel).encode()
         self.write(cmd_str)
+
         reply = self.conn.readline().decode()
         adc_value = float(reply.split(',')[-1].strip().strip(';'))
         voltage = adc_value * vstep
@@ -2336,26 +2566,17 @@ class EugenTempStage(object):
         return voltage
 
     def set_temperature(self, temp):
-        # Resistor-Values bridge
-        r_1 = 9975
-        r_3 = 9976
-        r_4 = 1001
-        # Gain from instrumental-opamp
-        opamp_gain = 12.55
-        # Voltage Bridge
-        volt_now = 10
-
-        ''' Temperature Setpoint Function, should be between 0-100Celsius  '''
+        #Temperature Setpoint Function, should be between 0-100Celsius
 
         if temp > 100:
             print('Its too HOT! DANGERZONE!')
 
         if temp <= 100 and temp >= 0:
             pt_res = round((1000 * (1.00385**temp)), 1)
-            volt_zaehler = volt_now * (pt_res * (r_3 + r_4) - r_4 * (r_1 + pt_res))
-            volt_nenner = (r_4 + r_3) * r_1 + (r_3 + r_4) * pt_res
+            volt_zaehler = self.volt_now * (pt_res * (self.r_3 + self.r_4) - self.r_4 * (self.r_1 + pt_res))
+            volt_nenner = (self.r_4 + self.r_3) * self.r_1 + (self.r_3 + self.r_4) * pt_res
             volt_bruch = volt_zaehler / volt_nenner
-            volt_set = volt_bruch * opamp_gain
+            volt_set = volt_bruch * self.opamp_gain
             temp_set = self.analogOut(volt_set)
             #print('Sent command to output {0:.3f} Volt'.format(temp_set))
             print('Temperature set to {0:.2f} \u00b0C'.format(temp))
@@ -2363,17 +2584,20 @@ class EugenTempStage(object):
             print('Its too COLD! Can not do that :-/')
 
     def read_temperature(self):
-        # Resistor-Values bridge
-        r_1 = 9975
-        r_3 = 9976
-        r_4 = 1001
-        # Gain from instrumental-opamp
-        opamp_gain = 12.55
-        # Voltage Bridge
-        volt_now = 10
+        r_1 = self.r_1
+        r_3 = self.r_3
+        r_4 = self.r_4
+        volt_now = self.volt_now
+        opamp_gain = self.opamp_gain
+
         volt_bridge = self.analogIn(1) / opamp_gain
         pt_zaehler = (((r_3 + r_4) * volt_bridge) + (volt_now * r_4)) * r_1
-        pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4) * volt_now)
+        pt_nenner = ((r_3 + r_4) * volt_now) - (volt_bridge * (r_3 + r_4) + (r_4 * volt_now))
         pt_res = round((pt_zaehler / pt_nenner), 1)
         temp_read = np.log(pt_res / 1000) / np.log(1.00385)
         return temp_read
+
+
+
+def com_port_info():
+    comports = serial.tools.list_ports.comports()
