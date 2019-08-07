@@ -122,6 +122,35 @@ class MetaHandler(object):
         self.filenamekeys = filenamekeys
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print()
+        
+    def load_nanoxbar2(self, **kwargs):
+        '''
+        Load nanoxbar metadata
+        use keys X, Y, width_nm, device
+        Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
+        all kwargs will just be added to all metadata
+        '''
+        nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar2.pkl')
+        nanoxbar = pd.read_pickle(nanoxbarfile)
+        devicemetalist = nanoxbar
+        for name, value in kwargs.items():
+            if name in nanoxbar:
+                if not hasattr(value, '__iter__'):
+                    value = [value]
+                devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
+            else:
+                devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
+        #filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        filenamekeys = ['id']
+        if 'sample_name' in kwargs:
+            filenamekeys = ['sample_name'] + filenamekeys
+        meta_i = 0
+        self.df = devicemetalist
+        self.meta = devicemetalist.iloc[0]
+        self.prettykeys = filenamekeys
+        self.filenamekeys = filenamekeys
+        print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
+        self.print()
 
     def load_lassen(self, **kwargs):
         '''
