@@ -430,7 +430,7 @@ def set_compliance(cc_value):
     fn = settings.COMPLIANCE_CALIBRATION_FILE
     abspath = os.path.abspath(fn)
     if os.path.isfile(abspath):
-        print('Reading calibration from file {abspath}'.format())
+        print('Reading calibration from file {}'.format(abspath))
     else:
         raise Exception('No compliance calibration.  Run calibrate_compliance().')
     with open(fn, 'rb') as f:

@@ -164,7 +164,34 @@ class MetaHandler(object):
         self.filenamekeys = filenamekeys
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print()
-
+    def load_mask32x1(self, **kwargs):
+        '''
+        Load nanoxbar metadata
+        use keys Geometry (XXnm_Yum), Device (1 to 32), Row (1 to 32)
+        Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
+        all kwargs will just be added to all metadata
+        '''
+        mask32x1file = os.path.join(self.moduledir, 'sampledata/mask32x1.pkl')
+        mask32x1 = pd.read_pickle(mask32x1file)
+        devicemetalist = mask32x1
+        for name, value in kwargs.items():
+            if name in mask32x1:
+                if not hasattr(value, '__iter__'):
+                    value = [value]
+                devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
+            else:
+                devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
+        #filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        filenamekeys = ['id']
+        if 'sample_name' in kwargs:
+            filenamekeys = ['sample_name'] + filenamekeys
+        meta_i = 0
+        self.df = devicemetalist
+        self.meta = devicemetalist.iloc[0]
+        self.prettykeys = filenamekeys
+        self.filenamekeys = filenamekeys
+        print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
+        self.print()
     def load_lassen(self, **kwargs):
         '''
         Load wafer information for Lassen
