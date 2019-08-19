@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import inspect
-from matplotlib.widgets import SpanSelector
+from matplotlib.widgets import SpanSelector, RectangleSelector
 from inspect import signature
 import os
 from numbers import Number
@@ -391,8 +391,9 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.scatter(cycle1, resist1, c='royalblue', **scatterargs)
     ax.scatter(cycle2, resist2,  c='seagreen', **scatterargs)
     #ax.legend(['HRS', 'LRS'], loc=0)
+    engformatter('y', ax)
     ax.set_xlabel('Cycle #')
-    ax.set_ylabel('Resistance / $\\Omega$')
+    ax.set_ylabel('Resistance [$\\Omega$]')
 
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
@@ -449,7 +450,7 @@ def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
     ax.set_ylabel(y)
     return fig, ax
 
-def plot_channels(chdata, ax=None, alpha=.8):
+def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     '''
     Plot the channel data of picoscope
     Includes an indication of the measurement range used
@@ -477,7 +478,7 @@ def plot_channels(chdata, ax=None, alpha=.8):
             else:
                 x = range(len(chdata[c]))
                 ax.set_xlabel('Data Point')
-            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha)
+            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha, **kwargs)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
@@ -485,14 +486,15 @@ def plot_channels(chdata, ax=None, alpha=.8):
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
     ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
     if ax is None:
         ax = plt.gca()
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cb = plt.colorbar(sm, ax=ax, **kwargs)
+    # Sometimes you want to specify the axis for the colorbar itelf.
+    cb = plt.colorbar(sm, ax=ax, cax=cax, **kwargs)
     return cb
 
 
@@ -581,8 +583,11 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
-            # doesn't do anything yet
+            # if False, disables updateline, newline
             self.enable = True
+            # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
+            self.preprocessing = []
+            self.processed_data = None
 
     def createfig(self, n):
         '''
@@ -628,21 +633,29 @@ class interactive_figs(object):
 
     def newline(self, data=None):
         ''' Update the plots with new data. '''
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if data is None:
-                ax.plot([])
-            else:
-                try:
-                    plotter(data, ax=ax)
-                    color = ax.lines[-1].get_color()
-                    ax.set_xlabel(ax.get_xlabel(), color=color)
-                    ax.set_ylabel(ax.get_ylabel(), color=color)
-                except Exception as e:
+        if self.enable:
+            if data is not None:
+                if any(self.preprocessing):
+                    for pp in self.preprocessing:
+                        # Just run the data through all the functions
+                        data = pp(data)
+                    # In case you want to access it without running the processing again
+                    self.processed_data = data
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if data is None:
                     ax.plot([])
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-                ax.get_figure().canvas.draw()
-        mypause(0.05)
+                else:
+                    try:
+                        plotter(data, ax=ax)
+                        color = ax.lines[-1].get_color()
+                        ax.set_xlabel(ax.get_xlabel(), color=color)
+                        ax.set_ylabel(ax.get_ylabel(), color=color)
+                    except Exception as e:
+                        ax.plot([])
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                    ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def set_maxlines(self, maxlines=None):
         for ax in self.axs:
@@ -659,31 +672,36 @@ class interactive_figs(object):
         # function again, this works by deleting the last line and plotting a new one with
         # the same colors
         # I am assuming for now that the plot functions each produce one line.
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if any(ax.lines):
-                color = ax.lines[-1].get_color()
-                del ax.lines[-1]
-            else:
-                color = None
-            argspec = inspect.getfullargspec(plotter)
-            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
-                # plotter won't error if we pass this keyword argument
-                # it might even work ..
-                try:
-                    plotter(data, ax, color=color)
-                except Exception as e:
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-            else:
-                # Simply set the line color after plotting
-                # could mess up the color cycle.
-                try:
-                    plotter(data, ax)
-                    ax.lines[-1].set_color(color)
-                except:
-                    print('Plotter number {} failed!'.format(axnum))
-            ax.get_figure().canvas.draw()
-        mypause(0.05)
+        if self.enable:
+            if any(self.preprocessing):
+                for pp in self.preprocessing:
+                    # Just run the data through all the functions
+                    data = pp(data)
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if any(ax.lines):
+                    color = ax.lines[-1].get_color()
+                    del ax.lines[-1]
+                else:
+                    color = None
+                argspec = inspect.getfullargspec(plotter)
+                if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
+                    # plotter won't error if we pass this keyword argument
+                    # it might even work ..
+                    try:
+                        plotter(data, ax, color=color)
+                    except Exception as e:
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                else:
+                    # Simply set the line color after plotting
+                    # could mess up the color cycle.
+                    try:
+                        plotter(data, ax)
+                        ax.lines[-1].set_color(color)
+                    except:
+                        print('Plotter number {} failed!'.format(axnum))
+                ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def clear(self):
         ''' Clear all the axes '''
@@ -857,7 +875,10 @@ def chplotter(data, ax=None, **kwargs):
             step = lendata // 50000
             #plotdata = analyze.decimate(data, step, columns=channels)
             plotdata = analyze.sliceiv(data, step=step, columns=channels)
-            plotdata['downsampling']= step
+            if 'downsampling' in plotdata:
+                plotdata['downsampling'] *= step
+            else:
+                plotdata['downsampling'] = step
         else:
             plotdata = data
         plot_channels(plotdata, ax=ax)
@@ -1048,11 +1069,10 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     To use selector, just make sure you don't have any other gui widgets active
     Will remain active as long as the return value is not garbage collected
     Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
-    # TODO pass the plotting function (could be different than plotiv)
     '''
     if data is None:
         # Check for global variables ...
-        # Sorry if this offends you ..
+        # Sorry if this offends you ..  it offends me
         print('No data passed. Looking for global variable d')
         try:
             data = d
@@ -1076,6 +1096,62 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
     return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
+
+# Data selector
+def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
+    '''
+    Plot all the data, x vs y
+    Select 2D range from plot of x vs y.
+    print the data indices that have data in the range selected
+    # Or should it return the data subset?
+
+    # TODO: use lasso tool instead
+
+    Will remain active as long as the return value is not garbage collected
+    Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
+    '''
+    if data is None:
+        # Check for global variables ...
+        # Sorry if this offends you ..  it offends me
+        print('No data passed. Looking for global variable d')
+        try:
+            data = d
+        except:
+            print('No global variable d. Looking for global variable df')
+            try:
+                data = df
+            except:
+                raise Exception('No data can be found')
+
+    if ax is None:
+        ax = plt.gca()
+
+    plotfunc(data, x=x, y=y, ax=ax)
+    def onselect(eclick, erelease):
+        x1, y1 = eclick.xdata, eclick.ydata
+        x2, y2 = erelease.xdata, erelease.ydata
+
+        xmin = min(x1, x2)
+        xmax = max(x1, x2)
+        ymin = min(y1, y2)
+        ymax = max(y1, y2)
+
+        #print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        #print("The button you used were: %s %s" % (eclick.button, erelease.button))
+        # Find the data that has values in the selected range
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+        def inside(d):
+            X = d[x]
+            Y = d[y]
+            return np.any((X > xmin) & (X < xmax) & (Y > ymin) & (Y < ymax))
+        if type(data) is pd.DataFrame:
+            print(data.index[data.apply(inside, 1)])
+        else:
+            # Should be a list of dicts/Series
+            print([i for i,d in enumerate(data) if inside(d)])
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
+    return RS
 
 
 ### Animation

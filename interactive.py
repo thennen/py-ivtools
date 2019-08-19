@@ -139,6 +139,8 @@ if hostname == 'pciwe46':
     connections = [('ps', instruments.Picoscope),
                    ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                    ('daq', instruments.USB2708HS),
+                   ('ts', instruments.EugenTempStage),
+                   ('dp', instruments.WichmannDigipot),
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                    #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
@@ -181,9 +183,9 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.RigolDG5000:'rigol',
                        instruments.Keithley2600:'k',
                        instruments.PG5:'pg5',
+                       instruments.Eurotherm2408:'et',
                        instruments.TektronixDPO73304D:'ttx',
                        instruments.USB2708HS:'daq'}
-
 # Make varnames None until connected
 for kk,v in instrument_varnames.items():
     globalvars[v] = None
