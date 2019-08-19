@@ -891,7 +891,6 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                     ax_dialog.set_ylabel('Curreent [A]')
                     ax_dialog.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
                     ax_dialog.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
-                    ax_dialog.legend()
 
                 ax_yes = plt.axes([0.7, 0.05, 0.1, 0.075])
                 ax_no = plt.axes([0.81, 0.05, 0.1, 0.075])
@@ -909,14 +908,17 @@ def eval_vcm_measurement(data,
 hrs_upper = np.nan, 
 hrs_lower = np.nan, 
 lrs_upper = np.nan,
-lrs_lower = np.nan):
+lrs_lower = np.nan,
+do_plots = True):
     impedance = 50
-    setup_vcm_plots()
     if(type(data) == str):
         data = pd.read_pickle(data)
-    iplots.show()
-    iplots.updateline(data)
-    print(type(data))
+    
+    if do_plots == True:
+        setup_vcm_plots()
+        iplots.updateline(data)
+        iplots.show()
+    #print(type(data))
     fwhm_list = []
     pulse_amplitude = []
     R_hrs = []
