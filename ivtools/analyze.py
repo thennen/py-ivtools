@@ -389,6 +389,11 @@ def medfilt(data, window=5, columns=('I', 'V')):
     add_missing_keys(data, dataout)
     return dataout
 
+@ivfunc
+def savgolfilt(window, order, columns=None):
+    # TODO implement this
+    pass
+
 
 @ivfunc
 def decimate(data, factor=5, columns=('I', 'V')):
