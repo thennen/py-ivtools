@@ -974,5 +974,3 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
     pulsearray = np.ones(ontime) * vpulse
     postarray = np.ones(posttime) * endval
     return np.concatenate((prearray, pulsearray, postarray))
-
-

@@ -166,8 +166,8 @@ class MetaHandler(object):
         self.print()
     def load_mask32x1(self, **kwargs):
         '''
-        Load nanoxbar metadata
-        use keys Geometry (XXnm_Yum), Device (1 to 32), Row (1 to 32)
+        Load 32x1 metadata
+        use keys Block (1 to 8, see notebook), Device (1 to 32), Row (1 to 32)
         Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
         all kwargs will just be added to all metadata
         '''
@@ -264,6 +264,42 @@ class MetaHandler(object):
         self.filenamekeys = ['dep_code', 'sample_number', 'die_rel', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
+
+
+    def load_CRS_mask(self, **kwargs):
+        '''
+        Load CRS
+        #Field represents the large Squares on the sample 1=A5, 25=E1 (going from left to right, from top to bottom)
+        #field = pd.DataFrame({'Field': [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25]})
+        #xs represents the x value in a field going from left to right 1=a, 12=l
+        #xs = pd.DataFrame({'X': [1,2,3,4,5,6,7,8,9,10,11,12]})
+        #ys represents the y value in a field going from top to bottom 1=50nm, 6=500nm
+        #ys = pd.DataFrame({'Y': [1,2,3,4,5,6]})
+        #Cell top = 0, Bot = 1
+        '''
+        CRSfile = os.path.join(self.moduledir, 'sampledata/CRSmask.pkl')
+        CRS = pd.read_pickle(CRSfile)
+        devicemetalist = CRS
+        for name, value in kwargs.items():
+            if name in CRS:
+                if not hasattr(value, '__iter__'):
+                    value = [value]
+                devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
+            else:
+                devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
+        #filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        filenamekeys = ['id']
+        if 'sample_name' in kwargs:
+            filenamekeys = ['sample_name'] + filenamekeys
+        meta_i = 0
+        self.df = devicemetalist
+        self.meta = devicemetalist.iloc[0]
+        self.prettykeys = filenamekeys
+        self.filenamekeys = filenamekeys
+        print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
+        self.print()
+
+
 
     def load_depositions():
         ''' Load sample information from some deposition sheet  (not implemented)'''
