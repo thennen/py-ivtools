@@ -37,7 +37,12 @@ import os
 import pandas as pd
 import serial
 from collections import deque
-from . import persistent_state
+#from . import persistent_state
+import sys
+sys.path.append(r'C:\py-ivtools\ivtools')
+sys.path.append(r'C:\py-ivtools\picoscope')
+#from ivtools import persistent_state
+import persistent_state
 visa_rm = persistent_state.visa_rm
 # Could also store the visa_rm in visa itself
 #visa.visa_rm = visa.ResourceManager()
@@ -55,13 +60,18 @@ visa_rm = persistent_state.visa_rm
 # Picoscope 6000 ########################################
 #########################################################
 class Picoscope(object):
+
     '''
     This class will basically extend the colinoflynn picoscope module
     Has some higher level functionality, and it stores/manipulates the channel settings.
     '''
+
     def __init__(self):
+        print('_init_ Pico')
         self.__dict__ = persistent_state.pico_state
-        from picoscope import ps6000
+        #from picoscope import ps6000
+        import ps6000
+        print('ps6000 file: {}'.format(ps6000.__file__))
         self.ps6000 = ps6000
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
         # Then this whole package would have picoscope module as a dependency
@@ -78,14 +88,17 @@ class Picoscope(object):
     def connect(self):
         # We are borg, so might already be connected!
         if self.connected():
-            #info = self.ps.getUnitInfo('VariantInfo')
-            #print('Picoscope {} already connected!'.format(info))
+            #
+
+            # info = self.ps.getUnitInfo('VariantInfo')
+            print('Picoscope {} already connected!'.format(info))
             pass
         else:
             try:
                 self.ps = self.ps6000.PS6000(connect=True)
-                model = self.ps.getUnitInfo('VariantInfo')
-                print('Picoscope {} connection succeeded.'.format(model))
+
+                #model = self.ps.getUnitInfo('VariantInfo')
+                print('Picoscope {} connection succeeded.'.format(' pico ')) #model))
                 self.close = self.ps.close
                 self.handle = self.ps.handle
                 # TODO: methods of PS6000 to expose?
@@ -157,8 +170,8 @@ class Picoscope(object):
             self.possible = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
             self.max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
             self['A'] = 1.0
-            self['B'] = 1.0
-            self['C'] = 1.0
+            self['B'] = 0.1
+            self['C'] = 1
             self['D'] = 1.0
 
         def set(self, channel, value):
@@ -222,9 +235,9 @@ class Picoscope(object):
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
             self['A'] = 'DC'
-            self['B'] = 'DC'
-            self['C'] = 'DC'
-            self['D'] = 'DC'
+            self['B'] = 'DC50' #''DC'
+            self['C'] = 'DC50' #''DC'
+            self['D'] = 'DC50'
             self.possible = ('DC', 'AC', 'DC50')  # I think?
 
         def set(self, channel, value):
@@ -362,7 +375,12 @@ class Picoscope(object):
                                VOffset=choffset[c],
                                enabled=True)
         # Set up the trigger.  Will timeout in 30s
+
+
+
+
         self.ps.setSimpleTrigger(trigsource, triglevel, timeout_ms=timeout_ms)
+        print('Trigger Source: {}'.format(trigsource))
         self.ps.runBlock(pretrig)
         return actualfreq
 
@@ -434,8 +452,11 @@ class RigolDG5000(object):
             return
         # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
         # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
-        self.screensaver(False)
+        #screensaver(False)
         self.volatilewfm = []
+    
+
+
 
     def get_visa_addr(self):
         # Look for the address of the DG5000 using visa resource manager
@@ -777,6 +798,8 @@ class RigolDG5000(object):
         self.load_volatile_wfm(waveform=waveform, duration=duration, ch=ch, interp=interp)
         self.setup_burstmode(n=n)
         self.outputstate(True, ch=ch)
+        self.trigsource()
+        self.burstmode()
         # Trigger rigol
         self.trigger(ch=ch)
 
@@ -1096,7 +1119,9 @@ class UF2000Prober(object):
         self.inst = visa_rm.open_resource(idstring)
         self.inst.timeout = 3000
         # UF2000 seems to call this position home, could depend on the setup!
-        self.home_indices = (128, 128)
+        #self.home_indices = (128, 128)
+        #self.home_indices = (129,127)
+        self.home_indices = (129, 128)
         # Very roughly the center of the chuck...
         self.center_position_um = (160_126.3, 388_264.5)
 
@@ -1884,3 +1909,7 @@ class PG5(object):
         '''Executes a pulse'''
         self.write(':INIT')
     
+
+if __name__ == '__main__':
+    '''create picoscop instance'''
+    ps = Picoscope()

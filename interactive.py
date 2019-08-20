@@ -166,6 +166,7 @@ keithley_plotters = [[0, partial(ivplot.ivplotter, **kargs)],
 # Default data subfolder -- will reflect the date of the last time this script ran
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
 subfolder = datestr
+
 if len(sys.argv) > 1:
     # Can give a folder name with command line argument
     subfolder += '_' + sys.argv[1]
@@ -231,6 +232,7 @@ add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
 def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
+    ts = time.clock()
     '''
     Save data with metadata attached.
     if no data is passed, try to use the global variable d
@@ -244,7 +246,11 @@ def savedata(data=None, filepath=None, drop=('A', 'B', 'C', 'D')):
             data = d
     if filepath is None:
         filepath = os.path.join(datadir(), meta.filename())
-    io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
+    #io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
+    data['filepath'] = filepath
+    te = time.clock()
+    print('total savedata time:{}'.format(te-ts))
+    return data
     # TODO: append metadata to a sql table
 # just typing s will save the d variable
 s = autocaller(savedata)
@@ -254,20 +260,26 @@ s = autocaller(savedata)
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
+
     ''' Activates auto data plotting and saving for wrapped functions '''
     @wraps(func)
     def func_with_plotting(*args, **kwargs):
+        ts = time.clock()
         # Call function as normal
         if getdatafunc is None:
+
+            print('getdatafunc is None')
             data = func(*args, **kwargs)
-            savedata(data)
+            data = savedata(data)
             # Plot the data
-            iplots.newline(data)
+            #iplots.newline(data)
         else:
+            print('getdatafunc not None')
             # Measurement function is different from getting data function
             # This gives the possibility for live plotting
             func(*args, **kwargs)
             if live:
+                print('live ==True')
                 iplots.newline()
                 while not donefunc():
                     if live:
@@ -277,13 +289,19 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
                 data = getdatafunc()
                 iplots.updateline(data)
             else:
+                print('live == False')
                 while not donefunc():
                     plt.pause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
             if autosave:
                 savedata(data)
+        te=time.clock()
+        print('Wrapper time: {}'.format(te-ts))
         return data
+
+    te = time.clock()
+    #print('Wrappertime: {}'.format(te - ts))
     return func_with_plotting
 
 picoiv = interactive_wrapper(measure.picoiv)

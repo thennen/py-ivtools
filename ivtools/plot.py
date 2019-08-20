@@ -1,8 +1,9 @@
 """ Functions for making plots with IV data """
 
-# Local imports
+#Local imports
 from . import analyze
 from . import persistent_state
+
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt

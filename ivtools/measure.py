@@ -2,11 +2,20 @@
 Functions for measuring IV data
 """
 # Local imports
-from . import plot as ivplot
-from . import analyze
-from . import instruments
-from . import persistent_state as settings
+# from . import plot as ivplot
+# from . import analyze
+# from . import instruments
+# from . import persistent_state as settings
 
+
+from ivtools import plot as ivplot
+from ivtools import analyze
+from ivtools import instruments
+from ivtools import persistent_state as settings
+
+
+
+import datetime
 from matplotlib import pyplot as plt
 from fractions import Fraction
 from math import gcd
@@ -17,7 +26,9 @@ import os
 import visa
 from functools import partial
 import pickle
-
+import matplotlib.ticker as mtick
+import inspect
+import stat
 ########### Picoscope - Rigol AWG testing #############
 
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, duration=None,
@@ -62,17 +73,90 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     return data
 
-def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
+def plot_Pulses_wDCRead(iv1 , iv2, DC1_arr, DC2_arr, DC3_arr, Rdict):
+
+    fig, ax = plt.subplots()
+    ax.set_title('Channel B Initial\n Die: {}, Mod: {}, Device: {}'.format(iv1['die'], iv1['mod'], iv1['dev']))
+    t = np.linspace(0, iv1['duration'], len(iv1['I2']))
+    ax.plot(t, (iv1['I2'] + iv1['b_offset']) / iv1['b_atten'], c='r')
+    ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2e'))
+    ax.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.4e'))
+    ax.set_ylabel('Current (A)')
+    ax_volt = ax.twinx()
+    ax_volt.plot(t, (iv1['V'] + iv1['c_offset']) / iv1['c_atten'], c='g')
+    ax_volt.set_ylabel('Voltage (V)')
+    ax.annotate('R_before: {}\nR_after: {}'.format(Rdict['R1'], Rdict['R2']), (.1, .75), xycoords='axes fraction')
+
+    fig, ax = plt.subplots()
+    ax.set_title('Channel B Secondary\n Die: {}, Mod: {}, Device: {}'.format(iv1['die'], iv1['mod'], iv1['dev']))
+    t = np.linspace(0, iv1['duration'], len(iv1['I2']))
+    ax.plot(t, (iv2['I2'] + iv2['b_offset']) / iv2['b_atten'], c='r')
+    ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2e'))
+    ax.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.4e'))
+    ax.set_ylabel('Current (A)')
+    ax_volt = ax.twinx()
+    ax_volt.plot(t, (iv2['V'] + iv2['c_offset']) / iv2['c_atten'], c='g')
+    ax_volt.set_ylabel('Voltage (V)')
+    ax.annotate('R_before: {}\nR_after: {}'.format(Rdict['R2'], Rdict['R3']), (.1, .75), xycoords='axes fraction')
+
+    fig, ax = plt.subplots()
+    ax.plot(DC1_arr[0], DC1_arr[1], label='First')
+    ax.plot(DC2_arr[0], DC2_arr[1], label='Second')
+    ax.plot(DC3_arr[0], DC3_arr[1], label='Third')
+    ax.set_ylabel('Current')
+    ax.set_xlabel('Voltage')
+    ax.set_title('Electrometer I vs. V')
+
+
+
+
+
+def plot_Nantes(df):
+
+    #channel B plot
+    fig, ax = plt.subplots()
+    ax.set_title('Channel B\n Die: {}, Mod: {}, Device: {}'.format(df['die'], df['mod'], df['dev']))
+    t = np.linspace(0,df['duration'], len(df['I2']))
+    ax.plot(t, (df['I2']+df['b_offset'])/df['b_atten'], c='r')
+    ax.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2e'))
+    ax.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.4e'))
+    ax.set_ylabel('Current (A)')
+    ax_volt = ax.twinx()
+    ax_volt.plot(t, (df['V']+df['c_offset'])/df['c_atten'], c='g')
+    ax_volt.set_ylabel('Voltage (V)')
+
+
+
+    #Channel D plot
+    fig2, ax2 = plt.subplots()
+    ax2.set_title('Channel D\n Die: {}, Mod: {}, Device: {}'.format(df['die'], df['mod'], df['dev']))
+    ax2.plot(t, -1*(df['I3']+df['d_offset'])/df['d_atten'])
+    ax2.yaxis.set_major_formatter(mtick.FormatStrFormatter('%.2e'))
+    ax2.xaxis.set_major_formatter(mtick.FormatStrFormatter('%.4e'))
+    ax2.set_ylabel('Current (A)')
+
+    ax_volt2 = ax2.twinx()
+    ax_volt2.plot(t, (df['V']+df['c_offset'])/df['c_atten'], c='g')
+    ax_volt2.set_ylim()
+    ax_volt.set_ylabel('Voltage (V)')
+
+
+def picoiv(wfm, die, mod, dev,duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
-           savewfm=False, pretrig=0, interpwfm=True, **kwargs):
+           savewfm=False, pretrig=0, interpwfm=True,  **kwargs):
+    ts =time.clock()
     '''
     Pulse a waveform, plot pico channels, IV, and save to d variable
     Provide either fs or nsamples
     kwargs go nowhere
     TODO: Don't let smartrange change the global settings
     '''
+
+
     rigol = instruments.RigolDG5000()
+
     ps = instruments.Picoscope()
+
 
     if not (bool(fs) ^ bool(nsamples)):
         raise Exception('Must pass either fs or nsamples, and not both')
@@ -83,29 +167,32 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
     else:
         # Always smart range the monitor channel
-        smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL])
+        smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL], ps=ps)
 
     # Let pretrig refer to the fraction of a single pulse, not the whole pulsetrain
     pretrig /= n
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+
+
     actual_fs = ps.capture(ch=channels,
                              freq=fs,
                              duration=n*duration,
                              pretrig=pretrig)
 
     # This makes me feel good, but I don't think it's really necessary
-    time.sleep(.05)
+    time.sleep(0.05)
     if into50ohm:
         # Multiply voltages by 2 to account for 50 ohm input
         wfm = 2 * wfm
 
     # Send a pulse
+    #input('enter to pulse Rigol')
     rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
 
     trainduration = n * duration
     print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
-    time.sleep(n * duration * 1.05)
+    #time.sleep(n * duration * 1.05)
     #ps.waitReady()
     print('Getting data from picoscope.')
     # Get the picoscope data
@@ -116,12 +203,27 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     ivdata = pico_to_iv(chdata)
 
     ivdata['nshots'] = n
+    ivdata['duration'] = duration
+    ivdata['b_offset'] = 5.4e-6
+    ivdata['d_offset'] = -1e-5
+    ivdata['c_offset'] = 0.02
+    ivdata['b_atten'] = .4494
+    ivdata['d_atten'] = .4494
+    ivdata['c_atten'] = .471
+    ivdata['die'] = die
+    ivdata['mod'] = mod
+    ivdata['dev'] = dev
+
+    #ivdata['t_array'] = np lins
+
 
     if savewfm:
         # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
         # You will need to interpolate it, however..
         # Or can we read it off the rigol??
         ivdata['Vwfm'] = wfm
+
+
 
     if autosmoothimate:
         nsamples_shot = ivdata['nsamples_capture'] / n
@@ -134,13 +236,15 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
         if autosmoothimate is True:
             # yes I meant IS true..
             npts = 1000
+            #npts = 50
         else:
             # Can pass the number of data points you would like to end up with
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         print('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
-
+    print(8, round(time.clock(), 2), inspect.getframeinfo(inspect.currentframe()).filename,
+          inspect.currentframe().f_back.f_lineno)
     if autosplit:
         print('Splitting data into individual pulses')
         if n > 1 and (splitbylevel is None):
@@ -156,6 +260,13 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
             increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
             ivdata = analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
+    print('Closing Rigol')
+    del rigol
+    print(9, round(time.clock(), 2), inspect.getframeinfo(inspect.currentframe()).filename,
+          inspect.currentframe().f_back.f_lineno)
+    te = time.clock()
+    print('Total picoscope time: {}'.format(te-ts))
+    ps.close()
     return ivdata
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
@@ -278,14 +389,15 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     If you pass vmin != -vmax, will not start at zero!
     '''
     rigol = instruments.RigolDG5000()
-
-    wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
+    ps = instruments.Picoscope()
+    wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*np.pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
 
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
-def smart_range(v1, v2, R=None, ch=['A', 'B']):
+def smart_range(v1, v2, R=None, ch=['A', 'B'], ps=None):
     # TODO: don't let this function change the pico state.  Just return the calculated ranges.
-    ps = instruments.Picoscope()
+    if ps is None:
+        ps = instruments.Picoscope()
     # Auto offset for current input
     possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
     # Each range has a maximum possible offset
@@ -580,14 +692,16 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
     Convert picoscope channel data to IV dict
     for TEO HF output channels
     '''
+    #ts = time.clock()
+
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
     # Volts per amp
-    gainA = 1
-    gainB = 1
-    gainC = 1
-    gainD = -2
+    gainA = 1/0.00417#0.01209411011483933 #
+    gainB = 1/0.00417#0.011869442906436508 #1
+    gainC = 1/5
+    gainD = 1/0.00417#0.006003293431804675 #1
 
     dataout = datain
     # If data is raw, convert it here
@@ -604,7 +718,8 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
     dataout['I3'] = D / gainD
     dataout['units'] = {'V':'V', 'I':'A', 'I2':'A', 'I3':'A'}
     dataout['gain'] = {'A':gainA, 'B':gainB, 'C':gainC, 'D':gainD}
-
+    #te = time.clock()
+    #print('Time for TEO to iv: {}'.format(te-ts))
     return dataout
 
 
@@ -764,3 +879,59 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
     return np.concatenate((prearray, pulsearray, postarray))
 
 
+def write_pandas_pickle(data, filepath=None, drop=None):
+    ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
+    if filepath is None:
+        filepath = timestamp()
+
+    filedir = os.path.split(filepath)[0]
+    if (filedir != '') and not os.path.isdir(filedir):
+        os.makedirs(filedir)
+
+    dtype = type(data)
+    if dtype in (dict, pd.Series):
+        filepath += '.s'
+        if dtype == dict:
+            print('Converting data to pd.Series for storage.')
+            data = pd.Series(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                print('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop)
+    elif dtype in (list, pd.DataFrame):
+        filepath += '.df'
+        if dtype == list:
+            print('Converting data to pd.DataFrame for storage.')
+            data = pd.DataFrame(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                print('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop, 1)
+    data.to_pickle(filepath)
+    set_readonly(filepath)
+    print('Wrote {}'.format(os.path.abspath(filepath)))
+
+def timestamp(date=True, time=True, ms=True, us=False):
+    now = datetime.datetime.now()
+    datestr = now.strftime('%Y-%m-%d')
+    timestr = now.strftime('%H%M%S')
+    msstr = now.strftime('%f')[:-3]
+    usstr = now.strftime('%f')[-3:]
+    parts = []
+    if date:
+        parts.append(datestr)
+    if time:
+        parts.append(timestr)
+    if ms:
+        parts.append(msstr)
+    if us:
+        parts[-1] += usstr
+
+    return '_'.join(parts)
+
+
+def set_readonly(filepath):
+    from stat import S_IREAD, S_IRGRP, S_IROTH
+    os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
