@@ -1119,9 +1119,10 @@ class UF2000Prober(object):
         self.inst = visa_rm.open_resource(idstring)
         self.inst.timeout = 3000
         # UF2000 seems to call this position home, could depend on the setup!
-        #self.home_indices = (128, 128)
+        # Depends on where the coupon sits relative to the wafer!!
+        self.home_indices = (128, 128)
         #self.home_indices = (129,127)
-        self.home_indices = (129, 128)
+        #self.home_indices = (129, 128)
         # Very roughly the center of the chuck...
         self.center_position_um = (160_126.3, 388_264.5)
 
