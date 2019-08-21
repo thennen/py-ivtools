@@ -3,7 +3,7 @@
 # HJR 2018
 import win32com.client
 from win32com.client import CastTo, WithEvents, Dispatch
-import np
+import numpy as np
 from matplotlib import pyplot as plt
 
 # Launches program that knows about which TEO boards are connected via usb
@@ -37,7 +37,7 @@ print ("TEO: Name/SN/Rev=" + DevName + " SN=" + str(DevSN) + " Rev=" + str(DevRe
 
 # Gain settings.  Need to see a schematic to know what this gain actually refers to
 # unit is "steps" and each steps correspond to 1dB
-HFgain = 10
+HFgain = 20
 if float(HFgain) > HF_Gain.GetMaxValue():
     print("Input error: Requested TEO gain too high")
 HF_Gain.SetValue(HFgain)
@@ -69,16 +69,20 @@ def Test():
     wf00 = AWG_WaveformManager.GetLastResult(0)
     # Iout waveform
     wf01 = AWG_WaveformManager.GetLastResult(1)
-    
+    print('Getting data...')
     # Have to get the data one point at a time ....  takes forever obviously.
     # Allocate
     wflen = wf00.GetWaveformLength()
     t = np.where(trig1)[0]
     Vmonitor = np.array([wf00.GetWaveformData(i) for i in range(wflen)])
     Iout =     np.array([wf01.GetWaveformData(i) for i in range(wflen)])
+    print('Plotting Data...')
     plt.figure()
     plt.plot(A, label='Input Waveform')
     plt.plot(trig1, label='Sampling Trigger')
     plt.plot(t, Vmonitor, label='V monitor [?]')
     plt.plot(t, Iout, label='Current [?]')
     plt.legend()
+
+    fig, ax = plt.subplots()
+    ax.plot(Vmonitor, Iout)
