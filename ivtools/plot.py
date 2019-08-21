@@ -9,7 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import inspect
-from matplotlib.widgets import SpanSelector
+from matplotlib.widgets import SpanSelector, RectangleSelector
 from inspect import signature
 import os
 from numbers import Number
@@ -79,8 +79,8 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
         # Down sample data
         print('Downsampling data for plot!!')
         step = int(lenX/maxsamples)
-        X = X[np.arange(0, l, step)]
-        Y = Y[np.arange(0, l, step)]
+        X = X[np.arange(0, lenX, step)]
+        Y = Y[np.arange(0, lenY, step)]
 
     # Name the axes
     defaultunits = {'V':     ('Voltage', 'V'),
@@ -139,6 +139,16 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
 
     return line
 
+def arrowplot(data, x, y, ax, **kwargs):
+    # Needed by plotiv to make a quiver style plot
+    # pass this function to plotiv as plotfunc=arrowplot
+    xd = data[x]
+    yd = data[y]
+    qkwargs = {}
+    if 'c' in kwargs:
+        qkwargs['color'] = kwargs['c']
+    ax.quiver(xd[:-1], yd[:-1], xd[1:]-xd[:-1], yd[1:]-yd[:-1], scale_units='xy', angles='xy', scale=1, width=.005, **qkwargs)
+
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=_plot_single_iv, autotitle=False, labels=None, colorbyval=True, **kwargs):
     '''
@@ -154,6 +164,9 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
 
     Can pass an arbitrary plotting function, which defaults to _plot_single_iv, haven't tested it yet
     Could then define some other plots that take IV data and reuse plotiv functionality.
+
+    # TODO: What if you want to plot a function of more than one variable contained in data?
+    # Right now you have to define a new variable like data['G'] = data['I']/data['V']
     '''
     if ax is None:
         fig, ax = plt.subplots()
@@ -170,7 +183,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             if isinstance(cm, str):
                 # Str refers to the name of a colormap
                 cmap = plt.cm.get_cmap(cm)
-            elif isinstance(cm, mpl.colors.LinearSegmentedColormap):
+            elif type(cm) in (mpl.colors.LinearSegmentedColormap, mpl.colors.ListedColormap):
                 cmap = cm
             # TODO: add vmin and vmax arguments to stretch the color map
             if c is None:
@@ -259,6 +272,72 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     # I have never actually used the return value.
     # return ax, line
 
+## Linearized plots for conduction mechanisms
+def schottky_plot(data, V='V', I='I', T=None):
+    # Linearizes schottky mechanism
+    # log(I) or log(I)/T^2 vs sqrt(v)
+    # Should I use ln on the data or use the log scale?
+    fig, ax = plt.subplots()
+    ax.set_yscale('log')
+    if T is not None:
+        # Assuming data is a dataframe.  Will kick myself later.
+        data = data.assign(**{'I/T2': data['I'] / data['T']**2})
+        plotiv(data, V, 'I/T2', xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel(f'{I} / {T}$^2$')
+    else:
+        plotiv(data, V, I, xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel(f'{I}')
+    ax.set_xlabel(f'sqrt({V})')
+
+def poole_frenkel_plot(data, V='V', I='I', T=None):
+    # Linearizes P-F mechanism
+    # log(G) or log(G)/T^2 vs sqrt(v)
+    # Should I use ln on the data or use the log scale?
+    data = data.assign(G=data[I]/data[V])
+    fig, ax = plt.subplots()
+    ax.set_yscale('log')
+    if T is not None:
+        # Assuming data is a dataframe.  Will kick myself later.
+        data = data.assign(**{'G/T2': data['G'] / data['T']**2})
+        plotiv(data, V, 'G/T2', xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel(f'G / {T}$^2$')
+    else:
+        plotiv(data, V, 'G', xfunc=np.sqrt, ax=ax)
+        ax.set_ylabel('G')
+    ax.set_xlabel(f'sqrt({V})')
+
+def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=plt.cm.viridis, **kwargs):
+    # Thermal activation plot -- needs some work though
+    # log(I) or log(G) vs 1000/T
+    # This is a little tricky because voltage values need to be interpolated in general
+    # If I is multi-valued in voltage then it can be a pain in the ass to interpolate
+    # for each interpolated value of V, we plot a line
+    # Not using plotiv because I couldn't think of the smart way to "pivot" the nested dataframe
+    # Should output the "interpolated pivot" data for fitting
+    plt.figure()
+    if maxv is None:
+        maxv =  np.max(data[V].apply(np.max))
+    if minv is None:
+        minv = 0.05
+    vs = np.linspace(minv, maxv, numv)
+    colors = cm(np.linspace(0, 1, len(vs)))
+    fits = []
+    for v,c in zip(vs, colors):
+        it = analyze.interpiv(data, v, column=V, left=np.nan, right=np.nan, findmonotonic=True)
+        plt.plot(1000/it['T'], np.log(it[I]), marker='.', color=c, label=format(v, '.2f'), **kwargs)
+        #notnan = ~it['I'].isnull()
+        #fits.append(polyfit(1/it['T'][notnan], log(it['G'][notnan]), 1))
+        #fitx = np.linspace(1/300, 1/81)
+        #color = ax.lines[-1].get_color()
+        #plt.plot(fitx, np.polyval(fits[-1], fitx), color=color, alpha=.7)
+        #ax.lines[-1].set_label(None)
+    #plt.legend(title='Device Voltage')
+    colorbar_manual(minv, maxv, cmap=cm, label='Applied Voltage [V]')
+    plt.xlabel('Temperature [K] (scale 1/T)')
+    plt.ylabel('log(I)')
+    formatter = mpl.ticker.FuncFormatter(lambda x, y: format(1000/x, '.0f'))
+    plt.gca().xaxis.set_major_formatter(formatter)
+
 def auto_title(data, keys=None, ax=None):
     '''
     Label an axis to identify the device.
@@ -312,8 +391,9 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.scatter(cycle1, resist1, c='royalblue', **scatterargs)
     ax.scatter(cycle2, resist2,  c='seagreen', **scatterargs)
     #ax.legend(['HRS', 'LRS'], loc=0)
+    engformatter('y', ax)
     ax.set_xlabel('Cycle #')
-    ax.set_ylabel('Resistance / $\\Omega$')
+    ax.set_ylabel('Resistance [$\\Omega$]')
 
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
@@ -370,7 +450,7 @@ def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
     ax.set_ylabel(y)
     return fig, ax
 
-def plot_channels(chdata, ax=None):
+def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     '''
     Plot the channel data of picoscope
     Includes an indication of the measurement range used
@@ -392,13 +472,13 @@ def plot_channels(chdata, ax=None):
                 chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
-                x = analyze.maketimearray(chdata)
+                x = analyze.maketimearray(chdata, c)
                 ax.set_xlabel('Time [s]')
                 ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
             else:
                 x = range(len(chdata[c]))
                 ax.set_xlabel('Data Point')
-            ax.plot(x, chplotdata, color=colors[c], label=c)
+            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha, **kwargs)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
@@ -406,15 +486,17 @@ def plot_channels(chdata, ax=None):
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
     ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
     if ax is None:
         ax = plt.gca()
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cb = plt.colorbar(sm, ax=ax, **kwargs)
+    # Sometimes you want to specify the axis for the colorbar itelf.
+    cb = plt.colorbar(sm, ax=ax, cax=cax, **kwargs)
     return cb
+
 
 
 def mypause(interval):
@@ -501,8 +583,11 @@ class interactive_figs(object):
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
-            # doesn't do anything yet
+            # if False, disables updateline, newline
             self.enable = True
+            # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
+            self.preprocessing = []
+            self.processed_data = None
 
     def createfig(self, n):
         '''
@@ -548,21 +633,29 @@ class interactive_figs(object):
 
     def newline(self, data=None):
         ''' Update the plots with new data. '''
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if data is None:
-                ax.plot([])
-            else:
-                try:
-                    plotter(data, ax=ax)
-                    color = ax.lines[-1].get_color()
-                    ax.set_xlabel(ax.get_xlabel(), color=color)
-                    ax.set_ylabel(ax.get_ylabel(), color=color)
-                except Exception as e:
+        if self.enable:
+            if data is not None:
+                if any(self.preprocessing):
+                    for pp in self.preprocessing:
+                        # Just run the data through all the functions
+                        data = pp(data)
+                    # In case you want to access it without running the processing again
+                    self.processed_data = data
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if data is None:
                     ax.plot([])
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-                ax.get_figure().canvas.draw()
-        mypause(0.05)
+                else:
+                    try:
+                        plotter(data, ax=ax)
+                        color = ax.lines[-1].get_color()
+                        ax.set_xlabel(ax.get_xlabel(), color=color)
+                        ax.set_ylabel(ax.get_ylabel(), color=color)
+                    except Exception as e:
+                        ax.plot([])
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                    ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def set_maxlines(self, maxlines=None):
         for ax in self.axs:
@@ -579,31 +672,36 @@ class interactive_figs(object):
         # function again, this works by deleting the last line and plotting a new one with
         # the same colors
         # I am assuming for now that the plot functions each produce one line.
-        for axnum, plotter in self.plotters:
-            ax = self.axs[axnum]
-            if any(ax.lines):
-                color = ax.lines[-1].get_color()
-                del ax.lines[-1]
-            else:
-                color = None
-            argspec = inspect.getfullargspec(plotter)
-            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
-                # plotter won't error if we pass this keyword argument
-                # it might even work ..
-                try:
-                    plotter(data, ax, color=color)
-                except Exception as e:
-                    print('Plotter number {} failed!: {}'.format(axnum, e))
-            else:
-                # Simply set the line color after plotting
-                # could mess up the color cycle.
-                try:
-                    plotter(data, ax)
-                    ax.lines[-1].set_color(color)
-                except:
-                    print('Plotter number {} failed!'.format(axnum))
-            ax.get_figure().canvas.draw()
-        mypause(0.05)
+        if self.enable:
+            if any(self.preprocessing):
+                for pp in self.preprocessing:
+                    # Just run the data through all the functions
+                    data = pp(data)
+            for axnum, plotter in self.plotters:
+                ax = self.axs[axnum]
+                if any(ax.lines):
+                    color = ax.lines[-1].get_color()
+                    del ax.lines[-1]
+                else:
+                    color = None
+                argspec = inspect.getfullargspec(plotter)
+                if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
+                    # plotter won't error if we pass this keyword argument
+                    # it might even work ..
+                    try:
+                        plotter(data, ax, color=color)
+                    except Exception as e:
+                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                else:
+                    # Simply set the line color after plotting
+                    # could mess up the color cycle.
+                    try:
+                        plotter(data, ax)
+                        ax.lines[-1].set_color(color)
+                    except:
+                        print('Plotter number {} failed!'.format(axnum))
+                ax.get_figure().canvas.draw()
+            mypause(0.05)
 
     def clear(self):
         ''' Clear all the axes '''
@@ -659,6 +757,7 @@ class interactive_figs(object):
 # They should take the data and an axis to plot on
 # Should handle single or multiple loops
 # TODO: Can I make a wrapper that makes that easier?
+# TODO: don't have each plot function downsample themselves, just do it once and share the result
 def parametrized(dec):
     ''' This is a meta-decorator to create a parametrized decorator.  You got a better idea? '''
     def layer(*args, **kwargs):
@@ -762,6 +861,7 @@ def R_vs_cycle_plotter(data, ax=None, **kwargs):
 
 #@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
+    # basically just plot_channels with downsampling
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
@@ -772,7 +872,13 @@ def chplotter(data, ax=None, **kwargs):
         lendata = len(data[channels[0]])
         if lendata > 100000:
             print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
-            plotdata = analyze.sliceiv(data, step=10)
+            step = lendata // 50000
+            #plotdata = analyze.decimate(data, step, columns=channels)
+            plotdata = analyze.sliceiv(data, step=step, columns=channels)
+            if 'downsampling' in plotdata:
+                plotdata['downsampling'] *= step
+            else:
+                plotdata['downsampling'] = step
         else:
             plotdata = data
         plot_channels(plotdata, ax=ax)
@@ -881,24 +987,77 @@ def VoverIplotter(data, ax=None, **kwargs):
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     ax.set_xlabel('Voltage [V]')
     #ax.set_ylabel('V/I [$\Omega$]', color=color)
-    ax.set_ylabel('V/I [$\Omega$]')
+    # Also called Chordal resistance
+    ax.set_ylabel('Static Resistance (V/I) [$\Omega$]')
 
-def vcalcplotter(data, ax=None, R=8197, **kwargs):
+# TODO differential resistance plotter
+
+def vcalcplotter(data, ax=None, R=None, **kwargs):
     '''
     Subtract internal series resistance voltage drop
     For Lassen R = 143, 2164, 8197, 12857
     '''
+    # Sorry this is shitty ...
+    dtype = type(data)
+    Rmap = {0:143, 1000:2164, 5000:8197, 9000:12857}
     if ax is None:
         fig, ax = plt.subplots()
     if hasattr(R, '__call__'):
         R = R()
+    if R is None:
+        # Look for R in the meta data
+        # Check normal meta
+        R = data.get('R_series')
+        if R is not None:
+            # If it is a lassen coupon, then convert to the measured values of series resistors
+            if dtype is list:
+                # Fuck
+                wafer_code = data.get('wafer_code')[0]
+            elif dtype is pd.DataFrame:
+                wafer_code = data.get('wafer_code').iloc[0]
+            else:
+                wafer_code = data.get('wafer_code')
+
+            if wafer_code == 'Lassen':
+                if (dtype == pd.Series) or (not hasattr(R, '__iter__')):
+                    R = int(R)
+                    if R in Rmap:
+                        R = Rmap[R]
+                else:
+                # lol
+                    R = np.array([Rmap[r] if r in Rmap else r for r in R])
+        else:
+            # Assumption for R_series if there's nothing in the meta data
+            R = 0
     # wtf modifies the input data?  Shouldn't do that.
+
+    # Determine the units of I data.  Assume the units are uniform.
+    Iunit = None
+    # This is STUPID
+    if dtype is list:
+        representative = data[0]
+    elif dtype is pd.DataFrame:
+        representative = data.iloc[0]
+    elif dtype in (pd.Series, dict):
+        representative = data
+    if 'units' in representative:
+        if 'I' in representative['units']:
+            Iunit = representative['units']['I']
+    if Iunit == '$\mu$A':
+        Iunit = 1e-6
+    else:
+        Iunit = 1
+
     if type(data) is list:
         for d in data:
-            d['Vcalc'] = d['V'] - R * d['I']
+            d['Vcalc'] = d['V'] - R * d['I'] * Iunit
     else:
-        data['Vcalc'] = data['V'] - R * data['I']
+        # Works for Series, dict, DataFrame
+        data['Vcalc'] = data['V'] - R * data['I'] * Iunit
+
     plotiv(data, ax=ax, x='Vcalc', **kwargs)
+    if hasattr(R, '__iter__'):
+        R = R[0]
     ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
@@ -910,11 +1069,10 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     To use selector, just make sure you don't have any other gui widgets active
     Will remain active as long as the return value is not garbage collected
     Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
-    # TODO pass the plotting function (could be different than plotiv)
     '''
     if data is None:
         # Check for global variables ...
-        # Sorry if this offends you ..
+        # Sorry if this offends you ..  it offends me
         print('No data passed. Looking for global variable d')
         try:
             data = d
@@ -938,6 +1096,62 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
     return SpanSelector(ax, onselect, 'horizontal', useblit=True, rectprops=rectprops)
+
+# Data selector
+def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
+    '''
+    Plot all the data, x vs y
+    Select 2D range from plot of x vs y.
+    print the data indices that have data in the range selected
+    # Or should it return the data subset?
+
+    # TODO: use lasso tool instead
+
+    Will remain active as long as the return value is not garbage collected
+    Ipython keeps a reference to all outputs, so this will stay open forever if you don't assign it a value
+    '''
+    if data is None:
+        # Check for global variables ...
+        # Sorry if this offends you ..  it offends me
+        print('No data passed. Looking for global variable d')
+        try:
+            data = d
+        except:
+            print('No global variable d. Looking for global variable df')
+            try:
+                data = df
+            except:
+                raise Exception('No data can be found')
+
+    if ax is None:
+        ax = plt.gca()
+
+    plotfunc(data, x=x, y=y, ax=ax)
+    def onselect(eclick, erelease):
+        x1, y1 = eclick.xdata, eclick.ydata
+        x2, y2 = erelease.xdata, erelease.ydata
+
+        xmin = min(x1, x2)
+        xmax = max(x1, x2)
+        ymin = min(y1, y2)
+        ymax = max(y1, y2)
+
+        #print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        #print("The button you used were: %s %s" % (eclick.button, erelease.button))
+        # Find the data that has values in the selected range
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+        def inside(d):
+            X = d[x]
+            Y = d[y]
+            return np.any((X > xmin) & (X < xmax) & (Y > ymin) & (Y < ymax))
+        if type(data) is pd.DataFrame:
+            print(data.index[data.apply(inside, 1)])
+        else:
+            # Should be a list of dicts/Series
+            print([i for i,d in enumerate(data) if inside(d)])
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
+    return RS
 
 
 ### Animation
@@ -1205,6 +1419,8 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
     ax.set_ylim(y0, y1)
 
 
+### Other kinds of plotting utilities
+
 def metric_prefix(x):
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
@@ -1215,6 +1431,16 @@ def metric_prefix(x):
         if abs(x) >= v:
             return '{:n}{}'.format(x/v, p)
 
+def metric_prefix_longname(x):
+    longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
+    if abs(x) < min(values):
+        return '{:n}'.format(x)
+    for v, p in zip(values, longnames):
+        if abs(x) >= v:
+            return '{:n} {}'.format(x/v, p)
+
 def engformatter(axis='y', ax=None):
     if ax is None:
         ax = plt.gca()
@@ -1224,15 +1450,11 @@ def engformatter(axis='y', ax=None):
         axis = ax.yaxis
     axis.set_major_formatter(mpl.ticker.EngFormatter())
 
-
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
-
-
-### Other kinds of plotting utilities
 
 def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
     ''' line plot whose color changes along its length '''
@@ -1240,7 +1462,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     if c is None:
-        c = arange(len(x))
+        c = np.arange(len(x))
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
@@ -1251,3 +1473,15 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
 
     ax.add_collection(lc)
     ax.autoscale()
+
+def xylim():
+    # return the command to set a plot xlim,ylim to the xlim and ylim of the current plot
+    # also put it on the clipboard
+    # got sick of repeating this over and over
+    xlim = plt.xlim()
+    ylim = plt.ylim()
+    cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
+    print(cmd)
+    # I don't know how to copy a new line onto the clipboard
+    df=pd.DataFrame([cmd.replace('\n', ';')])
+    df.to_clipboard(index=False,header=False)

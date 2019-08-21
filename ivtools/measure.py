@@ -19,9 +19,8 @@ from functools import partial
 import pickle
 
 ########### Picoscope - Rigol AWG testing #############
-
-def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, duration=None,
-                              ncycles=10, samplespercycle=None, fs=None):
+def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
+                              ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -35,15 +34,15 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, dura
     if freq is None:
         freq = 1. / duration
 
-    ps.capture(ch=ch, freq=fs, duration=ncycles/freq)
+    ps.capture(ch=ch, freq=fs, duration=(ncycles+extrasample)/freq, **kwargs)
 
-    rigol.pulse_builtin(freq=freq, amp=amp, shape=shape, n=ncycles)
+    rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, phase=phase, shape=shape, n=ncycles)
 
     data = ps.get_data(ch)
 
     return data
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True,
+def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, extrasample=0,
                       **kwargs):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
@@ -54,7 +53,8 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
-    ps.capture(ch, freq=fs, duration=n*duration, **kwargs)
+    # TODO make pulse and capture for builtin waveforms
+    ps.capture(ch, freq=fs, duration=(n+extrasample)*duration, **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
 
@@ -62,7 +62,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
     return data
 
-def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, autosplit=True,
+def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
            savewfm=False, pretrig=0, interpwfm=True, **kwargs):
     '''
@@ -74,15 +74,19 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
+    if not type(wfm) == np.ndarray:
+        wfm = np.array(wfm)
+
     if not (bool(fs) ^ bool(nsamples)):
         raise Exception('Must pass either fs or nsamples, and not both')
     if fs is None:
         fs = nsamples / duration
 
-    if smartrange:
+    if smartrange == 2:
+        # Smart range for the compliance circuit
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    else:
-        # Always smart range the monitor channel
+    elif smartrange:
+        # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL])
 
     # Let pretrig refer to the fraction of a single pulse, not the whole pulsetrain
@@ -113,7 +117,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
     chdata = ps.get_data(channels, raw=True)
     print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
-    ivdata = pico_to_iv(chdata)
+    ivdata = settings.pico_to_iv(chdata)
 
     ivdata['nshots'] = n
 
@@ -139,11 +143,14 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=False, au
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         print('Smoothimating data with window {}, factor {}'.format(window, factor))
+        # TODO: What if we want to retain a copy of the non-smoothed data?
+        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
+        # Maybe only smoothimate I and V?
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
-    if autosplit:
+    if autosplit and (n > 1):
         print('Splitting data into individual pulses')
-        if n > 1 and (splitbylevel is None):
+        if splitbylevel is None:
             nsamples = duration * actual_fs
             if 'downsampling' in ivdata:
                 # Not exactly correct but I hope it's close enough
@@ -166,7 +173,7 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
     if fend > 1e8:
         raise Exception('Rigol can only output up to 100MHz')
 
-    freqs = np.logspace(np.log10(fstart), np.log10(fend), n)
+    freqs = np.geomspace(fstart, fend, n)
     data = []
     for freq in freqs:
         # Figure out how many cycles to sample and at which sample rate.
@@ -176,6 +183,7 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
         # I don't know what the optimum sampling conditions for the sine curve fitting method.
         # Probably takes longer for big datasets.  And you need a good guess for the number of cycles contained in the dataset.
+        # (Actually is much faster, surprisingly)
 
         # How many cycles you want to have per frequency
         target_cycles = 100
@@ -186,11 +194,10 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
         # Capture at least this many cycles
         minimum_cycles = 1
 
-
         # Can sample 5 MS/s, divided among the channels
         # ** To achieve 2.5 GS/s sampling rate in 2-channel mode, use channel A or B and channel C or D.
         if len(ch) == 1:
-            maxrate = 5e9 / len(ch)
+            maxrate = 5e9
         elif len(ch) == 2:
             # 4 channel combinations allow 2.5 GS/s sampling rate
             if set(ch) in (set(('A', 'B')), set(('C', 'D'))):
@@ -237,7 +244,6 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
         # TODO: Should I apply the signal for a while before sampling?  Here I am sampling immediately from the first cycle.
         # The aux trigger has a delay and jitter for some reason.  Maybe triggering directly on the channel is better?
-        # 
         if trigsource == 'TriggerAux':
             triglevel = 0.05
         else:
@@ -247,13 +253,16 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
         #ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=triglevel, trigsource=trigsource)
         #rigol.pulse_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', n=npulses, ch=1)
         rigol.continuous_builtin(freq=freq, amp=amp, offset=offset, shape='SIN', ch=1)
-        time.sleep(.1)
+        #time.sleep(.1)
+        # I have seen this take a while on the first shot
+        time.sleep(.5)
         ps.capture(ch, freq=fs, duration=duration, pretrig=0, triglevel=triglevel, trigsource=trigsource)
         d = ps.get_data(ch)
         d['ncycles'] = ncycles
         data.append(d)
 
         # TODO: make some plots that show when debug=True is passed
+        rigol.output(False, ch=1)
 
     return data
 
@@ -294,7 +303,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
     monitor_channel = settings.MONITOR_PICOCHANNEL
     if monitor_channel in ch:
         # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-        arange, aoffs = ps.best_range((v1, v2))
+        arange, aoffs = ps.best_range((v1, v2), atten=ps.atten[monitor_channel])
         ps.range[monitor_channel] = arange
         ps.offset[monitor_channel] = aoffs
 
@@ -353,287 +362,6 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 
     return rate, duration
 
-
-########### Compliance circuit ###################
-def set_compliance(cc_value):
-    '''
-    Use two analog outputs to set the compliance current and compensate input offset.
-    Right now we use static lookup tables for compliance and compensation values.
-    '''
-    daq = instruments.USB2708HS()
-    if cc_value > 1e-3:
-        raise Exception('Compliance value out of range! Max 1 mA.')
-    fn = 'c:/t/py-ivtools/compliance_calibration.pkl'
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-    with open(fn, 'rb') as f:
-        cc = pickle.load(f)
-    DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
-    DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
-    print('Setting compliance to {} A'.format(cc_value))
-    daq.analog_out(0, dacval=DAC0)
-    daq.analog_out(1, volts=DAC1)
-    settings.COMPLIANCE_CURRENT = cc_value
-    settings.INPUT_OFFSET = 0
-
-def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
-    '''
-    Set and measure some compliance values throughout the range, and save a calibration look up table
-    Need picoscope channel B connected to circuit output
-    and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
-    This takes some time..
-    '''
-
-    ps = instruments.Picoscope()
-    daq = instruments.USB2708HS()
-    # Measure compliance currents and input offsets with static Vb
-
-    fig1, ax1 = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    ccurrent_list = []
-    offsets_list = []
-    dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
-
-    for it in range(iterations):
-        ccurrent = []
-        offsets = []
-        if len(offsets_list) == 0:
-            if startfromfile:
-                fn = 'compliance_calibration.pkl'
-                print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-                with open(fn, 'rb') as f:
-                    cc = pickle.load(f)
-                compensations = np.interp(dacvals, cc['dacvals'], cc['compensationV'])
-            else:
-                # Start with constant compensation
-                compensations = .55 /0.088 * np.ones(len(dacvals))
-        else:
-            compensations -= np.array(offsets_list[-1]) / .085
-        for v,cv in zip(dacvals, compensations):
-            daq.analog_out(1, volts=cv)
-            daq.analog_out(0, v)
-            time.sleep(.1)
-            cc, offs = measure_compliance()
-            ccurrent.append(cc)
-            offsets.append(offs)
-        ccurrent_list.append(ccurrent)
-        offsets_list.append(offsets)
-        ax1.plot(dacvals, np.array(ccurrent) * 1e6, '.-')
-        ax1.set_xlabel('DAC0 value')
-        ax1.set_ylabel('Compliance Current [$\mu$A]')
-        ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
-        ax2.set_xlabel('DAC0 value')
-        ax2.set_ylabel('Input offset')
-        ax2.legend()
-        plt.pause(.1)
-    output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
-              'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
-    calibrationfile = 'compliance_calibration.pkl'
-    with open(calibrationfile, 'wb') as f:
-        pickle.dump(output, f)
-    print('Wrote calibration to ' + calibrationfile)
-
-    return compensations
-
-def plot_compliance_calibration():
-    fn = 'compliance_calibration.pkl'
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-    with open(fn, 'rb') as f:
-        cc = pickle.load(f)
-    ccurrent = 1e6 * np.array(cc['ccurrent'])
-    dacvals = cc['dacvals']
-    compensationV = cc['compensationV']
-    fig, ax = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    ax.plot(dacvals, ccurrent, '.-')
-    ax.set_xlabel('DAC0 value')
-    ax.set_ylabel('Compliance Current [$\mu$A]')
-    ax2.plot(dacvals, compensationV, '.-')
-    ax2.set_xlabel('DAC0 value')
-    ax2.set_ylabel('Compensation V (DAC1)')
-    plt.tight_layout()
-    return cc
-
-def measure_compliance():
-
-    '''
-    Our circuit does not yet compensate the output for different current compliance levels
-    Right now current compliance is set by a physical knob, not by the computer.  This will change.
-    The current way to measure compliance approximately is by measuring the output at zero volts input,
-    because in this case, the entire compliance current flows across the output resistor.
-
-    There is a second complication because the input is not always at zero volts, because it is not compensated fully.
-    This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
-    '''
-    rigol = instruments.RigolDG5000()
-    ps = instruments.Picoscope()
-    # Put AWG in hi-Z mode (output channel off)
-    # Then current at compliance circuit input has to be ~zero
-    # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
-    ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol.outputstate(False)
-    time.sleep(.1)
-    # Immediately capture some samples on channels A and B
-    # Use these channel settings for the capture -- does not modify global settings
-    picosettings = {'chrange': {'A':.2, 'B':2},
-                    'choffset': {'A':0, 'B':-2},
-                    'chatten': {'A':.2, 'B':1},
-                    'chcoupling': {'A':'DC', 'B':'DC'}}
-    ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
-    picodata = ps.get_data(['A', 'B'])
-    #plot_channels(picodata)
-    Amean = np.mean(picodata['A'])
-    Bmean = np.mean(picodata['B'])
-
-    # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
-    settings.INPUT_OFFSET = Amean
-    print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
-
-    # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
-
-    # Circuit parameters
-    gain = 1
-    R = 2e3
-    # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
-    #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
-    ccurrent = Bmean / (R * gain)
-    settings.COMPLIANCE_CURRENT = ccurrent
-    print('Measured compliance current: {} A'.format(ccurrent))
-
-    return (ccurrent, Amean)
-
-########### Conversion from picoscope channel data to IV data ###################
-
-def ccircuit_to_iv(datain, dtype=np.float32):
-    '''
-    Convert picoscope channel data to IV dict
-    For the early version of compliance circuit, which needs manual compensation
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
-
-    dataout = datain
-    CC = settings.COMPLIANCE_CURRENT
-    IO = settings.INPUT_OFFSET
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-    A = datain['A']
-    B = datain['B']
-    #C = datain['C']
-    gain = 1
-    # Common base resistor
-    R = 2e3
-    dataout['V'] = A - dtype(IO)
-    #dataout['V_formula'] = 'CHA - IO'
-    dataout['INPUT_OFFSET'] = IO
-    #dataout['I'] = 1e3 * (B - C) / R
-    # Current circuit has 0V output in compliance, and positive output under compliance
-    # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    dataout['I'] = -1 * B / dtype(R * gain) + dtype(CC)
-    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    dataout['units'] = {'V':'V', 'I':'A'}
-    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
-    # parameters for conversion
-    #dataout['Rout_conv'] = R
-    dataout['CC'] = CC
-    dataout['gain'] = gain * R
-    return dataout
-
-
-def rehan_to_iv(datain, dtype=np.float32):
-    '''
-    Convert picoscope channel data to IV dict
-    for Rehan amplifier
-    Careful! Scope input couplings will affect the gain!
-    if x10 channel has 50 ohm termination, then gain of x200 channel reduced by 2!
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
-
-    # Volts per amp
-    gainC = 524
-    gainD = 11151 / 2
-    # 1 Meg, 33,000
-
-    dataout = datain
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-    A = datain['A']
-    C = datain['C']
-
-    dataout['V'] = A
-    dataout['I'] = C / gainC
-    dataout['units'] = {'V':'V', 'I':'A'}
-    dataout['Cgain'] = gainC
-
-    if 'D' in datain:
-        D = datain['D']
-        dataout['I2'] = D / gainD
-        dataout['Dgain'] = gainD
-        dataout['units'].update({'I2':'A'})
-
-    return dataout
-	
-def TEO_HFext_to_iv(datain, dtype=np.float32):
-    '''
-    Convert picoscope channel data to IV dict
-    for TEO HF output channels
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
-
-    # Volts per amp
-    gainA = 1
-    gainB = 1
-    gainC = 1
-    gainD = -2
-
-    dataout = datain
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-    A = datain['A']
-    B = datain['B']
-    C = datain['C']
-    D = datain['D']
-
-    dataout['V'] = C / gainC
-    dataout['I'] = A / gainA
-    dataout['I2'] = B / gainB
-    dataout['I3'] = D / gainD
-    dataout['units'] = {'V':'V', 'I':'A', 'I2':'A', 'I3':'A'}
-    dataout['gain'] = {'A':gainA, 'B':gainB, 'C':gainC, 'D':gainD}
-
-    return dataout
-
-
-def Rext_to_iv(datain, R=50, dtype=np.float32):
-    '''
-    Convert picoscope channel data to IV dict
-    This is for the configuration where you are using a series resistor
-    and probing the center junction
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
-
-    dataout = datain
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-
-    # Use channel A and C as input, because simultaneous sampling is faster than using A and B
-    A = datain['A']
-    C = datain['C']
-
-    # V device
-    dataout['V'] = A - C
-    dataout['I'] = C / R
-    dataout['units'] = {'V':'V', 'I':'A'}
-    dataout['Rs_ext'] = R
-
-    return dataout
-
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     # Measure dc gain of rehan amplifier
     # Apply voltage
@@ -684,27 +412,490 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 
-# Change this when you change probing circuits
-#pico_to_iv = rehan_to_iv
-#pico_to_iv = ccircuit_to_iv
-#pico_to_iv = partial(Rext_to_iv, R=50)
-pico_to_iv = TEO_HFext_to_iv
+########### Compliance circuit ###################
 
-def tri(v1, v2, n=None, step=None):
+# Voltage dividers
+# (Compliance control voltage)      DAC0 - 12kohm - 12kohm
+# (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
+
+def set_compliance(cc_value):
+    '''
+    Use two analog outputs to set the compliance current and compensate input offset.
+    Right now we use static lookup tables for compliance and compensation values.
+    '''
+    daq = instruments.USB2708HS()
+    if cc_value > 1e-3:
+        raise Exception('Compliance value out of range! Max 1 mA.')
+    fn = settings.COMPLIANCE_CALIBRATION_FILE
+    abspath = os.path.abspath(fn)
+    if os.path.isfile(abspath):
+        print('Reading calibration from file {abspath}'.format())
+    else:
+        raise Exception('No compliance calibration.  Run calibrate_compliance().')
+    with open(fn, 'rb') as f:
+        cc = pickle.load(f)
+    DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
+    DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
+    print('Setting compliance to {} A'.format(cc_value))
+    daq.analog_out(0, dacval=DAC0)
+    daq.analog_out(1, volts=DAC1)
+    settings.COMPLIANCE_CURRENT = cc_value
+    settings.INPUT_OFFSET = 0
+
+def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
+    '''
+    Set and measure some compliance values throughout the range, and save a calibration look up table
+    Need picoscope channel B connected to circuit output
+    and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
+    This takes a minute..
+    '''
+
+    ps = instruments.Picoscope()
+    daq = instruments.USB2708HS()
+    # Measure compliance currents and input offsets with static Vb
+
+    fig1, ax1 = plt.subplots()
+    fig2, ax2 = plt.subplots()
+    ccurrent_list = []
+    offsets_list = []
+    dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
+
+    fn = settings.COMPLIANCE_CALIBRATION_FILE
+    abspath = os.path.abspath(fn)
+    fdir = os.path.split(abspath)[0]
+    if not os.path.isdir(fdir):
+        os.makedirs(fdir)
+    if startfromfile and not os.path.isfile(fn):
+        print(f'No calibration file exists at {abspath}')
+        startfromfile = False
+
+    for it in range(iterations):
+        ccurrent = []
+        offsets = []
+        if len(offsets_list) == 0:
+            if startfromfile:
+                print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+                with open(fn, 'rb') as f:
+                    cc = pickle.load(f)
+                compensations = np.interp(dacvals, cc['dacvals'], cc['compensationV'])
+            else:
+                # Start with constant compensation
+                compensations = .55 /0.088 * np.ones(len(dacvals))
+        else:
+            compensations -= np.array(offsets_list[-1]) / .085
+        for v,cv in zip(dacvals, compensations):
+            daq.analog_out(1, volts=cv)
+            daq.analog_out(0, v)
+            ivplot.mypause(.1)
+            #plt.pause(.1)
+            cc, offs = measure_compliance()
+            ccurrent.append(cc)
+            offsets.append(offs)
+        ccurrent_list.append(ccurrent)
+        offsets_list.append(offsets)
+        ax1.plot(dacvals, np.array(ccurrent) * 1e6, '.-')
+        ax1.set_xlabel('DAC0 value')
+        ax1.set_ylabel('Compliance Current [$\mu$A]')
+        ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
+        ax2.set_xlabel('DAC0 value')
+        ax2.set_ylabel('Input offset')
+        ax2.legend()
+        ivplot.mypause(.1)
+        #plt.pause(.1)
+    output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
+              'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
+
+    with open(fn, 'wb') as f:
+        pickle.dump(output, f)
+    print('Wrote calibration to ' + fn)
+
+    return compensations
+
+def plot_compliance_calibration():
+    fn = 'compliance_calibration.pkl'
+    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+    with open(fn, 'rb') as f:
+        cc = pickle.load(f)
+    ccurrent = 1e6 * np.array(cc['ccurrent'])
+    dacvals = cc['dacvals']
+    compensationV = cc['compensationV']
+    fig, ax = plt.subplots()
+    fig2, ax2 = plt.subplots()
+    ax.plot(dacvals, ccurrent, '.-')
+    ax.set_xlabel('DAC0 value')
+    ax.set_ylabel('Compliance Current [$\mu$A]')
+    ax2.plot(dacvals, compensationV, '.-')
+    ax2.set_xlabel('DAC0 value')
+    ax2.set_ylabel('Compensation V (DAC1)')
+    plt.tight_layout()
+    return cc
+
+def measure_compliance():
+    '''
+    Our circuit does not yet compensate the output for different current compliance levels
+    Right now current compliance is set by a physical knob, not by the computer.  This will change.
+    The current way to measure compliance approximately is by measuring the output at zero volts input,
+    because in this case, the entire compliance current flows across the output resistor.
+
+    There is a second complication because the input is not always at zero volts, because it is not compensated fully.
+    This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
+    '''
+    gain = settings.CCIRCUIT_GAIN
+    rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
+    # Put AWG in hi-Z mode (output channel off)
+    # Then current at compliance circuit input has to be ~zero
+    # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
+    ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
+    rigol.output(False)
+    ivplot.mypause(.1)
+    #plt.pause(.1)
+    # Immediately capture some samples on channels A and B
+    # Use these channel settings for the capture -- does not modify global settings
+    # TODO pick the channel settings better or make it complain when the signal is out of range
+    picosettings = {'chrange': {'A':.2, 'B':2},
+                    'choffset': {'A':0, 'B':np.sign(gain)*-2},
+                    'chatten': {'A':1, 'B':1},
+                    'chcoupling': {'A':'DC', 'B':'DC'}}
+    ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
+    picodata = ps.get_data(['A', 'B'])
+    #plot_channels(picodata)
+    Amean = np.mean(picodata['A'])
+    Bmean = np.mean(picodata['B'])
+
+    # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
+    settings.INPUT_OFFSET = Amean
+    print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
+
+    # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
+
+    # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
+    #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
+    ccurrent =  Bmean / (gain)
+    settings.COMPLIANCE_CURRENT = ccurrent
+    print('Measured compliance current: {} A'.format(ccurrent))
+
+    return (ccurrent, Amean)
+
+
+########### Digipot ####################
+
+def digipot_test(plot=True):
+    # Short the needles, this rapidly makes sure everything is working properly
+    # Use these settings but don't change the state of picoscope
+    coupling = dict(A='DC', B='DC50', C='DC50')
+    ranges = dict(A=5, B=5, C=1)
+    ps = instruments.Picoscope()
+    dp = instruments.WichmannDigipot()
+    rigol = instruments.RigolDG5000()
+    dur = 1e-2
+    if plot:
+        fig, ax = plt.subplots()
+        ax.set_yscale('log')
+        plt.show()
+    data = []
+    channels = ['A', 'B', 'C']
+
+    # Check Bypass first
+    dp.set_bypass(1)
+    ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+    rigol.pulse_builtin('SIN', duration=dur, amp=1)
+    d = ps.get_data(channels)
+    d = digipot_to_iv(d)
+    d = analyze.moving_avg(d,1000)
+    data.append(d)
+    if plot:
+        #ax.plot(d['V'], d['I'])
+        ax.plot(d['V'], d['V']/d['I'], color='black')
+
+    dp.set_bypass(0)
+
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        # Put 10 milliwatt through each resistor
+        #A = np.sqrt(10e-3 * Rnom)
+        #A = min(A, 5)
+        A = 3
+        Iexpected = A/Rnom
+        ranges['C'] = ps.best_range([-Iexpected*50, Iexpected*50])[0]
+        ps.capture(channels, freq=10000/dur, duration=dur, chrange=ranges, chcoupling=coupling)
+        rigol.pulse_builtin('SIN', duration=dur, amp=A)
+        d = ps.get_data(channels)
+        d = digipot_to_iv(d)
+        d = analyze.moving_avg(d,100)
+        data.append(d)
+        if plot:
+            #ax.plot(d['V'], d['I'], label=w)
+            #color = ax.lines[-1].get_color()
+            #ax.plot(d['V'], d['V']/Rnom, label=w, linestyle='--', alpha=.2, color=color)
+            # Or
+            ax.plot(d['V'], d['V']/d['I'], label=w)
+            color = ax.lines[-1].get_color()
+            ax.plot([-5,5], [Rnom, Rnom], label=w, linestyle='--', alpha=.2, color=color)
+            plt.pause(.1)
+            plt.xlim(-3, 3)
+            plt.ylim(40, 60000)
+
+    return data
+
+def digipot_calibrate(plot=True):
+    # Connect keithley to digipot to measure the resistance values
+    dp = instruments.WichmannDigipot()
+    k = instruments.Keithley2600()
+    if plot:
+        fig, ax = plt.subplots()
+        ax.set_yscale('log')
+        plt.show()
+        ax.plot(np.arange(34), dp.Rlist, marker='.')
+
+    dp.set_bypass(0)
+    data = []
+    for w,Rnom in dp.Rmap.items():
+        dp.set_wiper(w) # Should have the necessary delay built in
+        # Apply a volt, measure current
+        k.iv([1], Irange=0, Ilimit=10e-3, nplc=10)
+        while not k.done():
+            plt.pause(.1)
+        d = k.get_data()
+        d['R'] = d['V']/d['I']
+        data.append(d)
+        if plot:
+            plt.scatter(w, d['R'])
+            plt.pause(.1)
+
+    print([d['R'][0].round(2) for d in data])
+    return data
+
+########### Conversion from picoscope channel data to IV data ###################
+
+def ccircuit_to_iv(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    For the early version of compliance circuit, which needs manual compensation
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    CC = settings.COMPLIANCE_CURRENT
+    IO = settings.INPUT_OFFSET
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+    #C = datain['C']
+    gain = settings.CCIRCUIT_GAIN
+    dataout['V'] = dtype(A - IO)
+    #dataout['V_formula'] = 'CHA - IO'
+    dataout['INPUT_OFFSET'] = IO
+    #dataout['I'] = 1e3 * (B - C) / R
+    # Current circuit has 0V output in compliance, and positive output under compliance
+    # Unless you know the compliance value, you can't get to current, because you don't know the offset
+    # TODO: Figure out if/why this works
+    dataout['I'] = dtype(-B / gain + CC)
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    dataout['units'] = {'V':'V', 'I':'A'}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
+    # parameters for conversion
+    #dataout['Rout_conv'] = R
+    dataout['CC'] = CC
+    dataout['gain'] = gain
+    return dataout
+
+def rehan_to_iv(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    for Rehan amplifier
+    Assumes constant gain vs frequency.  This isn't right.
+    Careful! Scope input couplings will affect the gain!
+    if x10 channel has 50 ohm termination, then gain of x200 channel reduced by 2!
+    everything should be terminated with 50 ohms obviously
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    # Volts per amp
+    gainC = 10.6876 * 50
+    gainD = 113.32 * 50
+    # 1 Meg, 33,000
+
+    # I think these depend a lot on the scope input range/offset..
+    offsD = 0.073988
+    offsC = 0.006025
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    C = datain['C']
+
+    dataout['V'] = A
+    dataout['I'] = (C - offsC) / gainC
+    dataout['units'] = {'V':'V', 'I':'A'}
+    dataout['Cgain'] = gainC
+    dataout['Coffs'] = offsC
+
+    if 'D' in datain:
+        D = datain['D']
+        dataout['I2'] = (D - offsD) / gainD
+        dataout['Dgain'] = gainD
+        dataout['Doffs'] = offsD
+        dataout['units'].update({'I2':'A'})
+
+    return dataout
+
+def femto_log_to_iv(datain, dtype=np.float32):
+    # Adjust output offset so that 0.1V in --> 1V out on the 2V input setting
+    # Then 0.1V in --> 1.25V out on the 200mV setting
+    # Input offset also important. should minimize the output signal when input is zero
+    dataout = datain
+
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+
+    dataout['V'] = A
+    # 2V setting
+    #dataout['I'] = 10**((B - 1) / 0.25) * 0.1 / 50
+    dataout['I'] = 10**((B - 1) / 0.25) * 0.01 / 50
+    dataout['units'] = {'V':'V', 'I':'A'}
+
+    return dataout
+
+def TEO_HFext_to_iv(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    for TEO HF output channels
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    # Volts per amp
+    gainA = 1
+    gainB = 1
+    gainC = 1
+    gainD = -2
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+    C = datain['C']
+    D = datain['D']
+
+    dataout['V'] = C / gainC
+    dataout['I'] = A / gainA
+    dataout['I2'] = B / gainB
+    dataout['I3'] = D / gainD
+    dataout['units'] = {'V':'V', 'I':'A', 'I2':'A', 'I3':'A'}
+    dataout['gain'] = {'A':gainA, 'B':gainB, 'C':gainC, 'D':gainD}
+
+    return dataout
+
+def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    This is for the configuration where you are using a series resistor
+    and probing the center junction
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+
+    # Use channel A and C as input, because simultaneous sampling is faster than using A and B
+    A = datain['A']
+    C = datain[Ichannel]
+
+    # V device
+    dataout['V'] = A - C
+    dataout['I'] = C / R
+    dataout['units'] = {'V':'V', 'I':'A'}
+    dataout['Rs_ext'] = R
+
+    return dataout
+
+def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    for digipot circuit with device voltage probe
+    gain is in A/V, in case you put an amplifier on the output
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+
+    # Use channel A and C as input, because simultaneous sampling is faster than using A and B
+    V = datain['A']
+    Vd = datain[Vd_channel]
+    I = datain[I_channel] * gain
+
+    # V device
+    dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
+    dataout['I'] = I
+    dataout['Vd'] = Vd
+    dataout['units'] = {'V':'V', 'I':'A'}
+    dataout['Igain'] = gain
+
+    return dataout
+
+
+############# Waveforms ###########################
+def tri(v1, v2, n=None, step=None, repeat=1):
     '''
     Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
 
     Can optionally pass number of data points you want, or the voltage step between points.
 
     If neither n or step is passed, return the shortest waveform which reaches v1 and v2.
+
+    Building these waveforms has some unexpected nuances.  Check the code if unsure.
     '''
+    # How this waveform is constructed depends on our value system.
+    # For example, when we pass n, do we care most that the waveform:
+    # 1. actually has n points?
+    # 2. has constant datapoint spacing?
+    # 3. contains the extrema?
+
+    # For IV sweeps I would say containing the extrema is important,
+    # In order to make sure the waveform actually contains 0, v1 and v2, we need to allow
+    # uneven spacing for the extreme points (v1, v2, last 0).
+    # I think this is better than strictly enforcing equal sweep rate, because you can then get
+    # deformed undersampled triangle waveforms
+
+    # Within this scheme, there does not necessarily exist a step size that leads to n data points.
+    # (e.g. going from zero to one extreme and back to zero can't be done in an even number of data points)
+    # When a step size does exist, it is not unique.
+    # What to do when a step size doesn't exist, and how to find the optimum step size when it does exist?
+    # It's a fun problem to think about, but hard to solve.
+
+    #nulls = sum(np.array((v1, v2-v1, v2)) == 0)
+    #endpts = 3 - nulls
     if n is not None:
         dv = abs(v1) + abs(v2 - v1) + abs(v2)
-        step = dv / n
+        step = dv / (n - 1)
+        # If I take the above step, I will end up between 1 and "endpts" extra points
+        # Dumb stuff below
+        #sstart = dv / (n-1)
+        #sstop = dv / (n-endpts-1)
+        #stest = np.linspace(sstart, sstop, 1024)
+        # number of points you will end up with
+        #ntest = abs(v1)//stest + (abs(v2-v1))//stest + abs(v2)//stest + 1 + endpts
+        #step = stest[np.where(ntest == n)[0][0]]
     if step is not None:
-        # I could choose here to either make sure the waveform surely contains v1 and v2
-        # or to make sure the waveform really has a constant sweep rate
-        # I choose the former..
         def sign(num):
             npsign = np.sign(num)
             return npsign if npsign !=0 else 1
@@ -714,8 +905,8 @@ def tri(v1, v2, n=None, step=None):
                              [0]))
         return wfm
     else:
-        # Find the shortest waveform that truly reaches v1 and v2 with constant sweep rate
-        # Don't think we need better than 1 mV resolution
+        # Find the shortest waveform that truly reaches v1 and v2 with constant spacing
+        # I don't think we need better than 1 mV resolution
         v1 = round(v1, 3)
         v2 = round(v2, 3)
         f1 = Fraction(str(v1))
@@ -746,6 +937,13 @@ def tri(v1, v2, n=None, step=None):
         #wfm = np.interp(x, xp, wfm)
 
         # Let AWG do the interpolation
+
+        if repeat > 1:
+            def lol():
+                for i in range(repeat-1):
+                    yield wfm[:-1]
+                yield wfm
+            wfm = np.concatenate([*lol()])
         return wfm
 
 def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
