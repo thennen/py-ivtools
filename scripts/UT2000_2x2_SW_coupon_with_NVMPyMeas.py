@@ -32,7 +32,10 @@ gitrev = io.getGitRevision()
 coupondf = pd.read_pickle('C:\\py-ivtools\\ivtools\\sampledata\\lassen_coupon_info.pkl').set_index(['die_rel', 'module', 'device'])
 
 # Go to home position and get the position in microns
+# This changes every time you load the wafer
+print('Getting UF2000Prober connection')
 p = UF2000Prober()
+print('Moving to home position')
 p.goHome()
 x_home, y_home = p.getPosition_um()
 
@@ -40,8 +43,6 @@ def gotoDevice(die_rel=1, module='001', device=2):
     # find location of this device relative to home device
     wX, wY = coupondf.loc[(die_rel, module, device)][['wX', 'wY']]
     p.moveAbsolute_um(x_home + wX, y_home + wY)
-
-
 
 #############################
 # "Leakage" and "threshold" testing
@@ -54,7 +55,7 @@ Not structured like anything you have ever seen -- more like VB clumsily transla
 There are Measurement modules in the directory NVMPyMeas/Measurements
 These contain classes which need to be initialized using a nested dictionary that holds the measurement parameters, and lots of other information mostly contained in config files
 The classes can also be initialized in a with block, in which case it will write to some log file somewhere
-Initialization will make the instrument connections, then you can use a method that runs the measurement
+Initialization will make the instrument connections (?), then you can use a method that runs the measurement
 name of the measurement method depends on class name -- seems to be 'Measure' + class.__name__
 After you run the method (which returns nothing), the class instance attributes get updated with results.
 Apparently the class tries to analyze the data as well, and returns some results of the analysis.  this is dumb.
@@ -62,7 +63,6 @@ You can run the measurement method again and the results get overwritten
 If you try to find out details of how this code runs, you will be dragged through a massive web of unnecessary complexity
 '''
 
-# TODO: add stuff to path because reasons
 sys.path.append("C:\\NVMPyMeas\\Utilities")
 sys.path.append("C:\\NVMPyMeas\\Measurements")   
 from MeasurementOTS import Leakage, VThreshold
@@ -74,7 +74,8 @@ import UtilsCollection
 paX = UtilsCollection.GetAuxInfoPlus()
 paX["General"] = UtilsCollection.GetGeneralInfo()
 
-def measureLeakage(Pol = 1,           # Polarity
+def measureLeakage(RecID = '',        # Determines the filename of the scope traces.  if blank, D:/Test/test.bin
+                   Pol = 1,           # Polarity
                    Stop_V = 0.75,
                    nPts = 10,         # limited to 4 <= nPts <= 50 for some reason
                    Bidirectional = 0, # Can sweep up and down
@@ -88,7 +89,6 @@ def measureLeakage(Pol = 1,           # Polarity
     # I think it just sweeps from zero to Stop_V and back if you want
     '''
     paX['Lk'] = locals()
-    paX['Lk']['RecID'] = ''
     print(paX['Lk'])
     with Leakage(paX) as L:
         #print('measurement 1')
@@ -105,7 +105,8 @@ def measureLeakage(Pol = 1,           # Polarity
     results['paX'] = copy.deepcopy(paX)
     return results
 
-def measureVThreshold(Pol = 1,           # polarity (+/-1) will be overridden by VC-polarity (what?)
+def measureVThreshold(RecID = '',        # Determines the filename of the scope traces.  if blank, D:/Test/test.bin
+                      Pol = 1,           # polarity (+/-1) will be overridden by VC-polarity (what?)
                       Algo = 0,          # Algorithms to detect threshold: 0 = matched filter, 1 = soft = 2-linefilt
                       Start_V = 0.25,    # threshold ramp: minimum voltages (>0)
                       End_V = 4,         # threshold ramp: end of voltage ramp (> Start_V)
@@ -144,12 +145,32 @@ def measureVThreshold(Pol = 1,           # polarity (+/-1) will be overridden by
     '''
     Run VTh test with settings in the paX dictionary, return result dict
     Description of what this test does goes here
-    # Some kind of pulse sequence with increasing amplitude, and multiple cycles
+    Square Pulse sequence with increasing amplitude, and multiple cycles (repeats)
+    Hans says: TEO AWG is has fixed 500 MS/s.  Starts breaking if waveform is a couple million samples.
     '''
     paX['VTh'] = locals()
     paX['VTh']['RecID'] = ''
+    paXcopy = copy.deepcopy(paX)
     # Hans's comment: needed to simulate situation for many cycles, skip otherwise
     #paX["VTh"]["RecID"] = UtilsCollection.CreateRecID(paX["General"]["StageName"])
+    with VThreshold(paX) as VT:
+        VT.MeasureVThreshold()
+    # Results is a list with length NCycl
+    # Stupidly only returns some processed data -- waveforms are apparently written to disk, in a location that depends on the RecID
+    # Check TEOModule.TEObox.StoreTraces
+    results = VT.Rslts
+    for r in results:
+        r['paX'] = paXcopy
+        # For some reason we have lists instead of arrays.
+        for k,v in r.items():
+            if type(v) is list:
+                r[k] = np.array(v)
+        # Rename to my standard names
+        #r['I'] = r.pop('Imeas')
+        r['V'] = r.pop('Vapp')
+    if NCycl == 1:
+        results = results[0]
+    return results
 
 def measure_resistances():
     # Use my dumb metadata cycler which wasn't really meant for auto probing.
@@ -163,7 +184,7 @@ def measure_resistances():
         # Make contact
         p.zUp()
         # Measure
-        d = measureLeakage(Stop_V=1, nPts=20, Bidirectional=1, Mode=0, Range=-7)
+        d = measureLeakage(Stop_V=.01, nPts=20, Bidirectional=1, Mode=0, Range=-7)
         filepath = os.path.join(datadir, datestr + '_Leakage', m.filename())
         io.write_pandas_pickle(m.attach(d), filepath, drop=None)
         m.next()
