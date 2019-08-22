@@ -245,6 +245,10 @@ continious = False):
     ttx.scale(2, answer_scale)
     ttx.position(2, -answer_position*polarity)
     ttx.change_samplerate_and_recordlength(100e9, 5000)
+
+
+
+
     trigger = trigger*polarity
     if two_channel:
         ttx.arm(source = 4, level = trigger, edge = 'e')
@@ -262,13 +266,10 @@ continious = False):
             pg5.trigger()
 
         data.update(k.get_data())
-        status = ttx.triggerstate()
-        while status == True:
-            plt.pause(0.1)
-            status = ttx.triggerstate()
-        plt.pause(0.5)
-        else:
 
+        if ttx.triggerstate():
+            plt.pause(0.1)
+        else:
             number_of_events +=1
             if two_channel:
                 data_scope1 = ttx.get_curve(4)
@@ -308,6 +309,77 @@ continious = False):
     io.write_pandas_pickle(meta.attach(data), filepath)
 
     return data
+
+def ferro_measurement(samplename,
+padname,
+polarity,
+attenuation,
+scale1 = 0.12,
+scale4 = 1.2,
+position1 = -1,
+position4 = -4,
+trigger_level = 0.7):
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+    data['attenuation'] = attenuation
+    data['scale1'] = scale1
+    data['scale4'] = scale4
+    data['position1'] = position1
+    data['position4'] = position4
+    data['trigger_level'] = trigger_level
+
+    
+    ttx.inputstate(1, True)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, False)
+    ttx.inputstate(4, True)
+
+
+    ttx.scale(1, scale1)
+    ttx.scale(4, scale4)
+    ttx.position(1, polarity*position1)
+    ttx.position(4, polarity*position4)
+
+
+    ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength = 5e3)
+    ttx.trigger_position(20)
+    if polarity == 1:
+        ttx.arm(source = 4, level = trigger_level*polarity, edge = 'r')
+    elif polarity == -1:
+        ttx.arm(source = 4, level = trigger_level*polarity, edge = 'f')
+    else:
+        print('wrong polarity')
+        return np.nan
+    plt.pause(0.2)
+    status = ttx.triggerstate()
+    while status == True:
+        plt.pause(0.1)
+        status = ttx.triggerstate()
+    plt.pause(0.5)
+    data_1 = ttx.get_curve(1)
+    data_4 = ttx.get_curve(4)
+
+    ax0.plot(data_1['t_ttx'], data_1['V_ttx'])
+    ax1.plot(data_4['t_ttx'], data_4['V_ttx'])
+
+    data['t_ttx'] = data_1['t_ttx']
+    data['v_scope'] = data_4['V_ttx']
+    data['v_answer'] = data_1['V_ttx']
+
+    datafolder = os.path.join('X:/emrl/Pool/Bulletin/Berg/Messungen/', samplename, padname)
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, 'pulse_'+str(i))
+    file_link = Path(filepath + '.s')
+    while file_link.is_file():
+        i +=1
+        filepath = os.path.join(datafolder, 'pulse_'+str(i))
+        file_link = Path(filepath + '.s')
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    return data
+    
 
 def vcm_pg5_measurement(samplename,
 padname,
