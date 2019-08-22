@@ -252,8 +252,8 @@ continious = False):
         ttx.arm(source = 2, level = trigger, edge = 'e')
     
     if pg5:
-        plt.pause(3)
         pg5.set_pulse_width(pulse_width)
+        plt.pause(1)
         pg5.trigger()
     
     while not k.done():
@@ -262,8 +262,11 @@ continious = False):
             pg5.trigger()
 
         data.update(k.get_data())
-        if ttx.triggerstate():
+        status = ttx.triggerstate()
+        while status == True:
             plt.pause(0.1)
+            status = ttx.triggerstate()
+        plt.pause(0.5)
         else:
 
             number_of_events +=1
@@ -397,8 +400,12 @@ cc_step = 25e-6):
                 
             pg5.trigger()
             plt.pause(0.1)
-            if not ttx.triggerstate:
+            plt.pause(0.2)
+            status = ttx.triggerstate()
+            while status == True:
                 plt.pause(0.1)
+                status = ttx.triggerstate()
+            plt.pause(0.5)
             scope_list.append(ttx.get_curve(3))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
@@ -585,9 +592,11 @@ points = 10
             ### Applying pulse and reading scope data #############################################################
 
             print('Apply pulse')
-            plt.pause(0.5)
-            while ttx.triggerstate():
+            plt.pause(0.2)
+            status = ttx.triggerstate()
+            while status == True:
                 plt.pause(0.1)
+                status = ttx.triggerstate()
             plt.pause(0.5)
             while ttx.busy():
                 plt.pause(0.1)
