@@ -157,7 +157,9 @@ class MetaHandler(object):
         coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
         non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
         non_coupon_specific = lassen_df[lassen_df.coupon == 42][non_coupon_cols]
-        lassen_df = pd.concat((lassen_df, non_coupon_specific), sort=False)
+        # sort breaks reverse compatibility with old pandas versions
+        # not passing sort can cause an annoying warning
+        lassen_df = pd.concat((lassen_df, non_coupon_specific))#, sort=False)
 
         if any([(k in deposition_df) for k in kwargs.keys()]):
             meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on, sort=False)
@@ -218,10 +220,10 @@ class MetaHandler(object):
         lastmeta = self.meta
         meta_i = self.i + n
         if meta_i < 0:
-            print('You are already at the beginning of metadata list')
+            print('You are at the beginning of metadata list')
             return
         elif meta_i >= len(self.df):
-            print('You are already at the end of metadata list')
+            print('You are at the end of metadata list')
             return
         else:
             self.i += n
@@ -641,7 +643,7 @@ def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subd
         filepaths = filepaths[-n:]
         ctimes = ctimes[-n:]
     if seconds is not None:
-        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < pastseconds]
+        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < seconds]
     if maxlen is not None:
         filepaths = filepaths[:maxlen]
     return [os.path.abspath(fp) for fp in filepaths]

@@ -139,8 +139,8 @@ if hostname == 'pciwe46':
     connections = [('ps', instruments.Picoscope),
                    ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                    ('daq', instruments.USB2708HS),
-                   ('ts', instruments.EugenTempStage, 'COM3'),
-                   ('dp', instruments.WichmannDigipot, 'COM10'),
+                   ('ts', instruments.EugenTempStage),
+                   ('dp', instruments.WichmannDigipot),
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                    #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                    ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]

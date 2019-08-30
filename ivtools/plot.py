@@ -391,8 +391,9 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.scatter(cycle1, resist1, c='royalblue', **scatterargs)
     ax.scatter(cycle2, resist2,  c='seagreen', **scatterargs)
     #ax.legend(['HRS', 'LRS'], loc=0)
+    engformatter('y', ax)
     ax.set_xlabel('Cycle #')
-    ax.set_ylabel('Resistance / $\\Omega$')
+    ax.set_ylabel('Resistance [$\\Omega$]')
 
 def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
@@ -449,7 +450,7 @@ def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
     ax.set_ylabel(y)
     return fig, ax
 
-def plot_channels(chdata, ax=None, alpha=.8):
+def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     '''
     Plot the channel data of picoscope
     Includes an indication of the measurement range used
@@ -477,7 +478,7 @@ def plot_channels(chdata, ax=None, alpha=.8):
             else:
                 x = range(len(chdata[c]))
                 ax.set_xlabel('Data Point')
-            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha)
+            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha, **kwargs)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
@@ -485,14 +486,15 @@ def plot_channels(chdata, ax=None, alpha=.8):
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
-def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, **kwargs):
+def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
     ''' Normally you need a "mappable" to create a colorbar on a plot.  This function lets you create one manually. '''
     if ax is None:
         ax = plt.gca()
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
-    cb = plt.colorbar(sm, ax=ax, **kwargs)
+    # Sometimes you want to specify the axis for the colorbar itelf.
+    cb = plt.colorbar(sm, ax=ax, cax=cax, **kwargs)
     return cb
 
 
