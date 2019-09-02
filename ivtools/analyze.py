@@ -182,7 +182,7 @@ def find_data_arrays(data):
     '''
     # Get lengths of all arrays
     #arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
-    if hasattr(data, '__iter__')
+    if type(data) in (list, pd.DataFrame):
         # Only look at the first one
         data = iloc(data, 0)
     arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray)]
@@ -751,8 +751,10 @@ def concativ(data, columns=None):
     for k in concatkeys:
         if type(data) is pd.DataFrame:
             out[k] = np.concatenate(list(data[k]))
-        else:
+        elif type(data) is list:
             out[k] = np.concatenate([d[k] for d in data])
+        else:
+            raise Exception('pass a list of dicts or a dataframe')
     add_missing_keys(firstrow, out)
 
     if type(data) == pd.DataFrame:
@@ -1289,7 +1291,7 @@ def iloc(data, index):
     normal indexing notation is used for column indexing.
     This is a function that will index based on the datatype..
     '''
-    if type(data) is pd.DataFrame:
+    if type(data) in [pd.DataFrame, pd.Series]:
         return data.iloc[index]
     else:
         return data[index]
