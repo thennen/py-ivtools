@@ -1852,3 +1852,161 @@ def filter_byhand(df, groupby=None, **kwargs):
 def category(alist):
     unique, category = np.unique(alist, return_inverse=True)
     return category
+
+
+
+
+
+
+
+###New (additional) functions by Felix Cueppers for compliance circuit setup in FZ Juelich
+### BEGIN HERE FC
+
+@ivfunc    
+def select_by_vmax(data, column='V', polarity=False):
+    '''
+    Find Icc by finding the mmaximum (maximum negative for polarity=False) voltage.
+    Return index of the threshold datapoint
+    '''
+    
+    if polarity:
+        vmax = np.argmin(data[column])
+    else:
+        vmax = np.argmax(data[column])
+    return vmax
+
+@ivfunc 
+def ICC_by_vmax(data, column='V', polarity=True):
+
+    ''' Find ICC by finding the mmaximum (maximum negative for polarity=False) voltage. '''
+
+    vmax1 = select_by_vmax(data, column='V', polarity=polarity)
+
+    return indexiv(data, vmax1)
+
+@ivfunc 
+def V_RESET_stop_by_vmax(data, column='V', polarity=True):
+
+    ''' Find V_RESET_stop by finding the maximum negative (maximum positive for polarity=True) voltage. '''
+
+    vmax1 = select_by_vmax(data, column='V', polarity=polarity)
+
+    return indexiv(data, vmax1)
+@ivfunc    
+def select_by_imax(data, column='I', polarity=True):
+    '''
+    Find Reset voltage by finding the mmaximum (maximum negative for polarity=False) current.
+    Return index of the threshold datapoint
+    '''
+    
+    if polarity:
+        imax = np.argmax(data[column])
+    else:
+        imax = np.argmin(data[column])
+    return imax
+
+@ivfunc 
+def Reset_by_imax(data, column='I', polarity=False):
+    ''' Find Reset voltage by finding the mmaximum (maximum negative for polarity=False) current. '''
+
+    reset_I_index = select_by_imax(data, column='I', polarity=polarity)
+
+    return indexiv(data, reset_I_index)
+
+@ivfunc
+def resistance_states_fit(iv, v_low=0.1, v_high=0.3):
+
+    '''
+    fit a linear slope to IV loop between v_low and v_high; can be used both positive and negative I hope
+    returns array of resistance where 
+    r1 is resistance during positively sloped voltage = HRS
+    r2 is resistance during negatively sloped voltage = LRS
+    '''
+    mask = (iv['V']>=v_low) & (iv['V']<=v_high)
+    grad = np.gradient(iv['V'][mask])
+    v = iv['V'][mask]
+    i = iv['I'][mask]
+    r1 = np.polyfit(i[grad>0],v[grad>0],1)[0]
+    r2 = np.polyfit(i[grad<0],v[grad<0],1)[0]
+    return [r1, r2]
+    
+@ivfunc
+def V_SET_by_max_gradient(iv, v_low=0.1, v_high=5):
+    '''
+    finds the SET Voltage by finding the maximum gradient in the positive sloped part between v_low and v_high
+    returns a voltage
+    '''
+    #v_set max slope in pos half cycle
+    mask = (iv['V']>v_low) & (iv['V']<v_high) & (np.gradient(iv['V'])>0)
+    mask[-1] = False
+    #mask = iv['V']>0
+    i_set = np.argmax(np.gradient(iv['I'][mask]))
+    #print(np.gradient(iv['I'][mask])
+    return iv['V'][mask][i_set]
+
+@ivfunc
+def V_RESET_by_change_of_gradient(iv, N=5, v_low=-0.1, v_high=-5):
+    '''
+    finds the first change of gradient in smoothed RESET data
+    returns a voltage
+    '''
+
+    #print(iv)
+    #v_reset find I minimum in negativ half cycle
+    mask = (iv['V']<v_high) & (iv['V']>v_low) & (np.gradient(iv['V'])<0)
+    x = np.convolve(iv['V'][mask], np.ones(N)/N)[:-5]
+    y = np.convolve(iv['I'][mask], np.ones(N)/N)[:-5]
+    i = np.where(np.r_[True, y[1:] < y[:-1]] & np.r_[y[:-1] < y[1:],True])[0][0]
+    return iv['V'][mask][i]
+
+@ivfunc  
+def I_SET_by_max_gradient_shifted(iv, v_low=0.1, v_high=5,shift_index_by=3):
+
+    '''
+    finds the SET Current by finding the maximum gradient in the positive sloped part between v_low and v_high
+    returns a current
+    '''
+    #v_set max slope in pos half cycle
+    mask = (iv['V']>v_low) & (iv['V']<v_high) & (np.gradient(iv['V'])>0)
+    mask[-1] = False
+    #mask = iv['V']>0
+    i_set = np.argmax(np.gradient(iv['I'][mask]))-shift_index_by
+    #print(np.gradient(iv['I'][mask])
+    return iv['I'][mask][i_set]
+    
+@ivfunc
+def I_RESET_by_change_of_gradient(iv, N=5, v_low=-0.1, v_high=-5):
+    '''
+    finds the first change of gradient in smoothed RESET data
+    returns a current
+    '''
+    #print(iv)
+    #v_reset find I minimum in negativ half cycle
+    mask = (iv['V']<v_high) & (iv['V']>v_low) & (np.gradient(iv['V'])<0)
+    x = np.convolve(iv['V'][mask], np.ones(N)/N)[:-5]
+    y = np.convolve(iv['I'][mask], np.ones(N)/N)[:-5]
+    i = np.where(np.r_[True, y[1:] < y[:-1]] & np.r_[y[:-1] < y[1:],True])[0][0]
+    return iv['I'][mask][i]
+
+def split_Matrix_dataframe(data, Icc, Vreset):
+    '''
+    Careful, only full 100 mV RESET stops possible
+    section dataframes into dataframes with identical ICC and V_RESET_stop
+    returns a single dataframe
+    '''
+    mask = (np.around(data['I'].apply(max),4)*1e6==Icc) & (np.around(data['V'].apply(min),1)==Vreset)
+    d = data.loc[mask,['I','V']]
+    return d
+
+
+
+
+
+
+### END HERE FC
+
+
+
+
+
+
