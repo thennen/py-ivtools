@@ -577,9 +577,10 @@ class RigolDG5000(object):
     def __init__(self, addr=None):
         self.verbose = False
         try:
-            if addr is None:
-                addr = self.get_visa_addr()
-            self.connect(addr)
+            if not self.connected():
+                if addr is None:
+                    addr = self.get_visa_addr()
+                self.connect(addr)
         except:
             print('Rigol connection failed.')
             return
@@ -590,7 +591,8 @@ class RigolDG5000(object):
         # hasn't changed
         self.volatilewfm = []
 
-    def get_visa_addr(self):
+    @staticmethod
+    def get_visa_addr():
         # Look for the address of the DG5000 using visa resource manager
         for resource in visa_rm.list_resources():
             if 'DG5' in resource:
@@ -610,6 +612,15 @@ class RigolDG5000(object):
             #print('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
+
+    def connected(self):
+        if hasattr(self, 'conn'):
+            try:
+                self.idn()
+                return True
+            except:
+                pass
+        return False
 
     def set_or_query(self, cmd, setting=None):
         # Sets or returns the current setting
@@ -786,6 +797,11 @@ class RigolDG5000(object):
         File needs to have extension .RAF
         This is the only way to reach the advertised number of waveform samples, or anywhere near it
         Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
+
+        wait=True can cause problems, because it uses another command to query whether rigol is responding
+        again, but this command itself can make rigol puke..
+        Ideally you just have a good idea how long it takes to load the waveform, and you wait manually..
+        This seems to only be an issue if you have a lot of waveforms to load sequentially
         '''
         self.write(':MMEMory:CDIR "D:\"')
         self.write(f':MMEMory:LOAD "{filename}"')
@@ -793,6 +809,7 @@ class RigolDG5000(object):
             oldtimeout = self.conn.timeout
             # set timeout to a minute!
             self.conn.timeout = 60000
+            time.sleep(1) # Stupid thing
             # Rigol won't reply to this until it is done loading the waveform
             err = self.error()
             #self.idn()

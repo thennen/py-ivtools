@@ -77,6 +77,7 @@ if firstrun:
 hostname = socket.gethostname()
 username = getpass.getuser()
 datestr = time.strftime('%Y-%m-%d')
+#datestr = '2019-08-07'
 # TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
 
