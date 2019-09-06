@@ -5,7 +5,7 @@ Functions for measuring IV data
 from . import plot as ivplot
 from . import analyze
 from . import instruments
-from . import persistent_state as settings
+from . import settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction

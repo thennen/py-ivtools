@@ -3,7 +3,7 @@
 # Local imports
 from . import analyze
 from . import plot as ivplot
-from . import persistent_state
+from . import settings
 
 import os
 import re
@@ -53,9 +53,9 @@ class MetaHandler(object):
     '''
     def __init__(self, clear_state=False):
         statename = self.__class__.__name__
-        if statename not in persistent_state.instrument_states:
-            persistent_state.instrument_states[statename] = {}
-        self.__dict__ = persistent_state.instrument_states[statename]
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         if not self.__dict__ or clear_state:
             self.clear()
 

@@ -40,8 +40,8 @@ from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
-from . import persistent_state
-visa_rm = persistent_state.visa_rm
+from . import settings
+visa_rm = settings.visa_rm
 # Could also store the visa_rm in visa itself
 #visa.visa_rm = visa.ResourceManager()
 #visa_rm = visa.visa_rm
@@ -64,9 +64,9 @@ class Picoscope(object):
     '''
     def __init__(self, connect=True):
         statename = self.__class__.__name__
-        if statename not in persistent_state.instrument_states:
-            persistent_state.instrument_states[statename] = {}
-        self.__dict__ = persistent_state.instrument_states[statename]
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
@@ -1140,9 +1140,9 @@ class Keithley2600(object):
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
             statename = '_'.join(self.__class__.__name__, addr)
-            if statename not in persistent_state.instrument_states:
-                persistent_state.instrument_states[statename] = {}
-            self.__dict__ = persistent_state.instrument_states[statename]
+            if statename not in settings.instrument_states:
+                settings.instrument_states[statename] = {}
+            self.__dict__ = settings.instrument_states[statename]
             self.connect(addr)
         except:
             print('Keithley connection failed at {}'.format(addr))
@@ -1893,9 +1893,9 @@ class Eurotherm2408(object):
     def __init__(self, addr='COM32', gid=0, uid=1):
         # BORG
         statename = '_'.join(self.__class__.__name__, addr, str(gid), str(uid))
-        if statename not in persistent_state.instrument_states:
-            persistent_state.instrument_states[statename] = {}
-        self.__dict__ = persistent_state.instrument_states[statename]
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         self.connect(addr, gid, uid)
 
     def connect(self, addr='COM32', gid=0, uid=1):
@@ -2192,9 +2192,9 @@ class WichmannDigipot_new(object):
     def __init__(self, addr=None):
         # BORG
         statename = self.__class__.__name__
-        if statename not in persistent_state.instrument_states:
-            persistent_state.instrument_states[statename] = {}
-        self.__dict__ = persistent_state.instrument_states[statename]
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
@@ -2341,9 +2341,9 @@ class WichmannDigipot(object):
     def __init__(self, addr=None):
         # BORG
         statename = self.__class__.__name__
-        if statename not in persistent_state.instrument_states:
-            persistent_state.instrument_states[statename] = {}
-        self.__dict__ = persistent_state.instrument_states[statename]
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
@@ -2542,9 +2542,9 @@ class EugenTempStage(object):
     def __init__(self, addr=None, baudrate=9600):
         # BORG
         statename = self.__class__.__name__
-        if statename not in persistent_state.instrument_states:
-            persistent_state.instrument_states[statename] = {}
-        self.__dict__ = persistent_state.instrument_states[statename]
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         try:
             self.connect(addr, baudrate)
         except:
