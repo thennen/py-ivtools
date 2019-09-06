@@ -157,7 +157,9 @@ class MetaHandler(object):
         coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
         non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
         non_coupon_specific = lassen_df[lassen_df.coupon == 42][non_coupon_cols]
-        lassen_df = pd.concat((lassen_df, non_coupon_specific), sort=False)
+        # sort breaks reverse compatibility with old pandas versions
+        # not passing sort can cause an annoying warning
+        lassen_df = pd.concat((lassen_df, non_coupon_specific))#, sort=False)
 
         if any([(k in deposition_df) for k in kwargs.keys()]):
             meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on, sort=False)
@@ -218,10 +220,10 @@ class MetaHandler(object):
         lastmeta = self.meta
         meta_i = self.i + n
         if meta_i < 0:
-            print('You are already at the beginning of metadata list')
+            print('You are at the beginning of metadata list')
             return
         elif meta_i >= len(self.df):
-            print('You are already at the end of metadata list')
+            print('You are at the end of metadata list')
             return
         else:
             self.i += n
@@ -979,3 +981,19 @@ def makefolder(*args):
         os.makedirs(subfolder)
     else:
         print('Folder already exists: {}'.format(subfolder))
+
+def psplitall(path):
+    # get all parts of the filepath why the heck isn't this in os.path?
+    allparts = []
+    while 1:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path: # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    return allparts
