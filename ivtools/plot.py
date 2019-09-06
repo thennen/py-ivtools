@@ -548,7 +548,10 @@ class interactive_figs(object):
     '''
     # TODO: save/load configurations to disk?
     def __init__(self, n=4, clear_state=False):
-        self.__dict__ = persistent_state.plotter_state
+        statename = self.__class__.__name__
+        if statename not in persistent_state.instrument_states:
+            persistent_state.instrument_states[statename] = {}
+        self.__dict__ = persistent_state.instrument_states[statename]
         if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...

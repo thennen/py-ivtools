@@ -52,7 +52,10 @@ class MetaHandler(object):
     This is so if io module is reloaded, Metahandler instance keeps the metadata
     '''
     def __init__(self, clear_state=False):
-        self.__dict__ = persistent_state.metahandler_state
+        statename = self.__class__.__name__
+        if statename not in persistent_state.instrument_states:
+            persistent_state.instrument_states[statename] = {}
+        self.__dict__ = persistent_state.instrument_states[statename]
         if not self.__dict__ or clear_state:
             self.clear()
 
