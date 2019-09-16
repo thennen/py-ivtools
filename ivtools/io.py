@@ -104,9 +104,28 @@ class MetaHandler(object):
     def __delitem__(self, key):
         self.meta[key].__delitem__
 
-    def load_from_csv(self, xlspath):
-        ''' Not implemented.  Easy to implement. '''
-        pass
+    def load_sample_table(self, **filters):
+        ''' load data (pd.read_excel) from some tabular format'''
+        fpath='sampledata/CeRAM_Depositions.xlsx'
+        if not os.path.isfile(fpath):
+            # Maybe it's a relative path
+            fpath = os.path.join(self.moduledir, fpath)
+        df = pd.read_excel(fpath, header=8, skiprows=[9])
+        # TODO: Apply filters
+        for name, value in filters.items():
+            if name in df:
+                if isinstance(value, str) or not hasattr(value, '__iter__'):
+                    value = [value]
+                df = df[df[name].isin(value)].dropna(axis=1, how='all')
+            else:
+                df[name] = [value] * len(df)
+        filenamekeys = []
+        if 'sample_name' in df:
+            filenamekeys = ['sample_name'] + filenamekeys
+        self.prettykeys = None
+        self.i = 0
+        self.meta = df.iloc[0]
+        self.df = df
 
     # TODO: Unified metadata loader that just loads every possible sample
 
@@ -138,6 +157,7 @@ class MetaHandler(object):
         self.filenamekeys = filenamekeys
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print()
+
 
     def load_lassen(self, **kwargs):
         '''
@@ -214,8 +234,7 @@ class MetaHandler(object):
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
-    def load_depositions():
-        ''' Load sample information from some deposition sheet  (not implemented)'''
+    def load_DomeB():
         pass
 
     def step(self, n):
