@@ -758,7 +758,7 @@ class RigolDG5000(object):
     # <<<<< For burst mode
     def ncycles(self, n=None, ch=1):
         ''' Set number of cycles that will be output in burst mode '''
-        if n > 1000000:
+        if (n is not None) and (n > 1000000):
             # Rigol does not give error, leaving you to waste a bunch of time discovering this
             raise Exception('Rigol can only pulse maximum 1,000,000 cycles')
         else:
@@ -808,7 +808,8 @@ class RigolDG5000(object):
         '''
         self.write(':MMEMory:CDIR "D:\"')
         self.write(f':MMEMory:LOAD "{filename}"')
-        if wait:
+        # This shit causes an error every time now.  Used to work.
+        if 0:#wait:
             oldtimeout = self.conn.timeout
             # set timeout to a minute!
             self.conn.timeout = 60000
@@ -1139,13 +1140,14 @@ class Keithley2600(object):
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
-            statename = '_'.join(self.__class__.__name__, addr)
+            statename = '_'.join((self.__class__.__name__, addr))
             if statename not in settings.instrument_states:
                 settings.instrument_states[statename] = {}
             self.__dict__ = settings.instrument_states[statename]
             self.connect(addr)
-        except:
+        except Exception as E:
             print('Keithley connection failed at {}'.format(addr))
+            print(E)
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():
@@ -1892,7 +1894,7 @@ class Eurotherm2408(object):
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
         # BORG
-        statename = '_'.join(self.__class__.__name__, addr, str(gid), str(uid))
+        statename = '_'.join((self.__class__.__name__, addr, str(gid), str(uid)))
         if statename not in settings.instrument_states:
             settings.instrument_states[statename] = {}
         self.__dict__ = settings.instrument_states[statename]
