@@ -345,6 +345,10 @@ def valid_filename(s):
     return re.sub(r'(?u)[^-\w.]', '', s)
 
 
+def hash_array(arr):
+    import hashlib
+    return hashlib.md5(arr).hexdigest()
+
 def timestamp(date=True, time=True, ms=True, us=False):
     now = datetime.now()
     datestr = now.strftime('%Y-%m-%d')

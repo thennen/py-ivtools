@@ -36,6 +36,7 @@ import time
 import os
 import pandas as pd
 import serial
+import hashlib
 from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
@@ -654,14 +655,17 @@ class RigolDG5000(object):
             return None
 
     @staticmethod
-    def write_wfm_file(wfm, filepath='wfm.RAF'):
+    def write_wfm_file(wfm, filepath=None):
         '''
         The only way to get anywhere near the advertised number of samples
         theoretically works up to 16 MPts = 2**24 samples
         wfm should be between -1 and 1, this will convert it to uint16
         '''
-        # Needs extension RAF!
-        filepath = os.path.splitext(filepath)[0] + '.RAF'
+        if filepath is None:
+            filepath = hashlib.md5(arr).hexdigest() + '.RAF'
+        else:
+            # Needs extension RAF!
+            filepath = os.path.splitext(filepath)[0] + '.RAF'
 
         if np.any(np.abs(wfm) > 1):
             print('Waveform must be in [-1, 1].  Clipping it!')
@@ -753,7 +757,11 @@ class RigolDG5000(object):
 
     def error(self):
         ''' Get error message from rigol '''
-        return self.query(':SYSTem:ERRor?').strip()
+        err = self.query(':SYSTem:ERRor?').strip()
+        if err == '0,"No error"':
+            # So you can do "if rigol.error()"
+            return False
+        return err
 
     # <<<<< For burst mode
     def ncycles(self, n=None, ch=1):
@@ -805,11 +813,18 @@ class RigolDG5000(object):
         again, but this command itself can make rigol puke..
         Ideally you just have a good idea how long it takes to load the waveform, and you wait manually..
         This seems to only be an issue if you have a lot of waveforms to load sequentially
+
+        Like everything on rigol, this can be flaky. Can not have 100% confidence that the waveform loaded properly
+        Usually if it didn't load it, it will take an abnormally short time to respond to the next command
+        It does not "like" fractional powers of 2 if the waveform is longer than 2^19 = 524kSamples
+        but sometimes, unaccountably, it can load them anyway
+
+        It can also just crash and cause the python program to hang indefinitely
+        The only solution seems to be to cycle the power on rigol and usually restart the python kernel..
         '''
         self.write(':MMEMory:CDIR "D:\"')
         self.write(f':MMEMory:LOAD "{filename}"')
-        # This shit causes an error every time now.  Used to work.
-        if 0:#wait:
+        if wait:
             oldtimeout = self.conn.timeout
             # set timeout to a minute!
             self.conn.timeout = 60000
@@ -818,8 +833,32 @@ class RigolDG5000(object):
             err = self.error()
             #self.idn()
             self.conn.timeout = oldtimeout
-            if err != '0,"No error"':
-                raise Exception(err)
+            # This shit causes an error every time now.  Used to work.
+            if err:
+            #    raise Exception(err)
+                print(err)
+
+    def cd(self, dir='D:\\'):
+        # Change directory.  Can crash rigol.
+        self.write(f':MMEM:CDIR \"{dir}\"')
+
+    def listdir(self):
+        '''
+        List the files in the current directory
+        Highly unreliable.  Rigol can crashes on whatever command you send it after this!
+        Errors not consistently repeatable
+        File sizes have come back different -- they are probably wrong
+        '''
+        horrible_string = self.query('MMEM:CAT?')
+        quote = horrible_string.find('\"')
+        first_number,second_number = horrible_string[:quote-1].split(',')
+        rest = horrible_string[quote:].strip().strip('\"').split('\",\"')
+        splitrest = [r.split(',') for r in rest]
+        size,wtf,fn = zip(*splitrest)
+        # Idiot rigol writes .RAF.RAF when it is just .RAF
+        fn = [n.replace('.RAF.RAF', '.RAF') for n in fn]
+        #out = {f:s for f,s in zip(fn,size)}
+        return fn
 
     def writebinary(self, message, values):
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)

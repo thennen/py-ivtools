@@ -431,7 +431,8 @@ def test_rigol_1():
         w[0] = 0
         w[-1] = 0
         return w
-    wfms = [wfm(np.linspace(0,1,n)) for n in np.int32(np.geomspace(1000, 100000, 100))]
+    lens = np.int32(np.geomspace(1000, 100000, 20))
+    wfms = [wfm(np.linspace(0,1,n)) for n in lens]
     freq = 1e6
     filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
 
@@ -440,7 +441,7 @@ def test_rigol_1():
         print('Writing waveforms to USB drive at F:')
         for wfm, fn in zip(wfms, filenames):
             rigol.write_wfm_file(wfm, os.path.join('F:', fn))
-        input('Put the usb drive into rigol')
+        input('Put the usb drive into rigol. (press enter)')
 
     sleep = 3
     amp = 1
@@ -455,17 +456,108 @@ def test_rigol_1():
         # x2 for idiot definition of amplitude, x2 for 50 ohm termination
         # There could still be some error here, both in the measurement by picoscope and by rigol..
         rigol.amplitude(2*2*(amp + abs(offs)))
+        rigol.period(dur)
         time.sleep(.05) # I don't think it's needed, just trying to stop crash
-        ps.capture(ch=['A'], freq=fs, duration=dur, chrange={'A':1}, choffset={'A':0}, chcoupling={'A':'DC50'})
+        ps.capture(ch=['A'], freq=fs, duration=3*dur, chrange={'A':1}, choffset={'A':0}, chcoupling={'A':'DC50'})
         rigol.trigger(1)
         d = ps.get_data(['A'], raw=False)
         d['t'] = analyze.maketimearray(d)
+        d['len'] = len(wfm)
         data.append(d)
-    return pd.DataFrame(data)
+    df = pd.DataFrame(data)
+    return df
 
 
+def test_rigol_2():
+    '''
+    How long does waveform loading take from USB stick?
+    vs rear loading binary?
+    '''
+    from ivtools import instruments
+    rigol = instruments.RigolDG5000()
 
-def test_rigol_wfms(sleep=8):
+    # just resample this
+    # Something recognizable with a sharp edge
+    def wfm(t):
+        w = 0.8 + 0.2*np.sin(t*2*np.pi)
+        w[0] = 0
+        w[-1] = 0
+        return w
+    #lens = np.int32(np.geomspace(1000, 16e6, 40))
+    #lens = 2**np.arange(12, 25)
+    #lens = np.int32(2**np.arange(12, 24, .5))
+    lens = np.int32(2**np.arange(19, 22, .1))
+    wfms = [wfm(np.linspace(0,1,n)) for n in lens]
+    freq = 1e6
+    filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
+
+    ans = input('Write wfms to usb drive at F: ?')
+    if ans.lower() == 'y':
+        print('Writing waveforms to USB drive at F:')
+        for wfm, fn in zip(wfms, filenames):
+            rigol.write_wfm_file(wfm, os.path.join('F:', fn))
+        input('Put the usb drive into rigol. (press enter)')
+
+    times = []
+    for wfm, fn in zip(wfms, filenames):
+        l = len(wfm)
+        time.sleep(1)
+        print(f'loading length {l} waveform')
+        t0 = time.time()
+        rigol.load_wfm_usbdrive(fn, wait=True)
+        t1 = time.time()
+        times.append(t1-t0)
+
+    plt.figure()
+    plt.plot(np.log(lens)/np.log(2), times, '.-')
+    plt.xlabel('waveform length (log2)')
+    plt.ylabel('time to load from front usb [s]')
+
+    return lens, times
+
+def test_rigol_3():
+    '''
+    What is the distribution of loading times?
+    '''
+    from ivtools import instruments
+    rigol = instruments.RigolDG5000()
+
+    # just resample this
+    # Something recognizable with a sharp edge
+    def wfm(t):
+        w = 0.8 + 0.2*np.sin(t*2*np.pi)
+        w[0] = 0
+        w[-1] = 0
+        return w
+    lens = 2**16, 2**18
+    wfms = [wfm(np.linspace(0,1,n)) for n in lens]
+    freq = 1e6
+    filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
+
+    ans = input('Write wfms to usb drive at F: ?')
+    if ans.lower() == 'y':
+        print('Writing waveforms to USB drive at F:')
+        for wfm, fn in zip(wfms, filenames):
+            rigol.write_wfm_file(wfm, os.path.join('F:', fn))
+        input('Put the usb drive into rigol. (press enter)')
+
+    times = []
+    nrepeats = 50
+    for wfm, fn in zip(wfms, filenames):
+        tt = []
+        for n in range(nrepeats):
+            l = len(wfm)
+            time.sleep(1)
+            print(f'loading length {l} waveform. {n+1}/{nrepeats}')
+            t0 = time.time()
+            rigol.load_wfm_usbdrive(fn, wait=True)
+            t1 = time.time()
+            tt.append(t1-t0-1) # load_wfm_usbdrive waits a second
+        times.append(tt)
+    return lens, times
+
+
+def test_rigol_wfms_1(sleep=8):
     '''
     Rigol is a flaky piece of crap
     we need to reliably output long waveforms
@@ -508,7 +600,7 @@ def test_rigol_wfms(sleep=8):
         print('Writing waveforms to USB drive at F:')
         for wfm, fn in zip(wfms, filenames):
             rigol.write_wfm_file(wfm, os.path.join('F:', fn))
-        input('Put the usb drive into rigol')
+        input('Put the usb drive into rigol. (press enter)')
 
     def is_wfm_good(programmed, measured):
         # Cross correlation to tell if you got the waveform you asked for
@@ -520,7 +612,7 @@ def test_rigol_wfms(sleep=8):
         nsamples = len(programmed)
         interp = np.interp(np.linspace(0,1,nsamples), np.linspace(0, 1, len(measured)), measured)
         corr = np.correlate(programmed, interp) / np.correlate(programmed, programmed)
-        return corr > 0.8
+        return 0.8 < corr < 1.2
 
     for wfm, fn in zip(wfms, filenames):
         rigol.load_wfm_usbdrive(fn, wait=False)
@@ -529,6 +621,7 @@ def test_rigol_wfms(sleep=8):
         # x2 for idiot definition of amplitude, x2 for 50 ohm termination
         # There could still be some error here, both in the measurement by picoscope and by rigol..
         rigol.amplitude(2*2*(amp + abs(offs)))
+        rigol.period(dur)
         time.sleep(.05) # I don't think it's needed, just trying to stop crash
         ps.capture(ch=['A'], freq=scope_fs, duration=dur, chrange={'A':1}, choffset={'A':0}, chcoupling={'A':'DC50'})
         rigol.trigger(1)
