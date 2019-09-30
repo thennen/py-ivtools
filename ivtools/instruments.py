@@ -655,14 +655,18 @@ class RigolDG5000(object):
             return None
 
     @staticmethod
-    def write_wfm_file(wfm, filepath=None):
+    def write_wfm_file(wfm, filepath=None, drive='F'):
         '''
         The only way to get anywhere near the advertised number of samples
         theoretically works up to 16 MPts = 2**24 samples
         wfm should be between -1 and 1, this will convert it to uint16
+        Can load up to 512 MPts in "play mode", which reduces the sample rate
+        There are magic values of waveform lengths that can be used, there is no obvious logic to this
+        safe values are anything < 2^19 = 524,288 samples, and any whole power of 2 after that
+        if > 2^14 = 16383 points, the bursts are delayed by ~910 ns after the trigger..
         '''
         if filepath is None:
-            filepath = hashlib.md5(arr).hexdigest() + '.RAF'
+            filepath = f'{drive}:\\' + hashlib.md5(wfm).hexdigest()[:8] + '.RAF'
         else:
             # Needs extension RAF!
             filepath = os.path.splitext(filepath)[0] + '.RAF'
@@ -671,6 +675,9 @@ class RigolDG5000(object):
             print('Waveform must be in [-1, 1].  Clipping it!')
             A = np.clip(A, -1, 1)
         wfm = ((wfm + 1)/2 * (2**14 - 1))
+        n = len(wfm)
+        if (n > 2**19) and (np.log(n)/np.log(2)%1 != 0):
+            print('write_wfm_file: If waveform has more than 2^19 points, it should have a whole power of 2 points!')
         wfm = np.round(wfm).astype(np.dtype('H'))
         print(f'Writing binary waveform to {filepath}')
         with open(filepath, 'wb') as f:
@@ -802,42 +809,6 @@ class RigolDG5000(object):
 
     # End for burst mode >>>>>
 
-    def load_wfm_usbdrive(self, filename='wfm.RAF', wait=True):
-        '''
-        Load waveform from usb drive.  Should be a binary sequence of unsigned shorts.
-        File needs to have extension .RAF
-        This is the only way to reach the advertised number of waveform samples, or anywhere near it
-        Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
-
-        wait=True can cause problems, because it uses another command to query whether rigol is responding
-        again, but this command itself can make rigol puke..
-        Ideally you just have a good idea how long it takes to load the waveform, and you wait manually..
-        This seems to only be an issue if you have a lot of waveforms to load sequentially
-
-        Like everything on rigol, this can be flaky. Can not have 100% confidence that the waveform loaded properly
-        Usually if it didn't load it, it will take an abnormally short time to respond to the next command
-        It does not "like" fractional powers of 2 if the waveform is longer than 2^19 = 524kSamples
-        but sometimes, unaccountably, it can load them anyway
-
-        It can also just crash and cause the python program to hang indefinitely
-        The only solution seems to be to cycle the power on rigol and usually restart the python kernel..
-        '''
-        self.write(':MMEMory:CDIR "D:\"')
-        self.write(f':MMEMory:LOAD "{filename}"')
-        if wait:
-            oldtimeout = self.conn.timeout
-            # set timeout to a minute!
-            self.conn.timeout = 60000
-            time.sleep(1) # Stupid thing
-            # Rigol won't reply to this until it is done loading the waveform
-            err = self.error()
-            #self.idn()
-            self.conn.timeout = oldtimeout
-            # This shit causes an error every time now.  Used to work.
-            if err:
-            #    raise Exception(err)
-                print(err)
-
     def cd(self, dir='D:\\'):
         # Change directory.  Can crash rigol.
         self.write(f':MMEM:CDIR \"{dir}\"')
@@ -863,12 +834,51 @@ class RigolDG5000(object):
     def writebinary(self, message, values):
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
 
+    ### Waveform loading by many different methods, all of which are terrible for their own set of reasons
+
+    def load_wfm_usbdrive(self, filename='wfm.RAF', wait=True):
+        '''
+        Load waveform from usb drive.  Should be a binary sequence of unsigned shorts.
+        File needs to have extension .RAF
+        This is the only way to reach the advertised number of waveform samples, or anywhere near it
+        Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
+
+        wait=True can cause problems, because it uses another command to query whether rigol is responding
+        again, but this command itself can make rigol puke..
+        Ideally you just have a good idea how long it takes to load the waveform, and you wait manually..
+        This seems to only be an issue if you have a lot of waveforms to load sequentially
+
+        Like everything on rigol, this can be flaky. Can not have 100% confidence that the waveform loaded properly
+        Usually if it didn't load it, it will take an abnormally short time to respond to the next command
+        It does not "like" fractional powers of 2 if the waveform is longer than 2^19 = 524kSamples
+        but sometimes, unaccountably, it can load them anyway.  I wouldn't trust it.
+
+        It can also just crash and cause the python program to hang indefinitely
+        The only solution seems to be to cycle the power on rigol and usually restart the python kernel..
+        '''
+        self.write(':MMEMory:CDIR "D:\"')
+        self.write(f':MMEMory:LOAD "{filename}"')
+        if wait:
+            oldtimeout = self.conn.timeout
+            # set timeout to a minute!
+            self.conn.timeout = 60000
+            time.sleep(1) # Stupid thing
+            # Rigol won't reply to this until it is done loading the waveform
+            err = self.error()
+            #self.idn()
+            self.conn.timeout = oldtimeout
+            # This shit causes an error every time now.  Used to work.
+            if err:
+            #    raise Exception(err)
+                print(err)
+
     def load_wfm_binary(self, wfm, ch=1):
         """
         TODO: write about all the bullshit involved with this
         I have seen these waveforms simply fail to trigger unless you wait a second after enabling the channel output
         You need to wait after loading this waveform and after turning the output on, sometimes an obscene amount of time?
         the "idle level" in burst mode will be the first value of the waveform ??
+        No, the idle level is unpredictable, which is the killer for this upload mode
         """
         CHUNK = 2**14
         # vertical resolution
@@ -877,10 +887,11 @@ class RigolDG5000(object):
         PADVAL = 2**13
 
         nA = len(wfm)
-        A = np.array(wfm)
-
         print(f'You are trying to program {nA} pts')
+        if nA > 2**16:
+            print('Programming over 2^16 = 65,536 points by this method usually leads to problems!')
 
+        A = np.array(wfm)
         if np.any(np.abs(A) > 1):
             print('Waveform must be in [-1, 1].  Clipping it!')
             A = np.clip(A, -1, 1)
@@ -1929,6 +1940,7 @@ class Eurotherm2408(object):
     '''
     This uses some dumb proprietary EI-BISYNCH protocol over serial.
     Make the connections DB2 -> HF, DB3 -> HE, DB5 -> HD.
+    Link together DB1, DB4, DB6
     You can also use modbus.
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
