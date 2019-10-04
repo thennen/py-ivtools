@@ -1159,7 +1159,10 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     vmax = max(v0, v1)
     V = data[x]
     I = data[y]
-    mask = (V <= vmax) & (V >= vmin)
+    mask = (V <= vmax) & (V >= vmin) & ~np.isnan(V) & ~np.isnan(I)
+    if not any(mask):
+        print('Nothing to fit!')
+        return np.nan
     poly = np.polyfit(I[mask], V[mask], 1)
     if 'units' in data:
         if y in data['units']:

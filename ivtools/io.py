@@ -900,7 +900,7 @@ def set_readonly(filepath):
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
+def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
     # Make a plot of all the .s and .df files in a directory
     # Save as pngs with the same name
     # kwargs go to plotfunc
@@ -915,7 +915,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
             g = analyze.moving_avg(g, smoothn)
         if 'R_series' in g:
             g['Vd'] = g['V'] - g['R_series'] * g['I']
-        analyze.convert_to_uA(g)
+        #analyze.convert_to_uA(g)
         return g
 
     def plotgroup(g):
@@ -939,8 +939,11 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
                 #if type(df) is pd.Series:
                     #df = analyze.series_to_df(df)
                 df = processgroup(df)
+                print('plotting')
                 plotgroup(df)
                 writefig(pngfp)
+            elif not overwrite:
+                print(f'not overwriting file {pngfp}')
     else:
         # Read all the data in the directory into memory at once
         df = read_pandas(files)

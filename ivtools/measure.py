@@ -6,6 +6,7 @@ from . import plot as ivplot
 from . import analyze
 from . import instruments
 from . import settings
+from . import io
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
@@ -467,7 +468,6 @@ def test_rigol_1():
     df = pd.DataFrame(data)
     return df
 
-
 def test_rigol_2():
     '''
     How long does waveform loading take from USB stick?
@@ -484,12 +484,13 @@ def test_rigol_2():
         w[-1] = 0
         return w
     #lens = np.int32(np.geomspace(1000, 16e6, 40))
-    #lens = 2**np.arange(12, 25)
+    lens = 2**np.arange(12, 25)
     #lens = np.int32(2**np.arange(12, 24, .5))
-    lens = np.int32(2**np.arange(19, 22, .1))
+    #lens = np.int32(2**np.arange(19, 22, .1))
     wfms = [wfm(np.linspace(0,1,n)) for n in lens]
     freq = 1e6
-    filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
+    #filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
+    filenames = [io.hash_array(a)[:8]+'.RAF' for a in wfms]
 
     ans = input('Write wfms to usb drive at F: ?')
     if ans.lower() == 'y':
@@ -556,7 +557,6 @@ def test_rigol_3():
         times.append(tt)
     return lens, times
 
-
 def test_rigol_wfms_1(sleep=8):
     '''
     Rigol is a flaky piece of crap
@@ -577,18 +577,19 @@ def test_rigol_wfms_1(sleep=8):
 
     # Generate a few long waveforms
     # modulated sinewaves
-    awg_fs = 1e9
+    awg_fs = 4e8
     nwfms = 10
-    dur = 1e-3
-    nsamples = awg_fs * dur
+    nsamples = 2**20
+    dur = nsamples / awg_fs
     # Carrier freq
-    # If you keep the frequency far below 1/trigger_jitter ~ 100 MHz, we don't have to cross-correlate
+    # If you keep the frequency far below 1/trigger_jitter ~ 100 MHz, we maybe don't have to cross-correlate
     f1 = 1e6
     # Modulation freqs
-    f2 = np.linspace(1e5, 5e5, nwfms)
+    f2 = np.linspace(1e4, 5e4, nwfms)
     t = np.linspace(0, dur, nsamples)
     wfms = [np.sin(f1*2*np.pi*t)*np.sin(ff2*2*np.pi*t) for ff2 in f2]
-    filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
+    filenames = [io.hash_array(a)[:8]+'.RAF' for a in wfms]
+    #filenames = [f'wfm{i}.RAF' for i in range(len(wfms))]
     amp = 1
     offs = 0
     # same as awg, so that we can compare the waveforms easily
@@ -612,12 +613,16 @@ def test_rigol_wfms_1(sleep=8):
         nsamples = len(programmed)
         interp = np.interp(np.linspace(0,1,nsamples), np.linspace(0, 1, len(measured)), measured)
         corr = np.correlate(programmed, interp) / np.correlate(programmed, programmed)
+        plt.figure()
+        plt.plot(programmed)
+        plt.plot(interp)
         return 0.8 < corr < 1.2
 
     for wfm, fn in zip(wfms, filenames):
         rigol.load_wfm_usbdrive(fn, wait=False)
         # Long wait to be absolutely sure that rigol is finished loading wfm and had time to rest...
-        time.sleep(sleep)
+        for _ in range(int(sleep)):
+            time.sleep(1)
         # x2 for idiot definition of amplitude, x2 for 50 ohm termination
         # There could still be some error here, both in the measurement by picoscope and by rigol..
         rigol.amplitude(2*2*(amp + abs(offs)))
@@ -627,11 +632,27 @@ def test_rigol_wfms_1(sleep=8):
         rigol.trigger(1)
         d = ps.get_data(['A'], raw=False)
         worked = is_wfm_good(wfm, d['A'])
+        break
         if worked:
             print('Worked!')
         else:
             print('Failed!')
             return wfm, d
+
+def test_rigol_wfms_2(sleep=8):
+    '''
+    difference between waveforms when loaded different ways (strings, ints, binary, front usb)
+    limits of lengths?
+    strings < ~20,000
+    ints < ~40,000 ??
+    binary <= 2^16 = 65,563
+    front < 2^24 = 16 MS
+    '''
+    from ivtools import instruments
+    ps = instruments.Picoscope()
+    rigol = instruments.RigolDG5000()
+    rigol.setup_burstmode()
+    rigol.output(1)
 
 ########### Compliance circuit ###################
 
