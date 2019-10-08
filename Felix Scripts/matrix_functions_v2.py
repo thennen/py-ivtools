@@ -1,9 +1,9 @@
-
+#from ..ivtools import plot
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-
+import itertools
 
 
 
@@ -44,16 +44,18 @@ def analyze_matrix(data,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v
     ###first find the measurement circumstances: V_RESET_stop and I_CC
     #I_CC=pd.DataFrame(analyze.ICC_by_vmax(data, column='V', polarity=True))['I']
     I_CC=pd.DataFrame(data)['CC']
-    
+    print('I_CC done')
     #print(len(V_RESET_stop))
     
     ###find out resistances
 
     V_RESET_stop=pd.DataFrame({'V_RESET_stop':np.floor(10*analyze.V_RESET_stop_by_vmax(data, column='V', polarity=True)['V'])/10})
+    print('V_RESET_stop done')
     HRS=pd.DataFrame({'HRS':analyze.resistance_states_fit(data,v_low=vlow_resistance,v_high=vhigh_resistance)[0]})
-    
+    print('HRS done')
     
     LRS=pd.DataFrame({'LRS':analyze.resistance_states_fit(data,v_low=vlow_resistance,v_high=vhigh_resistance)[1]})
+    print('LRS done')
     # print((HRS))
     # print(len(LRS))
     # ###find out V_SET and V_RESET----OLD
@@ -70,9 +72,14 @@ def analyze_matrix(data,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v
     ###find out V_SET and V_RESET, I_SET and I_RESET----NEW
     
     V_SET=pd.DataFrame({'V_SET':analyze.V_SET_by_max_gradient(data=data,v_low=v_lowSET,v_high=v_highSET)})
+    print('V_SET done')
     V_RESET=pd.DataFrame({'V_RESET':analyze.V_RESET_by_change_of_gradient(data=data, N=N_RESETstride, v_low=v_lowRESET,v_high=v_highRESET)})
+    #V_RESET=pd.DataFrame([0])
+    print('V_RESET done')
     I_SET=pd.DataFrame({'I_SET':analyze.I_SET_by_max_gradient_shifted(data=data,v_low=v_lowSET,v_high=v_highSET,shift_index_by=SET_current_shift)})
+    print('I_SET done')
     I_RESET=pd.DataFrame({'I_RESET':analyze.I_RESET_by_change_of_gradient(data=data, N=N_RESETstride, v_low=v_lowRESET,v_high=v_highRESET)})
+    print('I_RESET done')
     
      
     # print(len(V_SET))
@@ -188,14 +195,35 @@ def plot_flat_matrix_analysis(analysis_data,saveoption='No',filepath='None'):
         flatfig5.savefig(filepath_savefig+'LRS_vs_V_RESET')
         
     
+def plot_colored_matrix_analysis(analysis_data,cmap='jet',saveoption='No',filepath='None'):
+    unique_ICC=np.unique(np.around(analysis_data['CC'],4))  
+    Icc_map = cm.get_cmap(cmap, len(unique_ICC))
+    I_cc_colors = [Icc_map(c) for c in np.linspace(0, 1, len(unique_ICC))]
     
+    unique_V_RESET_stop=np.unique(analysis_data['V_RESET_stop'])
+    Vreset_stop_map = cm.get_cmap(cmap, len(unique_V_RESET_stop))
+    Vreset_stop_colors = [Vreset_stop_map(c) for c in np.linspace(0, 1, len(unique_V_RESET_stop))]
     
+    cfig1, ax = plt.subplots()
+    scatterargs = dict(s=10, alpha=.8, edgecolor='none')
+    #scatterargs.update(kwargs)
+    #ax.scatter(analysis_data.index,analysis_data['LRS'],  c='seagreen', **scatterargs)
+    #ax.legend(['HRS', 'LRS'], loc=0)
+    engformatter('y', ax)
+    ax.set_xlabel('V_RESET #')
+    ax.set_ylabel('Resistance [$\\Omega$]')
+    ax.set_yscale('log')
+    ax.set_ylim(bottom=1e3, top=1e7)
     
+    for element in itertools.product(unique_V_RESET_stop, unique_ICC):
+    
+        mask = (analysis_data['V_RESET_stop']==element[0]) & (analysis_data['CC']==element[1])
+        ax.scatter(analysis_data.loc[mask]['V_RESET'],analysis_data['LRS'].loc[mask], c='blue', **scatterargs)
     
     
 
 
-def split_data_into_matrix(data,plot=True,cmap='jet',saveplots=False,analyse=True,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v_highSET=5,N_RESETstride=5,v_lowRESET=-5,v_highRESET=-0.3,SET_current_shift=3):
+def split_data_into_matrix(data,doplot=True,cmap='jet',saveplots=False,analyse=True,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v_highSET=5,N_RESETstride=5,v_lowRESET=-5,v_highRESET=-0.3,SET_current_shift=3):
     unique_ICC=np.unique(np.around(data['CC'],4))
     print(unique_ICC)
     unique_V_RESET_stop=np.unique(np.floor(10*analyze.V_RESET_stop_by_vmax(data, column='V', polarity=True)['V'])/10)
@@ -208,10 +236,10 @@ def split_data_into_matrix(data,plot=True,cmap='jet',saveplots=False,analyse=Tru
     Vreset_stop_colors = [Vreset_stop_map(c) for c in np.linspace(0, 1, len(unique_V_RESET_stop))]
     combi_cmap=cm.get_cmap(cmap, len(unique_V_RESET_stop)*len(unique_ICC))
     combi_colors = [combi_cmap(c) for c in np.linspace(0, 1, len(unique_V_RESET_stop)*len(unique_ICC))]
-    if plot==True:
+    if doplot==True:
         scatterargs = dict(s=10, alpha=.8, edgecolor='none')
         errorbarargs=dict(alpha=.8)
-        lineargs=dict(alpha=.8)
+        lineargs=dict(alpha=.5)
         figIcc, axIcc = plt.subplots()##figIcc sind Sweeps mit constanter CC
         axIcc.set_xlabel('Voltage [V]')
         axIcc.set_ylabel('Current [A]')
@@ -267,21 +295,21 @@ def split_data_into_matrix(data,plot=True,cmap='jet',saveplots=False,analyse=Tru
         
         count_combinations=-1
     for i,Icc in enumerate(Iccs[::1]):
-        if plot==True:
-            # figIcc, axIcc = plt.subplots()##figIcc sind Sweeps mit constanter CC
-            # axIcc.set_xlabel('Voltage [V]')
-            # axIcc.set_ylabel('Current [A]')
-            # axIcc.set_yscale('log')
-            # axIcc.set_ylim(bottom=1e-9, top=5e-3)
-            # axIcc.set_xlim(left=-2, right=2.5)
-            # legendIcc_handles=[]
-            # legendIcc_labels=[]
-            pass
-        print(Icc)
+        if doplot==True:
+             figIcc, axIcc = plt.subplots()##figIcc sind Sweeps mit constanter CC
+             axIcc.set_xlabel('Voltage [V]')
+             axIcc.set_ylabel('Current [A]')
+             axIcc.set_yscale('log')
+             axIcc.set_ylim(bottom=1e-9, top=5e-3)
+             axIcc.set_xlim(left=-2, right=2.5)
+             legendIcc_handles=[]
+             legendIcc_labels=[]
+            #pass
+        #print(Icc)
         for j,Vreset in enumerate(Vresets[::-1]):
             count_combinations=count_combinations+1
             print(count_combinations)
-            print(Vreset)
+            #print(Vreset)
             mask = (np.around(data['I'].apply(max),4)==Icc) & (np.floor(10*data['V'].apply(min))/10==Vreset)
             current_df= data.loc[mask]
             if analyse==True:
@@ -290,7 +318,8 @@ def split_data_into_matrix(data,plot=True,cmap='jet',saveplots=False,analyse=Tru
                 combined_stats=pd.concat([current_ana.describe(),pd.DataFrame(current_ana.median(), columns = ["median"] ).T,pd.DataFrame(current_ana.mad(), columns = ["mean_ad"] ).T,pd.DataFrame(abs(current_ana-current_ana.median()).median(),columns=["median_ad"]).T])
             else:
                 plot_analysis=False
-            if plot==True:
+            if doplot==True:
+                #plot.plotiv(current_df)
                 if plot_analysis==True:
                     scatter1=ax1.scatter(current_ana['V_SET'],current_ana['HRS'], c=[Vreset_stop_colors[j]], **scatterargs)
                     legend1_handles.append(scatter1)
@@ -305,21 +334,22 @@ def split_data_into_matrix(data,plot=True,cmap='jet',saveplots=False,analyse=Tru
                     scatter2med=ax2med.errorbar(x=abs(combined_stats.loc['median']['V_RESET']),y=combined_stats.loc['median']['LRS'],yerr=combined_stats.loc['median_ad']['LRS'],xerr=combined_stats.loc['median_ad']['V_RESET'],color=combi_colors[count_combinations])
                     legend2med_handles.append(scatter2med)
                     legend2med_labels.append(str(Vreset)+' V| '+str(Icc)+' A')  
-            for kkk in current_df.index:
-                print(kkk)
+            for kkk,lelelel in enumerate(current_df.index):
+                #print(kkk)
                 
-                #lineIcc=axIcc.plot(current_df.iloc[kkk]['V'],abs(current_df.iloc[kkk]['I']),c=Vreset_stop_colors[j])
-                #legendIcc_handles.append(lineIcc)
-                #legendIcc_labels.append(str(Vreset)) 
-                
+                lineIcc,=axIcc.plot(current_df.iloc[kkk]['V'],abs(current_df.iloc[kkk]['I']),c=Vreset_stop_colors[j],**lineargs)
+                legendIcc_handles.append(lineIcc)
+                legendIcc_labels.append(str(Vreset)) 
+            #axIcc.legend(legendIcc_handles[::np.ceil(len(current_df['V'])/len(unique_V_RESET_stop))],legendIcc_labels[::np.ceil(len(current_df['V'])/len(unique_V_RESET_stop))])
             
     
     
-    if plot==True:
+    if doplot==True:
         ax1.legend(legend1_handles[0:len(unique_V_RESET_stop)],legend1_labels[0:len(unique_V_RESET_stop)])
         ax1med.legend(legend1med_handles,legend1med_labels)
         ax2.legend(legend2_handles[::len(unique_ICC)],legend2_labels[::len(unique_ICC)])
         ax2med.legend(legend2med_handles,legend2med_labels)
+        
     return(current_df)
     
     
