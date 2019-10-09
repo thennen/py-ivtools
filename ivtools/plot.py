@@ -395,7 +395,7 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_xlabel('Cycle #')
     ax.set_ylabel('Resistance [$\\Omega$]')
 
-def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
+def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
               ax=None, **kwargs):
     '''
