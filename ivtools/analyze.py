@@ -792,7 +792,7 @@ def meaniv(data, truncate=False, columns=None):
             dataout[k] = data[k].mean()
         else:
             dataout[k] = np.mean([d[k] for d in data], axis=0)
-    add_missing_keys(firstrow, dataout)
+    add_missing_keys(iloc(data, 0), dataout)
     if isdf:
         return pd.Series(dataout)
     else:
