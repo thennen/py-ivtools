@@ -755,6 +755,8 @@ def concativ(data, columns=None):
             out[k] = np.concatenate([d[k] for d in data])
         else:
             raise Exception('pass a list of dicts or a dataframe')
+    # Put in the metadata from the first row only -- don't know how else to combine metadata
+    firstrow = iloc(data, 0)
     add_missing_keys(firstrow, out)
 
     if type(data) == pd.DataFrame:
@@ -1267,7 +1269,7 @@ def downsample_dumb(data, nsamples, columns=None):
     return dataout
 
 
-#### datatype conversion ####
+#### datatype conversion/ stuff that's hard to do in pandas ####
 
 # operations that are easy:
 # dict --> series      (pd.Series(dict))
@@ -1276,6 +1278,10 @@ def downsample_dumb(data, nsamples, columns=None):
 
 def df_to_listofdicts(df):
     return df.to_dict(orient='records')
+
+def df_to_listofdicts_sparse(df):
+    # This one drops the nans but takes longer
+    return [v.dropna().to_dict() for i,v in df.iterrows()]
 
 def series_to_df(series):
     # Convert pd.series into single row dataframe
