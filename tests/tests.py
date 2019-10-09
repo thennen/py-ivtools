@@ -34,6 +34,7 @@ def name_collisions():
 
     return fail
 
+
 if __name__ == '__main__':
     fail = name_collisions()
     if not fail:

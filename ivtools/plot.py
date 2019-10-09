@@ -2,7 +2,7 @@
 
 # Local imports
 from . import analyze
-from . import persistent_state
+from . import settings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -548,7 +548,10 @@ class interactive_figs(object):
     '''
     # TODO: save/load configurations to disk?
     def __init__(self, n=4, clear_state=False):
-        self.__dict__ = persistent_state.plotter_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...

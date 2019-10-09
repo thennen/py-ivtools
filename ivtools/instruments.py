@@ -36,12 +36,13 @@ import time
 import os
 import pandas as pd
 import serial
+import hashlib
 from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
-from . import persistent_state
-visa_rm = persistent_state.visa_rm
+from . import settings
+visa_rm = settings.visa_rm
 # Could also store the visa_rm in visa itself
 #visa.visa_rm = visa.ResourceManager()
 #visa_rm = visa.visa_rm
@@ -63,7 +64,10 @@ class Picoscope(object):
     Has some higher level functionality, and it stores/manipulates the channel settings.
     '''
     def __init__(self, connect=True):
-        self.__dict__ = persistent_state.pico_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
@@ -577,9 +581,10 @@ class RigolDG5000(object):
     def __init__(self, addr=None):
         self.verbose = False
         try:
-            if addr is None:
-                addr = self.get_visa_addr()
-            self.connect(addr)
+            if not self.connected():
+                if addr is None:
+                    addr = self.get_visa_addr()
+                self.connect(addr)
         except:
             print('Rigol connection failed.')
             return
@@ -590,7 +595,8 @@ class RigolDG5000(object):
         # hasn't changed
         self.volatilewfm = []
 
-    def get_visa_addr(self):
+    @staticmethod
+    def get_visa_addr():
         # Look for the address of the DG5000 using visa resource manager
         for resource in visa_rm.list_resources():
             if 'DG5' in resource:
@@ -610,6 +616,15 @@ class RigolDG5000(object):
             #print('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
             print('Connection to Rigol AWG failed.')
+
+    def connected(self):
+        if hasattr(self, 'conn'):
+            try:
+                self.idn()
+                return True
+            except:
+                pass
+        return False
 
     def set_or_query(self, cmd, setting=None):
         # Sets or returns the current setting
@@ -640,19 +655,29 @@ class RigolDG5000(object):
             return None
 
     @staticmethod
-    def write_wfm_file(wfm, filepath='wfm.RAF'):
+    def write_wfm_file(wfm, filepath=None, drive='F'):
         '''
         The only way to get anywhere near the advertised number of samples
         theoretically works up to 16 MPts = 2**24 samples
         wfm should be between -1 and 1, this will convert it to uint16
+        Can load up to 512 MPts in "play mode", which reduces the sample rate
+        There are magic values of waveform lengths that can be used, there is no obvious logic to this
+        safe values are anything < 2^19 = 524,288 samples, and any whole power of 2 after that
+        if > 2^14 = 16383 points, the bursts are delayed by ~910 ns after the trigger..
         '''
-        # Needs extension RAF!
-        filepath = os.path.splitext(filepath)[0] + '.RAF'
+        if filepath is None:
+            filepath = f'{drive}:\\' + hashlib.md5(wfm).hexdigest()[:8] + '.RAF'
+        else:
+            # Needs extension RAF!
+            filepath = os.path.splitext(filepath)[0] + '.RAF'
 
         if np.any(np.abs(wfm) > 1):
             print('Waveform must be in [-1, 1].  Clipping it!')
             A = np.clip(A, -1, 1)
         wfm = ((wfm + 1)/2 * (2**14 - 1))
+        n = len(wfm)
+        if (n > 2**19) and (np.log(n)/np.log(2)%1 != 0):
+            print('write_wfm_file: If waveform has more than 2^19 points, it should have a whole power of 2 points!')
         wfm = np.round(wfm).astype(np.dtype('H'))
         print(f'Writing binary waveform to {filepath}')
         with open(filepath, 'wb') as f:
@@ -739,12 +764,16 @@ class RigolDG5000(object):
 
     def error(self):
         ''' Get error message from rigol '''
-        return self.query(':SYSTem:ERRor?').strip()
+        err = self.query(':SYSTem:ERRor?').strip()
+        if err == '0,"No error"':
+            # So you can do "if rigol.error()"
+            return False
+        return err
 
     # <<<<< For burst mode
     def ncycles(self, n=None, ch=1):
         ''' Set number of cycles that will be output in burst mode '''
-        if n > 1000000:
+        if (n is not None) and (n > 1000000):
             # Rigol does not give error, leaving you to waste a bunch of time discovering this
             raise Exception('Rigol can only pulse maximum 1,000,000 cycles')
         else:
@@ -780,12 +809,52 @@ class RigolDG5000(object):
 
     # End for burst mode >>>>>
 
+    def cd(self, dir='D:\\'):
+        # Change directory.  Can crash rigol.
+        self.write(f':MMEM:CDIR \"{dir}\"')
+
+    def listdir(self):
+        '''
+        List the files in the current directory
+        Highly unreliable.  Rigol can crashes on whatever command you send it after this!
+        Errors not consistently repeatable
+        File sizes have come back different -- they are probably wrong
+        '''
+        horrible_string = self.query('MMEM:CAT?')
+        quote = horrible_string.find('\"')
+        first_number,second_number = horrible_string[:quote-1].split(',')
+        rest = horrible_string[quote:].strip().strip('\"').split('\",\"')
+        splitrest = [r.split(',') for r in rest]
+        size,wtf,fn = zip(*splitrest)
+        # Idiot rigol writes .RAF.RAF when it is just .RAF
+        fn = [n.replace('.RAF.RAF', '.RAF') for n in fn]
+        #out = {f:s for f,s in zip(fn,size)}
+        return fn
+
+    def writebinary(self, message, values):
+        self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
+
+    ### Waveform loading by many different methods, all of which are terrible for their own set of reasons
+
     def load_wfm_usbdrive(self, filename='wfm.RAF', wait=True):
         '''
         Load waveform from usb drive.  Should be a binary sequence of unsigned shorts.
         File needs to have extension .RAF
         This is the only way to reach the advertised number of waveform samples, or anywhere near it
         Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
+
+        wait=True can cause problems, because it uses another command to query whether rigol is responding
+        again, but this command itself can make rigol puke..
+        Ideally you just have a good idea how long it takes to load the waveform, and you wait manually..
+        This seems to only be an issue if you have a lot of waveforms to load sequentially
+
+        Like everything on rigol, this can be flaky. Can not have 100% confidence that the waveform loaded properly
+        Usually if it didn't load it, it will take an abnormally short time to respond to the next command
+        It does not "like" fractional powers of 2 if the waveform is longer than 2^19 = 524kSamples
+        but sometimes, unaccountably, it can load them anyway.  I wouldn't trust it.
+
+        It can also just crash and cause the python program to hang indefinitely
+        The only solution seems to be to cycle the power on rigol and usually restart the python kernel..
         '''
         self.write(':MMEMory:CDIR "D:\"')
         self.write(f':MMEMory:LOAD "{filename}"')
@@ -793,15 +862,15 @@ class RigolDG5000(object):
             oldtimeout = self.conn.timeout
             # set timeout to a minute!
             self.conn.timeout = 60000
+            time.sleep(1) # Stupid thing
             # Rigol won't reply to this until it is done loading the waveform
             err = self.error()
             #self.idn()
             self.conn.timeout = oldtimeout
-            if err != '0,"No error"':
-                raise Exception(err)
-
-    def writebinary(self, message, values):
-        self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
+            # This shit causes an error every time now.  Used to work.
+            if err:
+            #    raise Exception(err)
+                print(err)
 
     def load_wfm_binary(self, wfm, ch=1):
         """
@@ -809,6 +878,7 @@ class RigolDG5000(object):
         I have seen these waveforms simply fail to trigger unless you wait a second after enabling the channel output
         You need to wait after loading this waveform and after turning the output on, sometimes an obscene amount of time?
         the "idle level" in burst mode will be the first value of the waveform ??
+        No, the idle level is unpredictable, which is the killer for this upload mode
         """
         CHUNK = 2**14
         # vertical resolution
@@ -817,10 +887,11 @@ class RigolDG5000(object):
         PADVAL = 2**13
 
         nA = len(wfm)
-        A = np.array(wfm)
-
         print(f'You are trying to program {nA} pts')
+        if nA > 2**16:
+            print('Programming over 2^16 = 65,536 points by this method usually leads to problems!')
 
+        A = np.array(wfm)
         if np.any(np.abs(A) > 1):
             print('Waveform must be in [-1, 1].  Clipping it!')
             A = np.clip(A, -1, 1)
@@ -1119,10 +1190,14 @@ class Keithley2600(object):
     '''
     def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         try:
-            self.__dict__ = persistent_state.keithley_state
+            statename = '_'.join((self.__class__.__name__, addr))
+            if statename not in settings.instrument_states:
+                settings.instrument_states[statename] = {}
+            self.__dict__ = settings.instrument_states[statename]
             self.connect(addr)
-        except:
+        except Exception as E:
             print('Keithley connection failed at {}'.format(addr))
+            print(E)
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():
@@ -1865,11 +1940,15 @@ class Eurotherm2408(object):
     '''
     This uses some dumb proprietary EI-BISYNCH protocol over serial.
     Make the connections DB2 -> HF, DB3 -> HE, DB5 -> HD.
+    Link together DB1, DB4, DB6
     You can also use modbus.
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
         # BORG
-        self.__dict__ = persistent_state.eurotherm_state
+        statename = '_'.join((self.__class__.__name__, addr, str(gid), str(uid)))
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         self.connect(addr, gid, uid)
 
     def connect(self, addr='COM32', gid=0, uid=1):
@@ -2165,7 +2244,10 @@ class WichmannDigipot_new(object):
     '''
     def __init__(self, addr=None):
         # BORG
-        self.__dict__ = persistent_state.digipot_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
@@ -2311,7 +2393,10 @@ class WichmannDigipot(object):
     '''
     def __init__(self, addr=None):
         # BORG
-        self.__dict__ = persistent_state.digipot_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
@@ -2509,7 +2594,10 @@ class EugenTempStage(object):
 
     def __init__(self, addr=None, baudrate=9600):
         # BORG
-        self.__dict__ = persistent_state.tempstage_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         try:
             self.connect(addr, baudrate)
         except:

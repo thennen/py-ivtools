@@ -794,7 +794,7 @@ def meaniv(data, truncate=False, columns=None):
             dataout[k] = data[k].mean()
         else:
             dataout[k] = np.mean([d[k] for d in data], axis=0)
-    add_missing_keys(firstrow, dataout)
+    add_missing_keys(iloc(data, 0), dataout)
     if isdf:
         return pd.Series(dataout)
     else:
@@ -1161,7 +1161,10 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     vmax = max(v0, v1)
     V = data[x]
     I = data[y]
-    mask = (V <= vmax) & (V >= vmin)
+    mask = (V <= vmax) & (V >= vmin) & ~np.isnan(V) & ~np.isnan(I)
+    if not any(mask):
+        print('Nothing to fit!')
+        return np.nan
     poly = np.polyfit(I[mask], V[mask], 1)
     if 'units' in data:
         if y in data['units']:

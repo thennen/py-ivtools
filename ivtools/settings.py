@@ -39,12 +39,6 @@ pico_to_iv = partial(measure.Rext_to_iv, R=50)
 # instrument connections
 
 
-# These hold the BORG instance states, to protect them from reload
+# This holds the BORG instance states, to protect them from reload
 # Often just for reusing the instrument connections
-pico_state = {}
-plotter_state = {}
-metahandler_state = {}
-eurotherm_state = {}
-keithley_state = {}
-digipot_state = {}
-tempstage_state = {}
+instrument_states = {}
