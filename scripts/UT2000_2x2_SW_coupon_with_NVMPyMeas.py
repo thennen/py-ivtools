@@ -28,7 +28,6 @@ def gotoDevice(die_rel=1, module='001', device=2):
     p.moveAbsolute_um(x_home + wX, y_home + wY)
 
 
-
 #############################
 # "Leakage" and "threshold" testing
 #############################
