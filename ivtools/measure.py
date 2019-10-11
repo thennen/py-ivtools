@@ -1204,3 +1204,21 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
     return np.concatenate((prearray, pulsearray, postarray))
 
 
+############# Misc ##############################
+def text_to_speech(text):
+    '''
+    runs in a separate thread, but you can't call it again until the previous one is complete
+    '''
+    import pyttsx3
+    from threading import Thread
+    class Threader(Thread):
+        def __init__(self, *args, **kwargs):
+            Thread.__init__(self, *args, **kwargs)
+            self.daemon = True
+            self.start()
+
+        def run(self):
+            tts_engine = pyttsx3.init()
+            tts_engine.say(text)
+            tts_engine.runAndWait()
+    Threader()
