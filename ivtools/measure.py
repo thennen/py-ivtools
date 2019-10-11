@@ -315,6 +315,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
         # channelb should never go below zero, except for potentially op amp overshoot
         # I have seen it reach -0.1V
         CC = settings.COMPLIANCE_CURRENT
+        polarity = np.sign(settings.CCIRCUIT_GAIN)
         if R is None:
             # Hypothetical resistance method
             # Signal should never go below 0V (compliance)
@@ -322,7 +323,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
             b_resistance = max(abs(v1), abs(v2)) / CC / 1.1
             # Compliance current sets the voltage offset at zero input.
             # Add 10% to be safe.
-            b_max = (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
+            b_max = polarity * (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
         else:
             # R was passed, assume device has constant resistance with this value
             b_min = (CC - max(v1, v2) / R) * 2e3
