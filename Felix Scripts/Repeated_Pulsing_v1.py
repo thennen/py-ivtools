@@ -107,7 +107,7 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         [[t_SET,t_trans,I_preset]]=analyze_SET_transient(SET)
         newentry_df=pd.DataFrame([[V_SET,t_pulse,resistance_pre,resistance_after,t_SET,t_trans,I_preset]], columns={'V_SET','t_pulse','R_pre','R_post','t_SET','t_trans','I_preset'})
         SET_data.append(newentry,ignore_index=True)
-        c
+        plot.interactive_figs.clear()
     
     return(SET_data)
     

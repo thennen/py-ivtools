@@ -5,14 +5,46 @@ from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import itertools
 
-
-
+def squeeze_range_mul(data_list, padpercent=0, ch=['A', 'B', 'C', 'D']):
+    for c in ch:
+        offset_list = []
+        range_list = []
+        for data in data_list:
+            if c in data:
+                usedatten = data['ATTENUATION'][c]
+                usedcoupling = data['COUPLINGS'][c]
+                usedrange = data['RANGE'][c]
+                usedoffset = data['OFFSET'][c]
+                if type(data[c][0]) is np.int8:
+                    # Need to convert to float
+                    # TODO: consider attenuation
+                    maximum = np.max(data[c]) / 2**8 * usedrange * 2 - usedoffset
+                    minimum = np.min(data[c]) / 2**8 * usedrange * 2 - usedoffset
+                    rang, offs = ps.best_range((minimum, maximum), padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
+                else:
+                    rang, offs = ps.best_range(data[c], padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
+                
+                range_list.append(rang)
+                offset_list.append(offs)
+        #print(c, offset_list)
+        #print(c, range_list)
+        if range_list != []:
+            ps.offset[c] = np.mean(offset_list)
+            ps.range[c] = max(range_list)
+            print('Setting picoscope channel {} range {}, offset {}'.format(c, max(range_list), np.mean(offset_list)))
+        
+        
 def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_inc,Vset_stop, n_cycle=100, duration=1e-3,fs=1.25e9):
     '''
-    Define Current Compliance Start, Stop and Increment in micra-A,
+    Define Current Compliance Start, Stop and Increment in micro-A,
     Reset Voltage start, stop and increment (negative values *100),
     and regular picoiv-stuff.
     '''
+    path = os.path.join(datadir(),"MatrixMeasurement_Vset{}_{}".format(Vset_stop*100,time.strftime('%H%M%S')))
+    if os.path.isfile(path):
+        pass
+    else:
+        os.mkdir(path)
     appended_data_out=[]
     for I_CC in range(ICC_Start,ICC_Stop+ICC_inc,ICC_inc):
         set_compliance(I_CC*1e-6)
@@ -25,22 +57,67 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
             ps.range.a = 5
             ps.offset.a = 0
             temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
-            ps.squeeze_range(temp,padpercent=0.2)
+            try:
+                ps.squeeze_range(temp,padpercent=0.5)
+            except:
+                ps.range.b = 5
+                ps.offset.b = 0
+                ps.range.a = 5
+                ps.offset.a = 0
+                temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
+                try:
+                    ps.squeeze_range(temp,padpercent=0.5)
+                except:
+                    ps.range.b=5
+                    ps.offset.b=ps.best_range(temp,padpercent=0.5)
             print('----------------------------------')
-            print('Changed RESET Stop Voltage to {}'.format(V_RESET_STOP))
+            print('Changed RESET Stop Voltage to {}'.format(V_RESET_STOP/100))
             print('----------------------------------')
+            iplots.clear()
             d=picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
             #d_in_df=pd.DataFrame(d)
-            appended_data_out += d
-    savedata(appended_data_out,filepath = os.path.join(datadir(), meta.filename()+'_combined_matrix'))
+            savedata(appended_data_out,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,Vset_stop*100)))
+
+    
+    for I_CC in reversed(range(ICC_Start,ICC_Stop+ICC_inc,ICC_inc)):
+        set_compliance(I_CC*1e-6)
+        print('-------------------------------------')
+        print('Changed Current Compliance to {}'.format(I_CC))
+        print('-------------------------------------')
+        ps.range.b = 5
+        ps.offset.b = 0
+        ps.range.a = 5
+        ps.offset.a = 0
+        temp = picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=1, fs=fs,smartrange=False)
+        try:
+            ps.squeeze_range(temp,padpercent=0.5)
+        except:
+            ps.range.b = 5
+            ps.offset.b = 0
+            ps.range.a = 5
+            ps.offset.a = 0
+            temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
+            try:
+                ps.squeeze_range(temp,padpercent=0.5)
+            except:
+                ps.range.b=5
+                ps.offset.b=ps.best_range(temp,padpercent=0.5)
+        iplots.clear()
+        d=picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
+        #ivplot.interactive_figs.clear()
+        savedata(appended_data_out,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,Vreset_Stop,Vset_stop*100)))
             
-    return(appended_data_out)
+    #return(appended_data_out)
 	
-def analyze_matrix(data,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v_highSET=5,N_RESETstride=5,v_lowRESET=-5,v_highRESET=-0.3,SET_current_shift=3):
+def analyze_matrix(data,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v_highSET=5,N_RESETstride=5,v_lowRESET=-5,v_highRESET=-0.1,SET_current_shift=3):
     '''
     Analyze a dataframe and write the data to an excel file so it can be later plotted in Origin or other programms
     TODO cycle duration column
     '''
+    
+    if type(data) != pd.core.frame.DataFrame:
+        data = pd.DataFrame(data)
+    
     ###first find the measurement circumstances: V_RESET_stop and I_CC
     #I_CC=pd.DataFrame(analyze.ICC_by_vmax(data, column='V', polarity=True))['I']
     I_CC=pd.DataFrame(data)['CC']
@@ -104,8 +181,26 @@ def check_analysis_quality(analysis_data):
     print('There are {} cases of negative V_SET in the analysis'.format(badV_SET))
     badV_RESET=sum(float(analysis_data.iloc[i]['V_RESET']) >0 for i in analysis_data.index)
     print('There are {} cases of positive V_RESET in the analysis'.format(badV_RESET))
+    badV_RESET2=sum(float(analysis_data.iloc[i]['V_RESET']) ==0 for i in analysis_data.index)
+    print('There are {} cases where V_RESET could not be found in the analysis'.format(badV_RESET2))
     badV_RESET_Currentdefinition=sum(float(analysis_data.iloc[i]['V_RESET']/analysis_data.iloc[i]['V_RESET_stop']) >=0.95 for i in analysis_data.index)
     print('There are {} cases of V_RESET equal to V_RESET_stop in the analysis'.format(badV_RESET_Currentdefinition))
+    sumBadQuality = badHRS+badLRS+badHRStoLRS+badV_SET+badV_RESET+badV_RESET2+badV_RESET_Currentdefinition
+    print('There are max. {}% bad data points'.format(sumBadQuality/len(analysis_data)*100))
+
+def drop_bad(analysis_data):
+    """
+    Returns a DataFrame without data with bad quality, accroding to check_analysis_quality. 
+    """
+    #analysis_data.drop(analysis_data[analysis_data['HRS'] > 0].index, inplace = True) #would be in-place
+    #analysis_data.drop(analysis_data[analysis_data['LRS'] > 0].index, inplace = True)
+    #analysis_data.drop(analysis_data[analysis_data['HRS'] < analysis_data['LRS']].index, inplace = True)
+    #analysis_data.drop(analysis_data[analysis_data['V_SET']<0].index, inplace = True)
+    #analysis_data.drop(analysis_data[analysis_data['V_RESET']>0].index, inplace = True)
+    #analysis_data.drop(analysis_data[analysis_data['V_RESET']==0].index, inplace = True)
+    #analysis_data.drop(analysis_data[analysis_data['V_RESET']/analysis_data['V_RESET_stop']<0.95].index, inplace = True)
+    return analysis_data[(analysis_data['HRS']>0) & (analysis_data['LRS'] > 0) & (analysis_data['HRS'] > analysis_data['LRS']) & (analysis_data['V_SET']>0) & (analysis_data['V_RESET']<0) & (analysis_data['V_RESET']!=0) & (analysis_data['V_RESET']/analysis_data['V_RESET_stop']<0.95)]
+    
     
 def save_matrix_analysis(analysis_data,filepath=None,drop=None):
 
@@ -183,6 +278,21 @@ def plot_flat_matrix_analysis(analysis_data,saveoption='No',filepath='None'):
     ax.set_ylim(bottom=1e3, top=2e4)
     ax.set_xlim(left=0, right=2)
     
+   
+    flatfig6, ax = plt.subplots()
+    scatterargs = dict(s=10, alpha=.8, edgecolor='none')
+    #scatterargs.update(kwargs)
+    for _, val in analysis_data.groupby('CC'):
+        ax.scatter(val['CC'].iloc[0]*1e6,np.mean(val['HRS']), c='red', **scatterargs)
+        ax.scatter(val['CC'].iloc[0]*1e6,np.mean(val['LRS']),  c='blue', **scatterargs)
+    ax.legend(['HRS', 'LRS'], loc=0)
+    engformatter('y', ax)
+    ax.set_xlabel('CC [$\\mu$A]')
+    ax.set_ylabel('Resistance [$\\Omega$]')
+    ax.set_yscale('log', nonposy='clip')
+    ax.set_ylim(bottom=1e3, top=1e7)
+    plt.show()
+    
     if saveoption=='Yes':
         if filepath=='None':
             filepath_savefig = os.path.join(datadir(), meta.filename()+'_matrix_analysis_flatplots_')
@@ -194,7 +304,9 @@ def plot_flat_matrix_analysis(analysis_data,saveoption='No',filepath='None'):
         flatfig4.savefig(filepath_savefig+'HRS_vs_V_SET')
         flatfig5.savefig(filepath_savefig+'LRS_vs_V_RESET')
         
-    
+ 
+
+###Dont use: 
 def plot_colored_matrix_analysis(analysis_data,cmap='jet',saveoption='No',filepath='None'):
     unique_ICC=np.unique(np.around(analysis_data['CC'],4))  
     Icc_map = cm.get_cmap(cmap, len(unique_ICC))

@@ -1955,8 +1955,13 @@ def V_RESET_by_change_of_gradient(iv, N=5, v_low=-0.1, v_high=-5):
     #v_reset find I minimum in negativ half cycle
     mask = (iv['V']<v_high) & (iv['V']>v_low) & (np.gradient(iv['V'])<0)
     x = np.convolve(iv['V'][mask], np.ones(N)/N)[:-5]
+    
     y = np.convolve(iv['I'][mask], np.ones(N)/N)[:-5]
-    i = np.where(np.r_[True, y[1:] < y[:-1]] & np.r_[y[:-1] < y[1:],True])[0][0]
+   
+    try: ##very unnice way of dealing with the fact that sometimes the program doesnt find anything;
+        i = np.where(np.r_[True, y[1:] < y[:-1]] & np.r_[y[:-1] < y[1:],True])[0][0]
+    except IndexError:
+        return(0)
     return iv['V'][mask][i]
 
 @ivfunc  
@@ -1985,7 +1990,10 @@ def I_RESET_by_change_of_gradient(iv, N=5, v_low=-0.1, v_high=-5):
     mask = (iv['V']<v_high) & (iv['V']>v_low) & (np.gradient(iv['V'])<0)
     x = np.convolve(iv['V'][mask], np.ones(N)/N)[:-5]
     y = np.convolve(iv['I'][mask], np.ones(N)/N)[:-5]
-    i = np.where(np.r_[True, y[1:] < y[:-1]] & np.r_[y[:-1] < y[1:],True])[0][0]
+    try:
+        i = np.where(np.r_[True, y[1:] < y[:-1]] & np.r_[y[:-1] < y[1:],True])[0][0]
+    except IndexError:
+        return(0)
     return iv['I'][mask][i]
 
 def split_Matrix_dataframe(data, Icc, Vreset):
@@ -2001,9 +2009,12 @@ def split_Matrix_dataframe(data, Icc, Vreset):
 
 
 
-
-
 ### END HERE FC
+
+
+
+
+
 
 
 
