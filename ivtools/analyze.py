@@ -1,4 +1,15 @@
-""" Functions for doing data analysis on IV data """
+"""
+Functions for doing data analysis on IV data
+We are working with data structures that can contain metadata, and want to process them without losing that meta data
+
+The basic data structure for an IV measurement is a dict, and multiple measurements are lists of dicts
+in many ways it is convenient to work with these structures after converting them to a Pandas Series, or DataFrame, respectively
+
+I try to make every function compatible with any of these four datatypes (wherever it makes sense)
+There is some pain involved with this, which I try to abstract away, but python is only so good of a language and I'm only so good of a programmer.
+
+Generally, analyzing list of dicts will be faster, but DataFrames more convenient
+"""
 
 # Local imports
 from . import plot as ivplot
@@ -14,9 +25,6 @@ from matplotlib import pyplot as plt
 import sys
 from scipy.signal import savgol_filter as savgol
 
-
-# TODO make some functions that index/iterate rows of dataframe AND list, because they have different syntax
-#      this would avoid testing for the datatype in many different parts of the code
 
 # TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
 
@@ -174,6 +182,9 @@ def find_data_arrays(data):
     '''
     # Get lengths of all arrays
     #arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
+    if type(data) in (list, pd.DataFrame):
+        # Only look at the first one
+        data = iloc(data, 0)
     arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray)]
     lens = [len(data[a]) for a in arraykeys]
     # If 'I' or 'V' is in array keys, use that length array
@@ -731,22 +742,21 @@ def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
     # This is slightly complicated to fix and I don't want to do it now
     return outlist
 
-
-def concativ(data):
+def concativ(data, columns=None):
     ''' Inverse of splitiv.  Can only be called on multiple loops.  Keeps only keys from 0th loop.'''
-    if type(data) is pd.DataFrame:
-        firstrow = data.iloc[0]
-    else:
-        firstrow = data[0]
-
-    concatkeys = find_data_arrays(firstrow)
+    if columns is None:
+        concatkeys = find_data_arrays(data)
 
     out = {}
     for k in concatkeys:
         if type(data) is pd.DataFrame:
             out[k] = np.concatenate(list(data[k]))
-        else:
+        elif type(data) is list:
             out[k] = np.concatenate([d[k] for d in data])
+        else:
+            raise Exception('pass a list of dicts or a dataframe')
+    # Put in the metadata from the first row only -- don't know how else to combine metadata
+    firstrow = iloc(data, 0)
     add_missing_keys(firstrow, out)
 
     if type(data) == pd.DataFrame:
@@ -761,14 +771,10 @@ def meaniv(data, truncate=False, columns=None):
     No interpolation at the moment
     not an ivfunc -- takes multiple loops and returns one
     '''
-    if type(data) is pd.DataFrame:
-        isdf = True
-        firstrow = data.iloc[0]
-    else:
-        isdf = False
-        firstrow = data[0]
     if columns is None:
-        columns = find_data_arrays(firstrow)
+        columns = find_data_arrays(data)
+
+    isdf = type(data) == pd.DataFrame
 
     if isdf:
         lens = data[columns[0]].apply(len)
@@ -788,7 +794,7 @@ def meaniv(data, truncate=False, columns=None):
             dataout[k] = data[k].mean()
         else:
             dataout[k] = np.mean([d[k] for d in data], axis=0)
-    add_missing_keys(firstrow, dataout)
+    add_missing_keys(iloc(data, 0), dataout)
     if isdf:
         return pd.Series(dataout)
     else:
@@ -1155,7 +1161,10 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     vmax = max(v0, v1)
     V = data[x]
     I = data[y]
-    mask = (V <= vmax) & (V >= vmin)
+    mask = (V <= vmax) & (V >= vmin) & ~np.isnan(V) & ~np.isnan(I)
+    if not any(mask):
+        print('Nothing to fit!')
+        return np.nan
     poly = np.polyfit(I[mask], V[mask], 1)
     if 'units' in data:
         if y in data['units']:
@@ -1263,7 +1272,7 @@ def downsample_dumb(data, nsamples, columns=None):
     return dataout
 
 
-#### datatype conversion ####
+#### datatype conversion/ stuff that's hard to do in pandas ####
 
 # operations that are easy:
 # dict --> series      (pd.Series(dict))
@@ -1272,6 +1281,10 @@ def downsample_dumb(data, nsamples, columns=None):
 
 def df_to_listofdicts(df):
     return df.to_dict(orient='records')
+
+def df_to_listofdicts_sparse(df):
+    # This one drops the nans but takes longer
+    return [v.dropna().to_dict() for i,v in df.iterrows()]
 
 def series_to_df(series):
     # Convert pd.series into single row dataframe
@@ -1284,6 +1297,33 @@ def df_to_nested_series(df):
 # TODO: Some others I have struggled with but don't remember at the moment
 
 #### ####
+
+def iloc(data, index):
+    '''
+    An unfortunate thing about pandas is that the positional indexing has different syntax
+    normal indexing notation is used for column indexing.
+    This is a function that will index based on the datatype..
+    '''
+    if type(data) in [pd.DataFrame, pd.Series]:
+        return data.iloc[index]
+    else:
+        return data[index]
+
+def iloop(data):
+    '''
+    Pandas dataframes have different syntax for looping through the rows
+    Usually you should just avoid using loops, but sometimes you need to be a genius to
+    figure out the non-loop way
+    this is supposed to provide a consistent syntax so you can loop without knowing the datatype
+    now you can use "for d in iloop(df):" instead of checking if it's a dataframe
+    thanks python for not being a very good language
+    '''
+    if type(data) == pd.DataFrame:
+        for i,d in data.iterrows():
+            yield d
+    else:
+        yield from data
+
 
 @ivfunc
 def set_dict_kv(data, dictname, key, value):

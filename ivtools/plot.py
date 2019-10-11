@@ -2,7 +2,7 @@
 
 # Local imports
 from . import analyze
-from . import persistent_state
+from . import settings
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -395,7 +395,7 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_xlabel('Cycle #')
     ax.set_ylabel('Resistance [$\\Omega$]')
 
-def paramplot(df, y, x, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
+def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
               ax=None, **kwargs):
     '''
@@ -548,7 +548,10 @@ class interactive_figs(object):
     '''
     # TODO: save/load configurations to disk?
     def __init__(self, n=4, clear_state=False):
-        self.__dict__ = persistent_state.plotter_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...

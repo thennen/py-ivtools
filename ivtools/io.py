@@ -3,7 +3,7 @@
 # Local imports
 from . import analyze
 from . import plot as ivplot
-from . import persistent_state
+from . import settings
 
 import os
 import re
@@ -52,7 +52,10 @@ class MetaHandler(object):
     This is so if io module is reloaded, Metahandler instance keeps the metadata
     '''
     def __init__(self, clear_state=False):
-        self.__dict__ = persistent_state.metahandler_state
+        statename = self.__class__.__name__
+        if statename not in settings.instrument_states:
+            settings.instrument_states[statename] = {}
+        self.__dict__ = settings.instrument_states[statename]
         if not self.__dict__ or clear_state:
             self.clear()
 
@@ -101,9 +104,28 @@ class MetaHandler(object):
     def __delitem__(self, key):
         self.meta[key].__delitem__
 
-    def load_from_csv(self, xlspath):
-        ''' Not implemented.  Easy to implement. '''
-        pass
+    def load_sample_table(self, **filters):
+        ''' load data (pd.read_excel) from some tabular format'''
+        fpath='sampledata/CeRAM_Depositions.xlsx'
+        if not os.path.isfile(fpath):
+            # Maybe it's a relative path
+            fpath = os.path.join(self.moduledir, fpath)
+        df = pd.read_excel(fpath, header=8, skiprows=[9])
+        # TODO: Apply filters
+        for name, value in filters.items():
+            if name in df:
+                if isinstance(value, str) or not hasattr(value, '__iter__'):
+                    value = [value]
+                df = df[df[name].isin(value)].dropna(axis=1, how='all')
+            else:
+                df[name] = [value] * len(df)
+        filenamekeys = []
+        if 'sample_name' in df:
+            filenamekeys = ['sample_name'] + filenamekeys
+        self.prettykeys = None
+        self.i = 0
+        self.meta = df.iloc[0]
+        self.df = df
 
     # TODO: Unified metadata loader that just loads every possible sample
 
@@ -136,6 +158,7 @@ class MetaHandler(object):
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print()
 
+
     def load_lassen(self, **kwargs):
         '''
         Load wafer information for Lassen
@@ -157,7 +180,9 @@ class MetaHandler(object):
         coupon_cols = ['coupon', 'die_x', 'die_y', 'die']
         non_coupon_cols = [c for c in lassen_df.columns if c not in coupon_cols]
         non_coupon_specific = lassen_df[lassen_df.coupon == 42][non_coupon_cols]
-        lassen_df = pd.concat((lassen_df, non_coupon_specific), sort=False)
+        # sort breaks reverse compatibility with old pandas versions
+        # not passing sort can cause an annoying warning
+        lassen_df = pd.concat((lassen_df, non_coupon_specific))#, sort=False)
 
         if any([(k in deposition_df) for k in kwargs.keys()]):
             meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on, sort=False)
@@ -209,8 +234,7 @@ class MetaHandler(object):
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
-    def load_depositions():
-        ''' Load sample information from some deposition sheet  (not implemented)'''
+    def load_DomeB():
         pass
 
     def step(self, n):
@@ -218,10 +242,10 @@ class MetaHandler(object):
         lastmeta = self.meta
         meta_i = self.i + n
         if meta_i < 0:
-            print('You are already at the beginning of metadata list')
+            print('You are at the beginning of metadata list')
             return
         elif meta_i >= len(self.df):
-            print('You are already at the end of metadata list')
+            print('You are at the end of metadata list')
             return
         else:
             self.i += n
@@ -320,6 +344,10 @@ def valid_filename(s):
     s = str(s).strip().replace(' ', '_')
     return re.sub(r'(?u)[^-\w.]', '', s)
 
+
+def hash_array(arr):
+    import hashlib
+    return hashlib.md5(arr).hexdigest()
 
 def timestamp(date=True, time=True, ms=True, us=False):
     now = datetime.now()
@@ -872,7 +900,7 @@ def set_readonly(filepath):
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
+def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
     # Make a plot of all the .s and .df files in a directory
     # Save as pngs with the same name
     # kwargs go to plotfunc
@@ -887,7 +915,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
             g = analyze.moving_avg(g, smoothn)
         if 'R_series' in g:
             g['Vd'] = g['V'] - g['R_series'] * g['I']
-        analyze.convert_to_uA(g)
+        #analyze.convert_to_uA(g)
         return g
 
     def plotgroup(g):
@@ -911,8 +939,11 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=1, overwrite=False, gro
                 #if type(df) is pd.Series:
                     #df = analyze.series_to_df(df)
                 df = processgroup(df)
+                print('plotting')
                 plotgroup(df)
                 writefig(pngfp)
+            elif not overwrite:
+                print(f'not overwriting file {pngfp}')
     else:
         # Read all the data in the directory into memory at once
         df = read_pandas(files)
@@ -979,3 +1010,19 @@ def makefolder(*args):
         os.makedirs(subfolder)
     else:
         print('Folder already exists: {}'.format(subfolder))
+
+def psplitall(path):
+    # get all parts of the filepath why the heck isn't this in os.path?
+    allparts = []
+    while 1:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path: # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    return allparts

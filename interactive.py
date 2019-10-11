@@ -46,7 +46,7 @@ from ivtools import measure
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import io
-from ivtools import persistent_state
+from ivtools import settings
 
 # Dump everything into interactive namespace for convenience
 # TODO: run test for overlapping names
@@ -77,6 +77,7 @@ if firstrun:
 hostname = socket.gethostname()
 username = getpass.getuser()
 datestr = time.strftime('%Y-%m-%d')
+#datestr = '2019-08-07'
 # TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
 
@@ -190,7 +191,7 @@ instrument_varnames = {instruments.Picoscope:'ps',
 for kk,v in instrument_varnames.items():
     globalvars[v] = None
 
-visa_resources = persistent_state.visa_rm.list_resources()
+visa_resources = settings.visa_rm.list_resources()
 # Connect to all the instruments
 # Instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing connections
