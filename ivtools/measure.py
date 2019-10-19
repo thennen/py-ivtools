@@ -1205,20 +1205,41 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
 
 
 ############# Misc ##############################
+
+def beep(freq=500, ms=300):
+    import winsound
+    winsound.Beep(freq, ms)
+
 def text_to_speech(text):
+    import pyttsx3
+    tts_engine = pyttsx3.init()
+    voices = tts_engine.getProperty('voices')       #getting details of current voice
+    tts_engine.setProperty('voice', voices[1].id)
+    tts_engine.say(text)
+    tts_engine.runAndWait()
+
+
+def text_to_speech_thread(text):
     '''
     runs in a separate thread, but you can't call it again until the previous one is complete
+
+    sometimes it gives an error and some unknown condition can get it to work again..
+
+    Seems to be that if you run it outside of a thread first, then it works inside a thread forever.
+    therefore you can initialize with text_to_speech('')
     '''
-    import pyttsx3
     from threading import Thread
+    import pyttsx3
+    tts_engine = pyttsx3.init()
+    voices = tts_engine.getProperty('voices')       #getting details of current voice
+    tts_engine.setProperty('voice', voices[1].id)
+    #tts_engine.say('')
     class Threader(Thread):
         def __init__(self, *args, **kwargs):
             Thread.__init__(self, *args, **kwargs)
             self.daemon = True
             self.start()
-
         def run(self):
-            tts_engine = pyttsx3.init()
             tts_engine.say(text)
             tts_engine.runAndWait()
-    Threader()
+    ttsthread = Threader()
