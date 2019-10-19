@@ -1290,6 +1290,10 @@ def series_to_df(series):
     # Convert pd.series into single row dataframe
     return pd.DataFrame.from_records([series])
 
+def df_to_nested_series(df):
+    # Don't know the best way to do this..
+    return pd.Series({k:v.values for k,v in d.items()})
+
 # TODO: Some others I have struggled with but don't remember at the moment
 
 #### ####
