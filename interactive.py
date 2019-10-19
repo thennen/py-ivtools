@@ -142,9 +142,9 @@ if hostname == 'pciwe46':
                    ('daq', instruments.USB2708HS),
                    ('ts', instruments.EugenTempStage),
                    ('dp', instruments.WichmannDigipot),
-                   ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                    #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
+                   ('k', instruments.Keithley2600)] # Keithley can be located automatically now
 elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'

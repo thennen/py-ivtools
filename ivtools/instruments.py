@@ -27,6 +27,11 @@ Another approach could be to have the module maintain weak references to all ins
 and have a function that decides whether to instantiate a new instance or return an existing one.
 I tried this for a while and I think it's a worse solution.
 '''
+def ping(host):
+    ping_param = "-n 1"
+    # -c 1 on linux
+    reply = os.popen("ping " + ping_param + " " + host).read()
+    return "TTL=" in reply
 
 # TODO: Maybe split this up into one file per instrument
 
@@ -36,6 +41,7 @@ import time
 import os
 import pandas as pd
 import serial
+import re
 import hashlib
 from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
@@ -1188,13 +1194,38 @@ class Keithley2600(object):
     because .list_resources() does not show them.
     This is the only reason Keithley2600 is Borg
     '''
-    def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
+    def __init__(self, addr=None):
+        valid_ip_re = "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$"
+        if addr is None:
+            # I don't trust the resource manager at all, but you didn't pass an address so..
+            # I assume you are using ethernet
+            ipresources = [r for r in visa_rm.list_resources() if r.startswith('TCPIP')]
+            #print('Looking for ip address for Keithley...')
+            for ipr in ipresources:
+                # Sorry..
+                ip = re.search(valid_ip_re[1:-1] +':', ipr)[0][:-1]
+                # I'm not sure how to check if it is a keithley or not
+                # for now, if it is in resource_manager and replies to a ping, it's a keithley
+                up = ping(ip)
+                if up:
+                    #print(f'{ip} is up. Is it keithley?')
+                    addr = ipr
+                    break
+        elif re.match(valid_ip_re, addr):
+            # You passed an ip alone and we will turn it into a gpib string
+            addr = f'TCPIP::{addr}::inst0::INSTR'
+
         try:
             statename = '_'.join((self.__class__.__name__, addr))
             if statename not in settings.instrument_states:
                 settings.instrument_states[statename] = {}
+                say_if_successful = True
+            else:
+                say_if_successful = False
             self.__dict__ = settings.instrument_states[statename]
             self.connect(addr)
+            if say_if_successful:
+                print('Keithley connection successful at {}'.format(addr))
         except Exception as E:
             print('Keithley connection failed at {}'.format(addr))
             print(E)
