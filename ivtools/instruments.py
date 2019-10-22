@@ -497,14 +497,12 @@ class Picoscope(object):
         data['RANGE'] = {ch:chr for ch, chr in zip(Channels, self.ps.CHRange)}
         data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, self.ps.CHOffset)}
         data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, self.ps.ProbeAttenuation)}
+        CHCOUPLINGS = dict(map(reversed, self.ps.CHANNEL_COUPLINGS.items()))
+        data['COUPLINGS'] = {ch:CHCOUPLINGS[chc] for ch, chc in zip(Channels, self.ps.CHCoupling)}
         data['sample_rate'] = self.ps.sampleRate
         # Specify samples captured, because this field will persist even after splitting for example
         # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
         data['nsamples_capture'] = len(data[ch[0]])
-        # Using the current state of the global variables to record what settings were used
-        # I don't know a way to get couplings from the picoscope instance
-        # TODO: pull request a change to setChannel to fix this
-        data['COUPLINGS'] = dict(self.coupling)
         # Sample frequency?
         self.data = data
         return data
