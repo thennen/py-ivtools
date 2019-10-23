@@ -936,9 +936,9 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                 v_max = max(v_answer)
                 v_min = min(v_answer)
                 if v_max > -v_min:
-                    pulse_width = fwhm(valuelist = v_answer, time = t_scope)
+                    pulse_width = calc_fwhm(valuelist = v_answer, time = t_scope)
                 else:
-                    pulse_width = fwhm(valuelist = -v_answer, time = t_scope)
+                    pulse_width = calc_fwhm(valuelist = -v_answer, time = t_scope)
 
                 data['pulse_width'][x].append(pulse_width)
                 data['pulse_amplitude'][x].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'][x], bits = data['bits'][x]))
