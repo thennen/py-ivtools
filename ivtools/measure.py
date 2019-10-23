@@ -823,7 +823,10 @@ def measure_compliance():
 ########### Digipot ####################
 
 def digipot_test(plot=True):
-    # Short the needles, this rapidly makes sure everything is working properly
+    '''
+    This rapidly makes sure everything is working properly
+    Short the needles, use channel A as the input waveform monitor, chC as the current and chB as node voltage
+    '''
     # Use these settings but don't change the state of picoscope
     coupling = dict(A='DC', B='DC50', C='DC50')
     ranges = dict(A=5, B=5, C=1)

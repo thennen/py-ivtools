@@ -18,10 +18,8 @@ reuse a connection if it exists, EVEN IF THE CLASS DEFINITION ITSELF HAS CHANGED
 One downside is that if you screw up the state somehow, you have to manually delete it to start over.
 But one could add some kind of reset_state flag to __init__ to handle this.
 
-If, in the future, we need multiple instances of the same instrument class, we can implement
-something that detects the appropriate state dict to use.
-
-#TODO make parent class or decorator to implement the borg stuff
+TODO make parent class or decorator to implement the borg stuff.
+Then one could copy-paste these classes and use them without the decorator
 
 Another approach could be to have the module maintain weak references to all instrument instances,
 and have a function that decides whether to instantiate a new instance or return an existing one.
