@@ -833,7 +833,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     return data
 
 
-def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_cap = np.nan):
+def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_cap = np.nan, filename = ''):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
     setup_pcm_plots_2()
     ########## declareation of buttons ###########
@@ -980,6 +980,11 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                 b_no = Button(ax_no, 'No')
                 b_no.on_clicked(threshold_invisible)
                 root.wait_variable(waitVar)
+                if filename is not '':
+                    figure_handle.tight_layout()
+                    figure_handle.savefig(filename + '.png', dpi =600)
+                    plt.rcParams['pdf.fonttype'] = 'truetype'
+                    figure_handle.savefig(filename + '.pdf')
                 plt.close(figure_handle)
                 #print(len(data['pulse_amplitude'])-len(data['t_threshold']))         
             root.destroy()
@@ -1103,7 +1108,7 @@ def eval_all_pcm_r_measurements(filepath, t_cap = np.nan, v_cap = np.nan):
         else:
             filename = filepath+f
             print(filename)
-            all_data.append(eval_pcm_r_measurement(filename, manual_evaluation = True, t_cap = t_cap, v_cap = v_cap))
+            all_data.append(eval_pcm_r_measurement(filename, manual_evaluation = True, t_cap = t_cap, v_cap = v_cap, filename = f))
     
     t_threshold = []
     pulse_amplitude = []
