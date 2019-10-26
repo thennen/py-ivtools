@@ -1031,7 +1031,7 @@ def psplitall(path):
 def update_depsheet():
     # Try to get the new deposition sheet
     moduledir = os.path.split(__file__)[0]
-    localfile = os.path.join(moduledir, r'sampledata\CeRAM_Depositions')
+    localfile = os.path.join(moduledir, r'sampledata\CeRAM_Depositions.xlsx')
     sourcefile = r'X:\emrl\Pool\Projekte\HGST-CERAM\CeRAM_Depositions.xlsx'
     print(f'copy {sourcefile} {localfile}')
     return subprocess.getoutput(f'copy {sourcefile} {localfile}')

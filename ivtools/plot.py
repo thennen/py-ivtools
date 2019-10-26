@@ -517,7 +517,7 @@ def plot_cumulative_dist(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     ax.plot(np.sort(data), np.arange(len(data))/len(data), **kwargs)
 
-def plot_ivt(d, phaseshift=14, fig=None):
+def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
     ''' A not-so-refined subplot of current and voltage vs time'''
     if fig is None:
         fig, ax1 = plt.subplots()
@@ -970,23 +970,30 @@ def VoverIplotter(data, ax=None, **kwargs):
     #    mask = np.abs(data['I']) > .01 * max_current
     #else:
     #    mask = []
-    mask = np.abs(data['V']) > .01
-    V = data['V'][mask]
 
-    if 'Vmeasured' in data:
-        VoverI = data['Vmeasured'] / data['I']
-    elif 'Imeasured' in data:
-        VoverI = data['V'] / data['Imeasured']
-    else:
-        VoverI = data['V'] / data['I']
+    def calc_VoverI(data):
+        mask = np.abs(data['V']) > .01
+        V = data['V'][mask]
 
-    VoverI = VoverI[mask]
-    VoverI[VoverI <= 0] = np.nan
+        if 'Vmeasured' in data:
+            VoverI = data['Vmeasured'] / data['I']
+        elif 'Imeasured' in data:
+            VoverI = data['V'] / data['Imeasured']
+        else:
+            VoverI = data['V'] / data['I']
 
-    ax.plot(V, VoverI, **kwargs)
-    #color = ax.lines[-1].get_color()
+        VoverI = VoverI[mask]
+        VoverI[VoverI <= 0] = np.nan
+
+        return VoverI
 
     ax.set_yscale('log')
+
+    #ax.plot(V, VoverI, **kwargs)
+    # should work with multiple loops
+    plotiv(data, y=calc_VoverI, ax=ax)
+    #color = ax.lines[-1].get_color()
+
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     ax.set_xlabel('Voltage [V]')
     #ax.set_ylabel('V/I [$\Omega$]', color=color)
@@ -1002,66 +1009,80 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
     '''
     # Sorry this is shitty ...
     dtype = type(data)
+    # i don't want to modify input data, make shallow copy
+    if dtype in (pd.Series, pd.DataFrame):
+        data = data.copy(deep=False)
+    else:
+        data = data.copy()
     Rmap = {0:143, 1000:2164, 5000:8197, 9000:12857}
     if ax is None:
         fig, ax = plt.subplots()
-    if hasattr(R, '__call__'):
-        R = R()
-    if R is None:
-        # Look for R in the meta data
-        # Check normal meta
-        R = data.get('R_series')
-        if R is not None:
-            # If it is a lassen coupon, then convert to the measured values of series resistors
-            if dtype is list:
-                # Fuck
-                wafer_code = data.get('wafer_code')[0]
-            elif dtype is pd.DataFrame:
-                wafer_code = data.get('wafer_code').iloc[0]
-            else:
-                wafer_code = data.get('wafer_code')
 
-            if wafer_code == 'Lassen':
-                if (dtype == pd.Series) or (not hasattr(R, '__iter__')):
-                    R = int(R)
-                    if R in Rmap:
-                        R = Rmap[R]
+    if 'Vd' in data:
+        plotiv(data, ax=ax, x='Vd', **kwargs)
+    elif 'Vcalc' in data:
+        plotiv(data, ax=ax, x='Vcalc', **kwargs)
+    else:
+        # Desperately try to figure out the series resistance and calculate Vd
+        if hasattr(R, '__call__'):
+            R = R()
+        if R is None:
+            # Look for R in the meta data
+            # Check normal meta
+            R = data.get('R_series')
+            if R is not None:
+                # If it is a lassen coupon, then convert to the measured values of series resistors
+                if dtype is list:
+                    # Fuck
+                    wafer_code = data.get('wafer_code')[0]
+                elif dtype is pd.DataFrame:
+                    wafer_code = data.get('wafer_code').iloc[0]
                 else:
-                # lol
-                    R = np.array([Rmap[r] if r in Rmap else r for r in R])
+                    wafer_code = data.get('wafer_code')
+
+                if wafer_code == 'Lassen':
+                    if (dtype == pd.Series) or (not hasattr(R, '__iter__')):
+                        R = int(R)
+                        if R in Rmap:
+                            R = Rmap[R]
+                    else:
+                    # lol
+                        R = np.array([Rmap[r] if r in Rmap else r for r in R])
+            else:
+                # Assumption for R_series if there's nothing in the meta data
+                R = 0
+        # wtf modifies the input data?  Shouldn't do that.
+
+        # Determine the units of I data.  Assume the units are uniform.
+        Iunit = None
+        # This is STUPID
+        if dtype is list:
+            representative = data[0]
+        elif dtype is pd.DataFrame:
+            representative = data.iloc[0]
+        elif dtype in (pd.Series, dict):
+            representative = data
+        if 'units' in representative:
+            if 'I' in representative['units']:
+                Iunit = representative['units']['I']
+        if Iunit == '$\mu$A':
+            Iunit = 1e-6
         else:
-            # Assumption for R_series if there's nothing in the meta data
-            R = 0
-    # wtf modifies the input data?  Shouldn't do that.
+            Iunit = 1
 
-    # Determine the units of I data.  Assume the units are uniform.
-    Iunit = None
-    # This is STUPID
-    if dtype is list:
-        representative = data[0]
-    elif dtype is pd.DataFrame:
-        representative = data.iloc[0]
-    elif dtype in (pd.Series, dict):
-        representative = data
-    if 'units' in representative:
-        if 'I' in representative['units']:
-            Iunit = representative['units']['I']
-    if Iunit == '$\mu$A':
-        Iunit = 1e-6
-    else:
-        Iunit = 1
+        if type(data) is list:
+            for d in data:
+                d['Vcalc'] = d['V'] - R * d['I'] * Iunit
+        else:
+            # Works for Series, dict, DataFrame
+            data['Vcalc'] = data['V'] - R * data['I'] * Iunit
 
-    if type(data) is list:
-        for d in data:
-            d['Vcalc'] = d['V'] - R * d['I'] * Iunit
-    else:
-        # Works for Series, dict, DataFrame
-        data['Vcalc'] = data['V'] - R * data['I'] * Iunit
+        plotiv(data, ax=ax, x='Vcalc', **kwargs)
 
-    plotiv(data, ax=ax, x='Vcalc', **kwargs)
-    if hasattr(R, '__iter__'):
-        R = R[0]
-    ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
+        if hasattr(R, '__iter__'):
+            R = R[0]
+        ax.set_xlabel('V device (calculated assuming Rseries={}$\Omega$) [V]'.format(R))
+
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 
