@@ -43,7 +43,7 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offs
 
     return data
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, extrasample=0,
+def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, pretrig=0, posttrig=0,
                       **kwargs):
     '''
     Send n pulses of the input waveform and capture on specified channels of picoscope.
@@ -55,7 +55,12 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     # Set up to capture for n times the duration of the pulse
     # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
     # TODO make pulse and capture for builtin waveforms
-    ps.capture(ch, freq=fs, duration=(n+extrasample)*duration, **kwargs)
+    sampling_factor = (n + pretrig + posttrig)
+
+    ps.capture(ch, freq=fs,
+                   duration=duration * sampling_factor,
+                   pretrig=pretrig / sampling_factor,
+                   **kwargs)
     # Pulse the waveform n times, this will trigger the picoscope capture.
     rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
 
@@ -65,12 +70,23 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
-           savewfm=False, pretrig=0, interpwfm=True, **kwargs):
+           savewfm=False, pretrig=0, posttrig=0, interpwfm=True, **kwargs):
     '''
-    Pulse a waveform, plot pico channels, IV, and save to d variable
+    Pulse a waveform, measure on picoscope channels, and return data
     Provide either fs or nsamples
+
+    smartrange 1 autoranges the monitor channel
+    smartrange 2 tries some other fancy shit to autorange the current measurement channel
+
+    autosplit will split the waveforms into n chunks
+
+    into50ohm will double the waveform amplitude to cancel resistive losses when using terminator
+
+    by default we sample for exactly the length of the waveform,
+    use "pretrig" and "posttrig" to sample before and after the waveform
+    units are fraction of one pulse duration
+
     kwargs go nowhere
-    TODO: Don't let smartrange change the global settings
     '''
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
@@ -90,14 +106,16 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL])
 
-    # Let pretrig refer to the fraction of a single pulse, not the whole pulsetrain
-    pretrig /= n
+    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
+
+    sampling_factor = (n + pretrig + posttrig)
+
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_fs = ps.capture(ch=channels,
-                             freq=fs,
-                             duration=n*duration,
-                             pretrig=pretrig)
+                           freq=fs,
+                           duration=duration * sampling_factor,
+                           pretrig=pretrig / sampling_factor)
 
     # This makes me feel good, but I don't think it's really necessary
     time.sleep(.05)
@@ -1074,25 +1092,39 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
     Convert picoscope channel data to IV dict
     for digipot circuit with device voltage probe
     gain is in A/V, in case you put an amplifier on the output
+
+    Simultaneous sampling is faster when not using adjacent channels (i.e. A&B)
     '''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
+    chs_sampled = [ch for ch in ['A', 'B', 'C', 'D'] if ch in datain]
+    if not chs_sampled:
+        print('No picoscope data detected')
+        return datain
+
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain[chs_sampled[0]].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
 
-    # Use channel A and C as input, because simultaneous sampling is faster than using A and B
-    V = datain['A']
-    Vd = datain[Vd_channel]
-    I = datain[I_channel] * gain
+    if 'units' not in dataout:
+        dataout['units'] = {}
 
-    # V device
-    dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
-    dataout['I'] = I
-    dataout['Vd'] = Vd
-    dataout['units'] = {'V':'V', 'I':'A'}
+    monitor_channel = settings.MONITOR_PICOCHANNEL
+    if monitor_channel in datain:
+        V = datain[monitor_channel]
+        dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
+        dataout['units']['V'] = 'V'
+    if Vd_channel in datain:
+        Vd = datain[Vd_channel]
+        dataout['Vd'] = Vd
+        dataout['units']['Vd'] = 'V'
+    if I_channel in datain:
+        I = datain[I_channel] * gain
+        dataout['I'] = I
+        dataout['units']['I'] = 'A'
+
     dataout['Igain'] = gain
 
     return dataout
