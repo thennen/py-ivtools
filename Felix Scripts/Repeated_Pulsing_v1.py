@@ -88,8 +88,9 @@ def analyze_SET_transient(SET_pulse,trans_low=0.2,trans_high=0.8):
     
 
 def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_read=1e-3,V_RESET_max=-1.8,t_RESET=1e-3,V_RESET_start=-0.4):
+    duty = 0.5
     SET_data=pd.DataFrame(columns={'V_SET','t_pulse','R_pre','R_post','t_SET','t_trans','I_preset'})
-    pulse_signal=measure.square(vpulse=V_SET, duty=0.5, length=16000, startval=0, endval=0, startendratio=1)
+    pulse_signal=measure.square(vpulse=V_SET, duty=duty, length=16000, startval=0, endval=0, startendratio=1)
     for i in range(0,n_SET,1):
         print('Starting cycle {} of {}'.format(int(i),int(n_SET)))
         ##first reset the device to the desired HRS and save the staircase data
@@ -98,9 +99,9 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         ##then apply read-SET-read
         measure.set_compliance(7e-4)
         resistance_pre=read_resistance(V_read=V_read,t_read=t_read)
-        SET=picoiv(wfm=pulse_signal,n=1,fs=1.25e9,duration=2*t_pulse,autosmoothimate=False)
+        SET=picoiv(wfm=pulse_signal,n=1,fs=1.25e9,duration=1/duty*t_pulse,autosmoothimate=False)
         SET['t']=analyze.maketimearray(SET)
-        mask_0V=SET['V']<0.01
+        mask_0V=abs(SET['V'])<0.01
         current_offset=np.mean(SET['I'][mask_0V])
         SET['I_corr']=SET['I']-current_offset
         resistance_after=read_resistance(V_read=V_read,t_read=t_read)

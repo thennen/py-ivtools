@@ -5,6 +5,92 @@ from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import itertools
 
+possible_ranges = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
+max_offsets = [.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20]
+
+def duration_at_const_slew_rate(slew_rate, V_reset_stop, V_set_stop):
+    """
+    Returns a pulse duration for a constant, preset, slew_rate. For a triangular pulse with a given V_reset_stop and V_set_stop.
+    slew_rate in V/s
+    Voltages in V
+    Returns duration in s
+    """
+    return (2*abs(V_reset_stop)+2*abs(V_set_stop))/slew_rate
+
+
+def is_fs_d_n_ratio_ok(fs, duration, cycles):
+    """
+    Test whether or not the three parameters are too big so they will exceed the memory of the picoscope.
+    """
+    fs0 = 1.25e9
+    n0 = 100
+    d0 = 1e-3
+    return True if fs*duration*cycles/(fs0*n0*d0) <= 1 else False
+
+def calc_max_fs_d_n(fs=None, duration=None, cycles=None):
+    """
+    Calculates the maximum sampling rate, duration and amount of cycles depending on the input values.
+    """
+    fs = fs
+    d = duration
+    n = cycles
+    fs0 = 1.25e9
+    n0 = 100
+    d0 = 1e-3
+    ratio = fs0*n0*d0
+    if fs == d == n == None:
+        print('Returning standard parameters, due to no input: samplingrate = {}, cycles = {}, duration = {}'.format(1.25e9, 200, 1e-3))
+        return 1.25e9, 200, 1e-3
+    elif fs == None:
+        if (d != None) and (n != None):
+            return ratio/(d*n), d, n
+        elif d != None:
+            print('Choosing maximum sampling rate!')
+            return fs0, d, ratio/(d*fs0)
+        elif n != None:
+            print('Choosing maximum sampling rate!')
+            return fs0, ratio/(n*fs0), n
+    elif d == None:
+        if (fs != None) and (n != None):
+            return fs, ratio/(fs*n) ,n        
+        elif fs != None:
+            print('Choosing standard duration (1e-3s)')
+            return fs, d0, ratio/(fs*d0)
+        elif n != None: #duerfte nie aufgerufen werden
+            print('Choosing maximum sampling rate!')
+            return fs0, ratio/(fs0*n), n
+    elif n == None:
+        if (d != None) and (fs != None):
+            return fs, d, ratio/(fs*d)        
+        elif d != None: #duerfte nie aufgerufen werden
+            print('Choosing maximum sampling rate!')
+            return fs0, d, ratio/(fs0*d) 
+        elif fs != None: #duerfte nie aufgerufen werden
+            print('Choosing standard duration (1e-3s)')
+            return fs, d0, ratio/(fs*d0)
+    else:
+        if is_fs_d_n_ratio_ok(samplingrate, duration, cycles):
+            return fs, d, n
+        else:
+            print('Ratio not okay, too many samples! Please change a parameter!')
+            return None, None, None
+
+def adjust_picorange(V_reset_stop, V_set_stop, duration=1e-3, fs=1.25e9, smartrange=False):
+    """
+    Performs one measurement with the given parameters to adjust the range and the offset of the picoscope.
+    """
+    possible_ranges = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
+    max_offsets = [.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20]
+    ps.range.b = 5
+    ps.offset.b = 0
+    ps.range.a = 5
+    ps.offset.a = 0
+    temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=smartrange)
+    ps.squeeze_range(temp,padpercent=0.5)
+    if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
+        ps.range.b=5
+        ps.offset.b=0 
+
 def squeeze_range_mul(data_list, padpercent=0, ch=['A', 'B', 'C', 'D']):
     for c in ch:
         offset_list = []
@@ -33,14 +119,46 @@ def squeeze_range_mul(data_list, padpercent=0, ch=['A', 'B', 'C', 'D']):
             ps.range[c] = max(range_list)
             print('Setting picoscope channel {} range {}, offset {}'.format(c, max(range_list), np.mean(offset_list)))
         
-        
+
+def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1000, duration=1e-3, fs=1.25e9):
+    '''
+    Define Current Compliance in micro-A,
+    V_reset_stop and V_set_stop in Volt,
+    and regular picoiv-stuff.
+    '''
+    path = os.path.join(datadir(),"Endurance_V_set_stop{}_V_reset_stop_{}_Icc_{}_cycles_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(I_CC),cycles,time.strftime('%H%M%S')))
+    if os.path.isfile(path):
+        pass
+    else:
+        os.mkdir(path)
+    set_compliance(I_CC*1e-6)
+    
+    ps.range.b = 5
+    ps.offset.b = 0
+    ps.range.a = 5
+    ps.offset.a = 0
+    temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=False)
+    ps.squeeze_range(temp,padpercent=0.5)
+    if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
+        ps.range.b=5
+        ps.offset.b=0
+    
+    if cycles_per_sweep/100 > 1:
+        fs=int(fs*100/cycles_per_sweep)
+        print('Downsizing sampling rate, due to memory. New sampling rate: {}'.format(fs))
+    
+    for i in range(int(cycles/cycles_per_sweep)):
+        iplots.clear()
+        d=picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=cycles_per_sweep, fs=fs,smartrange=False)
+        savedata(d,filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),I_CC,int(V_reset_stop*100),int(V_set_stop*100),i)))
+       
 def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_inc,Vset_stop, n_cycle=100, duration=1e-3,fs=1.25e9):
     '''
     Define Current Compliance Start, Stop and Increment in micro-A,
     Reset Voltage start, stop and increment (negative values *100),
     and regular picoiv-stuff.
     '''
-    path = os.path.join(datadir(),"MatrixMeasurement_Vset{}_{}".format(Vset_stop*100,time.strftime('%H%M%S')))
+    path = os.path.join(datadir(),"MatrixMeasurement_Vset{}_{}".format(int(Vset_stop*100),time.strftime('%H%M%S')))
     if os.path.isfile(path):
         pass
     else:
@@ -57,26 +175,22 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
             ps.range.a = 5
             ps.offset.a = 0
             temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
-            try:
-                ps.squeeze_range(temp,padpercent=0.5)
-            except:
-                ps.range.b = 5
-                ps.offset.b = 0
-                ps.range.a = 5
-                ps.offset.a = 0
+            ps.squeeze_range(temp,padpercent=0.5)
+            if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
+                ps.range.b=5
+                ps.offset.b=0
                 temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
-                try:
-                    ps.squeeze_range(temp,padpercent=0.5)
-                except:
-                    ps.range.b=5
-                    ps.offset.b=ps.best_range(temp,padpercent=0.5)
+                ps.squeeze_range(temp,padpercent=0.5)
+            if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
+                ps.range.b=5
+                ps.offset.b=0
             print('----------------------------------')
             print('Changed RESET Stop Voltage to {}'.format(V_RESET_STOP/100))
             print('----------------------------------')
             iplots.clear()
             d=picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
             #d_in_df=pd.DataFrame(d)
-            savedata(appended_data_out,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,Vset_stop*100)))
+            savedata(d,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,int(Vset_stop*100))))
 
     
     for I_CC in reversed(range(ICC_Start,ICC_Stop+ICC_inc,ICC_inc)):
@@ -89,26 +203,77 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
         ps.range.a = 5
         ps.offset.a = 0
         temp = picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=1, fs=fs,smartrange=False)
-        try:
-            ps.squeeze_range(temp,padpercent=0.5)
-        except:
-            ps.range.b = 5
-            ps.offset.b = 0
-            ps.range.a = 5
-            ps.offset.a = 0
+        if max_offsets[possible_ranges.index(ps.range.b)] > ps.offset.b:
             temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
-            try:
-                ps.squeeze_range(temp,padpercent=0.5)
-            except:
-                ps.range.b=5
-                ps.offset.b=ps.best_range(temp,padpercent=0.5)
+            ps.squeeze_range(temp,padpercent=0.5)
+        if max_offsets[possible_ranges.index(ps.range.b)] > ps.offset.b:
+            ps.range.b=5
+            ps.offset.b=0
         iplots.clear()
         d=picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
         #ivplot.interactive_figs.clear()
-        savedata(appended_data_out,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,Vreset_Stop,Vset_stop*100)))
+        savedata(d,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,Vreset_Stop,int(Vset_stop*100))))
             
     #return(appended_data_out)
-	
+
+def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop, Duration_steps, cycles, sampling_rate, log=True):
+    """
+    Performs multiple measurements, where the duration of the pulses are varied. 
+    """
+    path = os.path.join(datadir(),"Slewrate_V_set_stop{}_V_reset_stop_{}_Icc_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(Icc),time.strftime('%H%M%S')))
+    if os.path.isfile(path):
+        pass
+    else:
+        os.mkdir(path)
+    set_compliance(Icc*1e-6)
+    
+    v_range = (2*abs(V_reset_stop)+2*abs(V_set_stop))
+    
+    if log:
+        durations = np.logspace(np.log10(Duration_start), np.log10(Duration_stop), Duration_steps)
+    else:
+        durations = np.linspace(Duration_start, Duration_stop, Duration_steps)
+    
+    for i in range(Duration_steps):
+        duration = durations[i]
+            
+        fs, duration, n = calc_max_fs_d_n(fs=None, duration=duration, cycles=cycles)
+        
+        iplots.clear()
+        print('Adjusting Picoscope range and offset:')
+        adjust_picorange(V_reset_stop, V_set_stop, duration, fs, smartrange=False)
+        
+        meta.V_set_stop = V_set_stop
+        meta.V_reset_stop = V_reset_stop
+        meta.duration = duration
+        meta.cycles = n
+        meta.fs = fs
+        meta.slew_rate = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
+        
+        print('V_set_stop = {}'.format(V_set_stop))
+        print('V_reset_stop = {}'.format(V_reset_stop))
+        print('duration = {}'.format(duration))
+        print('n = {}'.format(n))
+        print('fs = {}'.format(fs))
+        print('Icc = {}'.format(Icc))
+        print('slew_rate = {}'.format((2*abs(V_reset_stop)+2*abs(V_set_stop))/duration))
+        
+        print('Starting Measurement')
+        d = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=n, fs=fs,smartrange=False)
+        savedata(d,filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),Icc,int(V_reset_stop*100),int(V_set_stop*100),i)))
+        
+        meta.V_set_stop = np.nan
+        meta.V_reset_stop = np.nan
+        meta.duration = np.nan
+        meta.cycles = np.nan
+        meta.fs = np.nan
+        meta.slew_rate = np.nan
+        
+        
+        
+    
+    
+
 def analyze_matrix(data,vlow_resistance=0.1,vhigh_resistance=0.3,v_lowSET=0.15,v_highSET=5,N_RESETstride=5,v_lowRESET=-5,v_highRESET=-0.1,SET_current_shift=3):
     '''
     Analyze a dataframe and write the data to an excel file so it can be later plotted in Origin or other programms
@@ -304,7 +469,11 @@ def plot_flat_matrix_analysis(analysis_data,saveoption='No',filepath='None'):
         flatfig4.savefig(filepath_savefig+'HRS_vs_V_SET')
         flatfig5.savefig(filepath_savefig+'LRS_vs_V_RESET')
         
- 
+def combine_df(path):
+    df = pd.dataframe
+    for item in glob.glob(path):
+        df.concat(pd.read_pickle(item))
+    return df
 
 ###Dont use: 
 def plot_colored_matrix_analysis(analysis_data,cmap='jet',saveoption='No',filepath='None'):
