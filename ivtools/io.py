@@ -234,8 +234,102 @@ class MetaHandler(object):
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
-    def load_DomeB():
+    def load_DomeB(self, **kwargs):
+        '''
+        Load wafer information for DomeB
+        if a key is specified which is in the deposition sheet, then try to merge in deposition data
+        Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
+        '''
+        # Left to right, bottom to top!
+        columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
+                   'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b',
+                   'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                   'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AP', 'AQ',
+                   'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
+                   'A7', 'A8', 'A9', 'A0']
+        rows = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '01', '02', '03', '04', '05', '06',
+                '07', '08', '09', '10', '11', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
+                '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34']
+        deposition_file = os.path.join(self.moduledir, 'sampledata/CeRAM_Depositions.xlsx')
+        domeB_file = os.path.join(self.moduledir, 'sampledata/domeB.pkl')
+
+        deposition_df = pd.read_excel(deposition_file, header=8, skiprows=[9])
+        # Only use info for DomeB wafers
+        deposition_df = deposition_df[deposition_df['wafer_code'] == 'DomeB']
+        domeB_df = pd.DataFrame(pd.read_pickle(domeB_file))
+        # Merge data
+        if any([(k in deposition_df) for k in kwargs.keys()]):
+            # Why is cartesian merge not just available in pandas?
+            domeB_df['key'] = 0
+            deposition_df['key'] = 0
+            meta_df = domeB_df.merge(deposition_df, how='outer', sort=False).drop(columns=['key'])
+        else:
+            meta_df = domeB_df
+
+        # Check that function got valid arguments
+        for key, values in kwargs.items():
+            if key not in meta_df.columns:
+                raise Exception('Key must be in {}'.format(meta_df.columns))
+            if isinstance(values, str) or not hasattr(values, '__iter__'):
+                kwargs[key] = [values]
+
+        #### Filter kwargs ####
+        for key, values in kwargs.items():
+            meta_df = meta_df[meta_df[key].isin(values)]
+        #### Filter devices to be measured #####
+        meta_df = meta_df.dropna(1, 'all')
+
+        # Sort left to right, top to bottom
+
+
+        # Sort values so that they are in the same order as you would probe them
+        #sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'module', 'device') if k in meta_df.columns]
+        #meta_df = meta_df.sort_values(by=sortby)
+
+        self.i = 0
+        self.df = meta_df
+        self.meta = meta_df.iloc[0]
+        self.prettykeys = ['dep_code', 'sample_number', 'row', 'col']
+        self.filenamekeys = ['dep_code', 'sample_number', 'row', 'col']
+        print('Loaded metadata for {} devices'.format(len(self.df)))
+        self.print()
         pass
+
+    def move_domeb(direction='l'):
+        '''
+        Assumes you have domeB metadata loaded into self.df
+        Lets you move left, right, up, down by passing l r u d
+        For interactive use
+        '''
+        # Left to right, bottom to top!
+        columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
+                   'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b',
+                   'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                   'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AP', 'AQ',
+                   'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
+                   'A7', 'A8', 'A9', 'A0']
+        rows = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '01', '02', '03', '04', '05', '06',
+                '07', '08', '09', '10', '11', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
+                '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34']
+        col = self.meta.col
+        row = self.meta.row
+        icol = columns.index(col)
+        irow = rows.index(row)
+        if direction.lower() in ('left', 'l'):
+            icol -= 1
+        if direction.lower() in ('right', 'r'):
+            icol += 1
+        if direction.lower() in ('up', 'u'):
+            irow += 1
+        if direction.lower() in ('down', 'd'):
+            icol -= 1
+        newcol = columns[icol]
+        newrow = rows[irow]
+        i = np.where((self.df.col == newcol) & (self.df.row == newrow))[0][0]
+        self.i = i
+        self.meta = self.df.iloc[i]
+        self.print()
+
 
     def step(self, n):
         ''' Select the another device by taking a step through meta df '''
