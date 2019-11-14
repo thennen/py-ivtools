@@ -279,12 +279,10 @@ class MetaHandler(object):
         #### Filter devices to be measured #####
         meta_df = meta_df.dropna(1, 'all')
 
-        # Sort left to right, top to bottom
-
-
-        # Sort values so that they are in the same order as you would probe them
-        #sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'module', 'device') if k in meta_df.columns]
-        #meta_df = meta_df.sort_values(by=sortby)
+        # Sort top to bottom, left to right
+        meta_df['icol'] = meta_df.col.apply(columns.index)
+        meta_df['irow'] = meta_df.row.apply(rows.index)
+        meta_df = meta_df.sort_values(by=['icol', 'irow']).drop(columns=['icol', 'irow'])
 
         self.i = 0
         self.df = meta_df
@@ -295,7 +293,7 @@ class MetaHandler(object):
         self.print()
         pass
 
-    def move_domeb(direction='l'):
+    def move_domeb(self, direction='l'):
         '''
         Assumes you have domeB metadata loaded into self.df
         Lets you move left, right, up, down by passing l r u d
@@ -322,7 +320,7 @@ class MetaHandler(object):
         if direction.lower() in ('up', 'u'):
             irow += 1
         if direction.lower() in ('down', 'd'):
-            icol -= 1
+            irow -= 1
         newcol = columns[icol]
         newrow = rows[irow]
         i = np.where((self.df.col == newcol) & (self.df.row == newrow))[0][0]
