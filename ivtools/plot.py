@@ -67,7 +67,7 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
 
     # X and Y should be the same length, if they are not, truncate one
     if lenX != lenY:
-        print('X and Y arrays are not the same length! Truncating the longer one.')
+        print('_plot_single_iv: X and Y arrays are not the same length! Truncating the longer one.')
         if lenX > lenY:
             X = X[:lenY]
             lenX = lenY
@@ -973,7 +973,6 @@ def VoverIplotter(data, ax=None, **kwargs):
 
     def calc_VoverI(data):
         mask = np.abs(data['V']) > .01
-        V = data['V'][mask]
 
         if 'Vmeasured' in data:
             VoverI = data['Vmeasured'] / data['I']
@@ -982,7 +981,7 @@ def VoverIplotter(data, ax=None, **kwargs):
         else:
             VoverI = data['V'] / data['I']
 
-        VoverI = VoverI[mask]
+        VoverI[~mask] = np.nan
         VoverI[VoverI <= 0] = np.nan
 
         return VoverI

@@ -210,8 +210,7 @@ class MetaHandler(object):
         meta_df = meta_df.sort_values(by=sortby)
 
         # Try to convert data types
-        typedict = dict(wafer_number=np.uint8,
-                        coupon=np.uint8,
+        typedict = dict(coupon=np.uint8,
                         sample_number=np.uint16,
                         number_of_dies=np.uint8,
                         cr=np.uint8,
@@ -282,7 +281,7 @@ class MetaHandler(object):
         # Sort top to bottom, left to right
         meta_df['icol'] = meta_df.col.apply(columns.index)
         meta_df['irow'] = meta_df.row.apply(rows.index)
-        meta_df = meta_df.sort_values(by=['icol', 'irow']).drop(columns=['icol', 'irow'])
+        meta_df = meta_df.sort_values(by=['icol', 'irow'], ascending=[True, False])#.drop(columns=['icol', 'irow'])
 
         self.i = 0
         self.df = meta_df
@@ -313,17 +312,26 @@ class MetaHandler(object):
         row = self.meta.row
         icol = columns.index(col)
         irow = rows.index(row)
-        if direction.lower() in ('left', 'l'):
-            icol -= 1
-        if direction.lower() in ('right', 'r'):
-            icol += 1
-        if direction.lower() in ('up', 'u'):
-            irow += 1
-        if direction.lower() in ('down', 'd'):
-            irow -= 1
-        newcol = columns[icol]
-        newrow = rows[irow]
-        i = np.where((self.df.col == newcol) & (self.df.row == newrow))[0][0]
+        # dumb loop because it's the first thing I thought of
+        i = None
+        while i is None:
+            if direction.lower() in ('left', 'l'):
+                icol -= 1
+            if direction.lower() in ('right', 'r'):
+                icol += 1
+            if direction.lower() in ('up', 'u'):
+                irow += 1
+            if direction.lower() in ('down', 'd'):
+                irow -= 1
+            if (icol < 0) or (icol > len(columns)) or (irow < 0) or (irow > len(rows)):
+                pass
+            newcol = columns[icol]
+            newrow = rows[irow]
+            w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0][0]
+            if any(w):
+                i = w[0][0]
+            else:
+                print('skipping a device that is not in loaded into memory')
         self.i = i
         self.meta = self.df.iloc[i]
         self.print()

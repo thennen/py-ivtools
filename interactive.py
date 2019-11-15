@@ -241,10 +241,11 @@ class autocaller():
     There's an ipython magic for this, but I only want it to apply to certain functions
     This is only for interactive convenience! Don't use it in a program or a script.
     '''
-    def __init__(self, function):
+    def __init__(self, function, *args):
         self.function = function
+        self.args = args
     def __repr__(self):
-        self.function()
+        self.function(*self.args)
         return 'autocalled ' + self.function.__name__
 
 # Add items to this and they will be appended as metadata to all subsequent measurements
@@ -257,6 +258,11 @@ meta.static['hostname'] = hostname
 pp = autocaller(meta.print)
 n = autocaller(meta.next)
 p = autocaller(meta.previous)
+
+left = autocaller(meta.move_domeb, 'left')
+right = autocaller(meta.move_domeb, 'right')
+up = autocaller(meta.move_domeb, 'up')
+down = autocaller(meta.move_domeb, 'down')
 
 # Plotter
 figs = [None] * 6
