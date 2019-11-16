@@ -290,7 +290,6 @@ class MetaHandler(object):
         self.filenamekeys = ['dep_code', 'sample_number', 'row', 'col']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
-        pass
 
     def move_domeb(self, direction='l'):
         '''
@@ -324,7 +323,8 @@ class MetaHandler(object):
             if direction.lower() in ('down', 'd'):
                 irow -= 1
             if (icol < 0) or (icol > len(columns)) or (irow < 0) or (irow > len(rows)):
-                pass
+                print('There is no loaded device metadata in that direction')
+                break
             newcol = columns[icol]
             newrow = rows[irow]
             w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0][0]
@@ -362,7 +362,6 @@ class MetaHandler(object):
         print('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
-        pass
 
     def next(self):
         self.step(1)

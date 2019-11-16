@@ -1463,14 +1463,151 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
 
-    def set_channel_state(self, channel='A', state=True):
-        ch = channel.lower()
-        if state:
-            self.write('smu{0}.source.output = smu{0}.OUTPUT_ON'.format(ch))
+    ### Wrap some of the lua commands directly
+    ### There are a million commands so this is not a complete wrapper..
+    ### See the 900 page pdf reference manual..
+
+    def _set_or_query(self, prop, val=None, bool=False):
+        # Sets or returns the current val
+        if val is None:
+            reply = self.query(f'print({prop})').strip()
+            return self._string_parser(reply)
         else:
-            self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
+            if bool:
+                val = 1 if val else 0
+            self.write(f'{prop} = {val}')
+            return None
 
+    def _string_parser(self, string):
+        # Since we have to communicate via strings and these string might just be numeric..
+        # Convert to numeric?
+        def will_it_float(value):
+            try:
+                float(value)
+                return True
+            except ValueError:
+                return False
+        if string.isnumeric():
+            return int(string)
+        elif will_it_float(string):
+            return float(string)
+        else:
+            # dunno
+            return string
 
+    def output(self, state=None, ch='A'):
+        # Set output state
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.output', state, bool=True)
+
+    def measure_autorangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.autorangei', state, bool=True)
+
+    def measure_autorangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.autorangev', state, bool=True)
+
+    def measure_rangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.rangei', state)
+
+    def measure_rangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.rangev', state)
+
+    def measurei(self, ch='A'):
+        # Request a current reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.i())')
+        return float(reply)
+
+    def measurev(self, ch='A'):
+        # Request a voltage reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.v())')
+        return float(reply)
+
+    def measurer(self, ch='A'):
+        # Request a resistance reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.r())')
+        return float(reply)
+
+    def measurep(self, ch='A'):
+        # Request a power reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.p())')
+        return float(reply)
+
+    def measureiv(self, ch='A'):
+        # Request a current and voltage reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.iv())')
+        i, v = reply.split('\t')
+        return float(i), float(v)
+
+    def source_autorangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.autorangev', state, bool=True)
+
+    def source_autorangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.autorangei', state, bool=True)
+
+    def source_func(self, state=None, ch='A'):
+        # 'i' or 'v'
+        # 1 for volts, 0 for current
+        ch = ch.lower()
+        if state is not None:
+            if state.lower() == 'i':
+                state = 0
+            elif state.lower() == 'v':
+                state = 1
+        reply = self._set_or_query(f'smu{ch}.source.func', state)
+        if reply is None: return None
+        return 'v' if int(reply) else 'i'
+
+    def source_leveli(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.leveli', state)
+
+    def source_levelv(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.levelv', state)
+
+    def source_limiti(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.limiti', state)
+
+    def source_limitv(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.limitv', state)
+
+    def source_limitp(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.limitp', state)
+
+    def source_rangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.rangei', state)
+
+    def source_rangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.rangev', state)
+
+    def sense(self, state=None, ch='A'):
+        # local (2-wire), remote (4-wire)
+        # 0 for local, 1 for remote
+        ch = ch.lower()
+        if state is not None:
+            if state.lower() == 'local':
+                state = 0
+            elif state.lower() == 'remote':
+                state = 1
+        reply = self._set_or_query(f'smu{ch}.source.func', state)
+        if reply is None: return None
+        return 'remote' if int(reply) else 'local'
 
 #########################################################
 # UF2000 Prober #########################################
