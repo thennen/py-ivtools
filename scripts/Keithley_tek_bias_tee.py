@@ -1432,7 +1432,7 @@ def plot_R_threshold(r, t):
 
 def plot_R_threshold_color(r, t):
     fig, ax = plt.subplots()
-    sc = ax.scatter(r,t,cmap = 'rainbow', c= range(len(t)))
+    sc = ax.scatter(r, t, cmap = 'rainbow', c = np.arange(len(t)))
     ax.set_yscale('log')
     ax.set_xscale('log')
     ax.set_xlim(left=1e4, right =1.2e7)
@@ -1440,7 +1440,7 @@ def plot_R_threshold_color(r, t):
     ax.set_xlabel('Resistance [$\Omega$]')
     ax.set_ylabel('$t_{\mathrm{Threshold}}$ [s]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+    #ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     plt.colorbar(sc)
     fig.tight_layout()
     fig.show()
