@@ -738,7 +738,7 @@ def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subd
         filepaths = filepaths[:maxlen]
     return [os.path.abspath(fp) for fp in filepaths]
 
-def write_pandas_pickle(data, filepath=None, drop=None):
+def write_pandas_pickle(data, filepath=None, drop=None, read_only=True):
     ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
     if filepath is None:
         filepath = timestamp()
@@ -769,7 +769,8 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 print('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
-    set_readonly(filepath)
+    if read_only:
+        set_readonly(filepath)
     print('Wrote {}'.format(os.path.abspath(filepath)))
 
 def write_matlab(data, filepath, varname=None, compress=True):

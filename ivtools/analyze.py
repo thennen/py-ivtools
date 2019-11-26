@@ -468,7 +468,7 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
 
 
 @ivfunc
-def maketimearray(data, basedon=None):
+def maketimearray(data, basedon=None, ignore_downsampling=False):
     ''' Make the time array based on number of samples, sample rate, and downsampling'''
     if basedon is None:
         # Don't know what data columns exist
@@ -476,7 +476,7 @@ def maketimearray(data, basedon=None):
     else:
         columns = [basedon]
     t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
-    if 'downsampling' in data:
+    if 'downsampling' in data and not ignore_downsampling:
         t *= data['downsampling']
     return t
 

@@ -5,6 +5,8 @@ from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import itertools
 
+pd.options.mode.chained_assignment = None
+
 possible_ranges = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
 max_offsets = [.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20]
 
@@ -75,7 +77,7 @@ def calc_max_fs_d_n(fs=None, duration=None, cycles=None):
             print('Ratio not okay, too many samples! Please change a parameter!')
             return None, None, None
 
-def adjust_picorange(V_reset_stop, V_set_stop, duration=1e-3, fs=1.25e9, smartrange=False):
+def adjust_picorange2(V_reset_stop, V_set_stop, duration=1e-3, fs=1.25e9, smartrange=False):
     """
     Performs one measurement with the given parameters to adjust the range and the offset of the picoscope.
     """
@@ -85,11 +87,30 @@ def adjust_picorange(V_reset_stop, V_set_stop, duration=1e-3, fs=1.25e9, smartra
     ps.offset.b = 0
     ps.range.a = 5
     ps.offset.a = 0
-    temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=smartrange)
+    
     ps.squeeze_range(temp,padpercent=0.5)
     if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
-        ps.range.b=5
-        ps.offset.b=0 
+        range_index = np.where(possible_ranges>=ps.offset.b)[0][0]
+        
+        ### alternatively we could just set the range 
+        #ps.range.b=5
+        #ps.offset.b=0
+        
+def adjust_picorange(sweep_data):
+    """
+    Sets the best possible range at a given offset of a sweep.
+    """
+    possible_ranges = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
+    max_offsets = [.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20]
+    
+    ps.squeeze_range(sweep_data,padpercent=0.5)
+    if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
+        range_index = np.where(possible_ranges>=ps.offset.b)[0][0]
+        ps.range.b=possible_ranges[range_index]
+        
+        ### alternatively we could just set the range 
+        #ps.range.b=5
+        #ps.offset.b=0 
 
 def squeeze_range_mul(data_list, padpercent=0, ch=['A', 'B', 'C', 'D']):
     for c in ch:
@@ -147,11 +168,34 @@ def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1
         fs=int(fs*100/cycles_per_sweep)
         print('Downsizing sampling rate, due to memory. New sampling rate: {}'.format(fs))
     
+    meta.meta['I_cc'] = I_CC
+    meta.meta['V_set_stop'] = V_set_stop
+    meta.meta['V_reset_stop'] = V_reset_stop
+    meta.meta['duration'] = duration
+    meta.meta['cycles'] = cycles
+    meta.meta['cycles_per_sweep'] = cycles_per_sweep
+    meta.meta['fs'] = fs
+    meta.meta['slew_rate'] = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
+    meta.meta['tag'] = 'Endurance'
+    meta.meta['wfm'] = 'triangular'
+    
     for i in range(int(cycles/cycles_per_sweep)):
         iplots.clear()
         d=picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=cycles_per_sweep, fs=fs,smartrange=False)
-        savedata(d,filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),I_CC,int(V_reset_stop*100),int(V_set_stop*100),i)))
-       
+        savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),I_CC,int(V_reset_stop*100),int(V_set_stop*100),i)))
+    
+    del meta.meta['I_cc']
+    del meta.meta['V_set_stop']
+    del meta.meta['V_reset_stop']
+    del meta.meta['duration']
+    del meta.meta['cycles']
+    del meta.meta['cycles_per_sweep'] 
+    del meta.meta['fs']
+    del meta.meta['slew_rate']
+    del meta.meta['tag']
+    del meta.meta['wfm']
+
+    
 def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_inc,Vset_stop, n_cycle=100, duration=1e-3,fs=1.25e9):
     '''
     Define Current Compliance Start, Stop and Increment in micro-A,
@@ -190,7 +234,27 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
             iplots.clear()
             d=picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
             #d_in_df=pd.DataFrame(d)
-            savedata(d,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,int(Vset_stop*100))))
+            
+            
+            meta.meta['wfm'] = 'triangular'
+            meta.meta['tag'] = 'MatrixMeasurement'
+            meta.meta['I_cc'] = I_CC
+            meta.meta['V_reset_stop'] = Vreset_Stop
+            meta.meta['Vset_stop'] = Vset_stop
+            meta.meta['cycles'] = n_cycle
+            meta.meta['duration'] = duration
+            meta.meta['fs'] = fs
+            
+            savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,int(Vset_stop*100))))
+            
+            del meta.meta['wfm']
+            del meta.meta['tag']
+            del meta.meta['I_cc']
+            del meta.meta['V_reset_stop']
+            del meta.meta['Vset_stop']
+            del meta.meta['cycles']
+            del meta.meta['duration']
+            del meta.meta['fs']
 
     
     for I_CC in reversed(range(ICC_Start,ICC_Stop+ICC_inc,ICC_inc)):
@@ -241,14 +305,18 @@ def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop,
         
         iplots.clear()
         print('Adjusting Picoscope range and offset:')
-        adjust_picorange(V_reset_stop, V_set_stop, duration, fs, smartrange=False)
+        temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=smartrange)
+        adjust_picorange(temp)
         
-        meta.V_set_stop = V_set_stop
-        meta.V_reset_stop = V_reset_stop
-        meta.duration = duration
-        meta.cycles = n
-        meta.fs = fs
-        meta.slew_rate = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
+        meta.meta['I_cc'] = I_CC
+        meta.meta['V_set_stop'] = V_set_stop
+        meta.meta['V_reset_stop'] = V_reset_stop
+        meta.meta['duration'] = duration
+        meta.meta['cycles'] = n
+        meta.meta['fs'] = fs
+        meta.meta['slew_rate'] = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
+        meta.meta['tag'] = 'VarySlewRate'
+        meta.meta['wfm'] = 'triangular'
         
         print('V_set_stop = {}'.format(V_set_stop))
         print('V_reset_stop = {}'.format(V_reset_stop))
@@ -260,16 +328,17 @@ def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop,
         
         print('Starting Measurement')
         d = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=n, fs=fs,smartrange=False)
-        savedata(d,filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),Icc,int(V_reset_stop*100),int(V_set_stop*100),i)))
+        savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),Icc,int(V_reset_stop*100),int(V_set_stop*100),i)))
         
-        meta.V_set_stop = np.nan
-        meta.V_reset_stop = np.nan
-        meta.duration = np.nan
-        meta.cycles = np.nan
-        meta.fs = np.nan
-        meta.slew_rate = np.nan
-        
-        
+        del meta.meat['I_cc']
+        del meta.meta['V_set_stop']
+        del meta.meta['V_reset_stop']
+        del meta.meta['duration']
+        del meta.meta['cycles']
+        del meta.meta['fs']
+        del meta.meta['slew_rate']
+        del meta.meta['wfm']
+        del meta.meta['tag']
         
     
     

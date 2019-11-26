@@ -278,7 +278,7 @@ plotters = iplots.plotters
 add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
-def savedata(data=None, filepath=None, drop=None):
+def savedata(data=None, filepath=None, drop=None, attach=True, read_only=True):
     '''
     Save data with metadata attached, as determined by the state of the global MetaHandler instance
     if no data is passed, try to use the global variable d
@@ -292,7 +292,12 @@ def savedata(data=None, filepath=None, drop=None):
             data = d
     if filepath is None:
         filepath = os.path.join(datadir(), meta.filename())
-    io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
+        
+    if attach:
+        io.write_pandas_pickle(meta.attach(data), filepath, drop=drop, read_only=read_only)
+    else:
+        io.write_pandas_pickle(data, filepath, drop=drop, read_only=read_only)
+    
     # TODO: append metadata to a sql table
 # just typing s will save the d variable
 s = autocaller(savedata)
@@ -351,3 +356,12 @@ if k and hasattr(k, 'query'):
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
 
 # TODO def reload_settings, def reset_state
+
+### Special functions by NQ
+
+def default_rng():
+    """
+    Sets the picoscope to a default range and offset on canal b.
+    """
+    ps.range.b = 5
+    ps.offset.b = 0
