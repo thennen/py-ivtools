@@ -79,7 +79,18 @@ hostname = socket.gethostname()
 username = getpass.getuser()
 datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
+gitstatus = io.getGitStatus()
+if 'M' in gitstatus:
+    print('The following files have uncommited changes:')
+    print('\n'.join(gitstatus['M']))
+if '??' in gitstatus:
+    print('The following files are untracked by git:')
+    print('\n'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch
+# problem is I don't want to pollute my commit history with a million autocommits
+# and git is not really designed to commit to branches that are not checked out
+# is this relevant?  https://github.com/bartman/git-wip
+# git commit -a -m "autocommit `date +%F-%T`"
 gitrev = io.getGitRevision()
 
 # Helps you step through the metadata of your samples/devices

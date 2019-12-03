@@ -490,6 +490,11 @@ def getGitStatus():
             output[k] = [v]
     return output
 
+def gitCommit(message='AUTOCOMMIT'):
+    output = subprocess.check_output(['git', 'commit', '-a', f'-m \"{message}\"']).decode()
+    return output
+
+
 def log_ipy(start=True, logfilepath=None):
     '''
     Append ipython and std in/out to a text file
