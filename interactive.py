@@ -160,14 +160,19 @@ elif hostname == 'pcluebben2':
                    ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
 elif hostname == 'pciwe34':
     # Mark II
-    datafolder = r'F:\Messdaten\hennen'
+    # This computer and whole set up is a massive irredeemable piece of shit
+    # computer crashes when you try to access the data drive
+    # Data drive gets mounted on different letters for some reason
+    # Therefore I will use the operating system drive..
+    #datafolder = r'G:\Messdaten\hennen'
+    datafolder = r'C:\Messdaten\hennen'
     connections = [('et', instruments.Eurotherm2408),
                    #('ps', instruments.Picoscope),
                    #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                    #('daq', instruments.USB2708HS),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600, 'GPIB0::26::INSTR')]
+                   ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
 elif hostname == 'CHMP2':
     datafolder = r'C:\data'
     connections = [('ps', instruments.Picoscope),
