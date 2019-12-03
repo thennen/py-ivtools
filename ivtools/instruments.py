@@ -378,7 +378,7 @@ class Picoscope(object):
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
-                pretrig=0.0, chrange=None, choffset=None, chcoupling=None, chatten=None):
+                pretrig=0.0, delay=0, chrange=None, choffset=None, chcoupling=None, chatten=None):
         '''
         Set up picoscope to capture from specified channel(s).
 
@@ -390,8 +390,11 @@ class Picoscope(object):
         Won't actually start capture until picoscope receives the specified trigger event.
 
         It will trigger automatically after a timeout.
+        I think if you set timeout_ms to zero this means an infinite timeout
 
         ch can be a list of characters, i.e. ch=['A','B'].
+
+        pretrig is in fraction of the whole sampling time, delay is in samples..
 
         if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
         the settings will be taken from the global variables
@@ -452,8 +455,8 @@ class Picoscope(object):
                                probeAttenuation=chatten[c],
                                VOffset=choffset[c],
                                enabled=True)
-        # Set up the trigger.  Will timeout in 30s
-        self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, timeout_ms=timeout_ms)
+        # Set up trigger.  Will timeout in 30s
+        self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, delay=delay, timeout_ms=timeout_ms)
         self.ps.runBlock(pretrig)
         return actualfreq
 

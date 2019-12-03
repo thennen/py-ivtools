@@ -990,7 +990,7 @@ def VoverIplotter(data, ax=None, **kwargs):
 
     #ax.plot(V, VoverI, **kwargs)
     # should work with multiple loops
-    plotiv(data, y=calc_VoverI, ax=ax)
+    plotiv(data, y=calc_VoverI, ax=ax, **kwargs)
     #color = ax.lines[-1].get_color()
 
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())

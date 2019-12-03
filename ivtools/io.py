@@ -135,6 +135,7 @@ class MetaHandler(object):
         use keys X, Y, width_nm, device
         Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
         all kwargs will just be added to all metadata
+        # TODO add formatter for filename '{}_{}_{}_{}_{}' or whatever
         '''
         nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar.pkl')
         nanoxbar = pd.read_pickle(nanoxbarfile)
@@ -322,16 +323,16 @@ class MetaHandler(object):
                 irow += 1
             if direction.lower() in ('down', 'd'):
                 irow -= 1
-            if (icol < 0) or (icol > len(columns)) or (irow < 0) or (irow > len(rows)):
+            if (icol < 0) or (icol >= len(columns)) or (irow < 0) or (irow >= len(rows)):
                 print('There is no loaded device metadata in that direction')
-                break
+                return
             newcol = columns[icol]
             newrow = rows[irow]
-            w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0][0]
+            w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0]
             if any(w):
-                i = w[0][0]
+                i = w[0]
             else:
-                print('skipping a device that is not in loaded into memory')
+                print('skipping a device that is not loaded into memory')
         self.i = i
         self.meta = self.df.iloc[i]
         self.print()
