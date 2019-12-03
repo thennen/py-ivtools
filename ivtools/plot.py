@@ -1086,6 +1086,7 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
 
 
 ### Widgets
+# TODO: more of these!
 def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     '''
     Select index range from plot of some parameter vs index.  Plot the loops there.
@@ -1178,6 +1179,7 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
 
 
 ### Animation
+# TODO: check out the library "celluloid"
 def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, startloopnum=0, title=None, axfunc=None, **kwargs):
     '''
     Write set of ivloops to disk to make a movie which shows their evolution nicely
@@ -1443,7 +1445,6 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
 
 
 ### Other kinds of plotting utilities
-
 def metric_prefix(x):
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
@@ -1506,5 +1507,5 @@ def xylim():
     cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
     print(cmd)
     # I don't know how to copy a new line onto the clipboard
-    df=pd.DataFrame([cmd.replace('\n', ';')])
+    df = pd.DataFrame([cmd.replace('\n', ';')])
     df.to_clipboard(index=False,header=False)

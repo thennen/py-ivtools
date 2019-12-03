@@ -477,7 +477,18 @@ def getGitRevision():
         return rev
 
 def getGitStatus():
-    return subprocess.check_output(['git', 'status', '-z'])
+    # attempt to parse the git status
+    status = subprocess.check_output(['git', 'status', '--porcelain']).decode().strip()
+    status = [l.strip().split(' ', maxsplit=1) for l in status.split('\n')]
+    # I like dict of lists better
+    output = {}
+    for l in status:
+        k,v = l
+        if k in output:
+            output[k].append(v)
+        else:
+            output[k] = [v]
+    return output
 
 def log_ipy(start=True, logfilepath=None):
     '''

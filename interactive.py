@@ -1,16 +1,17 @@
-# Trying to combine picoscope and keithley measurement scripts
 '''
+IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
+
 This file should be run using the %run -i magic in ipython.
 Provides a command based user interface for IV measurements.
 Binds convenient names to functions contained in other modules
 
-This script can be rerun, and all of the code will be updated, with
-your settings not overwritten
+This script is designed to be rerun, and all of the code will be updated,
+with everything but your measurement settings not overwritten.
 
-Therefore you can modify any part of the code while making measurements
-and without ever leaving the running program.
+Therefore you can modify any part of the code/library while making measurements
+and without ever leaving the running program or closing instrument connections.
 
-TODO: Maintain a database of all the metadata for all the data files created
+TODO: Maintain a proper database of all the metadata for all the data files created
 TODO: GUI for displaying and changing channel settings, other status information
 '''
 import numpy
@@ -81,6 +82,7 @@ datestr = time.strftime('%Y-%m-%d')
 # TODO: auto commit to some kind of auto commit branch
 gitrev = io.getGitRevision()
 
+# Helps you step through the metadata of your samples/devices
 meta = io.MetaHandler()
 
 # 2634B : 192.168.11.11
