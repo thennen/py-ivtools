@@ -323,8 +323,11 @@ class MetaHandler(object):
                 irow += 1
             if direction.lower() in ('down', 'd'):
                 irow -= 1
+
             if (icol < 0) or (icol >= len(columns)) or (irow < 0) or (irow >= len(rows)):
-                print('There is no loaded device metadata in that direction')
+                irow %= len(rows)
+                icol %= len(col)
+                print('Went over edge of coupon -- wrapping around')
                 return
             newcol = columns[icol]
             newrow = rows[irow]
@@ -332,6 +335,7 @@ class MetaHandler(object):
             if any(w):
                 i = w[0]
             else:
+                # TODO: don't check every single row/column in between, this can print lots of times in a row
                 print('skipping a device that is not loaded into memory')
         self.i = i
         self.meta = self.df.iloc[i]

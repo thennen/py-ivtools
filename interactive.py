@@ -90,7 +90,7 @@ if '??' in gitstatus:
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
 # is this relevant?  https://github.com/bartman/git-wip
-# git commit -a -m "autocommit `date +%F-%T`"
+gitCommit(message='AUTOCOMMIT')
 gitrev = io.getGitRevision()
 
 # Helps you step through the metadata of your samples/devices
@@ -144,6 +144,7 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
 datafolder = r'C:\data'
 connections = {}
 # Hostname specific settings
+# TODO move this code to a different file (settings.py?), so that it's obvious where the pc specific settings are
 if hostname == 'pciwe46':
     if username == 'hennen':
         datafolder = r'D:\t\ivdata'
@@ -223,7 +224,6 @@ for varname, inst_class, *args in connections:
                 # https://pyvisa.readthedocs.io/en/stable/names.html
                 continue
     globalvars[varname] = inst_class(*args)
-
 
 # Default data subfolder -- will reflect the date of the last time this script ran
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
@@ -322,6 +322,9 @@ s = autocaller(savedata)
 ###### Interactive measurement functions #######
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
+# TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
+#      could use the same wrapper and just compose a new getdatafunc..
+#      or pass a list of functions as getdatafunc, then smash the results together somehow
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
     ''' Activates auto data plotting and saving for wrapped functions '''
     @wraps(func)
@@ -342,12 +345,12 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
                     if live:
                         data = getdatafunc()
                         iplots.updateline(data)
-                    mypause(0.1)
+                    ivplot.mypause(0.1)
                 data = getdatafunc()
                 iplots.updateline(data)
             else:
                 while not donefunc():
-                    mypause(0.1)
+                    ivplot.mypause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
             if autosave:
@@ -357,7 +360,7 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
 
 picoiv = interactive_wrapper(measure.picoiv)
 
-# If keithley is connected ...
+# If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
 if k and hasattr(k, 'query'):
     live = True
