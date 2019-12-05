@@ -14,6 +14,7 @@ visa_rm = visa.ResourceManager()
 
 ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
+suppress_prints = True
 
 ### Settings for compliance circuit
 COMPLIANCE_CURRENT = 0

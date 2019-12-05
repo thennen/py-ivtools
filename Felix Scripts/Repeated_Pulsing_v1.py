@@ -7,6 +7,7 @@ import matplotlib as mpl
 import time
 import Telegram_bot as tb
 import scipy
+import traceback
 
 pd.options.mode.chained_assignment = None
 
@@ -158,11 +159,11 @@ def bring_device_to_HRS(HRS_min,HRS_max,filepath, V_RESET_max=-1.8,t_RESET=1e-3,
             return False
         else:
             print('\n---Resistance found {}---\n'.format(current_res))
-            return(RESET_tracer)
+            return RESET_tracer, current_res
     else:
         print('\n---Resistance already was correct.---\n')          
         RESET_tracer=np.array([[0,current_res]])
-        return(RESET_tracer)
+        return RESET_tracer, current_res
         
 def save_RESET_stair(RESET_stair_data,filepath=None,drop=None):
     RESET_stair_data=pd.DataFrame(RESET_stair_data,columns={'V_RESET','R_read'})
@@ -306,7 +307,8 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
     while (Done == False) and (i <= max_iterations):
         print('Starting cycle {} of {}'.format(int(i),int(n_SET)))
         ##first reset the device to the desired HRS and save the staircase data
-        RESET_stair=bring_device_to_HRS(HRS_min=HRS_min,filepath=filepath,HRS_max=HRS_max,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_read=V_read,t_read=t_read,V_RESET_start=V_RESET_start,max_iterations=max_iterations)
+        RESET_stair, resistance_pre=bring_device_to_HRS(HRS_min=HRS_min,filepath=filepath,HRS_max=HRS_max,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_read=V_read,t_read=t_read,V_RESET_start=V_RESET_start,V_RESET_step=V_RESET_step,max_iterations=max_iterations)
+        iplots.clear()
         if isinstance(RESET_stair,bool):
             return None #in case it was not possible to bring the device to the desired HRS window
         else:
@@ -315,7 +317,7 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         
         ##then apply read-SET-read
         measure.set_compliance(7e-4)
-        resistance_pre=read_resistance(V_read=V_read,t_read=t_read)
+        #resistance_pre=read_resistance(V_read=V_read,t_read=t_read)
         
         default_rng()
         measure.smart_range(-0.1,V_SET,ch=['A'])
@@ -345,7 +347,7 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         factor = np.round(factor,0)
         factor = int(factor)
         SET = rem_over_sampling(SET, factor, columns=['I','V'])
-        SET['t'] = analyze.maketimearray(x, ignore_downsampling=True)
+        SET['t'] = analyze.maketimearray(SET, ignore_downsampling=True)
         
         
         mask_0V=abs(SET['V'])<0.01
@@ -410,13 +412,14 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
 
 def matrix_repeat_SET_pulse_from_HRS(V_SET_start,V_SET_end,V_SET_step,n_SET,t_pulse,HRS_min,HRS_max,HRS_step,V_read=0.3,t_read=1e-3,V_RESET_max=-1.8,t_RESET=1e-3,V_RESET_start=-0.4, V_RESET_step=0.05, max_iterations=20):
     try:
+        tb.msg_to_nils("RepeatedPulsing measurement: Started!")
         for j in np.arange(V_SET_start,V_SET_end+V_SET_step,V_SET_step):
-            print(j)
             for i in range(HRS_min,HRS_max,HRS_step):
                 cur_HRS_min = i
                 cur_HRS_max = i+HRS_step
+                tb.msg_to_nils("RepeatedPulsing measurement: V_set = {} HRS_min {} HRS_max {}!".format(j,i,i+HRS_step))
                 _, _, _ = repeat_SET_pulse_from_HRS(V_SET=j,n_SET=n_SET,t_pulse=t_pulse,HRS_min=cur_HRS_min,HRS_max=cur_HRS_max,V_read=V_read,t_read=t_read,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_RESET_start=V_RESET_start, V_RESET_step=V_RESET_step, max_iterations=max_iterations)
-        tb.msg_to_nils("RepeatedPulsing measurement: Done!")
     except:
         tb.msg_to_nils("RepeatedPulsing measurement: Error!")
+        traceback.print_exc()
     

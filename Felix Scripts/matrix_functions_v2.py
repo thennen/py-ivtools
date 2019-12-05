@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import itertools
+import Telegram_bot as tb
 
 pd.options.mode.chained_assignment = None
 
@@ -194,6 +195,7 @@ def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1
     del meta.meta['slew_rate']
     del meta.meta['tag']
     del meta.meta['wfm']
+    tb.msg_to_nils("Endurance measurement: Done!")
 
     
 def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_inc,Vset_stop, n_cycle=100, duration=1e-3,fs=1.25e9):
@@ -237,7 +239,7 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
             
             
             meta.meta['wfm'] = 'triangular'
-            meta.meta['tag'] = 'MatrixMeasurement'
+            meta.meta['tag'] = 'matrix'
             meta.meta['I_cc'] = I_CC
             meta.meta['V_reset_stop'] = Vreset_Stop
             meta.meta['Vset_stop'] = Vset_stop
@@ -245,7 +247,7 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
             meta.meta['duration'] = duration
             meta.meta['fs'] = fs
             
-            savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,int(Vset_stop*100))))
+            savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,V_RESET_STOP,int(Vset_stop*100))),attach=False)
             
             del meta.meta['wfm']
             del meta.meta['tag']
@@ -268,7 +270,7 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
         ps.offset.a = 0
         temp = picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=1, fs=fs,smartrange=False)
         if max_offsets[possible_ranges.index(ps.range.b)] > ps.offset.b:
-            temp = picoiv(tri(Vset_stop, V_RESET_STOP/100), duration=duration, n=1, fs=fs,smartrange=False)
+            temp = picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=1, fs=fs,smartrange=False)
             ps.squeeze_range(temp,padpercent=0.5)
         if max_offsets[possible_ranges.index(ps.range.b)] > ps.offset.b:
             ps.range.b=5
@@ -277,6 +279,7 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
         d=picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
         #ivplot.interactive_figs.clear()
         savedata(d,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,Vreset_Stop,int(Vset_stop*100))))
+    tb.msg_to_nils("Matrix measurement: Done!")
             
     #return(appended_data_out)
 
@@ -339,6 +342,7 @@ def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop,
         del meta.meta['slew_rate']
         del meta.meta['wfm']
         del meta.meta['tag']
+    tb.msg_to_nils("Slewrate measurement: Done!")
         
     
     

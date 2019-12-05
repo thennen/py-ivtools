@@ -653,7 +653,8 @@ class interactive_figs(object):
                         ax.set_ylabel(ax.get_ylabel(), color=color)
                     except Exception as e:
                         ax.plot([])
-                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                        if not persistent_state.suppress_prints:
+                            print('Plotter number {} failed!: {}'.format(axnum, e))
                     ax.get_figure().canvas.draw()
             mypause(0.05)
 
@@ -691,7 +692,8 @@ class interactive_figs(object):
                     try:
                         plotter(data, ax, color=color)
                     except Exception as e:
-                        print('Plotter number {} failed!: {}'.format(axnum, e))
+                        if not persistent_state.suppress_prints:
+                            print('Plotter number {} failed!: {}'.format(axnum, e))
                 else:
                     # Simply set the line color after plotting
                     # could mess up the color cycle.
@@ -699,7 +701,8 @@ class interactive_figs(object):
                         plotter(data, ax)
                         ax.lines[-1].set_color(color)
                     except:
-                        print('Plotter number {} failed!'.format(axnum))
+                        if not persistent_state.suppress_prints:
+                            print('Plotter number {} failed!'.format(axnum))
                 ax.get_figure().canvas.draw()
             mypause(0.05)
 

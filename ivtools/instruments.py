@@ -324,7 +324,8 @@ class Picoscope(object):
                     rang, offs = self.best_range((minimum, maximum), padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
                 else:
                     rang, offs = self.best_range(data[c], padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
-                print('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
+                if not persistent_state.suppress_prints:
+                    print('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
                 self.range[c] = rang
                 self.offset[c] = offs
 
@@ -433,7 +434,8 @@ class Picoscope(object):
         chatten = global_replace(chatten, self.atten)
 
         actualfreq, max_samples = self.ps.setSamplingFrequency(actualfreq, nsamples)
-        print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
+        if not persistent_state.suppress_prints:
+            print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
         if nsamples > max_samples:
             raise(Exception('Trying to sample more than picoscope memory capacity'))
         # Set up the channels
@@ -470,7 +472,8 @@ class Picoscope(object):
         for c in ch:
             rawint16, _, overflow = self.ps.getDataRaw(c)
             if overflow:
-                print(f'!! Picoscope overflow on Ch {c} !!')
+                if not persistent_state.suppress_prints:
+                    print(f'!! Picoscope overflow on Ch {c} !!')
             if raw:
                 # For some reason pico-python gives the values as int16
                 # Probably because some scopes have 16 bit resolution
@@ -2000,7 +2003,8 @@ class USB2708HS(object):
             print('I disallow voltage value {} for analog output {}'.format(volts, ch))
             return
         else:
-            print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
+            if not suppress_prints:
+                print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
 
         try:
             self.ul.a_out(board_num, ch, ao_range, int(dacval))

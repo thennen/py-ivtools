@@ -18,6 +18,8 @@ import visa
 from functools import partial
 import pickle
 
+
+
 ########### Picoscope - Rigol AWG testing #############
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
                               ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
@@ -108,14 +110,17 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
 
     trainduration = n * duration
-    print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    if not settings.suppress_prints:
+        print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     time.sleep(n * duration * 1.05)
     #ps.waitReady()
-    print('Getting data from picoscope.')
+    if not settings.suppress_prints:
+        print('Getting data from picoscope.')
     # Get the picoscope data
     # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
     chdata = ps.get_data(channels, raw=True)
-    print('Got data from picoscope.')
+    if not settings.suppress_prints:
+        print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
     ivdata = settings.pico_to_iv(chdata)
 
@@ -142,14 +147,16 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             # Can pass the number of data points you would like to end up with
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
-        print('Smoothimating data with window {}, factor {}'.format(window, factor))
+        if not settings.suppress_prints:
+            print('Smoothimating data with window {}, factor {}'.format(window, factor))
         # TODO: What if we want to retain a copy of the non-smoothed data?
         # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
         # Maybe only smoothimate I and V?
         ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit and (n > 1):
-        print('Splitting data into individual pulses')
+        if not settings.suppress_prints:
+            print('Splitting data into individual pulses')
         if splitbylevel is None:
             nsamples = duration * actual_fs
             if 'downsampling' in ivdata:
@@ -430,7 +437,8 @@ def set_compliance(cc_value):
     fn = settings.COMPLIANCE_CALIBRATION_FILE
     abspath = os.path.abspath(fn)
     if os.path.isfile(abspath):
-        print('Reading calibration from file {}'.format(abspath))
+        if not suppress_prints:
+            print('Reading calibration from file {}'.format(abspath))
     else:
         raise Exception('No compliance calibration.  Run calibrate_compliance().')
     with open(fn, 'rb') as f:
@@ -475,7 +483,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         offsets = []
         if len(offsets_list) == 0:
             if startfromfile:
-                print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+                if not suppress_prints:
+                    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
                 with open(fn, 'rb') as f:
                     cc = pickle.load(f)
                 compensations = np.interp(dacvals, cc['dacvals'], cc['compensationV'])
@@ -514,7 +523,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
 
 def plot_compliance_calibration():
     fn = 'compliance_calibration.pkl'
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
+    if not suppress_prints:
+        print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
     ccurrent = 1e6 * np.array(cc['ccurrent'])

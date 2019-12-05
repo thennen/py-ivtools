@@ -362,9 +362,10 @@ class MetaHandler(object):
         # TODO make it always modify the input data, or never
         '''
         if len(self.meta) > 0:
-            print('Attaching the following metadata:')
+            if not persistent_state.suppress_prints:
+                print('Attaching the following metadata:')
             # TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
-            self.print()
+                self.print()
         dtype = type(data)
         if dtype is dict:
             # Make shallow copy
@@ -751,17 +752,20 @@ def write_pandas_pickle(data, filepath=None, drop=None, read_only=True):
     if dtype in (dict, pd.Series):
         filepath += '.s'
         if dtype == dict:
-            print('Converting data to pd.Series for storage.')
+            if not persistent_state.suppress_prints:
+                print('Converting data to pd.Series for storage.')
             data = pd.Series(data)
         if drop is not None:
             todrop = [c for c in drop if c in data]
             if any(todrop):
-                print('Dropping data keys: {}'.format(todrop))
+                if not persistent_state.suppress_prints:
+                    print('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop)
     elif dtype in (list, pd.DataFrame):
         filepath += '.df'
         if dtype == list:
-            print('Converting data to pd.DataFrame for storage.')
+            if not persistent_state.suppress_prints:
+                print('Converting data to pd.DataFrame for storage.')
             data = pd.DataFrame(data)
         if drop is not None:
             todrop = [c for c in drop if c in data]
@@ -771,7 +775,8 @@ def write_pandas_pickle(data, filepath=None, drop=None, read_only=True):
     data.to_pickle(filepath)
     if read_only:
         set_readonly(filepath)
-    print('Wrote {}'.format(os.path.abspath(filepath)))
+    if not persistent_state.suppress_prints:
+        print('Wrote {}'.format(os.path.abspath(filepath)))
 
 def write_matlab(data, filepath, varname=None, compress=True):
    # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
