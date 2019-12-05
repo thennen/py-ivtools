@@ -269,6 +269,7 @@ class autocaller():
 # Add items to this and they will be appended as metadata to all subsequent measurements
 meta.static['gitrev'] = gitrev
 meta.static['hostname'] = hostname
+meta.static['username'] = username
 
 ################ Bindings for interactive convenience #################
 
