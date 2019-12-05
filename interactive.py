@@ -83,6 +83,7 @@ gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     print('The following files have uncommited changes:')
     print('\n'.join(gitstatus['M']))
+    gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
     print('The following files are untracked by git:')
     print('\n'.join(gitstatus['??']))
@@ -90,7 +91,6 @@ if '??' in gitstatus:
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
 # is this relevant?  https://github.com/bartman/git-wip
-gitCommit(message='AUTOCOMMIT')
 gitrev = io.getGitRevision()
 
 # Helps you step through the metadata of your samples/devices
