@@ -384,7 +384,7 @@ class MetaHandler(object):
 
     def goto(self, **kwargs):
         ''' Assuming you loaded metadata already, this goes to the first row that matches the keys'''
-        mask = np.ones(, bool)len(self.df)
+        mask = np.ones(len(self.df), bool)
         for k,v in kwargs:
             mask &= df[k] == v
 
