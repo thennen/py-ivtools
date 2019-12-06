@@ -391,9 +391,11 @@ class MetaHandler(object):
         w = np.where(mask)
         if any(w):
             i = w[0][0]
-        self.select(i)
-        print('You have selected this device (index {}):'.format(self.i))
-        self.print()
+            self.select(i)
+            print('You have selected this device (index {}):'.format(self.i))
+            self.print()
+        else:
+            print('No matching devices found')
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
