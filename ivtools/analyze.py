@@ -407,7 +407,9 @@ def medfilt(data, window=5, columns=('I', 'V')):
 @ivfunc
 def savgolfilt(window, order, columns=None):
     # TODO implement this
-    pass
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
 
 
 @ivfunc
