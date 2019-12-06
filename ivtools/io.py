@@ -493,7 +493,7 @@ def getGitStatus():
                 output[k].append(v)
             else:
                 output[k] = [v]
-        return output
+    return output
 
 def gitCommit(message='AUTOCOMMIT'):
     output = subprocess.check_output(['git', 'commit', '-a', f'-m \"{message}\"']).decode()
