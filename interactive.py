@@ -1,16 +1,17 @@
-# Trying to combine picoscope and keithley measurement scripts
 '''
+IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
+
 This file should be run using the %run -i magic in ipython.
 Provides a command based user interface for IV measurements.
 Binds convenient names to functions contained in other modules
 
-This script can be rerun, and all of the code will be updated, with
-your settings not overwritten
+This script is designed to be rerun, and all of the code will be updated,
+with everything but your measurement settings not overwritten.
 
-Therefore you can modify any part of the code while making measurements
-and without ever leaving the running program.
+Therefore you can modify any part of the code/library while making measurements
+and without ever leaving the running program or closing instrument connections.
 
-TODO: Maintain a database of all the metadata for all the data files created
+TODO: Maintain a proper database of all the metadata for all the data files created
 TODO: GUI for displaying and changing channel settings, other status information
 '''
 import numpy
@@ -78,9 +79,21 @@ hostname = socket.gethostname()
 username = getpass.getuser()
 datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
+gitstatus = io.getGitStatus()
+if 'M' in gitstatus:
+    print('The following files have uncommited changes:')
+    print('\n'.join(gitstatus['M']))
+if '??' in gitstatus:
+    print('The following files are untracked by git:')
+    print('\n'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch
+# problem is I don't want to pollute my commit history with a million autocommits
+# and git is not really designed to commit to branches that are not checked out
+# is this relevant?  https://github.com/bartman/git-wip
+gitCommit(message='AUTOCOMMIT')
 gitrev = io.getGitRevision()
 
+# Helps you step through the metadata of your samples/devices
 meta = io.MetaHandler()
 
 # 2634B : 192.168.11.11
@@ -131,6 +144,7 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
 datafolder = r'C:\data'
 connections = {}
 # Hostname specific settings
+# TODO move this code to a different file (settings.py?), so that it's obvious where the pc specific settings are
 if hostname == 'pciwe46':
     if username == 'hennen':
         datafolder = r'D:\t\ivdata'
@@ -142,9 +156,9 @@ if hostname == 'pciwe46':
                    ('daq', instruments.USB2708HS),
                    ('ts', instruments.EugenTempStage),
                    ('dp', instruments.WichmannDigipot),
-                   ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                    #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600, 'TCPIP::192.168.11.13::inst0::INSTR')]
+                   ('k', instruments.Keithley2600)] # Keithley can be located automatically now
 elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'
@@ -160,14 +174,19 @@ elif hostname == 'pcluebben2':
                    ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
 elif hostname == 'pciwe34':
     # Mark II
-    datafolder = r'F:\Messdaten\hennen'
+    # This computer and whole set up is a massive irredeemable piece of shit
+    # computer crashes when you try to access the data drive
+    # Data drive gets mounted on different letters for some reason
+    # Therefore I will use the operating system drive..
+    #datafolder = r'G:\Messdaten\hennen'
+    datafolder = r'C:\Messdaten\hennen'
     connections = [('et', instruments.Eurotherm2408),
                    #('ps', instruments.Picoscope),
                    #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                    #('daq', instruments.USB2708HS),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600, 'GPIB0::26::INSTR')]
+                   ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
 elif hostname == 'CHMP2':
     datafolder = r'C:\data'
     connections = [('ps', instruments.Picoscope),
@@ -206,7 +225,6 @@ for varname, inst_class, *args in connections:
                 continue
     globalvars[varname] = inst_class(*args)
 
-
 # Default data subfolder -- will reflect the date of the last time this script ran
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
 subfolder = datestr
@@ -241,10 +259,11 @@ class autocaller():
     There's an ipython magic for this, but I only want it to apply to certain functions
     This is only for interactive convenience! Don't use it in a program or a script.
     '''
-    def __init__(self, function):
+    def __init__(self, function, *args):
         self.function = function
+        self.args = args
     def __repr__(self):
-        self.function()
+        self.function(*self.args)
         return 'autocalled ' + self.function.__name__
 
 # Add items to this and they will be appended as metadata to all subsequent measurements
@@ -257,6 +276,11 @@ meta.static['hostname'] = hostname
 pp = autocaller(meta.print)
 n = autocaller(meta.next)
 p = autocaller(meta.previous)
+
+left = autocaller(meta.move_domeb, 'left')
+right = autocaller(meta.move_domeb, 'right')
+up = autocaller(meta.move_domeb, 'up')
+down = autocaller(meta.move_domeb, 'down')
 
 # Plotter
 figs = [None] * 6
@@ -298,6 +322,9 @@ s = autocaller(savedata)
 ###### Interactive measurement functions #######
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
+# TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
+#      could use the same wrapper and just compose a new getdatafunc..
+#      or pass a list of functions as getdatafunc, then smash the results together somehow
 def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
     ''' Activates auto data plotting and saving for wrapped functions '''
     @wraps(func)
@@ -318,12 +345,12 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
                     if live:
                         data = getdatafunc()
                         iplots.updateline(data)
-                    mypause(0.1)
+                    ivplot.mypause(0.1)
                 data = getdatafunc()
                 iplots.updateline(data)
             else:
                 while not donefunc():
-                    mypause(0.1)
+                    ivplot.mypause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
             if autosave:
@@ -333,7 +360,7 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
 
 picoiv = interactive_wrapper(measure.picoiv)
 
-# If keithley is connected ...
+# If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
 if k and hasattr(k, 'query'):
     live = True
