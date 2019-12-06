@@ -507,16 +507,18 @@ def getGitStatus():
     status = [l.strip().split(' ', maxsplit=1) for l in status.split('\n')]
     # I like dict of lists better
     output = {}
-    for l in status:
-        k,v = l
-        if k in output:
-            output[k].append(v)
-        else:
-            output[k] = [v]
+    if any(status[0]):
+        for l in status:
+            k,v = l
+            if k in output:
+                output[k].append(v)
+            else:
+                output[k] = [v]
     return output
 
 def gitCommit(message='AUTOCOMMIT'):
-    output = subprocess.check_output(['git', 'commit', '-a', f'-m \"{message}\"']).decode()
+    # I think it will give an error if there is nothing to commit..
+    output = subprocess.check_output(['git', 'commit', '-a', f'-m {message}']).decode()
     return output
 
 
