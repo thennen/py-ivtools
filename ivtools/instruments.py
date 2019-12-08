@@ -18,15 +18,18 @@ reuse a connection if it exists, EVEN IF THE CLASS DEFINITION ITSELF HAS CHANGED
 One downside is that if you screw up the state somehow, you have to manually delete it to start over.
 But one could add some kind of reset_state flag to __init__ to handle this.
 
-If, in the future, we need multiple instances of the same instrument class, we can implement
-something that detects the appropriate state dict to use.
-
-#TODO make parent class or decorator to implement the borg stuff
+TODO make parent class or decorator to implement the borg stuff.
+Then one could copy-paste these classes and use them without the decorator
 
 Another approach could be to have the module maintain weak references to all instrument instances,
 and have a function that decides whether to instantiate a new instance or return an existing one.
 I tried this for a while and I think it's a worse solution.
 '''
+def ping(host):
+    ping_param = "-n 1"
+    # -c 1 on linux
+    reply = os.popen("ping " + ping_param + " " + host).read()
+    return "TTL=" in reply
 
 # TODO: Maybe split this up into one file per instrument
 
@@ -36,6 +39,7 @@ import time
 import os
 import pandas as pd
 import serial
+import re
 import hashlib
 from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
@@ -374,7 +378,7 @@ class Picoscope(object):
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
-                pretrig=0.0, chrange=None, choffset=None, chcoupling=None, chatten=None):
+                pretrig=0.0, delay=0, chrange=None, choffset=None, chcoupling=None, chatten=None):
         '''
         Set up picoscope to capture from specified channel(s).
 
@@ -386,8 +390,11 @@ class Picoscope(object):
         Won't actually start capture until picoscope receives the specified trigger event.
 
         It will trigger automatically after a timeout.
+        I think if you set timeout_ms to zero this means an infinite timeout
 
         ch can be a list of characters, i.e. ch=['A','B'].
+
+        pretrig is in fraction of the whole sampling time, delay is in samples..
 
         if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
         the settings will be taken from the global variables
@@ -448,8 +455,8 @@ class Picoscope(object):
                                probeAttenuation=chatten[c],
                                VOffset=choffset[c],
                                enabled=True)
-        # Set up the trigger.  Will timeout in 30s
-        self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, timeout_ms=timeout_ms)
+        # Set up trigger.  Will timeout in 30s
+        self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, delay=delay, timeout_ms=timeout_ms)
         self.ps.runBlock(pretrig)
         return actualfreq
 
@@ -491,14 +498,12 @@ class Picoscope(object):
         data['RANGE'] = {ch:chr for ch, chr in zip(Channels, self.ps.CHRange)}
         data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, self.ps.CHOffset)}
         data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, self.ps.ProbeAttenuation)}
+        CHCOUPLINGS = dict(map(reversed, self.ps.CHANNEL_COUPLINGS.items()))
+        data['COUPLINGS'] = {ch:CHCOUPLINGS[chc] for ch, chc in zip(Channels, self.ps.CHCoupling)}
         data['sample_rate'] = self.ps.sampleRate
         # Specify samples captured, because this field will persist even after splitting for example
         # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
         data['nsamples_capture'] = len(data[ch[0]])
-        # Using the current state of the global variables to record what settings were used
-        # I don't know a way to get couplings from the picoscope instance
-        # TODO: pull request a change to setChannel to fix this
-        data['COUPLINGS'] = dict(self.coupling)
         # Sample frequency?
         self.data = data
         return data
@@ -1188,13 +1193,38 @@ class Keithley2600(object):
     because .list_resources() does not show them.
     This is the only reason Keithley2600 is Borg
     '''
-    def __init__(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
+    def __init__(self, addr=None):
+        valid_ip_re = "^(([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])\.){3}([0-9]|[1-9][0-9]|1[0-9]{2}|2[0-4][0-9]|25[0-5])$"
+        if addr is None:
+            # I don't trust the resource manager at all, but you didn't pass an address so..
+            # I assume you are using ethernet
+            ipresources = [r for r in visa_rm.list_resources() if r.startswith('TCPIP')]
+            #print('Looking for ip address for Keithley...')
+            for ipr in ipresources:
+                # Sorry..
+                ip = re.search(valid_ip_re[1:-1] +':', ipr)[0][:-1]
+                # I'm not sure how to check if it is a keithley or not
+                # for now, if it is in resource_manager and replies to a ping, it's a keithley
+                up = ping(ip)
+                if up:
+                    #print(f'{ip} is up. Is it keithley?')
+                    addr = ipr
+                    break
+        elif re.match(valid_ip_re, addr):
+            # You passed an ip alone and we will turn it into a gpib string
+            addr = f'TCPIP::{addr}::inst0::INSTR'
+
         try:
             statename = '_'.join((self.__class__.__name__, addr))
             if statename not in settings.instrument_states:
                 settings.instrument_states[statename] = {}
+                say_if_successful = True
+            else:
+                say_if_successful = False
             self.__dict__ = settings.instrument_states[statename]
             self.connect(addr)
+            if say_if_successful:
+                print('Keithley connection successful at {}'.format(addr))
         except Exception as E:
             print('Keithley connection failed at {}'.format(addr))
             print(E)
@@ -1261,7 +1291,7 @@ class Keithley2600(object):
 
         self.run_lua_lines(cmdlist)
 
-    def iv(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+    def iv(self, vlist, Irange=0, Ilimit=0, Plimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
         '''
         range = 0 enables autoranging
         Wraps the SweepVList lua function defined on keithley
@@ -1269,7 +1299,7 @@ class Keithley2600(object):
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay, Vrange))
+        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {}, {})'.format(Irange, Ilimit, Plimit, nplc, delay, Vrange))
 
     def iv_4pt(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
         '''
@@ -1436,14 +1466,151 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
 
-    def set_channel_state(self, channel='A', state=True):
-        ch = channel.lower()
-        if state:
-            self.write('smu{0}.source.output = smu{0}.OUTPUT_ON'.format(ch))
+    ### Wrap some of the lua commands directly
+    ### There are a million commands so this is not a complete wrapper..
+    ### See the 900 page pdf reference manual..
+
+    def _set_or_query(self, prop, val=None, bool=False):
+        # Sets or returns the current val
+        if val is None:
+            reply = self.query(f'print({prop})').strip()
+            return self._string_parser(reply)
         else:
-            self.write('smu{0}.source.output = smu{0}.OUTPUT_OFF'.format(ch))
+            if bool:
+                val = 1 if val else 0
+            self.write(f'{prop} = {val}')
+            return None
 
+    def _string_parser(self, string):
+        # Since we have to communicate via strings and these string might just be numeric..
+        # Convert to numeric?
+        def will_it_float(value):
+            try:
+                float(value)
+                return True
+            except ValueError:
+                return False
+        if string.isnumeric():
+            return int(string)
+        elif will_it_float(string):
+            return float(string)
+        else:
+            # dunno
+            return string
 
+    def output(self, state=None, ch='A'):
+        # Set output state
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.output', state, bool=True)
+
+    def measure_autorangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.autorangei', state, bool=True)
+
+    def measure_autorangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.autorangev', state, bool=True)
+
+    def measure_rangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.rangei', state)
+
+    def measure_rangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.rangev', state)
+
+    def measurei(self, ch='A'):
+        # Request a current reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.i())')
+        return float(reply)
+
+    def measurev(self, ch='A'):
+        # Request a voltage reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.v())')
+        return float(reply)
+
+    def measurer(self, ch='A'):
+        # Request a resistance reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.r())')
+        return float(reply)
+
+    def measurep(self, ch='A'):
+        # Request a power reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.p())')
+        return float(reply)
+
+    def measureiv(self, ch='A'):
+        # Request a current and voltage reading
+        ch = ch.lower()
+        reply = self.query(f'print(smu{ch}.measure.iv())')
+        i, v = reply.split('\t')
+        return float(i), float(v)
+
+    def source_autorangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.autorangev', state, bool=True)
+
+    def source_autorangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.autorangei', state, bool=True)
+
+    def source_func(self, state=None, ch='A'):
+        # 'i' or 'v'
+        # 1 for volts, 0 for current
+        ch = ch.lower()
+        if state is not None:
+            if state.lower() == 'i':
+                state = 0
+            elif state.lower() == 'v':
+                state = 1
+        reply = self._set_or_query(f'smu{ch}.source.func', state)
+        if reply is None: return None
+        return 'v' if int(reply) else 'i'
+
+    def source_leveli(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.leveli', state)
+
+    def source_levelv(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.levelv', state)
+
+    def source_limiti(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.limiti', state)
+
+    def source_limitv(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.limitv', state)
+
+    def source_limitp(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.limitp', state)
+
+    def source_rangei(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.rangei', state)
+
+    def source_rangev(self, state=None, ch='A'):
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.source.rangev', state)
+
+    def sense(self, state=None, ch='A'):
+        # local (2-wire), remote (4-wire)
+        # 0 for local, 1 for remote
+        ch = ch.lower()
+        if state is not None:
+            if state.lower() == 'local':
+                state = 0
+            elif state.lower() == 'remote':
+                state = 1
+        reply = self._set_or_query(f'smu{ch}.source.func', state)
+        if reply is None: return None
+        return 'remote' if int(reply) else 'local'
 
 #########################################################
 # UF2000 Prober #########################################

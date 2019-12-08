@@ -104,6 +104,14 @@ class MetaHandler(object):
     def __delitem__(self, key):
         self.meta[key].__delitem__
 
+    def select(self, i):
+        # select the ith row of the metadataframe
+        self.i = i
+        if type(self.df) == pd.DataFrame:
+            self.meta = self.df.iloc[self.i]
+        else:
+            self.meta = self.df[self.i]
+
     def load_sample_table(self, **filters):
         ''' load data (pd.read_excel) from some tabular format'''
         fpath='sampledata/CeRAM_Depositions.xlsx'
@@ -123,8 +131,7 @@ class MetaHandler(object):
         if 'sample_name' in df:
             filenamekeys = ['sample_name'] + filenamekeys
         self.prettykeys = None
-        self.i = 0
-        self.meta = df.iloc[0]
+        self.select(0)
         self.df = df
 
     # TODO: Unified metadata loader that just loads every possible sample
@@ -135,6 +142,7 @@ class MetaHandler(object):
         use keys X, Y, width_nm, device
         Making no attempt to load sample information, because it's a huge machine unreadable excel file mess.
         all kwargs will just be added to all metadata
+        # TODO add formatter for filename '{}_{}_{}_{}_{}' or whatever
         '''
         nanoxbarfile = os.path.join(self.moduledir, 'sampledata/nanoxbar.pkl')
         nanoxbar = pd.read_pickle(nanoxbarfile)
@@ -150,9 +158,8 @@ class MetaHandler(object):
         filenamekeys = ['id']
         if 'sample_name' in kwargs:
             filenamekeys = ['sample_name'] + filenamekeys
-        self.i = 0
         self.df = devicemetalist
-        self.meta = devicemetalist.iloc[0]
+        self.select(0)
         self.prettykeys = filenamekeys
         self.filenamekeys = filenamekeys
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
@@ -210,8 +217,7 @@ class MetaHandler(object):
         meta_df = meta_df.sort_values(by=sortby)
 
         # Try to convert data types
-        typedict = dict(wafer_number=np.uint8,
-                        coupon=np.uint8,
+        typedict = dict(coupon=np.uint8,
                         sample_number=np.uint16,
                         number_of_dies=np.uint8,
                         cr=np.uint8,
@@ -226,16 +232,127 @@ class MetaHandler(object):
                 if not any(meta_df[k].isnull()):
                     meta_df[k] = meta_df[k].astype(v)
 
-        self.i = 0
         self.df = meta_df
-        self.meta = meta_df.iloc[0]
+        self.select(0)
         self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die_rel', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'die_rel', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
-    def load_DomeB():
-        pass
+    def load_DomeB(self, **kwargs):
+        '''
+        Load wafer information for DomeB
+        if a key is specified which is in the deposition sheet, then try to merge in deposition data
+        Specify lists of keys to match on. e.g. coupon=[23, 24], module=['001H', '014B']
+        '''
+        # Left to right, bottom to top!
+        columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
+                   'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b',
+                   'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                   'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AP', 'AQ',
+                   'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
+                   'A7', 'A8', 'A9', 'A0']
+        rows = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '01', '02', '03', '04', '05', '06',
+                '07', '08', '09', '10', '11', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
+                '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34']
+        deposition_file = os.path.join(self.moduledir, 'sampledata/CeRAM_Depositions.xlsx')
+        domeB_file = os.path.join(self.moduledir, 'sampledata/domeB.pkl')
+
+        deposition_df = pd.read_excel(deposition_file, header=8, skiprows=[9])
+        # Only use info for DomeB wafers
+        deposition_df = deposition_df[deposition_df['wafer_code'] == 'DomeB']
+        domeB_df = pd.DataFrame(pd.read_pickle(domeB_file))
+        # Merge data
+        if any([(k in deposition_df) for k in kwargs.keys()]):
+            # Why is cartesian merge not just available in pandas?
+            domeB_df['key'] = 0
+            deposition_df['key'] = 0
+            meta_df = domeB_df.merge(deposition_df, how='outer', sort=False).drop(columns=['key'])
+        else:
+            meta_df = domeB_df
+
+        # Check that function got valid arguments
+        for key, values in kwargs.items():
+            if key not in meta_df.columns:
+                raise Exception('Key must be in {}'.format(meta_df.columns))
+            if isinstance(values, str) or not hasattr(values, '__iter__'):
+                kwargs[key] = [values]
+
+        #### Filter kwargs ####
+        for key, values in kwargs.items():
+            meta_df = meta_df[meta_df[key].isin(values)]
+        #### Filter devices to be measured #####
+        meta_df = meta_df.dropna(1, 'all')
+
+        # Sort top to bottom, left to right
+        meta_df['icol'] = meta_df.col.apply(columns.index)
+        meta_df['irow'] = meta_df.row.apply(rows.index)
+        meta_df = meta_df.sort_values(by=['icol', 'irow'], ascending=[True, False])#.drop(columns=['icol', 'irow'])
+
+        self.df = meta_df
+        self.select(0)
+        self.prettykeys = ['dep_code', 'sample_number', 'die_rel', 'row', 'col']
+        self.filenamekeys = ['dep_code', 'sample_number', 'row', 'col']
+        print('Loaded metadata for {} devices'.format(len(self.df)))
+        self.print()
+
+    def move_domeb(self, direction='l'):
+        '''
+        Assumes you have domeB metadata loaded into self.df
+        Lets you move left, right, up, down by passing l r u d
+        For interactive use
+        '''
+        lastmeta = self.meta
+        # Left to right, bottom to top!
+        columns = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'J', 'K', 'L', 'M', 'N', 'P', 'Q', 'R', 'S', 'T',
+                   'U', 'V', 'W', 'X', 'Y', 'Z', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', 'a', 'b',
+                   'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
+                   'AA', 'AB', 'AC', 'AD', 'AE', 'AF', 'AG', 'AH', 'AJ', 'AK', 'AL', 'AM', 'AN', 'AP', 'AQ',
+                   'AR', 'AS', 'AT', 'AU', 'AV', 'AW', 'AX', 'AY', 'AZ', 'A1', 'A2', 'A3', 'A4', 'A5', 'A6',
+                   'A7', 'A8', 'A9', 'A0']
+        rows = ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '01', '02', '03', '04', '05', '06',
+                '07', '08', '09', '10', '11', '13', '14', '15', '16', '17', '18', '19', '20', '21', '22',
+                '23', '24', '25', '26', '27', '28', '29', '30', '31', '32', '33', '34']
+        col = self.meta.col
+        row = self.meta.row
+        icol = columns.index(col)
+        irow = rows.index(row)
+        # dumb loop because it's the first thing I thought of
+        i = None
+        while i is None:
+            if direction.lower() in ('left', 'l'):
+                icol -= 1
+            if direction.lower() in ('right', 'r'):
+                icol += 1
+            if direction.lower() in ('up', 'u'):
+                irow += 1
+            if direction.lower() in ('down', 'd'):
+                irow -= 1
+
+            if (icol < 0) or (icol >= len(columns)) or (irow < 0) or (irow >= len(rows)):
+                irow %= len(rows)
+                icol %= len(col)
+                print('Went over edge of coupon -- wrapping around')
+                return
+            newcol = columns[icol]
+            newrow = rows[irow]
+            w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0]
+            if any(w):
+                i = w[0]
+            else:
+                # TODO: don't check every single row/column in between, this can print lots of times in a row
+                print('skipping a device that is not loaded into memory')
+        self.select(i)
+
+        # Highlight keys that have changed
+        hlkeys = []
+        for key in self.meta.keys():
+            if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
+                hlkeys.append(key)
+        print('You have selected this device (index {}):'.format(self.i))
+        # Print some information about the device
+        self.print(hlkeys=hlkeys)
+
 
     def step(self, n):
         ''' Select the another device by taking a step through meta df '''
@@ -248,11 +365,7 @@ class MetaHandler(object):
             print('You are at the end of metadata list')
             return
         else:
-            self.i += n
-            if type(self.df) == pd.DataFrame:
-                self.meta = self.df.iloc[self.i]
-            else:
-                self.meta = self.df[self.i]
+            self.select(meta_i)
 
         # Highlight keys that have changed
         hlkeys = []
@@ -262,13 +375,25 @@ class MetaHandler(object):
         print('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
-        pass
 
     def next(self):
         self.step(1)
 
     def previous(self):
         self.step(-1)
+
+    def goto(self, **kwargs):
+        ''' Assuming you loaded metadata already, this goes to the first row that matches the keys'''
+        mask = np.ones(, bool)len(self.df)
+        for k,v in kwargs:
+            mask &= df[k] == v
+
+        w = np.where(mask)
+        if any(w):
+            i = w[0][0]
+        self.select(i)
+        print('You have selected this device (index {}):'.format(self.i))
+        self.print()
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
@@ -377,7 +502,25 @@ def getGitRevision():
         return rev
 
 def getGitStatus():
-    return subprocess.check_output(['git', 'status', '-z'])
+    # attempt to parse the git status
+    status = subprocess.check_output(['git', 'status', '--porcelain']).decode().strip()
+    status = [l.strip().split(' ', maxsplit=1) for l in status.split('\n')]
+    # I like dict of lists better
+    output = {}
+    if any(status[0]):
+        for l in status:
+            k,v = l
+            if k in output:
+                output[k].append(v)
+            else:
+                output[k] = [v]
+    return output
+
+def gitCommit(message='AUTOCOMMIT'):
+    # I think it will give an error if there is nothing to commit..
+    output = subprocess.check_output(['git', 'commit', '-a', f'-m {message}']).decode()
+    return output
+
 
 def log_ipy(start=True, logfilepath=None):
     '''
@@ -1026,3 +1169,12 @@ def psplitall(path):
             path = parts[0]
             allparts.insert(0, parts[1])
     return allparts
+
+
+def update_depsheet():
+    # Try to get the new deposition sheet
+    moduledir = os.path.split(__file__)[0]
+    localfile = os.path.join(moduledir, r'sampledata\CeRAM_Depositions.xlsx')
+    sourcefile = r'X:\emrl\Pool\Projekte\HGST-CERAM\CeRAM_Depositions.xlsx'
+    print(f'copy {sourcefile} {localfile}')
+    return subprocess.getoutput(f'copy {sourcefile} {localfile}')

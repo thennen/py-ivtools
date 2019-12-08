@@ -407,7 +407,9 @@ def medfilt(data, window=5, columns=('I', 'V')):
 @ivfunc
 def savgolfilt(window, order, columns=None):
     # TODO implement this
-    pass
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
 
 
 @ivfunc
@@ -1798,6 +1800,30 @@ def replace_nanvals(array):
         array[array == nv] = np.nan
     return array
 
+
+def synchronize(data, column='I', to=0):
+    '''
+    NOT DONE!!
+
+    Use correlation to calculate sampling offset of signals
+    All will be synchronized to the nth signal
+
+    could just translate the time arrays, but here we crop the signals
+
+    You can use this to correct your crappy trigger jitter after the fact
+    '''
+    x = iloc(data, to)
+    lags = []
+    for i in len(data):
+        y = iloc(data, i)
+        # Assume they are the same length for now
+        lag = np.argmax(np.correlate(x, y, 'full')) - len(y) # Should be the number of points you need to shift y
+        lags.append(lag)
+
+    newlength = max(abs(lags))
+
+    out = data.copy()
+    # Slice off parts of the dataset to make them align
 
 ### Interactive
 # TODO: dig up some other interactive stuff you have written

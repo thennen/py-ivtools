@@ -18,9 +18,11 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 ### Settings for compliance circuit
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
-MONITOR_PICOCHANNEL = 'A'
 COMPLIANCE_CALIBRATION_FILE = os.path.join(pyivtools_dir, 'compliance_calibration.pkl')
 CCIRCUIT_GAIN = -2000 # common base resistance * differential amp gain
+
+# This is the channel where you are sampling the input waveform
+MONITOR_PICOCHANNEL = 'A'
 
 ### Change this when you change probing circuits - defines how to get from pico channels to I, V
 # circular import?
