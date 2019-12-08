@@ -11,8 +11,12 @@ with everything but your measurement settings not overwritten.
 Therefore you can modify any part of the code/library while making measurements
 and without ever leaving the running program or closing instrument connections.
 
+TODO: fix the %matplotlib thing
 TODO: Maintain a proper database of all the metadata for all the data files created
 TODO: GUI for displaying and changing channel settings, other status information
+TODO: Replace all print() with a logging system and display them with colors
+IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
+IDEA: buy a wireless keypad
 '''
 import numpy
 import numpy as np
@@ -26,6 +30,8 @@ import getpass # to get user name
 import sys
 import time
 import pandas as pd
+# Because it does not autodetect in windows..
+pd.set_option('display.width', 1000)
 import subprocess
 import socket
 from datetime import datetime
