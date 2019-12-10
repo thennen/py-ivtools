@@ -357,6 +357,7 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
                 iplots.newline(data)
             if autosave:
                 savedata(data)
+            measure.beep()
         return data
     return func_with_plotting
 

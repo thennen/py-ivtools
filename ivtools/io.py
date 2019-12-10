@@ -291,7 +291,7 @@ class MetaHandler(object):
 
         self.df = meta_df
         self.select(0)
-        self.prettykeys = ['dep_code', 'sample_number', 'die_rel', 'row', 'col']
+        self.prettykeys = ['dep_code', 'sample_number', 'die_rel', 'row', 'col', 'Resistance', 'gap', 'radius']
         self.filenamekeys = ['dep_code', 'sample_number', 'row', 'col']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
