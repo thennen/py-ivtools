@@ -1291,7 +1291,7 @@ class Keithley2600(object):
 
         self.run_lua_lines(cmdlist)
 
-    def iv(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+    def iv(self, vlist, Irange=0, Ilimit=0, Plimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
         '''
         range = 0 enables autoranging
         Wraps the SweepVList lua function defined on keithley
@@ -1299,7 +1299,7 @@ class Keithley2600(object):
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {})'.format(Irange, Ilimit, nplc, delay, Vrange))
+        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {}, {})'.format(Irange, Ilimit, Plimit, nplc, delay, Vrange))
 
     def iv_4pt(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
         '''
@@ -2434,6 +2434,9 @@ class WichmannDigipot_new(object):
         if not self.connected():
             if addr is None:
                 # Connect to the first thing you see that has Leonardo in the description
+                # This assumes you programmed the microcontroller as Leonardo.
+                # TODO: Figure out how to rename the com device
+                # https://github.com/MHeironimus/ArduinoJoystickLibrary/issues/14
                 matches = list(comgrep('Leonardo'))
                 if any(matches):
                     addr = matches[0].device
