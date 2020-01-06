@@ -2003,7 +2003,7 @@ class USB2708HS(object):
             print('I disallow voltage value {} for analog output {}'.format(volts, ch))
             return
         else:
-            if not suppress_prints:
+            if not persistent_state.suppress_prints:
                 print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
 
         try:

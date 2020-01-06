@@ -148,7 +148,7 @@ def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1
     V_reset_stop and V_set_stop in Volt,
     and regular picoiv-stuff.
     '''
-    path = os.path.join(datadir(),"Endurance_V_set_stop{}_V_reset_stop_{}_Icc_{}_cycles_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(I_CC),cycles,time.strftime('%H%M%S')))
+    path = os.path.join(datadir(),"Endurance_V_set_stop{}_V_reset_stop_{}_Icc_{}_cycles_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(I_CC),cycles,time.strftime('%d%m%y-%H%M%S')))
     if os.path.isfile(path):
         pass
     else:
@@ -177,7 +177,7 @@ def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1
     meta.meta['cycles_per_sweep'] = cycles_per_sweep
     meta.meta['fs'] = fs
     meta.meta['slew_rate'] = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
-    meta.meta['tag'] = 'Endurance'
+    meta.meta['tag'] = 'endurance'
     meta.meta['wfm'] = 'triangular'
     
     for i in range(int(cycles/cycles_per_sweep)):
@@ -204,7 +204,7 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
     Reset Voltage start, stop and increment (negative values *100),
     and regular picoiv-stuff.
     '''
-    path = os.path.join(datadir(),"MatrixMeasurement_Vset{}_{}".format(int(Vset_stop*100),time.strftime('%H%M%S')))
+    path = os.path.join(datadir(),"MatrixMeasurement_Vset{}_{}".format(int(Vset_stop*100),time.strftime('%d%m%y-%H%M%S')))
     if os.path.isfile(path):
         pass
     else:
@@ -241,7 +241,7 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
             meta.meta['wfm'] = 'triangular'
             meta.meta['tag'] = 'matrix'
             meta.meta['I_cc'] = I_CC
-            meta.meta['V_reset_stop'] = Vreset_Stop
+            meta.meta['V_reset_stop'] = V_RESET_STOP/100
             meta.meta['Vset_stop'] = Vset_stop
             meta.meta['cycles'] = n_cycle
             meta.meta['duration'] = duration
@@ -278,7 +278,27 @@ def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_in
         iplots.clear()
         d=picoiv(tri(Vset_stop, Vreset_Stop/100), duration=duration, n=n_cycle, fs=fs,smartrange=False)
         #ivplot.interactive_figs.clear()
+        
+        meta.meta['wfm'] = 'triangular'
+        meta.meta['tag'] = 'matrix'
+        meta.meta['I_cc'] = I_CC
+        meta.meta['V_reset_stop'] = Vreset_Stop/100
+        meta.meta['Vset_stop'] = Vset_stop
+        meta.meta['cycles'] = n_cycle
+        meta.meta['duration'] = duration
+        meta.meta['fs'] = fs
+        
         savedata(d,filepath = os.path.join(path, '{}_Icc_{}_Vreset_{}_Vset_{}'.format(meta.filename(),I_CC,Vreset_Stop,int(Vset_stop*100))))
+        
+        del meta.meta['wfm']
+        del meta.meta['tag']
+        del meta.meta['I_cc']
+        del meta.meta['V_reset_stop']
+        del meta.meta['Vset_stop']
+        del meta.meta['cycles']
+        del meta.meta['duration']
+        del meta.meta['fs']
+            
     tb.msg_to_nils("Matrix measurement: Done!")
             
     #return(appended_data_out)
@@ -287,7 +307,7 @@ def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop,
     """
     Performs multiple measurements, where the duration of the pulses are varied. 
     """
-    path = os.path.join(datadir(),"Slewrate_V_set_stop{}_V_reset_stop_{}_Icc_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(Icc),time.strftime('%H%M%S')))
+    path = os.path.join(datadir(),"Slewrate_V_set_stop{}_V_reset_stop_{}_Icc_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(Icc),time.strftime('%d%m%y-%H%M%S')))
     if os.path.isfile(path):
         pass
     else:
@@ -308,17 +328,17 @@ def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop,
         
         iplots.clear()
         print('Adjusting Picoscope range and offset:')
-        temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=smartrange)
+        temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=False)
         adjust_picorange(temp)
         
-        meta.meta['I_cc'] = I_CC
+        meta.meta['I_cc'] = Icc
         meta.meta['V_set_stop'] = V_set_stop
         meta.meta['V_reset_stop'] = V_reset_stop
         meta.meta['duration'] = duration
         meta.meta['cycles'] = n
         meta.meta['fs'] = fs
         meta.meta['slew_rate'] = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
-        meta.meta['tag'] = 'VarySlewRate'
+        meta.meta['tag'] = 'slew_rate'
         meta.meta['wfm'] = 'triangular'
         
         print('V_set_stop = {}'.format(V_set_stop))
@@ -333,7 +353,7 @@ def vary_slew_rate(Icc, V_reset_stop, V_set_stop, Duration_start, Duration_stop,
         d = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=n, fs=fs,smartrange=False)
         savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),Icc,int(V_reset_stop*100),int(V_set_stop*100),i)))
         
-        del meta.meat['I_cc']
+        del meta.meta['I_cc']
         del meta.meta['V_set_stop']
         del meta.meta['V_reset_stop']
         del meta.meta['duration']
@@ -448,10 +468,10 @@ def save_matrix_analysis(analysis_data,filepath=None,drop=None):
     if filepath is None:
         filepath_df = os.path.join(datadir(), meta.filename()+'_matrix_analysis_df')
         filepath_csv=os.path.join(datadir(), meta.filename()+'_matrix_analysis_csv.csv')
-    print('Data to be saved in {}'.format(filepath_df))
+    #print('Data to be saved in {}'.format(filepath_df))
     io.write_pandas_pickle(meta.attach(analysis_data), filepath_df, drop=drop)
     analysis_data.to_csv(path_or_buf=filepath_csv)
-    print('Wrote ',format(filepath_csv))
+    #print('Wrote ',format(filepath_csv))
      
 def plot_flat_matrix_analysis(analysis_data,saveoption='No',filepath='None'):
 

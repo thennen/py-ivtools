@@ -218,8 +218,9 @@ subfolder = datestr
 if len(sys.argv) > 1:
     # Can give a folder name with command line argument
     subfolder += '_' + sys.argv[1]
-print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
-print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+if not persistent_state.suppress_prints:
+    print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+    print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 io.makefolder(datafolder, subfolder)
 def datadir():
     return os.path.join(datafolder, subfolder)

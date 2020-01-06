@@ -77,7 +77,8 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
 
     if maxsamples is not None and maxsamples < lenX:
         # Down sample data
-        print('Downsampling data for plot!!')
+        if not persistent_state.suppress_prints:
+            print('Downsampling data for plot!!')
         step = int(lenX/maxsamples)
         X = X[np.arange(0, lenX, step)]
         Y = Y[np.arange(0, lenY, step)]
@@ -874,7 +875,8 @@ def chplotter(data, ax=None, **kwargs):
     if len(channels) > 0:
         lendata = len(data[channels[0]])
         if lendata > 100000:
-            print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
+            if not persistent_state.suppress_prints:
+                print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
             step = lendata // 50000
             #plotdata = analyze.decimate(data, step, columns=channels)
             plotdata = analyze.sliceiv(data, step=step, columns=channels)

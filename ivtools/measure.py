@@ -437,7 +437,7 @@ def set_compliance(cc_value):
     fn = settings.COMPLIANCE_CALIBRATION_FILE
     abspath = os.path.abspath(fn)
     if os.path.isfile(abspath):
-        if not suppress_prints:
+        if not settings.suppress_prints:
             print('Reading calibration from file {}'.format(abspath))
     else:
         raise Exception('No compliance calibration.  Run calibrate_compliance().')
@@ -483,7 +483,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         offsets = []
         if len(offsets_list) == 0:
             if startfromfile:
-                if not suppress_prints:
+                if not settings.suppress_prints:
                     print('Reading calibration from file {}'.format(os.path.abspath(fn)))
                 with open(fn, 'rb') as f:
                     cc = pickle.load(f)
@@ -517,13 +517,14 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
 
     with open(fn, 'wb') as f:
         pickle.dump(output, f)
-    print('Wrote calibration to ' + fn)
+    if not settings.suppress_prints:
+        print('Wrote calibration to ' + fn)
 
     return compensations
 
 def plot_compliance_calibration():
     fn = 'compliance_calibration.pkl'
-    if not suppress_prints:
+    if not settings.suppress_prints:
         print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
         cc = pickle.load(f)
@@ -576,7 +577,8 @@ def measure_compliance():
 
     # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
     settings.INPUT_OFFSET = Amean
-    print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
+    if not settings.suppress_prints:
+        print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
 
     # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
 
@@ -584,7 +586,8 @@ def measure_compliance():
     #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
     ccurrent =  Bmean / (gain)
     settings.COMPLIANCE_CURRENT = ccurrent
-    print('Measured compliance current: {} A'.format(ccurrent))
+    if not settings.suppress_prints:
+        print('Measured compliance current: {} A'.format(ccurrent))
 
     return (ccurrent, Amean)
 

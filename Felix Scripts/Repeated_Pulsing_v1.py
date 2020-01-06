@@ -2,12 +2,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
-import itertools
+#import itertools
 import matplotlib as mpl
-import time
+import time as time
 import Telegram_bot as tb
-import scipy
-import traceback
+import scipy as sc
+import traceback as traceback
 
 pd.options.mode.chained_assignment = None
 
@@ -156,7 +156,7 @@ def bring_device_to_HRS(HRS_min,HRS_max,filepath, V_RESET_max=-1.8,t_RESET=1e-3,
                     
         if iterations>=max_iterations:
             print('Maximal amount of iterations reached!')
-            return False
+            return ESET_tracer, current_res
         else:
             print('\n---Resistance found {}---\n'.format(current_res))
             return RESET_tracer, current_res
@@ -173,14 +173,14 @@ def save_RESET_stair(RESET_stair_data,filepath=None,drop=None):
     else:
         filepath_df = os.path.join(filepath, meta.filename()+'_RESET_stair_df')
         filepath_csv=os.path.join(filepath, meta.filename()+'_RESET_stair_csv.csv')
-    print('Data to be saved in {}'.format(filepath_df))
+        #print('Data to be saved in {}'.format(filepath_df))
     io.write_pandas_pickle(meta.attach(RESET_stair_data), filepath_df, drop=drop)
     RESET_stair_data.to_csv(path_or_buf=filepath_csv)
-    print('Wrote ',format(filepath_csv))
+    #print('Wrote ',format(filepath_csv))
 
 
 def rem_over_sampling(data, factor, columns=['I','V']):
-    decarrays = [scipy.signal.decimate(x=data[key], q=factor, zero_phase=True) for key in columns]
+    decarrays = [sc.signal.decimate(x=data[key], q=factor, zero_phase=True) for key in columns]
     dataout = {c:dec for c,dec in zip(columns, decarrays)}
     analyze.add_missing_keys(data, dataout)
     if 'downsampling' in dataout:
@@ -262,22 +262,24 @@ def analysis_Nils(SET_pulse, t_pulse,V_SET, resistance_pre,resistance_after,tran
 
 def analyze_SET_transient(SET_pulse,trans_low=0.2,trans_high=0.8):
     if np.max(SET_pulse['I_corr'])>1e-4:
-    
-        mask_over0V=SET_pulse['V']>0.5*np.max(SET_pulse['V'])
-        i_puls_begin=np.argmax(mask_over0V==True)
-        i_set = np.argmax(np.gradient(SET_pulse['I_corr'][mask_over0V]))+i_puls_begin #ist das maximum des Gradienten wirklich der beginn des pulses?
-    
-        t_SET=SET_pulse['t'][i_set]-SET_pulse['t'][i_puls_begin]
-    
-        i_trans_begin=np.argwhere(SET_pulse['I_corr'][mask_over0V]>trans_low*(np.max(SET_pulse['I_corr'][mask_over0V])-np.mean(SET_pulse['I_corr'][i_puls_begin:i_set]))) #wieso hier den mittelwert abziehen?
-        i_trans_end=np.argwhere(SET_pulse['I_corr'][mask_over0V]>trans_high*(np.max(SET_pulse['I_corr'][mask_over0V])-np.mean(SET_pulse['I_corr'][i_puls_begin:i_set])))
-        t_trans=SET_pulse['t'][i_trans_begin]-SET_pulse['t'][i_trans_end]
+        try:
+            mask_over0V=SET_pulse['V']>0.5*np.max(SET_pulse['V'])
+            i_puls_begin=np.argmax(mask_over0V==True)
+            i_set = np.argmax(np.gradient(SET_pulse['I_corr'][mask_over0V]))+i_puls_begin #ist das maximum des Gradienten wirklich der beginn des pulses?
         
-        if i_trans_begin>i_puls_begin:
-            I_preset=np.mean(SET_pulse['I_corr'][i_puls_begin:i_trans_begin]) #wenn der anstieg des pulses mit einbezogen wird, wird der wert nach oben gezogen
-        else:
-            I_preset=0
-        return t_SET,t_trans,I_preset, SET_pulse['t'][i_trans_begin],SET_pulse['t'][i_trans_end], SET_pulse['t'][i_set], SET_pulse['t'][i_puls_begin]
+            t_SET=SET_pulse['t'][i_set]-SET_pulse['t'][i_puls_begin]
+        
+            i_trans_begin=np.argwhere(SET_pulse['I_corr'][mask_over0V]>trans_low*(np.max(SET_pulse['I_corr'][mask_over0V])-np.mean(SET_pulse['I_corr'][i_puls_begin:i_set]))) #wieso hier den mittelwert abziehen?
+            i_trans_end=np.argwhere(SET_pulse['I_corr'][mask_over0V]>trans_high*(np.max(SET_pulse['I_corr'][mask_over0V])-np.mean(SET_pulse['I_corr'][i_puls_begin:i_set])))
+            t_trans=SET_pulse['t'][i_trans_begin]-SET_pulse['t'][i_trans_end]
+            
+            if i_trans_begin>i_puls_begin:
+                I_preset=np.mean(SET_pulse['I_corr'][i_puls_begin:i_trans_begin]) #wenn der anstieg des pulses mit einbezogen wird, wird der wert nach oben gezogen
+            else:
+                I_preset=0
+            return t_SET,t_trans,I_preset, SET_pulse['t'][i_trans_begin],SET_pulse['t'][i_trans_end], SET_pulse['t'][i_set], SET_pulse['t'][i_puls_begin]
+        except: np.nan,np.nan,np.nan, np.nan, np.nan, np.nan, np.nan
+            
     else:
         return np.nan,np.nan,np.nan, np.nan, np.nan, np.nan, np.nan
     
@@ -285,7 +287,7 @@ def analyze_SET_transient(SET_pulse,trans_low=0.2,trans_high=0.8):
 def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_read=1e-3,V_RESET_max=-1.8,t_RESET=1e-3,V_RESET_start=-0.4, V_RESET_step=0.05, max_iterations=20):
     
 
-    filepath = os.path.join(datadir(),'RepeatedPulsing_{}_HRSmin_{}_HRSmax_{}_Vset_{}'.format(time.strftime('%d%m%y-%H%M%S'),HRS_min,HRS_max,V_SET))
+    filepath = os.path.join(datadir(),'RepeatedPulsing_{}_HRSmin_{}_HRSmax_{}_Vset_{}'.format(time.strftime('%d%m%y-%H%M%S'),HRS_min,HRS_max,round(V_SET,3)))
     
     if os.path.isfile(filepath):
         pass
@@ -305,7 +307,7 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
     tmp = pd.DataFrame() #needed for the analysis_Nils func
     
     while (Done == False) and (i <= max_iterations):
-        print('Starting cycle {} of {}'.format(int(i),int(n_SET)))
+        print('Starting cycle {} of minimum {} and maximum {}'.format(int(i),int(n_SET),max_iterations))
         ##first reset the device to the desired HRS and save the staircase data
         RESET_stair, resistance_pre=bring_device_to_HRS(HRS_min=HRS_min,filepath=filepath,HRS_max=HRS_max,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_read=V_read,t_read=t_read,V_RESET_start=V_RESET_start,V_RESET_step=V_RESET_step,max_iterations=max_iterations)
         iplots.clear()
@@ -335,6 +337,7 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         meta.meta['V_RESET_start'] = V_RESET_start
         meta.meta['V_RESET_step'] = V_RESET_step
         meta.meta['current_res'] = resistance_pre
+        meta.meta['resistance_pre'] = resistance_pre
         meta.meta['wfm'] = 'square'
         meta.meta['fs'] = 1.25e9
         
@@ -354,6 +357,9 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         current_offset=np.mean(SET['I'][mask_0V])
         SET['I_corr']=SET['I']-current_offset
         resistance_after=read_resistance(V_read=V_read,t_read=t_read)
+        
+        meta.meta['resistance_after'] = resistance_after
+        
         try:
             t_SET,t_trans,I_preset, t_trans_begin, t_trans_end, t_pulse_begin_I, t_pulse_begin_V = analyze_SET_transient(SET)
         except:
@@ -363,7 +369,7 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         my_dict = {'V_SET':V_SET,'t_pulse':t_pulse,'R_pre':resistance_pre,'R_post':resistance_after,'t_set':t_SET,'t_trans':t_trans,'I_preset':I_preset,'t_pulse_begin_V':t_trans_begin,'t_pulse_begin_I':t_trans_end,'t_trans_low':t_pulse_begin_I,'t_trans_high':t_pulse_begin_V}
         newentry_df=pd.DataFrame(my_dict, index=[0])
         
-        SET_data = pd.concat([SET_data,newentry_df],ignore_index=True)
+        SET_data = pd.concat([SET_data,newentry_df],ignore_index=True, sort=True)
         iplots.clear()
 
         SET = pd.Series(SET)
@@ -388,6 +394,8 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
     SET_data.to_pickle(os.path.join(filepath,'Analysis_F.df'))
     tmp.to_pickle(os.path.join(filepath,'Analysis_N.df'))
     
+    del meta.meta['resistance_pre']
+    del meta.meta['resistance_after']
     del meta.meta['V_pulse']
     del meta.meta['t_pulse']
     del meta.meta['duty'] 
@@ -419,6 +427,7 @@ def matrix_repeat_SET_pulse_from_HRS(V_SET_start,V_SET_end,V_SET_step,n_SET,t_pu
                 cur_HRS_max = i+HRS_step
                 tb.msg_to_nils("RepeatedPulsing measurement: V_set = {} HRS_min {} HRS_max {}!".format(j,i,i+HRS_step))
                 _, _, _ = repeat_SET_pulse_from_HRS(V_SET=j,n_SET=n_SET,t_pulse=t_pulse,HRS_min=cur_HRS_min,HRS_max=cur_HRS_max,V_read=V_read,t_read=t_read,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_RESET_start=V_RESET_start, V_RESET_step=V_RESET_step, max_iterations=max_iterations)
+        tb.msg_to_nils("RepeatedPulsing measurement: Done!")
     except:
         tb.msg_to_nils("RepeatedPulsing measurement: Error!")
         traceback.print_exc()
