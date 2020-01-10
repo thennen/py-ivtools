@@ -1299,7 +1299,14 @@ class Keithley2600(object):
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {}, {})'.format(Irange, Ilimit, Plimit, nplc, delay, Vrange))
+        self.write(f'SweepVList(sweeplist, {Irange}, {Ilimit}, {Plimit}, {nplc}, {delay}, {Vrange})')
+
+    def iv_python(self, vlist, Irange=0, Ilimit=0, Plimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+        self.reset()
+
+        # Configure the SMU
+        self.reset_ch('A')
+
 
     def iv_4pt(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
         '''
@@ -1466,7 +1473,7 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
 
-    ### Wrap some of the lua commands directly
+    ### Wrap some of the individual lua commands directly
     ### There are a million commands so this is not a complete wrapper..
     ### See the 900 page pdf reference manual..
 
@@ -1611,6 +1618,13 @@ class Keithley2600(object):
         reply = self._set_or_query(f'smu{ch}.source.func', state)
         if reply is None: return None
         return 'remote' if int(reply) else 'local'
+
+    def reset(self):
+        self.write('reset()')
+
+    def reset_ch(self, ch='A'):
+        ch = ch.lower()
+        self.write(f'smu{ch}.reset()')
 
 #########################################################
 # UF2000 Prober #########################################
@@ -2483,8 +2497,8 @@ class WichmannDigipot_new(object):
             return False
 
     def writeCMD(self,textstr):
-        ''' 
-        Debugging tool. 
+        '''
+        Debugging tool.
         Send serial Command and print returned answer like a Serial monitor
         '''
         self.write((textstr+' \n').encode())
@@ -2505,8 +2519,8 @@ class WichmannDigipot_new(object):
 
     def set_wiper(self, state, n=1):
         '''
-        Change the digipot wiper setting 
-        n=1 is main potentiometer on chip 
+        Change the digipot wiper setting
+        n=1 is main potentiometer on chip
         0 ist only used in parallel/series Mode
         '''
         self.write(f'wiper {n} {state}'.encode())
