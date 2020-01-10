@@ -156,14 +156,17 @@ def bring_device_to_HRS(HRS_min,HRS_max,filepath, V_RESET_max=-1.8,t_RESET=1e-3,
                     
         if iterations>=max_iterations:
             print('Maximal amount of iterations reached!')
-            return ESET_tracer, current_res
+            return RESET_tracer, current_res, False
+        elif V_RESET<=V_RESET_max:
+            print('Resistance window was not reached!')
+            return RESET_tracer, current_res, False
         else:
             print('\n---Resistance found {}---\n'.format(current_res))
-            return RESET_tracer, current_res
+            return RESET_tracer, current_res, True
     else:
         print('\n---Resistance already was correct.---\n')          
         RESET_tracer=np.array([[0,current_res]])
-        return RESET_tracer, current_res
+        return RESET_tracer, current_res, True
         
 def save_RESET_stair(RESET_stair_data,filepath=None,drop=None):
     RESET_stair_data=pd.DataFrame(RESET_stair_data,columns={'V_RESET','R_read'})
@@ -241,6 +244,8 @@ def analysis_Nils(SET_pulse, t_pulse,V_SET, resistance_pre,resistance_after,tran
         current_offset=np.mean(x['I'][mask_0V])
         x['I_corr']=x['I']-current_offset            
         
+        
+        
         t_V, t_I, t_set = _calc_t_set(x)
         t_trans_low, t_trans_high, t_trans, twenty_I, eighty_I = _calc_t_trans(data=x,trans_low=trans_low,trans_high=trans_high)
         
@@ -309,14 +314,12 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
     while (Done == False) and (i <= max_iterations):
         print('Starting cycle {} of minimum {} and maximum {}'.format(int(i),int(n_SET),max_iterations))
         ##first reset the device to the desired HRS and save the staircase data
-        RESET_stair, resistance_pre=bring_device_to_HRS(HRS_min=HRS_min,filepath=filepath,HRS_max=HRS_max,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_read=V_read,t_read=t_read,V_RESET_start=V_RESET_start,V_RESET_step=V_RESET_step,max_iterations=max_iterations)
+        RESET_stair, resistance_pre, is_in_HRS_window=bring_device_to_HRS(HRS_min=HRS_min,filepath=filepath,HRS_max=HRS_max,V_RESET_max=V_RESET_max,t_RESET=t_RESET,V_read=V_read,t_read=t_read,V_RESET_start=V_RESET_start,V_RESET_step=V_RESET_step,max_iterations=max_iterations)
         iplots.clear()
-        if isinstance(RESET_stair,bool):
-            return None #in case it was not possible to bring the device to the desired HRS window
-        else:
-            save_RESET_stair(RESET_stair, filepath=filepath)
+        save_RESET_stair(RESET_stair, filepath=filepath)
+        if not is_in_HRS_window:
+            return None, None, None #in case it was not possible to bring the device to the desired HRS window
             
-        
         ##then apply read-SET-read
         measure.set_compliance(7e-4)
         #resistance_pre=read_resistance(V_read=V_read,t_read=t_read)
