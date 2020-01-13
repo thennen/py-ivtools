@@ -18,6 +18,7 @@ import os
 import visa
 from functools import partial
 import pickle
+import signal
 
 ########### Picoscope - Rigol AWG testing #############
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
