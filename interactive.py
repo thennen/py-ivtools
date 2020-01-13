@@ -339,8 +339,8 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
     def measfunc_interactive(*args, **kwargs):
         if autosave:
             # Protect the following code from keyboard interrupt until after the data is saved
-            interrupt = measure.controlled_interrupt()
-            interrupt.__enter__()
+            nointerrupt = measure.controlled_interrupt()
+            nointerrupt.start()
         if getdatafunc is None:
             # There is no separate function to get data
             # Assume that the measurement function returns the data
@@ -367,8 +367,8 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 iplots.newline(data)
         if autosave:
             savedata(data)
-            interrupt.breakpoint()
-            interrupt.__exit__()
+            nointerrupt.breakpoint()
+            nointerrupt.stop()
         measure.beep()
         return data
     return measfunc_interactive

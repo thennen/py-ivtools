@@ -1291,11 +1291,16 @@ class controlled_interrupt():
     ctrl-c behavior will be returned to normal at the end of the with block
     '''
     def __init__(self):
-        self.interruptable = False
+        self.interruptable = None
     def __enter__(self):
-        signal.signal(signal.SIGINT, self.int_handler)
+        self.start()
         return self
     def __exit__(self, *args):
+        self.stop()
+    def start(self):
+        signal.signal(signal.SIGINT, self.int_handler)
+        self.interruptable = False
+    def stop(self):
         # Now you can use "ctrl+c" as usual.
         signal.signal(signal.SIGINT, signal.default_int_handler)
     def int_handler(self, signalNumber, frame):
@@ -1303,6 +1308,7 @@ class controlled_interrupt():
             signal.default_int_handler()
         else:
             print('Not safe to interrupt! Will interrupt at next opportunity.')
+            print('Press ctrl-c again to override')
             self.interruptable = True
     def breakpoint(self):
         if self.interruptable:
