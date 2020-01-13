@@ -1279,3 +1279,30 @@ def text_to_speech_thread(text):
             tts_engine.say(text)
             tts_engine.runAndWait()
     ttsthread = Threader()
+
+
+class controlled_interrupt():
+    '''
+    Allows you to protect code from keyboard interrupt using a context manager.
+    Potential safe break points can be individually specified by breakpoint().
+    If a ctrl-c is detected during protected execution, the code will be interrupted at the next break point.
+    You can always press ctrl-c TWICE to bypass this protection and interrupt immediately.
+    ctrl-c behavior will be returned to normal at the end of the with block
+    '''
+    def __init__(self):
+        self.interruptable = False
+    def __enter__(self):
+        signal.signal(signal.SIGINT, self.int_handler)
+        return self
+    def __exit__(self, *args):
+        # Now you can use "ctrl+c" as usual.
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    def int_handler(self, signalNumber, frame):
+        if self.interruptable:
+            signal.default_int_handler()
+        else:
+            print('Not safe to interrupt! Will interrupt at next opportunity.')
+            self.interruptable = True
+    def breakpoint(self):
+        if self.interruptable:
+            raise KeyboardInterrupt

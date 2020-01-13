@@ -333,20 +333,24 @@ s = autocaller(savedata)
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
-def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autosave=True):
-    ''' Activates auto data plotting and saving for wrapped functions '''
-    @wraps(func)
-    def func_with_plotting(*args, **kwargs):
-        # Call function as normal
+def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True):
+    ''' Activates auto data plotting and saving for wrapped measurement functions '''
+    @wraps(measfunc)
+    def measfunc_interactive(*args, **kwargs):
+        if autosave:
+            # Protect the following code from keyboard interrupt until after the data is saved
+            interrupt = measure.controlled_interrupt()
+            interrupt.__enter__()
         if getdatafunc is None:
-            data = func(*args, **kwargs)
-            savedata(data)
+            # There is no separate function to get data
+            # Assume that the measurement function returns the data
+            data = measfunc(*args, **kwargs)
             # Plot the data
             iplots.newline(data)
         else:
             # Measurement function is different from getting data function
             # This gives the possibility for live plotting
-            func(*args, **kwargs)
+            measfunc(*args, **kwargs)
             if live:
                 iplots.newline()
                 while not donefunc():
@@ -361,11 +365,13 @@ def interactive_wrapper(func, getdatafunc=None, donefunc=None, live=False, autos
                     ivplot.mypause(0.1)
                 data = getdatafunc()
                 iplots.newline(data)
-            if autosave:
-                savedata(data)
-            measure.beep()
+        if autosave:
+            savedata(data)
+            interrupt.breakpoint()
+            interrupt.__exit__()
+        measure.beep()
         return data
-    return func_with_plotting
+    return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
 
