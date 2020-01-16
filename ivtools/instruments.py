@@ -2434,6 +2434,9 @@ class WichmannDigipot_new(object):
         if not self.connected():
             if addr is None:
                 # Connect to the first thing you see that has Leonardo in the description
+                # This assumes you programmed the microcontroller as Leonardo.
+                # TODO: Figure out how to rename the com device
+                # https://github.com/MHeironimus/ArduinoJoystickLibrary/issues/14
                 matches = list(comgrep('Leonardo'))
                 if any(matches):
                     addr = matches[0].device

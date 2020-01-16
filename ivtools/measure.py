@@ -18,6 +18,7 @@ import os
 import visa
 from functools import partial
 import pickle
+import signal
 
 ########### Picoscope - Rigol AWG testing #############
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
@@ -1279,3 +1280,36 @@ def text_to_speech_thread(text):
             tts_engine.say(text)
             tts_engine.runAndWait()
     ttsthread = Threader()
+
+
+class controlled_interrupt():
+    '''
+    Allows you to protect code from keyboard interrupt using a context manager.
+    Potential safe break points can be individually specified by breakpoint().
+    If a ctrl-c is detected during protected execution, the code will be interrupted at the next break point.
+    You can always press ctrl-c TWICE to bypass this protection and interrupt immediately.
+    ctrl-c behavior will be returned to normal at the end of the with block
+    '''
+    def __init__(self):
+        self.interruptable = None
+    def __enter__(self):
+        self.start()
+        return self
+    def __exit__(self, *args):
+        self.stop()
+    def start(self):
+        signal.signal(signal.SIGINT, self.int_handler)
+        self.interruptable = False
+    def stop(self):
+        # Now you can use "ctrl+c" as usual.
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    def int_handler(self, signalNumber, frame):
+        if self.interruptable:
+            signal.default_int_handler()
+        else:
+            print('Not safe to interrupt! Will interrupt at next opportunity.')
+            print('Press ctrl-c again to override')
+            self.interruptable = True
+    def breakpoint(self):
+        if self.interruptable:
+            raise KeyboardInterrupt

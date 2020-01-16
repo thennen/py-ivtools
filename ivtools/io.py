@@ -291,7 +291,7 @@ class MetaHandler(object):
 
         self.df = meta_df
         self.select(0)
-        self.prettykeys = ['dep_code', 'sample_number', 'die_rel', 'row', 'col']
+        self.prettykeys = ['dep_code', 'sample_number', 'die_rel', 'row', 'col', 'Resistance', 'gap', 'radius']
         self.filenamekeys = ['dep_code', 'sample_number', 'row', 'col']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
@@ -384,16 +384,18 @@ class MetaHandler(object):
 
     def goto(self, **kwargs):
         ''' Assuming you loaded metadata already, this goes to the first row that matches the keys'''
-        mask = np.ones(, bool)len(self.df)
-        for k,v in kwargs:
-            mask &= df[k] == v
+        mask = np.ones(len(self.df), bool)
+        for k,v in kwargs.items():
+            mask &= self.df[k] == v
 
         w = np.where(mask)
         if any(w):
             i = w[0][0]
-        self.select(i)
-        print('You have selected this device (index {}):'.format(self.i))
-        self.print()
+            self.select(i)
+            print('You have selected this device (index {}):'.format(self.i))
+            self.print()
+        else:
+            print('No matching devices found')
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
