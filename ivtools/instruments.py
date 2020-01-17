@@ -3033,8 +3033,7 @@ class EugenTempStage(object):
             return False
 
     def analogOut(self, voltage):
-        ''' Tell arduino to output a voltage on pin 9 '''
-        # Arduino will take the set voltage in bits.
+        ''' Tell arduino to output a voltage for the DAC '''
         vmax = 5
         numbits = 12
         # Find the closest value that can be output.
@@ -3046,8 +3045,7 @@ class EugenTempStage(object):
         return actualvoltage
 
     def analogIn(self, channel):
-        # Function to get Voltage from Bridge
-        # Arduino will return the voltage in bits
+        ''' Function to get Voltage from Bridge, Arduino reads Voltage on PIN A1'''
         vmax = 5
         numbits = 10
         vstep = round(vmax / (2**numbits - 1), 5)# 5 /1023
@@ -3057,11 +3055,10 @@ class EugenTempStage(object):
         reply = self.conn.readline().decode()
         adc_value = float(reply.split(',')[-1].strip().strip(';'))
         voltage = adc_value * vstep
-        # print('Sent command to read analog input on pin {}'.format(channel))
         return voltage
 
     def set_temperature(self, temp):
-        #Temperature Setpoint Function, should be between 0-100Celsius
+        '''Temperature Setpoint Function, should be between 0-100Celsius'''
 
         if temp > 100:
             print('Its too HOT! DANGERZONE!')
@@ -3073,12 +3070,12 @@ class EugenTempStage(object):
             volt_bruch = volt_zaehler / volt_nenner
             volt_set = volt_bruch * self.opamp_gain
             temp_set = self.analogOut(volt_set)
-            #print('Sent command to output {0:.3f} Volt'.format(temp_set))
             print('Temperature set to {0:.2f} \u00b0C'.format(temp))
         else:
             print('Its too COLD! Can not do that :-/')
 
     def read_temperature(self):
+        '''Function which reads temperature'''
         r_1 = self.r_1
         r_3 = self.r_3
         r_4 = self.r_4

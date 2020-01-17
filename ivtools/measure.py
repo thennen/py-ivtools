@@ -18,6 +18,7 @@ import os
 import visa
 from functools import partial
 import pickle
+import signal
 
 ########### Picoscope - Rigol AWG testing #############
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
@@ -903,21 +904,29 @@ def digipot_test(plot=True):
     return data
 
 def digipot_calibrate(plot=True):
-    # Connect keithley to digipot to measure the resistance values
+    '''
+    Connect keithley to digipot to measure the resistance values
+    Can be done by contacting something conductive or smashing the needles together in the air
+
+    configured for the single pot mode, not parallel or series
+    '''
     dp = instruments.WichmannDigipot()
     k = instruments.Keithley2600()
     if plot:
         fig, ax = plt.subplots()
         ax.set_yscale('log')
+        ax.plot(np.arange(34), dp.Rlist, marker='.', label='current calibration')
+        ax.set_xlabel('Pot setting')
+        ax.set_ylabel('Resistance [Ohm]')
         plt.show()
-        ax.plot(np.arange(34), dp.Rlist, marker='.')
+        plt.pause(.1)
 
     dp.set_bypass(0)
     data = []
     for w,Rnom in dp.Rmap.items():
         dp.set_wiper(w) # Should have the necessary delay built in
         # Apply a volt, measure current
-        k.iv([1], Irange=0, Ilimit=10e-3, nplc=10)
+        k.iv([1], Irange=0, Ilimit=10e-3, nplc=1)
         while not k.done():
             plt.pause(.1)
         d = k.get_data()
@@ -1279,3 +1288,36 @@ def text_to_speech_thread(text):
             tts_engine.say(text)
             tts_engine.runAndWait()
     ttsthread = Threader()
+
+
+class controlled_interrupt():
+    '''
+    Allows you to protect code from keyboard interrupt using a context manager.
+    Potential safe break points can be individually specified by breakpoint().
+    If a ctrl-c is detected during protected execution, the code will be interrupted at the next break point.
+    You can always press ctrl-c TWICE to bypass this protection and interrupt immediately.
+    ctrl-c behavior will be returned to normal at the end of the with block
+    '''
+    def __init__(self):
+        self.interruptable = None
+    def __enter__(self):
+        self.start()
+        return self
+    def __exit__(self, *args):
+        self.stop()
+    def start(self):
+        signal.signal(signal.SIGINT, self.int_handler)
+        self.interruptable = False
+    def stop(self):
+        # Now you can use "ctrl+c" as usual.
+        signal.signal(signal.SIGINT, signal.default_int_handler)
+    def int_handler(self, signalNumber, frame):
+        if self.interruptable:
+            signal.default_int_handler()
+        else:
+            print('Not safe to interrupt! Will interrupt at next opportunity.')
+            print('Press ctrl-c again to override')
+            self.interruptable = True
+    def breakpoint(self):
+        if self.interruptable:
+            raise KeyboardInterrupt
