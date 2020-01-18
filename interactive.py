@@ -319,8 +319,9 @@ def savedata(data=None, filepath=None, drop=None):
             data = d
     if filepath is None:
         filepath = os.path.join(datadir(), meta.filename())
-    # TODO: metadata might have already been attached by the interactive_wrapper.  This doesn't cause any problems, right?
-    io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
+    # io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
+    # meta will be attached already if you used interactive_wrapper..
+    io.write_pandas_pickle(data, filepath, drop=drop)
     # TODO: append metadata to a sql table
 # just typing s will save the d variable
 s = autocaller(savedata)
