@@ -345,6 +345,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             # There is no separate function to get data
             # Assume that the measurement function returns the data
             data = measfunc(*args, **kwargs)
+            data = meta.attach(data)
             # Plot the data
             iplots.newline(data)
         else:
@@ -359,11 +360,13 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                         iplots.updateline(data)
                     ivplot.mypause(0.1)
                 data = getdatafunc()
+                data = meta.attach(data)
                 iplots.updateline(data)
             else:
                 while not donefunc():
                     ivplot.mypause(0.1)
                 data = getdatafunc()
+                data = meta.attach(data)
                 iplots.newline(data)
         if autosave:
             savedata(data)
