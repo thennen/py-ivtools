@@ -88,6 +88,7 @@ class Picoscope(object):
             self.atten = self._PicoAttenuation(self)
             self.coupling = self._PicoCoupling(self)
             self.range = self._PicoRange(self)
+            self.BWlimit = self.PicoBWLimit(self)
         if connect:
             self.connect()
 
@@ -312,6 +313,15 @@ class Picoscope(object):
                 # If we didn't make it to the bottom of the last set of conditions
                 print(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
 
+    class _PicoBWLimit(_PicoSetting):
+        # Used to limit the bandwidth of a particular channel to 20 MHz using an internal ANALOG filter (I hope)
+        def __init__(self, parent):
+            parent._PicoSetting.__init__(self, parent)
+            self['A'] = 0
+            self['B'] = 0
+            self['C'] = 0
+            self['D'] = 0
+
 
     def squeeze_range(self, data, padpercent=0, ch=['A', 'B', 'C', 'D']):
         '''
@@ -378,7 +388,8 @@ class Picoscope(object):
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
-                pretrig=0.0, delay=0, chrange=None, choffset=None, chcoupling=None, chatten=None):
+                pretrig=0.0, delay=0,
+                chrange=None, choffset=None, chcoupling=None, chatten=None, chbwlimit=None):
         '''
         Set up picoscope to capture from specified channel(s).
 
@@ -442,6 +453,7 @@ class Picoscope(object):
         choffset = global_replace(choffset, self.offset)
         chcoupling = global_replace(chcoupling, self.coupling)
         chatten = global_replace(chatten, self.atten)
+        chbwlimit = global_replace(chbwlimit, self.BWlimit)
 
         actualfreq, max_samples = self.ps.setSamplingFrequency(actualfreq, nsamples)
         print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
@@ -454,6 +466,7 @@ class Picoscope(object):
                                VRange=chrange[c],
                                probeAttenuation=chatten[c],
                                VOffset=choffset[c],
+                               BWLimited=chbwlimit[c],
                                enabled=True)
         # Set up trigger.  Will timeout in 30s
         self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, delay=delay, timeout_ms=timeout_ms)
