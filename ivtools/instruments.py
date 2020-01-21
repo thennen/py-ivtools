@@ -255,6 +255,13 @@ class Picoscope(object):
 
             self[channel] = newvalue
 
+        def invert(self):
+            # multiplies all offsets by -1
+            self['A'] *= -1
+            self['B'] *= -1
+            self['C'] *= -1
+            self['D'] *= -1
+
     class _PicoAttenuation(_PicoSetting):
         def __init__(self, parent):
             parent._PicoSetting.__init__(self, parent)
@@ -352,6 +359,7 @@ class Picoscope(object):
         Just uses minimim and maximum values of the signal, therefore you could just pass (min, max), too
         Don't pass int8 signals, would then need channel information to convert to V
         TODO: Use an offset that includes zero if it doesn't require increasing the range
+        TODO: fix the error in logic leading to incompatible range-offset pairs
         '''
         # Consider coupling!
         # Consider the attenuation!
