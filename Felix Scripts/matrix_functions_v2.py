@@ -5,6 +5,7 @@ from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
 import itertools
 import Telegram_bot as tb
+from tqdm import tqdm
 
 pd.options.mode.chained_assignment = None
 
@@ -180,7 +181,7 @@ def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1
     meta.meta['tag'] = 'endurance'
     meta.meta['wfm'] = 'triangular'
     
-    for i in range(int(cycles/cycles_per_sweep)):
+    for i in trange(int(cycles/cycles_per_sweep)):
         iplots.clear()
         d=picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=cycles_per_sweep, fs=fs,smartrange=False)
         savedata(meta.attach(d),filepath = os.path.join(path, '{}_Icc_{}_V_reset_stop_{}_V_set_stop_{}_part_{}'.format(meta.filename(),I_CC,int(V_reset_stop*100),int(V_set_stop*100),i)))
@@ -197,7 +198,89 @@ def endurance(I_CC, V_reset_stop, V_set_stop, cycles=10000, cycles_per_sweep = 1
     del meta.meta['wfm']
     tb.msg_to_nils("Endurance measurement: Done!")
 
+ 
+def device_destroyer(I_CC, V_reset_stop, V_set_stop, measurement_cycles=1000, cycles_per_sweep=1e5, cycles_total=1e8, measurement_duration=1e-3, duration=1e-4, fs=1.25e6):
+    path = os.path.join(datadir(),"Long_Endurance_V_set_stop{}_V_reset_stop_{}_Icc_{}_cycles_total_{}_{}".format(int(V_set_stop*100),int(V_reset_stop*100),int(I_CC),cycles_total,time.strftime('%d%m%y-%H%M%S')))
+    if os.path.isfile(path):
+        pass
+    else:
+        os.mkdir(path)
+        
+    path2 = os.path.join(path,'_low_resolution'.format())
+    if os.path.isfile(path2):
+        pass
+    else:
+        os.mkdir(path2)
+        
+    set_compliance(I_CC*1e-6)
     
+    ps.range.b = 5
+    ps.offset.b = 0
+    ps.range.a = 5
+    ps.offset.a = 0
+    temp = picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=1, fs=fs,smartrange=False)
+    ps.squeeze_range(temp,padpercent=0.5)
+    if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
+        ps.range.b=5
+        ps.offset.b=0
+    
+    #if cycles_per_sweep/100 > 1:
+    #    fs=int(fs*100/cycles_per_sweep)
+    #    print('Downsizing sampling rate, due to memory. New sampling rate: {}'.format(fs))
+    
+    packages_of_100 = measurement_cycles/100
+    
+    meta.meta['I_cc'] = I_CC
+    meta.meta['V_set_stop'] = V_set_stop
+    meta.meta['V_reset_stop'] = V_reset_stop
+    meta.meta['duration'] = duration
+    meta.meta['cycles_total'] = cycles_total
+    meta.meta['cycles_per_sweep'] = cycles_per_sweep
+    meta.meta['fs'] = fs
+    meta.meta['slew_rate'] = (2*abs(V_reset_stop)+2*abs(V_set_stop))/duration
+    meta.meta['measurement_cycles'] = measurement_cycles
+    meta.meta['measurement_slew_rate'] = (2*abs(V_reset_stop)+2*abs(V_set_stop))/measurement_duration
+    meta.meta['measurement_duration'] = measurement_duration
+    meta.meta['measurement_fs'] = 1.25e9
+    meta.meta['measurement_cycles_total'] = measurement_cycles
+    meta.meta['measurement_cycles_per_package'] = 100
+    meta.meta['tag'] = 'long_endurance'
+    meta.meta['wfm'] = 'triangular'
+    
+    for i in tqdm(range(int(cycles_total//cycles_per_sweep))):
+        
+        d=measure.picoiv(tri(V_set_stop, V_reset_stop), duration=duration, n=cycles_per_sweep, fs=fs,smartrange=False)
+        savedata(meta.attach(d),filepath = os.path.join(path2, '{}_cycles_{}'.format(meta.filename(),(i+1)*cycles_per_sweep).zfill(5)))
+        
+        iplots.clear()
+        for j in range(int(packages_of_100)):
+            d=picoiv(tri(V_set_stop, V_reset_stop), duration=measurement_duration, n=100, fs=1.25e9,smartrange=False)
+            savedata(meta.attach(d),filepath = os.path.join(path, '{}_Measurement_ after_{}_cycles_part_{}'.format(meta.filename(),(i+1)*cycles_per_sweep, j)))
+    
+        if i%10 == 0:
+            [R1,R2] = analyze.resistance_states_fit(d, v_low=0.1, v_high=0.3)
+            tb.msg_to_nils("min HRS {} median HRS {} max HRS {} min LRS {} median LRS {} max LRS {}".format(np.min(R1),np.median(R1),np.max(R1),np.min(R2),np.median(R2),np.max(R2)))
+        
+
+    
+    del meta.meta['I_cc']
+    del meta.meta['V_set_stop']
+    del meta.meta['V_reset_stop']
+    del meta.meta['duration']
+    del meta.meta['cycles_total']
+    del meta.meta['cycles_per_sweep']
+    del meta.meta['fs']
+    del meta.meta['slew_rate']
+    del meta.meta['measurement_slew_rate']
+    del meta.meta['measurement_duration']
+    del meta.meta['measurement_fs']
+    del meta.meta['measurement_cycles']
+    del meta.meta['tag']
+    del meta.meta['wfm']
+    del meta.meta['measurement_cycles_per_package']
+    
+    tb.msg_to_nils("Long Endurance measurement: Done!")
+ 
 def measure_matrix(ICC_Start,ICC_Stop,ICC_inc,Vreset_Start,Vreset_Stop,Vreset_inc,Vset_stop, n_cycle=100, duration=1e-3,fs=1.25e9):
     '''
     Define Current Compliance Start, Stop and Increment in micro-A,

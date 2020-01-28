@@ -18,23 +18,85 @@ def adjust_picorange(sweep_data):
     Sets the best possible range at a given offset of a sweep.
     """
     possible_ranges = [0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0]
-    max_offsets = [.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20]
+    max_offsets =     [.5,    .5,  .5, 2.5, 2.5, 2.5, 20,    20, 20]
     
     ps.squeeze_range(sweep_data,padpercent=0.5)
-    if max_offsets[possible_ranges.index(ps.range.b)] < ps.offset.b:
-        range_index = np.where(possible_ranges>=ps.offset.b)[0][0]
+    if max_offsets[possible_ranges.index(ps.range.b)] < abs(ps.offset.b):
+        range_index = np.where(max_offsets>=abs(ps.offset.b))[0][0]
         ps.range.b=possible_ranges[range_index]
     
 def read_resistance(V_read=0.3,t_read=1e-3):
     read_signal=measure.tri(V_read,-V_read)
+    default_rng()
     read=picoiv(read_signal,duration=t_read, n=1, fs=1.25e9,smartrange=False)
     #print('\nFirst read: {}'.format(analyze.resistance_states_fit(read,v_low=0.01,v_high=V_read)))
     adjust_picorange(read)
+    iplots.clear()
     read=picoiv(read_signal,duration=t_read, n=1, fs=1.25e9,smartrange=False)
     [R1,R2]=analyze.resistance_states_fit(read,v_low=0.01,v_high=V_read)#-0.05)
     print('\nResistances were found to be {} and {}\n'.format(R1, R2))
     R_mean=(R1+R2)/2
     return(R_mean)
+    
+def save_resistance(real_resistance, V_read=0.3, t_read=1e-3, fs=1.25e9, cycles=100):
+    
+    filepath = os.path.join(datadir(),'{}_Resistance_Check_{}_Ohm'.format(time.strftime('%d%m%y-%H%M%S'),real_resistance))
+    
+    if os.path.isfile(filepath):
+        pass
+    else:
+        os.mkdir(filepath)
+
+    read_signal=measure.tri(V_read,-V_read)
+    
+    for j in range(100,800,100):
+
+        set_compliance(j*1e-6)
+        #time.sleep(0.5)
+        default_rng()
+        read=picoiv(read_signal,duration=t_read, n=1, fs=1.25e9,smartrange=False)
+        adjust_picorange(read)
+        
+        [R1,R2]=analyze.resistance_states_fit(read,v_low=0.01,v_high=V_read)
+        print('First read: ',R1, R2, ps.range.b, ps.offset.b)
+        
+        for i in range(int(cycles)):
+            iplots.clear()
+            
+            meta.meta['offset_b'] = ps.offset.b
+            meta.meta['range_b'] = ps.range.b
+            meta.meta['actual_resistance'] = real_resistance
+            meta.meta['I_cc'] = j
+            meta.meta['V_read'] = V_read
+            meta.meta['duration'] = t_read
+            meta.meta['cycles'] = cycles
+            meta.meta['fs'] = fs
+            meta.meta['tag'] = 'resistance_accuracy'
+            meta.meta['wfm'] = 'triangular'
+            #time.sleep(0.5)
+            read=picoiv(read_signal,duration=t_read, n=1, fs=1.25e9,smartrange=False)
+            [R1,R2]=analyze.resistance_states_fit(read,v_low=0.01,v_high=V_read)
+            
+            meta.meta['read_1'] = R1
+            meta.meta['read_2'] = R2
+
+            savedata(meta.attach(read),filepath = os.path.join(filepath, '{}_Icc_{}'.format(meta.filename(),j)))
+            
+            print(R1, R2, ps.range.b, ps.offset.b)
+            
+            del meta.meta['offset_b']
+            del meta.meta['range_b']
+            del meta.meta['I_cc']
+            del meta.meta['V_read']
+            del meta.meta['duration']
+            del meta.meta['cycles']
+            del meta.meta['fs']
+            del meta.meta['tag']
+            del meta.meta['wfm']
+            del meta.meta['read_1']
+            del meta.meta['read_2']
+            del meta.meta['actual_resistance']
+
     
 def bring_device_to_HRS(HRS_min,HRS_max,filepath, V_RESET_max=-1.8,t_RESET=1e-3,V_read=0.3,t_read=1e-3,V_RESET_start=-0.4, V_RESET_step=0.05, max_iterations=100):
     iterations = 0
@@ -47,9 +109,10 @@ def bring_device_to_HRS(HRS_min,HRS_max,filepath, V_RESET_max=-1.8,t_RESET=1e-3,
         print('---Start RESET stair---')
         RESET_tracer=[[0,current_res]]
    
-        while resistance_correct==False and iterations<=max_iterations and V_RESET>V_RESET_max:
+        while resistance_correct==False and iterations<=max_iterations and V_RESET>=V_RESET_max:
             #print('Loop 1 resisatnce_correct {} iterations {} maxiterations {} V_reset {} V_resetmax{}'.format(resistance_correct,iterations,max_iterations,V_RESET,V_RESET_max))
-            if current_res>HRS_max:
+            #if current_res>HRS_max:
+            if current_res>HRS_max or iterations == max_iterations-1 or V_RESET-V_RESET_step<=V_RESET_max:
                 print('---Do one SET---')
                 iterations += 1
                 
@@ -98,9 +161,9 @@ def bring_device_to_HRS(HRS_min,HRS_max,filepath, V_RESET_max=-1.8,t_RESET=1e-3,
                 del meta.meta['V_set_stop']
                 del meta.meta['V_reset_stop']
                 del meta.meta['fs']
+
                 
-                
-            while current_res<HRS_min and V_RESET>V_RESET_max and resistance_correct==False:
+            while current_res<HRS_min and V_RESET>=V_RESET_max and resistance_correct==False:
                 #print('Loop 2 current_res {} HRS_min {} V_RESET {} V_RESET_max {} resistance_correct{}'.format(current_res,HRS_min,V_RESET,V_RESET_max,resistance_correct))
                 print('---Do RESET:{}---'.format(V_RESET))
                 iterations += 1
@@ -183,6 +246,9 @@ def save_RESET_stair(RESET_stair_data,filepath=None,drop=None):
 
 
 def rem_over_sampling(data, factor, columns=['I','V']):
+    """
+    Downsample the signal after applying an anti-aliasing filter.
+    """
     decarrays = [sc.signal.decimate(x=data[key], q=factor, zero_phase=True) for key in columns]
     dataout = {c:dec for c,dec in zip(columns, decarrays)}
     analyze.add_missing_keys(data, dataout)
@@ -244,7 +310,12 @@ def analysis_Nils(SET_pulse, t_pulse,V_SET, resistance_pre,resistance_after,tran
         current_offset=np.mean(x['I'][mask_0V])
         x['I_corr']=x['I']-current_offset            
         
-        
+        """
+        duty = SET_pulse.duty
+        pulse_length = SET_pulse.t_pulse
+
+        mask = (x['t'] > (duty-duty*.5-0.03)*pulse_length)*(x['t'] < (duty+duty*.5+0.03)*pulse_length)
+        """
         
         t_V, t_I, t_set = _calc_t_set(x)
         t_trans_low, t_trans_high, t_trans, twenty_I, eighty_I = _calc_t_trans(data=x,trans_low=trans_low,trans_high=trans_high)
@@ -327,6 +398,8 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         default_rng()
         measure.smart_range(-0.1,V_SET,ch=['A'])
         
+        #ps.range.b = 1. #ergibt es Sinn die range auf 5 zu setzen?? passiert in default range -> vllt. besser 1, aufgrund des offsets
+        
         meta.meta['V_pulse'] = V_SET
         meta.meta['t_pulse'] = t_pulse
         meta.meta['duty'] = duty
@@ -350,8 +423,8 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         SET=picoiv(wfm=pulse_signal,n=1,fs=1.25e9,duration=(1/duty)*t_pulse,autosmoothimate=False)
         
         factor = len(SET['V'])/t_pulse/SET['sample_rate']
-        factor = np.round(factor,0)
-        factor = int(factor)
+        factor = int(np.round(factor,0))
+        #factor = int(factor)
         SET = rem_over_sampling(SET, factor, columns=['I','V'])
         SET['t'] = analyze.maketimearray(SET, ignore_downsampling=True)
         
@@ -384,7 +457,8 @@ def repeat_SET_pulse_from_HRS(V_SET,n_SET,t_pulse,HRS_min,HRS_max,V_read=0.3,t_r
         
         i += 1
         
-        if resistance_after < 50000:
+        #if resistance_after < 50000:
+        if np.max(SET['I_corr'])>1e-4:
             savedata(SET,filepath=os.path.join(filepath,'Set_{}'.format(i)), attach=False, read_only=False)
             iterator += 1
         else:

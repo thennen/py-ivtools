@@ -1928,6 +1928,7 @@ def resistance_states_fit(iv, v_low=0.1, v_high=0.3):
     i = iv['I'][mask]
     r1 = np.polyfit(i[grad>0],v[grad>0],1)[0]
     r2 = np.polyfit(i[grad<0],v[grad<0],1)[0]
+
     return [r1, r2]
     
 @ivfunc
@@ -2011,13 +2012,17 @@ def split_Matrix_dataframe(data, Icc, Vreset):
 
 ### END HERE FC
 
+### NQ
 
-
-
-
-
-
-
-
-
-
+def rem_over_sampling(data, factor, columns=['I','V']):
+    """
+    Downsample the signal after applying an anti-aliasing filter.
+    """
+    decarrays = [sc.signal.decimate(x=data[key], q=factor, zero_phase=True) for key in columns]
+    dataout = {c:dec for c,dec in zip(columns, decarrays)}
+    analyze.add_missing_keys(data, dataout)
+    if 'downsampling' in dataout:
+        dataout['downsampling'] *= factor
+    else:
+        dataout['downsampling'] = factor
+    return dataout

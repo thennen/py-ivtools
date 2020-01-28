@@ -762,7 +762,7 @@ class RigolDG5000(object):
         Send signal to rigol to trigger immediately.  Make sure that trigsource is set to MAN:
         trigsource('MAN')
         '''
-        if self.trigsource() != 'MAN':
+        if self.trigsource(ch=ch) != 'MAN':
             raise Exception('You must first set trigsource to MANual')
         else:
             self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
@@ -1050,7 +1050,7 @@ class RigolDG5000(object):
         TODO: I think some of these waveforms have additional options.  Add them
         !! Will idle at the offset level in between pulses !!
         '''
-        self.setup_burstmode(n=n)
+        self.setup_burstmode(n=n, ch=ch)
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, phase=phase, ch=ch)
         self.output(True, ch=ch)
         # Trigger rigol
@@ -1062,7 +1062,7 @@ class RigolDG5000(object):
         self.burst(False, ch=ch)
         self.output(True)
 
-    def pulse_arbitrary(self, waveform, duration, n=1, ch=1, offset=0, interp=True):
+    def pulse_arbitrary(self, waveform, duration, n=1, ch=1, offset=0, interp=True, ch_trig=1):
         '''
         Generate n pulses of the input waveform on Rigol AWG.
         Trigger immediately.
@@ -1075,7 +1075,7 @@ class RigolDG5000(object):
         self.setup_burstmode(n=n, ch=ch)
         self.output(True, ch=ch)
         # Trigger rigol
-        self.trigger(ch=ch)
+        self.trigger(ch=ch_trig)
 
     def DC(self, value, ch=1):
         '''
@@ -1095,6 +1095,17 @@ class RigolDG5000(object):
         self.amplitude(.01, ch=ch)
         # Limited to +- 9.995
         self.offset(value, ch=ch)
+    
+    
+    def DC_ON(self, value, ch=1):
+        self.load_builtin_wfm(shape='DC', freq=100)
+        self.offset(value, ch=ch)
+        # Trigger rigol
+        #self.trigsource(source='MAN', ch=1)
+        #self.trigger(ch=ch)
+        self.output(True, ch=ch)
+
+        
 
 
 #########################################################
@@ -2018,6 +2029,14 @@ class USB2708HS(object):
         #ul.d_config_port(0, DigitalPortType.AUXPORT, DigitalIODirection.OUT)
         self.ul.d_config_bit(0, self.enums.DigitalPortType.AUXPORT, 8, self.enums.DigitalIODirection.OUT)
         self.ul.d_bit_out(0, self.enums.DigitalPortType.AUXPORT, ch, val)
+    
+    def analog_scan_out(self):
+        """
+        Experimenting
+        """
+        pass
+        #num_points = 10
+        #self.ul.a_out_scan(board_num=0, low_chan=0, high_chan=0, num_points=num_points, rate=10000, ul_range=40, options=0, memhandle=self.ul.win_buf_alloc_32(num_points))
 
 
 #########################################################

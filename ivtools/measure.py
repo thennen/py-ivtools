@@ -426,7 +426,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 # (Compliance control voltage)      DAC0 - 12kohm - 12kohm
 # (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
 
-def set_compliance(cc_value):
+def set_compliance(cc_value, to_return=False):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
     Right now we use static lookup tables for compliance and compensation values.
@@ -450,6 +450,8 @@ def set_compliance(cc_value):
     daq.analog_out(1, volts=DAC1)
     settings.COMPLIANCE_CURRENT = cc_value
     settings.INPUT_OFFSET = 0
+    if to_return:
+        return DAC0, DAC1
 
 def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     '''
@@ -522,8 +524,8 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
 
     return compensations
 
-def plot_compliance_calibration():
-    fn = 'compliance_calibration.pkl'
+def plot_compliance_calibration(fn='compliance_calibration.pkl'):
+    #fn = fn
     if not settings.suppress_prints:
         print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
@@ -987,3 +989,92 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
     pulsearray = np.ones(ontime) * vpulse
     postarray = np.ones(posttime) * endval
     return np.concatenate((prearray, pulsearray, postarray))
+    
+    
+    
+
+
+############# NQ ##################################
+def ccircuit_current_pulse_toVV(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    For the early version of compliance circuit, which needs manual compensation
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    CC = settings.COMPLIANCE_CURRENT
+    IO = settings.INPUT_OFFSET
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    #B = datain['B']
+    C = datain['C']
+    #gain = settings.CCIRCUIT_GAIN
+    dataout['Va'] = dtype(A - IO)
+    dataout['Vb'] = dtype(C - IO)
+    #dataout['V_formula'] = 'CHA - IO'
+    dataout['INPUT_OFFSET'] = IO
+    #dataout['I'] = 1e3 * (B - C) / R
+    # Current circuit has 0V output in compliance, and positive output under compliance
+    # Unless you know the compliance value, you can't get to current, because you don't know the offset
+    # TODO: Figure out if/why this works
+    #dataout['I'] = dtype(-B / gain + CC)
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    dataout['units'] = {'Va':'V', 'Vb':'V'}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
+    # parameters for conversion
+    #dataout['Rout_conv'] = R
+    dataout['CC'] = CC
+    #dataout['gain'] = gain
+    return dataout
+
+
+def current_pulse(V_ch1=2, cc_value=600, fs=1.25e9, duration=1e-3, n=1):
+    """
+    In experimental state
+    """
+    from mcculw import ul
+    from mcculw import enums
+    
+    board_num = 0
+    ao_range = enums.ULRange.BIP10VOLTS
+    
+    rigol = instruments.RigolDG5000()
+    #ps = instruments.Picoscope()
+    
+    channels=['A', 'C']
+    pretrig=0
+    
+    DAC0, DAC1 = set_compliance(cc_value*1e-6, to_return=True)
+    
+    #volts = ul.to_eng_units(board_num, ao_range, dacval)
+    V_ch2 = (1-DAC0/2048)*10
+    waveform = square(V_ch2, duty=.75, length=2**14, startval=0, endval=0, startendratio=1)
+    
+    rigol.DC_ON(V_ch1, ch=1)
+    #actual_fs = ps.capture(ch=channels, freq=fs, duration=n*duration, pretrig=pretrig)
+    rigol.trigsource(source='MAN', ch=1)
+    rigol.pulse_arbitrary(waveform, duration, n=n, ch=2, offset=0, interp=True, ch_trig=1)
+
+    #chdata = ps.get_data(channels, raw=True)
+    rigol.output(False, ch=1)
+    """
+    chdata = ccircuit_current_pulse_toVV(chdata)
+    
+    factor = len(chdata['Va'])/duration/chdata['sample_rate']
+    factor = int(np.round(factor,0))
+    analyze.rem_over_sampling(chdata, factor, columns=['Va','Vb'])
+    chdata['t'] = analyze.maketimearray(chdata, ignore_downsampling=True)
+    chdata['V_ch1'] = V_ch1
+    chdata['cc_value'] = cc_value
+    chdata['duration'] = duration
+    chdata['t_pusle'] = duty*duration
+    chdata['V_ch2'] = V_ch2
+    chdata['n_shots'] = n
+    #chdata['I'] = (chdata['Vb']/10-1)*-2048
+    
+    return chdata
+    """
