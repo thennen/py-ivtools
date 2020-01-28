@@ -132,6 +132,9 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
 
     if Xscalar and Yscalar:
         # X and Y were scalars
+        if 'c' in kwargs:
+            # Stop matplotlib warning (maybe)
+            kwargs['c'] = [kwargs['c']]
         # Not actually a line, might lead to really strange bugs..
         line = ax.scatter(X, Y, **kwargs)
     else:
