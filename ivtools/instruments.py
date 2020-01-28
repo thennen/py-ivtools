@@ -88,7 +88,7 @@ class Picoscope(object):
             self.atten = self._PicoAttenuation(self)
             self.coupling = self._PicoCoupling(self)
             self.range = self._PicoRange(self)
-            self.BWlimit = self.PicoBWLimit(self)
+            self.BWlimit = self._PicoBWLimit(self)
         if connect:
             self.connect()
 
