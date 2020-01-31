@@ -131,7 +131,7 @@ class Picoscope(object):
         possible_ranges_1M = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
         max_offsets_1M = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
         possible_ranges_50 = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
-        max_offsets_50 = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 2.5))
+        max_offsets_50 = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 0.5))
         def __init__(self, parent):
             self._parent = parent
 
@@ -198,7 +198,7 @@ class Picoscope(object):
             oldvalue = self[channel]
             newvalue = oldvalue
 
-            if coupling == 'DC50':
+            if coupling == '':
                 possible_ranges = self.possible_ranges_50 * atten
                 max_offsets = self.max_offsets_50 * atten
             else:
