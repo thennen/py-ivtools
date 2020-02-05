@@ -1299,7 +1299,14 @@ class Keithley2600(object):
         # Send list of voltage values to keithley
         self.send_list(vlist, varname='sweeplist')
         # TODO: make sure the inputs are valid
-        self.write('SweepVList(sweeplist, {}, {}, {}, {}, {}, {})'.format(Irange, Ilimit, Plimit, nplc, delay, Vrange))
+        self.write(f'SweepVList(sweeplist, {Irange}, {Ilimit}, {Plimit}, {nplc}, {delay}, {Vrange})')
+
+    def iv_python(self, vlist, Irange=0, Ilimit=0, Plimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
+        self.reset()
+
+        # Configure the SMU
+        self.reset_ch('A')
+
 
     def iv_4pt(self, vlist, Irange=0, Ilimit=0, nplc=1, delay='smua.DELAY_AUTO', Vrange=0):
         '''
@@ -1466,18 +1473,20 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
 
-    ### Wrap some of the lua commands directly
+    ### Wrap some of the individual lua commands directly
     ### There are a million commands so this is not a complete wrapper..
     ### See the 900 page pdf reference manual..
 
     def _set_or_query(self, prop, val=None, bool=False):
         # Sets or returns the current val
         if val is None:
+            print(f'print({prop})')
             reply = self.query(f'print({prop})').strip()
             return self._string_parser(reply)
         else:
             if bool:
                 val = 1 if val else 0
+            print(f'{prop} = {val}')
             self.write(f'{prop} = {val}')
             return None
 
@@ -1591,6 +1600,15 @@ class Keithley2600(object):
         ch = ch.lower()
         return self._set_or_query(f'smu{ch}.source.limitp', state)
 
+    def source_limit(self, source=None, limit=None, ch='A'):
+        '''
+        Sets the voltage sweep limit of SMU channel.
+        source='v' set voltage.
+        source='i' set current
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.source.limit{source}', limit)
+
     def source_rangei(self, state=None, ch='A'):
         ch = ch.lower()
         return self._set_or_query(f'smu{ch}.source.rangei', state)
@@ -1611,6 +1629,225 @@ class Keithley2600(object):
         reply = self._set_or_query(f'smu{ch}.source.func', state)
         if reply is None: return None
         return 'remote' if int(reply) else 'local'
+
+    def reset(self):
+        self.write('reset()')
+
+    def reset_ch(self, ch='A'):
+        ch = ch.lower()
+        self.write(f'smu{ch}.reset()')
+
+    def nplc(self, nplc=None, ch='A'):
+        '''
+        This command sets the integration aperture for measurements
+        This attribute controls the integration aperture for the analog-to-digital converter (ADC).
+        The integration aperture is based on the number of power line cycles (NPLC), where 1 PLC for 60 Hzis 16.67 ms (1/60) and 1 PLC for 50 Hz is 20 ms (1/50)
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.nplc', nplc)
+
+    def measure_delay(self, delay=None, ch='A'):
+        '''
+        This attribute controls the measurement delay
+
+        This attribute allows for additional delay (settling time) before making a measurement. If you define
+            the value instead of using the automatic delay value, the delay you set is used regardless of the
+            range.
+            The smuX.DELAY_AUTO setting causes a current range-dependent delay to be inserted when a
+            current measurement is requested. This happens when a current measurement command is
+            executed, when the measure action is being performed in a sweep, or after changing ranges during
+            an autoranged measurement.
+            If smuX.measure.count is greater than 1, the measurement delay is only inserted before the first
+            measurement.
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.delay', delay)
+
+    def clear_buffer(self, buffer='nvbuffer1', ch='A'):
+        '''
+        This function empties the buffer
+
+        This function clears all readings and related recall attributes from the buffer (for example,
+            bufferVar.timestamps and bufferVar.statuses) from the specified buffer.
+        '''
+        ch = ch.lower()
+        return self.write(f'smu{ch}.{buffer}.clear()')
+
+    def collect_timestamps(self, state=None, buffer='nvbuffer1', ch='A'):
+        '''
+        This attribute sets whether or not timestamp values are stored with the readings in the buffer
+
+        Possible state values:
+             0: Timestamp value collection disabled (off)
+             1: Timestamp value collection enabled (on)
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.{buffer}.collecttimestamps', state)
+
+    def collect_timevalues(self, state=None, buffer='nvbuffer1', ch='A'):
+        '''
+        This attribute sets whether or not source values are stored with the readings in the buffer
+
+        Possible source values:
+            0: Source value collection disabled (off)
+            1: Source value collection enabled (on)
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.{buffer}.collecttimevalues', state)
+
+    def source_list(self, source=None, list=None, ch='A'):
+        '''
+        Configure list sweep for SMU channel.
+        source='v' set voltage.
+        source='i' set current
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.source.list{source}', list)
+
+
+
+    def source_range(self, source=None, range=None, ch='A'):
+        '''
+        This attribute contains the positive full-scale value of the measurement range for voltage or current.
+        source='v' set voltage.
+        source='i' set current.
+
+        Reading this attribute returns the positive full-scale value of the measurement range that the SMU is currently
+        using. Assigning a value to this attribute sets the SMU on a fixed range large enough to measure the assigned
+        value. The instrument will select the best range for measuring a value of rangeValue.
+        This attribute is primarily intended to eliminate the time that is required by the automatic range selection
+        performed by a measuring instrument. Because selecting a fixed range prevents autoranging, an overrange
+        condition can occur. For example, measuring 10.0 V on the Model 2601B/2602B/2604B 6 V range or measuring
+        5.0 V on the Model 2611B/2612B/2614B 2 V range causes an overrange. The value 9.91000E+37 is returned
+        when this occurs.
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.measure.ranfge{source}', range)
+
+    def measure_action(self, action=None, ch='A'):
+        '''
+        Possible action values:
+            0 or smuX.DISABLE: Do not make measurements during the sweep
+            1 or smuX.ENABLE: Make measurements during the sweep
+            2 or smuX.ASYNC: Make measurements during the sweep, but asynchronously with the source area of the trigger model
+            (where X is the chanel selcted, such as "a" )
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.measure.action', action)
+
+    def overlapped_measure(self, source=None, rbuffer='nvbuffer1', ibuffer='nvbuffer1', vbuffer='nvbuffer2', ch='A'):
+        '''
+        This function starts an asynchronous (background) measurement.
+            source='v' measures voltage in volts, storing it in rbuffer.
+            source='i' measures current in amperes, storing it in rbuffer.
+            source='r' measures resistance in ohms, storing it in rbuffer.
+            source='p' measures power in watts, storing it in rbuffer.
+            source='iv' measures current and voltage storing them in ibuffer and vbuffer.
+
+        'nvbuffer1' have been usually used as buffer.
+        '''
+        ch = ch.lower()
+        if source is 'iv':
+            return self.write(f'smu{ch}.trigger.measure.overlapped.iv({ibuffer},{vbuffer})')
+        else:
+            return self.write(f'smu{ch}.trigger.measure.overlapped{source}({rbuffer})')
+
+    def overlapped_measurev(self, rbuffer='nvbuffer1', ch='A'):
+        '''
+        This function starts an asynchronous (background) voltage measurement.
+        '''
+        ch = ch.lower()
+        return self.write(f'smu{ch}.trigger.measure.overlappedv({rbuffer})')
+
+    def overlapped_measurei(self, rbuffer='nvbuffer1', ch='A'):
+        '''
+        This function starts an asynchronous (background) current measurement.
+        '''
+        ch = ch.lower()
+        return self.write(f'smu{ch}.trigger.measure.overlappedi({rbuffer})')
+
+    def overlapped_measurer(self, rbuffer='nvbuffer1', ch='A'):
+        '''
+        This function starts an asynchronous (background) resistance measurement.
+        '''
+        ch = ch.lower()
+        return self.write(f'smu{ch}.trigger.measure.overlappedr({rbuffer})')
+
+    def overlapped_measurep(self, rbuffer='nvbuffer1', ch='A'):
+        '''
+        This function starts an asynchronous (background) power measurement.
+        '''
+        ch = ch.lower()
+
+
+
+
+        return self.write(f'smu{ch}.trigger.measure.overlappedp({rbuffer})')
+
+    def overlapped_measureiv(self, ibuffer='nvbuffer1', vbuffer='nvbuffer2', ch='A'):
+        '''
+        This function starts an asynchronous (background) current and voltage measurement.
+        '''
+        ch = ch.lower()
+        return self.write(f'smu{ch}.trigger.measure.overlapped.iv({ibuffer},{vbuffer})')
+
+    def endpulse_action(self, action=None, ch='A'):
+        '''
+        This attribute enables or disables pulse mode sweeps.
+
+        Possible action values:
+            0 or smuX.SOURCE_IDLE: Enables pulse mode sweeps, setting the source level to the programmed (idle) level at the end of the pulse.
+            1 or smuX.SOURCE_HOLD: Disables pulse mode sweeps, holding the source level for the remainder of the step.
+            (where X is the chanel selcted, such as "a" )
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.endpulse.action', action)
+
+    def endsweep_action(self, action=None, ch='A'):
+        '''
+        This attribute sets the action of the source at the end of a sweep
+
+        Possible action values:
+            0 or smuX.SOURCE_IDLE: Sets the source level to the programmed (idle) level at the end of the sweep
+            1 or smuX.SOURCE_HOLD: Sets the source level to stay at the level of the last step.
+            (where X is the chanel selcted, such as "a" )
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.endsweep.action', action)
+
+    def trigger_count(self, count=None, ch='A'):
+        '''
+        This attribute sets the trigger count in the trigger model.
+
+        The trigger count is the number of times the source-measure unit (SMU) will iterate in the trigger layer for any given sweep.
+
+        If this count is set to zero (0), the SMU stays in the trigger model indefinitely until aborted.
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.count', count)
+
+    def source_action(self, action=None, ch='A'):
+        '''
+        This attribute enables or disables sweeping the source (on or off).
+
+        Possible action values:
+            0 or smuX.DISABLE: Do not sweep the source
+            1 or smuX.ENABLE: Sweep the source
+            (where X is the chanel selcted, such as "a" )
+        '''
+        ch = ch.lower()
+        return self._set_or_query(f'smu{ch}.trigger.source.action', action)
+
+    def initiate(self, ch='A'):
+        '''
+        This function initiates a sweep operation.
+
+        This function causes the SMU to clear the four trigger model event detectors and enter its trigger model (moves the SMU from the idle state into the arm layer).
+        '''
+        ch = ch.lower()
+        return self.write(f'smu{ch}.trigger.initiate()')
+
+
 
 #########################################################
 # UF2000 Prober #########################################
@@ -2483,8 +2720,8 @@ class WichmannDigipot_new(object):
             return False
 
     def writeCMD(self,textstr):
-        ''' 
-        Debugging tool. 
+        '''
+        Debugging tool.
         Send serial Command and print returned answer like a Serial monitor
         '''
         self.write((textstr+' \n').encode())
@@ -2505,8 +2742,8 @@ class WichmannDigipot_new(object):
 
     def set_wiper(self, state, n=1):
         '''
-        Change the digipot wiper setting 
-        n=1 is main potentiometer on chip 
+        Change the digipot wiper setting
+        n=1 is main potentiometer on chip
         0 ist only used in parallel/series Mode
         '''
         self.write(f'wiper {n} {state}'.encode())
