@@ -333,7 +333,7 @@ s = autocaller(savedata)
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
-def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True):
+def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None):
     ''' Activates auto data plotting and saving for wrapped measurement functions '''
     @wraps(measfunc)
     def measfunc_interactive(*args, **kwargs):
@@ -351,19 +351,25 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             # Measurement function is different from getting data function
             # This gives the possibility for live plotting
             measfunc(*args, **kwargs)
+            if shared_kws:
+                # Also pass specific keyword arguments to getdatafunc
+                shared_kwargs = {k:v for k,v in kwargs.items() if k in shared_kws}
+                newgetdatafunc = partial(getdatafunc, **shared_kwargs)
+            else:
+                newgetdatafunc = getdatafunc
             if live:
                 iplots.newline()
                 while not donefunc():
                     if live:
-                        data = getdatafunc()
+                        data = newgetdatafunc()
                         iplots.updateline(data)
                     ivplot.mypause(0.1)
-                data = getdatafunc()
+                data = newgetdatafunc()
                 iplots.updateline(data)
             else:
                 while not donefunc():
                     ivplot.mypause(0.1)
-                data = getdatafunc()
+                data = newgetdatafunc()
                 iplots.newline(data)
         if autosave:
             savedata(data)
@@ -382,7 +388,7 @@ if k and hasattr(k, 'query'):
     if '2636A' in k.idn():
         # This POS doesn't support live plotting
         live = False
-    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
     kiv_4pt = interactive_wrapper(k.iv_4pt, k.get_data, donefunc=k.done, live=live, autosave=True)
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
