@@ -20,6 +20,7 @@ from itertools import groupby
 from scipy import signal
 from numbers import Number
 from scipy.optimize import curve_fit
+from scipy.interpolate import interp1d
 import pandas as pd
 from matplotlib import pyplot as plt
 import sys
@@ -904,14 +905,14 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, left=None, right=None):
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False):#, left=None, right=None):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"
     would be nice if newvalues could be a function, or an array of arrays ...
     '''
     lenI = len(data[column])
-    interpkeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
+    interpkeys = [k for k,v in data.items() if (type(v) == np.ndarray and np.shape(v)[0] == lenI)]
     interpkeys = [ik for ik in interpkeys if ik != column]
 
     # Get the largest monotonic subsequence of data, with 'column' increasing
@@ -926,9 +927,13 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
     dataout = {}
     for ik in interpkeys:
         if reverse:
-            dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
+            interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0)
+            dataout[ik] = interpolator(interpvalues)
+            #dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
         else:
-            dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
+            interpolator = interp1d(data[column], data[ik], axis=0)
+            dataout[ik] = interpolator(interpvalues)
+            #dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
     dataout[column] = interpvalues
     add_missing_keys(data, dataout)
 
@@ -1133,7 +1138,10 @@ def longest_monotonic(data, column='I'):
 
 @ivfunc
 def normalize(data):
-    ''' Normalize by the maximum current '''
+    '''
+    Normalize by the maximum current
+    I don't know why you would want to do this.
+    '''
     dataout = {}
     maxI = np.max(data['I'])
     dataout['I'] = data['I'] / maxI
@@ -1927,3 +1935,14 @@ def filter_byhand(df, groupby=None, **kwargs):
 def category(alist):
     unique, category = np.unique(alist, return_inverse=True)
     return category
+
+# From David Mertz book
+def compose(*funcs):
+    """Return a new function s.t.
+    compose(f,g,...)(x) == f(g(...(x)))"""
+    def inner(data, funcs=funcs):
+        result = data
+        for f in reversed(funcs):
+            result = f(result)
+        return result
+    return inner
