@@ -9,7 +9,7 @@
   I wonder if there is a way to ~automatically generate that wrapper code..
 --]]
 
-function SweepVList(sweepList, rangeI, limitI, nplc, delay, rangeV)
+function SweepVList(sweepList, rangeI, limitI, limitP, nplc, delay, rangeV)
     reset()
 
     -- Configure the SMU
@@ -20,6 +20,9 @@ function SweepVList(sweepList, rangeI, limitI, nplc, delay, rangeV)
     smua.measure.delay  = delay
     if limitI ~= 0 then
       smua.source.limiti  = limitI
+    end
+    if limitP ~= 0 then
+      smua.source.limitp  = limitP
     end
     -- Autorange if you pass limitI = 0
     -- Keithley programmers guide 7-226

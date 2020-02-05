@@ -904,21 +904,29 @@ def digipot_test(plot=True):
     return data
 
 def digipot_calibrate(plot=True):
-    # Connect keithley to digipot to measure the resistance values
+    '''
+    Connect keithley to digipot to measure the resistance values
+    Can be done by contacting something conductive or smashing the needles together in the air
+
+    configured for the single pot mode, not parallel or series
+    '''
     dp = instruments.WichmannDigipot()
     k = instruments.Keithley2600()
     if plot:
         fig, ax = plt.subplots()
         ax.set_yscale('log')
+        ax.plot(np.arange(34), dp.Rlist, marker='.', label='current calibration')
+        ax.set_xlabel('Pot setting')
+        ax.set_ylabel('Resistance [Ohm]')
         plt.show()
-        ax.plot(np.arange(34), dp.Rlist, marker='.')
+        plt.pause(.1)
 
     dp.set_bypass(0)
     data = []
     for w,Rnom in dp.Rmap.items():
         dp.set_wiper(w) # Should have the necessary delay built in
         # Apply a volt, measure current
-        k.iv([1], Irange=0, Ilimit=10e-3, nplc=10)
+        k.iv([1], Irange=0, Ilimit=10e-3, nplc=1)
         while not k.done():
             plt.pause(.1)
         d = k.get_data()
