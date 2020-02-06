@@ -215,7 +215,7 @@ class MetaHandler(object):
         # Sort values so that they are in the same order as you would probe them
         # Which is a strange order, since the mask is a disaster
         sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'wX', 'wY', 'device') if k in meta_df.columns]
-        meta_df = meta_df.sort_values(by=sortby, ascending=[True, True, True, True, False])
+        meta_df = meta_df.sort_values(by=sortby, ascending=[True, True, True, True, False, True])
 
         # Try to convert data types
         typedict = dict(coupon=np.uint8,
