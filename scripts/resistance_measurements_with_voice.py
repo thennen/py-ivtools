@@ -18,23 +18,46 @@ def metric_prefix_longname(x):
         if abs(x) >= v:
             return '{:n} {}'.format(round(x/v), p)
 
-meta.load_lassen(dep_code='Pferd', sample_number=[1,2,3], module=['001G','001H','001I','001E'], die_rel=1)
+#meta.load_lassen(dep_code='Esel', sample_number=[1,2,3,4,5], module=['001G','001H','001I','001E'], die_rel=1)
+meta.load_lassen(dep_code='Lachs', sample_number=[2], module=['001G','001H','001I','001E'], die_rel=1)
+meta.i = -1
 
 #### Begin meatframe for loop
 
-ans = 'lol'
-meta.print()
-while ans != 'q':
-    print('Measuring')
-    wfm = tri(-.1, .1, n=100)
-    wfm = wfm[abs(wfm) > 0.01]
-    d = kiv(wfm, Irange=0, Ilimit=1e-2)
+#meta.print()
+module = None
+sample = None
+while meta.i < len(meta.df):
     meta.next()
-    R = resistance(d)
-    engine.say(metric_prefix_longname(R) + ' ohms')
+    if meta['sample_number'] != sample:
+        engine.say('Sample ' + str(meta['sample_number']))
+    if meta['module'] != module:
+        engine.say('Module ' + meta['module'])
+    engine.say('Device ' + str(meta['device']))
+    engine.runAndWait()
+    module = meta['module']
+    sample = meta['sample_number']
+    # Switch the sample contact now!!!
+    #plt.pause(.1)
+    ans = input('Switch to the next sample.  Press enter to measure to measure (q to quit) ')
+    if ans == 'q':
+        break
+    elif ans == 's':
+        continue
+    elif ans == 'r':
+        meta.previous()
+        continue
+    print('Measuring')
+    engine.say('Measuring')
+    engine.runAndWait()
+    wfm = tri(-.2, .2, n=20)
+    wfm = wfm[abs(wfm) > 0.01] # so outrange doesn't take a decade
+    d = kiv(wfm, Irange=0, Ilimit=2e-3)
+    try:
+        R = resistance(d)
+        engine.say(metric_prefix_longname(R) + ' ohms')
+    except:
+        engine.say('W T F')
     engine.runAndWait()
     #winsound.Beep(500, 400)
-    # Switch the sample contact now!!!
-    ans = input('Switch to the next sample.  Press enter to measure to measure (q to quit) ')
-
 # End meatframe forloop
