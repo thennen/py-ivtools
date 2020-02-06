@@ -213,8 +213,9 @@ class MetaHandler(object):
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
         meta_df = meta_df.dropna(1, 'all')
         # Sort values so that they are in the same order as you would probe them
-        sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'module', 'device') if k in meta_df.columns]
-        meta_df = meta_df.sort_values(by=sortby)
+        # modules one die at a time, from upper left
+        sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'wX', 'wY') if k in meta_df.columns]
+        meta_df = meta_df.sort_values(by=sortby, ascending=[True, True, True, True, False])
 
         # Try to convert data types
         typedict = dict(coupon=np.uint8,

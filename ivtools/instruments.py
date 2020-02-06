@@ -1,7 +1,7 @@
 '''
 These classes contain functionality specific to only one instrument.
 Don't put code in an instrument class that has anything to do with a different instrument,
-or any particular application!
+or anything specific to a particular application!
 
 They are grouped into classes because there may be some overlapping function names which
 should be contained.  Also there might be a situation where we would like multiple instances
@@ -10,7 +10,7 @@ should be contained.  Also there might be a situation where we would like multip
 Should only put instruments here that have an actual data connection to the computer
 
 Right now we use the Borg pattern to maintain instrument state (and reuse existing connections),
-and we keep the state in a separate module so that it even survives reload of this module.
+and we keep the state in a separate module (settings) so that it even survives reload of this module.
 I don't know if this is a horrible idea or not, but it seems to suit our purposes very nicely.
 
 You can create an instance of these classes anywhere in your code, and they will automatically
@@ -19,7 +19,7 @@ One downside is that if you screw up the state somehow, you have to manually del
 But one could add some kind of reset_state flag to __init__ to handle this.
 
 TODO make parent class or decorator to implement the borg stuff.
-Then one could copy-paste these classes and use them without the decorator
+Then one could simply copy-paste these classes and use them without the decorator
 
 Another approach could be to have the module maintain weak references to all instrument instances,
 and have a function that decides whether to instantiate a new instance or return an existing one.
@@ -126,7 +126,9 @@ class Picoscope(object):
         print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
                            index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
 
-    # Settings are a class mainly because I wanted a convenient syntax for typing in repeatedly
+    # Settings are a class because I wanted a slightly more convenient syntax for typing in repeatedly
+    # Namely, ps.range.b = 2 vs ps.range['B'] = 2
+    # and we can also enforce that the settings are valid
     class _PicoSetting(dict):
         possible_ranges_1M = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
         max_offsets_1M = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
