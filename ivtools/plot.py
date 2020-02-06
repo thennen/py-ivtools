@@ -1458,7 +1458,7 @@ def metric_prefix(x):
         if abs(x) >= v:
             return '{:n}{}'.format(x/v, p)
 
-def metric_prefix_longname(x):
+def metric_prefix_longname(x, decimals=1):
     longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
@@ -1466,7 +1466,7 @@ def metric_prefix_longname(x):
         return '{:n}'.format(x)
     for v, p in zip(values, longnames):
         if abs(x) >= v:
-            return '{:n} {}'.format(x/v, p)
+            return f'{x/v:.{decimals}f} {p}'
 
 def engformatter(axis='y', ax=None):
     if ax is None:
