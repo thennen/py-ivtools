@@ -475,6 +475,8 @@ def valid_filename(s):
 def hash_array(arr):
     import hashlib
     return hashlib.md5(arr).hexdigest()
+    # There is also this?
+    #hash(arr.tostring())
 
 def timestamp(date=True, time=True, ms=True, us=False):
     now = datetime.now()
