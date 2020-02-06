@@ -244,6 +244,10 @@ print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directo
 io.makefolder(datafolder, subfolder)
 def datadir():
     return os.path.join(datafolder, subfolder)
+def open_datadir():
+    os.system('explorer ' + datadir())
+def cd_data():
+    magic('cd ' + datadir())
 
 
 # What the plots should do by default

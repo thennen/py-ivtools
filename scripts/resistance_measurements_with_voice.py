@@ -6,8 +6,6 @@ npts = 30
 Ilimit = 2e-3
 meta.i = -1
 
-tts('')
-
 #### Begin meatframe for loop
 
 #meta.print()
@@ -16,11 +14,10 @@ sample = None
 while meta.i < len(meta.df):
     meta.next()
     if meta['sample_number'] != sample:
-        tts_queue('Sample ' + str(meta['sample_number']))
+        tts('Sample ' + str(meta['sample_number']))
     if meta['module'] != module:
-        tts_queue('Module ' + meta['module'])
-    tts_queue('Device ' + str(meta['device']))
-    tts_thread()
+        tts('Module ' + meta['module'])
+    tts('Device ' + str(meta['device']))
     module = meta['module']
     sample = meta['sample_number']
     # Switch the sample contact now!!!
@@ -34,12 +31,12 @@ while meta.i < len(meta.df):
         meta.previous()
         continue
     print('Measuring')
-    tts_thread('Measuring')
+    tts('Measuring')
     wfm = tri(Vmin, Vmax, n=npts)
     wfm = wfm[abs(wfm) > 0.005] # so outrange doesn't take a decade
     d = kiv(wfm, Irange=0, Ilimit=Ilimit)
     try:
         R = resistance(d)
-        tts_thread(metric_prefix_longname(R, 0) + ' ohms')
+        tts(metric_prefix_longname(R, 0) + ' ohms')
     except:
-        tts_thread('W T F')
+        tts('W T F')
