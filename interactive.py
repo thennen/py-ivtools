@@ -43,6 +43,7 @@ warnings.filterwarnings("ignore",".*GUI is implemented.*")
 import ivtools
 # Reload all the modules in case they changed
 import importlib
+from importlib import reload
 importlib.reload(ivtools)
 importlib.reload(ivtools.measure)
 importlib.reload(ivtools.analyze)

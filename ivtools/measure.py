@@ -1014,7 +1014,8 @@ def beep(freq=500, ms=300):
     import winsound
     winsound.Beep(freq, ms)
 
-def text_to_speech(text):
+def tts(text=''):
+    # immediately speak the text, does not return until finished
     import pyttsx3
     tts_engine = pyttsx3.init()
     voices = tts_engine.getProperty('voices')       #getting details of current voice
@@ -1022,7 +1023,13 @@ def text_to_speech(text):
     tts_engine.say(text)
     tts_engine.runAndWait()
 
-def text_to_speech_thread(text):
+def tts_queue(text):
+    # Put some utterances in a queue, then you can call tts_thread() to start it
+    import pyttsx3
+    tts_engine = pyttsx3.init()
+    tts_engine.say(text)
+
+def tts_thread(text=None):
     '''
     runs in a separate thread, but you can't call it again until the previous one is complete
 
@@ -1030,6 +1037,8 @@ def text_to_speech_thread(text):
 
     Seems to be that if you run it outside of a thread first, then it works inside a thread forever.
     therefore you can initialize with text_to_speech('')
+
+    You can't run it again until it finishes -- check the done flag
     '''
     from threading import Thread
     import pyttsx3
@@ -1046,11 +1055,12 @@ def text_to_speech_thread(text):
             # Doesn't work
             #while tts_engine.isBusy():
                 #time.sleep(.1)
-            tts_engine.say(text)
+            if text:
+                tts_engine.say(text)
             tts_engine.runAndWait()
             # Is this an abuse of a function attribute?
-            text_to_speech_thread.done = True
-    text_to_speech_thread.done = False
+            tts_thread.done = True
+    tts_thread.done = False
     ttsthread = Threader()
 
 class controlled_interrupt():
