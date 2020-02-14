@@ -404,4 +404,8 @@ if k and hasattr(k, 'query'):
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
 
+if ts:
+    def set_Rseries(val):
+        meta.static['R_series'] = dp.set_R(val)
+
 # TODO def reload_settings, def reset_state

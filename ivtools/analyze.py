@@ -1282,7 +1282,7 @@ def downsample_dumb(data, nsamples, columns=None):
     return dataout
 
 
-#### datatype conversion/ stuff that's hard to do in pandas ####
+#### datatype conversion/ non-trivial pandas operations ####
 
 # operations that are easy:
 # dict --> series      (pd.Series(dict))
@@ -1333,6 +1333,44 @@ def iloop(data):
             yield d
     else:
         yield from data
+
+
+def whats_different(df):
+    '''
+    A lot of times we have a dataframe of values and a lot of them are the same
+    this drops everything that is the same
+    ignores nested arrays
+    '''
+    # Got a better way to tell which columns have arrays nested in them?
+    arrays = df.apply(lambda x: type(x[0])) == np.ndarray
+    arraycols = df.columns[arrays]
+    notarrays = df.drop(arraycols, 1)
+    equaltofirst = notarrays.apply(lambda r: r == notarrays.iloc[0], 1)
+    mask = ~equaltofirst.apply(all)
+    return notarrays[mask[mask].keys()]
+
+def unpack_nested_dicts(df):
+    '''
+    NOT IMPLEMENTED
+    sometimes I have dictionaries like RANGE=dict(A=1, B=2, C=5, D=0.5) nested inside dataframes
+    this helps tidy up the column names, but the inner keys are then not easily addressable in parallel
+    this looks for such nested dictionaries and flattens them
+    '''
+    # Find dicts
+    keys = df.keys()
+    types = [type(df[k]) for k in keys]
+    dicts = [k for k,t in zip(keys, types) if t == dict]
+    pass
+
+def flatten_nested_dicts(nested):
+    '''
+    flattens dict of dict by joining the keys with underscores
+    doesn't go past one level
+    there are better ways to do this
+    '''
+    #nested = dict(X=dict(A=3, B=5, dict(C=3)), Y=dict(A=2, B=5))
+    un = {f'{k}_{kk}':vv for k,v in nested.items() for kk,vv in v.items()}
+
 
 
 @ivfunc
@@ -1928,6 +1966,8 @@ def filter_byhand(df, groupby=None, **kwargs):
             if s is not None:
                 selected.append(s)
         return pd.DataFrame(selected)
+
+
 
 
 ### Not ivfuncs, useful to have around
