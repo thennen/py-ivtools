@@ -153,7 +153,8 @@ def arrowplot(data, x, y, ax, **kwargs):
     ax.quiver(xd[:-1], yd[:-1], xd[1:]-xd[:-1], yd[1:]-yd[:-1], scale_units='xy', angles='xy', scale=1, width=.005, **qkwargs)
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
-           plotfunc=_plot_single_iv, autotitle=False, labels=None, colorbyval=True, **kwargs):
+           plotfunc=_plot_single_iv, autotitle=False, labels=None, labelfmt=None, colorbyval=True,
+           hold=False , **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     Can plot any column vs any other column
@@ -163,14 +164,16 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     if x is None, then y is plotted vs range(len(y))
     maxsamples : downsample to this number of data points if necessary
     kwargs passed through to ax.plot (can customize line properties this way)
+    if you want a single color for all lines, use the "color" keyword
     New figure is created if ax=None
 
     Can pass an arbitrary plotting function, which defaults to _plot_single_iv, haven't tested it yet
     Could then define some other plots that take IV data and reuse plotiv functionality.
-
-    # TODO: What if you want to plot a function of more than one variable contained in data?
-    # Right now you have to define a new variable like data['G'] = data['I']/data['V']
     '''
+    if hold:
+        # if you are sick of typing ax=plt.gca(), you can type hold=1
+        fig = plt.gcf()
+        ax = plt.gca()
     if ax is None:
         fig, ax = plt.subplots()
 
@@ -182,6 +185,9 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         # you can pass a list of colors, or a colormap
         if isinstance(cm, list):
             colors = cm
+        elif 'color' in kwargs:
+            # color overrides everything
+            colors = [kwargs['color']] * len(data)
         else:
             if isinstance(cm, str):
                 # Str refers to the name of a colormap
@@ -212,43 +218,52 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                     normc = (c - np.min(c)) / (np.max(c) - np.min(c))
                     colors = cmap(normc)
 
-        if type(labels) is str:
-            # label by the column with this name
-            if type(data) == list:
-                labels = [d[labels] for d in data]
-            else:
-                labels = data[labels]
-            # otherwise we will iterate through labels directly
+        # If there's only one line to plot, then use 'label' not 'labels'
         if labels is not None:
-            # make np.nan count as None (not labelled)
-            labels = list(map(lambda v: None if (isinstance(v, Number) and np.isnan(v)) else v, labels))
-            # TODO: if there are repeat labels, only label the first one?  Might not always want that behavior..
-            assert len(labels) == len(data)
+            if type(labels) is str:
+                # TODO: allow passing a list of strings, which can label by multiple values
+                #       but there is an ambiguity if the length of that list happens to be the
+                #       same as the length of the data..
+                # label by the key with this name
+                if type(data) == list:
+                    label_list = [d[labels] for d in data]
+                else:
+                    #should be dataframe
+                    label_list = data[labels]
+            else:
+                # otherwise we will iterate through labels directly (so you can pass a list of labels)
+                # make np.nan count as None (not labelled)
+                label_list = list(map(lambda v: None if (isinstance(v, Number) and np.isnan(v)) else v, labels))
+            assert len(label_list) == len(data)
+            # reformat the labels in case they are numbers
+            if labelfmt:
+                label_list = list(map(lambda v: None if v is None else format(v, labelfmt), label_list))
         else:
-            # still need to iterate through labels, so make a list of None
-            labels = [None] * len(data)
+            # even if we did not specify labels, we will still iterate through a list of labels
+            # Make them all None (unlabeled)
+            label_list = [None] * len(data)
 
         # Drop repeat labels that have the same line style, because we don't need hundreds of repeat labeled objects
         # right now only the color identifies the line style
         # Python loop style.. will not be efficient, but it's the first solution I thought of.
         lineset = set()
         for i in range(len(data)):
-            l = labels[i]
+            l = label_list[i]
             c = tuple(colors[i])
             if (l,c) in lineset:
-                labels[i] = None
+                label_list[i] = None
             else:
                 lineset.add((l,c))
 
         if dtype == pd.DataFrame:
             # Plot x array vs y array.  x can be none, then it will just turn into data point number
             line = []
-            for (row, iv), c, l in zip(data.iterrows(), colors, labels):
+            for (row, iv), c, l in zip(data.iterrows(), colors, label_list):
                 kwargs.update(c=c)
                 line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
         else:
             line = []
-            for iv, c, l in zip(data, colors, labels):
+            for iv, c, l in zip(data, colors, label_list):
                 kwargs.update(c=c)
                 newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
                 line.append(newline)
@@ -267,6 +282,13 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     ylims = np.array(ax.get_ylim())
     if any(ylims > 1e3) or all(ylims < 1e-1):
         ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
+
+    if any(labels):
+        leg = ax.legend()
+        if type(labels) is str:
+            leg.set_title(labels)
+        elif hasattr(labels, 'name'):
+            leg.set_title(labels.name)
 
     if autotitle:
         auto_title(data, keys=None, ax=ax)
