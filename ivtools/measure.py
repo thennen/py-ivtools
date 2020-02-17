@@ -778,9 +778,6 @@ def new_ccircuit_to_iv(datain, dtype=np.float32):
     dataout['V'] = dtype(A)
     #dataout['V_formula'] = 'CHA - IO'
     #dataout['I'] = 1e3 * (B - C) / R
-    # Current circuit has 0V output in compliance, and positive output under compliance
-    # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    # TODO: Figure out if/why this works
     dataout['Vneedle'] = dtype(B)
     dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
     dataout['I'] = dtype(C / gain)
