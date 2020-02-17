@@ -599,7 +599,27 @@ def measure_compliance():
     return (ccurrent, Amean)
 
 
+## self-biasing version that uses AWG for current
+
 ########### Digipot ####################
+
+def measure_compliance_new():
+    pass
+
+def calibrate_compliance_new():
+    pass
+
+def set_compliance_new(cc_value):
+    rigol = instruments.RigolDG5000()
+    v = CC_to_controlvoltage(cc_value)
+    rigol.DC(v, ch=2)
+    pass
+
+def CC_to_controlvoltage(Iarray):
+    '''
+    Uses lookup table to convert between
+    '''
+    pass
 
 def digipot_test(plot=True):
     '''
@@ -732,6 +752,43 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     # parameters for conversion
     #dataout['Rout_conv'] = R
     dataout['CC'] = CC
+    dataout['gain'] = gain
+    return dataout
+
+def new_ccircuit_to_iv(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    For the newer version of compliance circuit, which compensates itself and amplifies the needle voltage
+    chA should monitor the applied voltage
+    chB should be the needle voltage
+    chC should be the amplified current
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    B = datain['B']
+    C = datain['C']
+    #C = datain['C']
+    gain = settings.CCIRCUIT_GAIN
+    dataout['V'] = dtype(A)
+    #dataout['V_formula'] = 'CHA - IO'
+    #dataout['I'] = 1e3 * (B - C) / R
+    # Current circuit has 0V output in compliance, and positive output under compliance
+    # Unless you know the compliance value, you can't get to current, because you don't know the offset
+    # TODO: Figure out if/why this works
+    dataout['Vneedle'] = dtype(B)
+    dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
+    dataout['I'] = dtype(C / gain)
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    dataout['units'] = {'V':'V', 'Vnode':'V', 'I':'A'}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
+    # parameters for conversion
+    #dataout['Rout_conv'] = R
     dataout['gain'] = gain
     return dataout
 
