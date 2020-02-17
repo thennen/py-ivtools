@@ -283,7 +283,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     if any(ylims > 1e3) or all(ylims < 1e-1):
         ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
-    if any(labels):
+    if labels and any(labels):
         leg = ax.legend()
         if type(labels) is str:
             leg.set_title(labels)
