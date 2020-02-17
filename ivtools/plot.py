@@ -644,8 +644,11 @@ class interactive_figs(object):
                 if any(self.preprocessing):
                     for pp in self.preprocessing:
                         # Just run the data through all the functions
-                        data = pp(data)
-                    # In case you want to access it without running the processing again
+                        try:
+                            data = pp(data)
+                        except:
+                            print('Pre-processing failed!')
+                        # In case you want to access it without running the processing again
                     self.processed_data = data
             for axnum, plotter in self.plotters:
                 ax = self.axs[axnum]
