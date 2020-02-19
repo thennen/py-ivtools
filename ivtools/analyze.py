@@ -1342,12 +1342,15 @@ def whats_different(df):
     ignores nested arrays
     '''
     # Got a better way to tell which columns have arrays nested in them?
+    # This is the clunkiest thing ever
     arrays = df.apply(lambda x: type(x[0])) == np.ndarray
-    arraycols = df.columns[arrays]
-    notarrays = df.drop(arraycols, 1)
-    equaltofirst = notarrays.apply(lambda r: r == notarrays.iloc[0], 1)
+    arraycols = df.columns[arrays].to_list()
+    dicts = df.apply(lambda x: type(x[0])) == dict
+    dictcols = df.columns[dicts].to_list()
+    notarraysordicts = df.drop(arraycols + dictcols, 1)
+    equaltofirst = notarraysordicts.apply(lambda r: r == notarraysordicts.iloc[0], 1)
     mask = ~equaltofirst.apply(all)
-    return notarrays[mask[mask].keys()]
+    return notarraysordicts[mask[mask].keys()]
 
 def unpack_nested_dicts(df):
     '''
