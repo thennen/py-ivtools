@@ -615,23 +615,78 @@ def measure_compliance():
 
 ########### Digipot ####################
 
-def measure_compliance_new():
+def calibrate_compliance_new():
+    # Here will go a version that does not need keithley to calibrate.  will be faster but less accurate.
     pass
 
-def calibrate_compliance_new():
-    pass
+def calibrate_compliance_with_keithley(Rload=1000):
+    '''
+    Use keithley to calibrate current compliance levels
+    takes a long time, but will be accurate
+    '''
+    k = instruments.Keithley2600()
+    rigol = instruments.RigolDG5000()
+
+    Remitter = 2050
+    Vneg = 9.6
+    def approxVc(Ic):
+        # first approximation for calibration of current source
+        return Ic*Remitter - Vneg + 0.344
+    def approxIc(Vc):
+        return (Vc + Vneg - 0.344) / Remitter
+
+    approxImax = 2e-3
+    n = 30
+    approxVcmax = approxVc(approxImax)
+    vlist = np.linspace(-9.6, approxVcmax, n)
+    # what V is necessary to reach the highest I? apply 1.25 times that
+    Vmax = approxIc(max(vlist)) * Rload * 1.25
+    Vmin = Rload * 500e-6
+    # Sweeps?
+    data = []
+    for v in vlist:
+        rigol.DC(v, 2)
+        d = k.iv(tri(Vmin, Vmax, n=100))
+        k.waitready()
+        d = k.get_data()
+        data.append(d)
+    data = pd.DataFrame(data)
+
+    mask = data.Ic > 100e-6
+    p = np.polyfit(data.Vc[mask], data.Ic[mask], 1)
+    data['R'] = ivtools.analyze.resistance(data, Vmax/1.25, Vmax)
+    data['Ic'] = slicebyvalue(data, 'V', Vmax/1.25, Vmax).I.apply(np.mean)
+    data['Vc'] = vlist
+    #plt.figure()
+    #plt.plot(vc, np.polyval(p, vc))
+    data.to_pickle(ivtools.settings.COMPLIANCE_CALIBRATION_FILE)
+
+    return data
+
 
 def set_compliance_new(cc_value):
     rigol = instruments.RigolDG5000()
-    v = CC_to_controlvoltage(cc_value)
-    rigol.DC(v, ch=2)
-    pass
+    Vc = compliance_voltage(cc_value)
+    rigol.DC(Vc, ch=2)
 
-def CC_to_controlvoltage(Iarray):
+
+def compliance_voltage(I):
     '''
-    Uses lookup table to convert between
+    Interpolates a calibration table to convert between Icompliance and Vcontrol
+    # TODO Use a spline
     '''
-    pass
+    calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
+    if os.path.isfile(calfile):
+        cal = pd.read_pickle(calfile)
+        # interpolate for best value for vc
+        Vc = np.interp(I, cal['Ic'], cal['Vc'])
+    else:
+        print('No calibration file! Guessing.')
+        Remitter = 2050
+        Vneg = 9.6
+        Vc = Ic*Remitter - Vneg + 0.344
+    return Vc
+
 
 def digipot_test(plot=True):
     '''

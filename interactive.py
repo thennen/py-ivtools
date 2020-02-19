@@ -272,9 +272,9 @@ def savedata(data=None, filepath=None, drop=None):
     if filepath is None:
         filepath = os.path.join(datadir(), meta.filename())
     # meta will be attached already if you used interactive_wrapper..
-    # but in case you didn't, I hope it doesn't take too long to do it again..
-    io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
-    #io.write_pandas_pickle(data, filepath, drop=drop)
+    # TODO detect if metadata is there or not, because I still want to attach it in either case
+    #io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
+    io.write_pandas_pickle(data, filepath, drop=drop)
     # TODO: append metadata to a sql table
 # just typing s will save the d variable
 s = autocaller(savedata)
