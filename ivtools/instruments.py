@@ -10,7 +10,7 @@ should be contained.  Also there might be a situation where we would like multip
 Should only put instruments here that have an actual data connection to the computer
 
 Right now we use the Borg pattern to maintain instrument state (and reuse existing connections),
-and we keep the state in a separate module (settings) so that it even survives reload of this module.
+and we keep the state in a separate module (ivtools) so that it even survives reload of this module.
 I don't know if this is a horrible idea or not, but it seems to suit our purposes very nicely.
 
 You can create an instance of these classes anywhere in your code, and they will automatically
@@ -45,11 +45,12 @@ from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
-from . import settings
-visa_rm = settings.visa_rm
-# Could also store the visa_rm in visa itself
-#visa.visa_rm = visa.ResourceManager()
-#visa_rm = visa.visa_rm
+import ivtools
+# Store visa resource manager in the visa module, so it doesn't get clobbered on reload
+import visa
+if not hasattr(visa, 'visa_rm'):
+    visa.visa_rm = visa.ResourceManager()
+visa_rm = visa.visa_rm
 
 
 
@@ -69,9 +70,9 @@ class Picoscope(object):
     '''
     def __init__(self, connect=True):
         statename = self.__class__.__name__
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+        self.__dict__ = ivtools.instrument_states[statename]
         from picoscope import ps6000
         self.ps6000 = ps6000
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
@@ -1252,12 +1253,12 @@ class Keithley2600(object):
 
         try:
             statename = '_'.join((self.__class__.__name__, addr))
-            if statename not in settings.instrument_states:
-                settings.instrument_states[statename] = {}
+            if statename not in ivtools.instrument_states:
+                ivtools.instrument_states[statename] = {}
                 say_if_successful = True
             else:
                 say_if_successful = False
-            self.__dict__ = settings.instrument_states[statename]
+            self.__dict__ = ivtools.instrument_states[statename]
             self.connect(addr)
             if say_if_successful:
                 print('Keithley connection successful at {}'.format(addr))
@@ -2149,9 +2150,9 @@ class Eurotherm2408(object):
     def __init__(self, addr='COM32', gid=0, uid=1):
         # BORG
         statename = '_'.join((self.__class__.__name__, addr, str(gid), str(uid)))
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+        self.__dict__ = ivtools.instrument_states[statename]
         self.connect(addr, gid, uid)
 
     def connect(self, addr='COM32', gid=0, uid=1):
@@ -2448,9 +2449,9 @@ class WichmannDigipot_new(object):
     def __init__(self, addr=None):
         # BORG
         statename = self.__class__.__name__
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+        self.__dict__ = ivtools.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
@@ -2600,9 +2601,9 @@ class WichmannDigipot(object):
     def __init__(self, addr=None):
         # BORG
         statename = self.__class__.__name__
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+        self.__dict__ = ivtools.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
         # TODO: does the second digipot have a different calibration?
@@ -2808,9 +2809,9 @@ class EugenTempStage(object):
     def __init__(self, addr=None, baudrate=9600):
         # BORG
         statename = self.__class__.__name__
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+        self.__dict__ = ivtools.instrument_states[statename]
         try:
             self.connect(addr, baudrate)
         except:

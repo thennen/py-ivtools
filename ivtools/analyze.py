@@ -12,7 +12,8 @@ Generally, analyzing list of dicts will be faster, but DataFrames more convenien
 """
 
 # Local imports
-from . import plot as ivplot
+#from . import plot as ivplot
+import ivtools.plot
 
 from functools import wraps
 import numpy as np
@@ -313,7 +314,7 @@ def select_by_derivative(data, threshold=None, debug=False):
         ax.hlines(threshold, xmin, xmax, alpha=.3, linestyle='--')
         ax.set_xlim(xmin, xmax)
     elif debug == 2:
-        ivplot.plotiv(data, ax=ax)
+        ivtools.plot.plotiv(data, ax=ax)
         ax.scatter(data['V'][index], data['I'][index])
 
     return index
@@ -1938,7 +1939,7 @@ def filter_byhand(df, groupby=None, **kwargs):
                     del ax.lines[-1]
                     print(self.n, self.l)
                     #print(data.iloc[self.n].Irange[0])
-                    ivplot.plotiv(sliceiv(data.iloc[self.n], stop=self.l), x='Vcalc', color='red', ax=ax)
+                    ivtools.plot.plotiv(sliceiv(data.iloc[self.n], stop=self.l), x='Vcalc', color='red', ax=ax)
                 else:
                     print('no more data')
                     self.n -= 1
@@ -1946,8 +1947,8 @@ def filter_byhand(df, groupby=None, **kwargs):
                 sys.stdout.flush()
                 fig.canvas.draw()
 
-        ivplot.plotiv(data, x='Vcalc', alpha=.1, color='black', ax=ax)
-        ivplot.plotiv(data.iloc[0], x='Vcalc', color='red', ax=ax)
+        ivtools.plot.plotiv(data, x='Vcalc', alpha=.1, color='black', ax=ax)
+        ivtools.plot.plotiv(data.iloc[0], x='Vcalc', color='red', ax=ax)
 
         thing = thinger() # lol object oriented
         cid = fig.canvas.mpl_connect('key_press_event', thing.press)

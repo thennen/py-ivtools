@@ -39,31 +39,32 @@ from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore",".*GUI is implemented.*")
+import visa
 
 import ivtools
-# Reload all the modules in case they changed
 import importlib
 from importlib import reload
-importlib.reload(ivtools)
-importlib.reload(ivtools.measure)
-importlib.reload(ivtools.analyze)
-importlib.reload(ivtools.plot)
-importlib.reload(ivtools.io)
-importlib.reload(ivtools.instruments)
-from ivtools import measure
+from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
+from ivtools import instruments
 from ivtools import io
-from ivtools import settings
+from ivtools import measure
+# Reload all the modules in case they changed
+# every module EXCEPT settings
+importlib.reload(ivtools.analyze)
+importlib.reload(ivtools.plot)
+importlib.reload(ivtools.instruments)
+importlib.reload(ivtools.io)
+importlib.reload(ivtools.measure)
 
 # Dump everything into interactive namespace for convenience
-# TODO: run test for overlapping names
+# TODO: run test for overlapping names first
 from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
-
 
 magic = get_ipython().magic
 
@@ -82,8 +83,8 @@ if firstrun:
     # TODO find out whether it has been called already
     magic('matplotlib')
 
-hostname = socket.gethostname()
-username = getpass.getuser()
+hostname = settings.hostname
+username = settings.username
 datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
@@ -111,7 +112,7 @@ meta = io.MetaHandler()
 ######### Plotter configurations
 
 # Make sure %matplotlib has been called! Or else figures will appear and then disappear.
-iplots = ivplot.interactive_figs(n=4)
+iplots = ivplot.InteractiveFigs(n=4)
 
 # Determine the series resistance from meta data
 def R_series():
@@ -148,63 +149,8 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
 #########
 
 
-# Default settings, that may get overwritten
-datafolder = r'C:\data'
-connections = {}
-# Hostname specific settings
-# TODO move this code to a different file (settings.py?), so that it's obvious where the pc specific settings are
-if hostname == 'pciwe46':
-    if username == 'hennen':
-        datafolder = r'D:\t\ivdata'
-    else:
-        datafolder = r'D:\{}\ivdata'.format(username)
-    # Variable name, Instrument class, arguments to pass to init
-    connections = [('ps', instruments.Picoscope),
-                   ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                   ('daq', instruments.USB2708HS),
-                   ('ts', instruments.EugenTempStage),
-                   ('dp', instruments.WichmannDigipot),
-                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600)] # Keithley can be located automatically now
-elif hostname == 'pciwe38':
-    # Moritz computer
-    datafolder = r'C:\Messdaten'
-    connections = {}
-elif hostname == 'pcluebben2':
-    datafolder = r'C:\data'
-    connections = [#('et', instruments.Eurotherm2408),
-                   #('ps', instruments.Picoscope),
-                   #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                   #('daq', instruments.USB2708HS),
-                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
-elif hostname == 'pciwe34':
-    # Mark II
-    # This computer and whole set up is a massive irredeemable piece of shit
-    # computer crashes when you try to access the data drive
-    # Data drive gets mounted on different letters for some reason
-    # Therefore I will use the operating system drive..
-    #datafolder = r'G:\Messdaten\hennen'
-    datafolder = r'C:\Messdaten\hennen'
-    connections = [('et', instruments.Eurotherm2408),
-                   #('ps', instruments.Picoscope),
-                   #('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                   #('daq', instruments.USB2708HS),
-                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                  #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
-elif hostname == 'CHMP2':
-    datafolder = r'C:\data'
-    connections = [('ps', instruments.Picoscope),
-                   ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
-                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                   #('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                   #TEO
-                   ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
-else:
-    print(f'No Hostname specific settings found for {hostname}')
+datafolder = settings.datafolder
+inst_connections = settings.inst_connections
 
 globalvars = globals()
 instrument_varnames = {instruments.Picoscope:'ps',
@@ -214,15 +160,16 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.Eurotherm2408:'et',
                        instruments.TektronixDPO73304D:'ttx',
                        instruments.USB2708HS:'daq'}
+
 # Make varnames None until connected
 for kk,v in instrument_varnames.items():
     globalvars[v] = None
 
-visa_resources = settings.visa_rm.list_resources()
+visa_resources = visa.visa_rm.list_resources()
 # Connect to all the instruments
 # Instrument classes should all be Borg, because the instrument manager cannot be trusted
-# to work properly and reuse existing connections
-for varname, inst_class, *args in connections:
+# to work properly and reuse existing inst_connections
+for varname, inst_class, *args in inst_connections:
     if len(args) > 0:
         if args[0].startswith('USB') or args[0].startswith('GPIB'):
             # don't bother trying to connect to it if it's not in visa_resources

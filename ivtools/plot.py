@@ -1,8 +1,7 @@
 """ Functions for making plots with IV data """
 
-# Local imports
-from . import analyze
-from . import settings
+import ivtools
+import ivtools.analyze
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
@@ -348,7 +347,7 @@ def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=
     colors = cm(np.linspace(0, 1, len(vs)))
     fits = []
     for v,c in zip(vs, colors):
-        it = analyze.interpiv(data, v, column=V, left=np.nan, right=np.nan, findmonotonic=True)
+        it = ivtools.analyze.interpiv(data, v, column=V, left=np.nan, right=np.nan, findmonotonic=True)
         plt.plot(1000/it['T'], np.log(it[I]), marker='.', color=c, label=format(v, '.2f'), **kwargs)
         #notnan = ~it['I'].isnull()
         #fits.append(polyfit(1/it['T'][notnan], log(it['G'][notnan]), 1))
@@ -401,7 +400,7 @@ def auto_title(data, keys=None, ax=None):
     return title
 
 def plot_R_states(data, v0=.1, v1=None, **kwargs):
-    resist_states = analyze.resistance_states(data, v0, v1)
+    resist_states = ivtools.analyze.resistance_states(data, v0, v1)
     resist1 = resist_states[0]
     resist2 = resist_states[1]
     if type(resist1) is pd.Series:
@@ -497,7 +496,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                 chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
-                x = analyze.maketimearray(chdata, c)
+                x = ivtools.analyze.maketimearray(chdata, c)
                 ax.set_xlabel('Time [s]')
                 ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
             else:
@@ -555,7 +554,7 @@ def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
             ax1 = fig.add_subplot(111)
             ax2 = ax1.twinx()
     if 't' not in d:
-        d['t'] = analyze.maketimearray(d)
+        d['t'] = ivtools.analyze.maketimearray(d)
     ax1.plot(d['t'], d['V'], c='blue', label='V')
     ax2.plot(d['t'] - phaseshift* 1e-9, d['I'], c='green', label='I')
     ax2.set_ylabel('Current [A]', color='green')
@@ -565,7 +564,7 @@ def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
     ax2.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 # Could be a module, but I want it to keep its state when the code is reloaded
-class interactive_figs(object):
+class InteractiveFigs(object):
     '''
     A class to manage the figures used for automatic plotting of IV data while it is measured.
     Right now we are limited to one axis per figure ...  could be extended.
@@ -574,9 +573,9 @@ class interactive_figs(object):
     # TODO: save/load configurations to disk?
     def __init__(self, n=4, clear_state=False):
         statename = self.__class__.__name__
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.class_states:
+            ivtools.class_states[statename] = {}
+        self.__dict__ = ivtools.class_states[statename]
         if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...
@@ -854,7 +853,7 @@ def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     if smooth:
-        data = analyze.moving_avg(data, window=10)
+        data = ivtools.analyze.moving_avg(data, window=10)
     if type(data) is list:
         nloops = len(data)
     else:
@@ -870,12 +869,12 @@ def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
 def R_vs_cycle_plotter(data, ax=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
-    # Using line plot because that's all interactive_figs knows about
+    # Using line plot because that's all InteractiveFigs knows about
 
     if len(data['V'] > 1):
         v0 = np.min(data['V'])
         v1 = np.max(data['V'])
-        R = analyze.resistance(data, v0, v1)
+        R = ivtools.analyze.resistance(data, v0, v1)
     else:
         R = np.nan
     # Try to always make a data point after the largest one already on the plot
@@ -904,8 +903,8 @@ def chplotter(data, ax=None, **kwargs):
         if lendata > 100000:
             print('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
             step = lendata // 50000
-            #plotdata = analyze.decimate(data, step, columns=channels)
-            plotdata = analyze.sliceiv(data, step=step, columns=channels)
+            #plotdata = ivtools.analyze.decimate(data, step, columns=channels)
+            plotdata = ivtools.analyze.sliceiv(data, step=step, columns=channels)
             if 'downsampling' in plotdata:
                 plotdata['downsampling'] *= step
             else:
@@ -962,7 +961,7 @@ def vtplotter(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     ''' This defines what gets plotted on ax2'''
     if 't' not in data:
-        t = analyze.maketimearray(data)
+        t = ivtools.analyze.maketimearray(data)
     else:
         t = data['t']
     ax.plot(t, data['V'], **kwargs)
@@ -978,7 +977,7 @@ def itplotter(data, ax=None, **kwargs):
     if 't' in data:
         t = data['t']
     else:
-        t = analyze.maketimearray(data)
+        t = ivtools.analyze.maketimearray(data)
     ax.plot(t, data['I'], **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Current [$\mu$A]', color=color)
@@ -1242,8 +1241,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             # Split branches
             colorup = 'Red'
             colordown = 'DarkBlue'
-            plotiv(analyze.increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
-            plotiv(analyze.decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
+            plotiv(ivtools.analyze.increasing(l, sort=True), ax=ax, color=colorup, label=r'$\rightarrow$', **kwargs)
+            plotiv(ivtools.analyze.decreasing(l, sort=True), ax=ax, color=colordown, label=r'$\leftarrow$', **kwargs)
             ax.legend(title='Sweep Direction')
         else:
             # Colors will mess up if you pass a dataframe with non range(0, ..) index

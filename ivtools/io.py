@@ -1,9 +1,9 @@
 """ Functions for saving and loading data """
-
-# Local imports
-from . import analyze
-from . import plot as ivplot
-from . import settings
+# we don't make heavy use of these other modules
+# don't reference them on the top level
+# this is to avoid circular import problems
+import ivtools.analyze
+import ivtools.plot
 
 import os
 import re
@@ -53,9 +53,9 @@ class MetaHandler(object):
     '''
     def __init__(self, clear_state=False):
         statename = self.__class__.__name__
-        if statename not in settings.instrument_states:
-            settings.instrument_states[statename] = {}
-        self.__dict__ = settings.instrument_states[statename]
+        if statename not in ivtools.class_states:
+            ivtools.class_states[statename] = {}
+        self.__dict__ = ivtools.class_states[statename]
         if not self.__dict__ or clear_state:
             self.clear()
 
@@ -1048,7 +1048,7 @@ def set_readonly(filepath):
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None, plotfunc=ivplot.plotiv, **kwargs):
+def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None, plotfunc=ivtools.plot.plotiv, **kwargs):
     # Make a plot of all the .s and .df files in a directory
     # Save as pngs with the same name
     # kwargs go to plotfunc
@@ -1060,17 +1060,17 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, gro
     def processgroup(g):
         if smoothpercent > 0:
             smoothn = max(int(smoothpercent * len(g.iloc[0].V) / 100), 1)
-            g = analyze.moving_avg(g, smoothn)
+            g = ivtools.analyze.moving_avg(g, smoothn)
         if 'R_series' in g:
             g['Vd'] = g['V'] - g['R_series'] * g['I']
-        #analyze.convert_to_uA(g)
+        #ivtools.analyze.convert_to_uA(g)
         return g
 
     def plotgroup(g):
         fig, ax = plt.subplots()
         step = int(np.ceil(len(g) / maxloops))
         plotfunc(g[::step], alpha=.6, ax=ax, **kwargs)
-        ivplot.auto_title(g)
+        ivtools.plot.auto_title(g)
 
     def writefig(pngfp):
         plt.savefig(pngfp)
@@ -1085,7 +1085,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, gro
             if overwrite or not os.path.isfile(pngfp):
                 df = pd.read_pickle(fn)
                 #if type(df) is pd.Series:
-                    #df = analyze.series_to_df(df)
+                    #df = ivtools.analyze.series_to_df(df)
                 df = processgroup(df)
                 print('plotting')
                 plotgroup(df)

@@ -2,11 +2,15 @@
 Functions for measuring IV data
 """
 # Local imports
-from . import plot as ivplot
-from . import analyze
+#from . import plot as ivplot
+#from . import analyze
+#from . import instruments
+#from . import settings
+#from . import io
 from . import instruments
-from . import settings
-from . import io
+import ivtools.analyze
+#import ivtools.instruments
+import ivtools.settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
@@ -15,12 +19,12 @@ import numpy as np
 import time
 import pandas as pd
 import os
-import visa
 from functools import partial
 import pickle
 import signal
 
 ########### Picoscope - Rigol AWG testing #############
+
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
                               ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
     rigol = instruments.RigolDG5000()
@@ -50,6 +54,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     Send n pulses of the input waveform and capture on specified channels of picoscope.
     Duration determines the length of one repetition of waveform.
     '''
+    from instruments import RigolDG5000, Picoscope
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -89,6 +94,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     kwargs go nowhere
     '''
+    import ivtools.analyze
+    from instruments import RigolDG5000, Picoscope
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -105,7 +112,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
     elif smartrange:
         # Smart range the monitor channel
-        smart_range(np.min(wfm), np.max(wfm), ch=[settings.MONITOR_PICOCHANNEL])
+        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
 
@@ -137,7 +144,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     chdata = ps.get_data(channels, raw=True)
     print('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
-    ivdata = settings.pico_to_iv(chdata)
+    ivdata = ivtools.settings.pico_to_iv(chdata)
 
     ivdata['nshots'] = n
 
@@ -187,6 +194,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
+    from instruments import RigolDG5000, Picoscope
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -292,6 +300,7 @@ def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
     Voltage sweep rate will  be constant.
     Trigger immediately
     '''
+    from instruments import RigolDG5000
     rigol = instruments.RigolDG5000()
 
     rate, duration = _rate_duration(v1, v2, rate, duration)
@@ -320,7 +329,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
     # Each range has a maximum possible offset
     max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
 
-    monitor_channel = settings.MONITOR_PICOCHANNEL
+    monitor_channel = ivtools.settings.MONITOR_PICOCHANNEL
     if monitor_channel in ch:
         # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
         arange, aoffs = ps.best_range((v1, v2), atten=ps.atten[monitor_channel])
@@ -333,8 +342,8 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
         #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
         # channelb should never go below zero, except for potentially op amp overshoot
         # I have seen it reach -0.1V
-        CC = settings.COMPLIANCE_CURRENT
-        polarity = np.sign(settings.CCIRCUIT_GAIN)
+        CC = ivtools.settings.COMPLIANCE_CURRENT
+        polarity = np.sign(ivtools.settings.CCIRCUIT_GAIN)
         if R is None:
             # Hypothetical resistance method
             # Signal should never go below 0V (compliance)
@@ -384,6 +393,7 @@ def _rate_duration(v1, v2, rate=None, duration=None):
     return rate, duration
 
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
+    import ivtools.plot as plot
     # Measure dc gain of rehan amplifier
     # Apply voltage
     rigol = instruments.RigolDG5000()
@@ -396,7 +406,7 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
     ps.capture(measurechannels, freq=1e6, duration=1, timeout_ms=1)
     time.sleep(.1)
     chdata = ps.get_data(measurechannels)
-    ivplot.plot_channels(chdata)
+    plot.plot_channels(chdata)
     chvalue = np.mean(chdata[ch])
     print('Measured {} volts on picoscope channel {}'.format(chvalue, ch))
 
@@ -408,6 +418,7 @@ def measure_dc_gain(Vin=1, ch='C', R=10e3):
 def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     # Probably an obsolete function
     # Send a test pulse to determine better range to use
+    import ivtools.plot as plot
     arange, aoffset = best_range([outamp, -outamp])
     RANGE = {}
     OFFSET = {}
@@ -420,7 +431,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     chs = ['A', ch]
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1, chrange=RANGE, choffset=OFFSET)
     data = ps.get_data(chs)
-    ivplot.plot_channels(data)
+    plot.plot_channels(data)
 
     # will change the range and offset after all
     squeeze_range(data, [ch])
@@ -428,7 +439,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     pulse_and_capture(sinwave, ch=chs, fs=freq*100, duration=1/freq, n=1000)
     data = ps.get_data(chs)
 
-    ivplot.plot_channels(data)
+    plot.plot_channels(data)
 
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
@@ -447,7 +458,7 @@ def set_compliance(cc_value):
     daq = instruments.USB2708HS()
     if cc_value > 1e-3:
         raise Exception('Compliance value out of range! Max 1 mA.')
-    fn = settings.COMPLIANCE_CALIBRATION_FILE
+    fn = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
     abspath = os.path.abspath(fn)
     if os.path.isfile(abspath):
         print('Reading calibration from file {abspath}'.format())
@@ -460,8 +471,8 @@ def set_compliance(cc_value):
     print('Setting compliance to {} A'.format(cc_value))
     daq.analog_out(0, dacval=DAC0)
     daq.analog_out(1, volts=DAC1)
-    settings.COMPLIANCE_CURRENT = cc_value
-    settings.INPUT_OFFSET = 0
+    ivtools.settings.COMPLIANCE_CURRENT = cc_value
+    ivtools.settings.INPUT_OFFSET = 0
 
 def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     '''
@@ -481,7 +492,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
     offsets_list = []
     dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
 
-    fn = settings.COMPLIANCE_CALIBRATION_FILE
+    fn = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
     abspath = os.path.abspath(fn)
     fdir = os.path.split(abspath)[0]
     if not os.path.isdir(fdir):
@@ -507,7 +518,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         for v,cv in zip(dacvals, compensations):
             daq.analog_out(1, volts=cv)
             daq.analog_out(0, v)
-            ivplot.mypause(.1)
+            plot.mypause(.1)
             #plt.pause(.1)
             cc, offs = measure_compliance()
             ccurrent.append(cc)
@@ -521,7 +532,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
         ax2.set_xlabel('DAC0 value')
         ax2.set_ylabel('Input offset')
         ax2.legend()
-        ivplot.mypause(.1)
+        plot.mypause(.1)
         #plt.pause(.1)
     output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
               'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
@@ -561,7 +572,8 @@ def measure_compliance():
     There is a second complication because the input is not always at zero volts, because it is not compensated fully.
     This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
     '''
-    gain = settings.CCIRCUIT_GAIN
+    import ivtools.plot as plot
+    gain = ivtools.settings.CCIRCUIT_GAIN
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
     # Put AWG in hi-Z mode (output channel off)
@@ -569,7 +581,7 @@ def measure_compliance():
     # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
     ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
     rigol.output(False)
-    ivplot.mypause(.1)
+    plot.mypause(.1)
     #plt.pause(.1)
     # Immediately capture some samples on channels A and B
     # Use these channel settings for the capture -- does not modify global settings
@@ -585,7 +597,7 @@ def measure_compliance():
     Bmean = np.mean(picodata['B'])
 
     # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
-    settings.INPUT_OFFSET = Amean
+    ivtools.settings.INPUT_OFFSET = Amean
     print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
 
     # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
@@ -593,7 +605,7 @@ def measure_compliance():
     # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
     #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
     ccurrent =  Bmean / (gain)
-    settings.COMPLIANCE_CURRENT = ccurrent
+    ivtools.settings.COMPLIANCE_CURRENT = ccurrent
     print('Measured compliance current: {} A'.format(ccurrent))
 
     return (ccurrent, Amean)
@@ -646,7 +658,7 @@ def digipot_test(plot=True):
     rigol.pulse_builtin('SIN', duration=dur, amp=1)
     d = ps.get_data(channels)
     d = digipot_to_iv(d)
-    d = analyze.moving_avg(d,1000)
+    d = ivtools.analyze.moving_avg(d,1000)
     data.append(d)
     if plot:
         #ax.plot(d['V'], d['I'])
@@ -666,7 +678,7 @@ def digipot_test(plot=True):
         rigol.pulse_builtin('SIN', duration=dur, amp=A)
         d = ps.get_data(channels)
         d = digipot_to_iv(d)
-        d = analyze.moving_avg(d,100)
+        d = ivtools.analyze.moving_avg(d,100)
         data.append(d)
         if plot:
             #ax.plot(d['V'], d['I'], label=w)
@@ -729,15 +741,15 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     # Make I, V arrays and store the parameters used to make them
 
     dataout = datain
-    CC = settings.COMPLIANCE_CURRENT
-    IO = settings.INPUT_OFFSET
+    CC = ivtools.settings.COMPLIANCE_CURRENT
+    IO = ivtools.settings.INPUT_OFFSET
     # If data is raw, convert it here
     if datain['A'].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     B = datain['B']
     #C = datain['C']
-    gain = settings.CCIRCUIT_GAIN
+    gain = ivtools.settings.CCIRCUIT_GAIN
     dataout['V'] = dtype(A - IO)
     #dataout['V_formula'] = 'CHA - IO'
     dataout['INPUT_OFFSET'] = IO
@@ -774,7 +786,7 @@ def new_ccircuit_to_iv(datain, dtype=np.float32):
     B = datain['B']
     C = datain['C']
     #C = datain['C']
-    gain = settings.CCIRCUIT_GAIN
+    gain = ivtools.settings.CCIRCUIT_GAIN
     dataout['V'] = dtype(A)
     #dataout['V_formula'] = 'CHA - IO'
     #dataout['I'] = 1e3 * (B - C) / R
@@ -934,7 +946,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
     if 'units' not in dataout:
         dataout['units'] = {}
 
-    monitor_channel = settings.MONITOR_PICOCHANNEL
+    monitor_channel = ivtools.settings.MONITOR_PICOCHANNEL
     if monitor_channel in datain:
         V = datain[monitor_channel]
         dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
