@@ -1,15 +1,8 @@
 """
 Functions for measuring IV data
 """
-# Local imports
-#from . import plot as ivplot
-#from . import analyze
-#from . import instruments
-#from . import settings
-#from . import io
-from . import instruments
 import ivtools.analyze
-#import ivtools.instruments
+import ivtools.instruments as instruments
 import ivtools.settings
 
 from matplotlib import pyplot as plt
@@ -54,7 +47,6 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     Send n pulses of the input waveform and capture on specified channels of picoscope.
     Duration determines the length of one repetition of waveform.
     '''
-    from instruments import RigolDG5000, Picoscope
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -95,7 +87,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     kwargs go nowhere
     '''
     import ivtools.analyze
-    from instruments import RigolDG5000, Picoscope
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -194,7 +185,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
-    from instruments import RigolDG5000, Picoscope
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
