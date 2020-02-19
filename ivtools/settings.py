@@ -19,7 +19,7 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
 COMPLIANCE_CALIBRATION_FILE = os.path.join(pyivtools_dir, 'compliance_calibration.pkl')
-CCIRCUIT_GAIN = -2000 # common base resistance * differential amp gain
+CCIRCUIT_GAIN = 1930 # common base resistance * differential amp gain
 
 # This is the channel where you are sampling the input waveform
 MONITOR_PICOCHANNEL = 'A'

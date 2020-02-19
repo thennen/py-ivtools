@@ -905,7 +905,7 @@ def increasing(data, column='V', sort=False):
 
 
 @ivfunc
-def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False):#, left=None, right=None):
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, fill_value='extrapolate'):#, left=None, right=None):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns
     Right now this sorts the arrays according to "column"
@@ -927,11 +927,11 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False)
     dataout = {}
     for ik in interpkeys:
         if reverse:
-            interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0)
+            interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0, bounds_error=False, fill_value=fill_value)
             dataout[ik] = interpolator(interpvalues)
             #dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
         else:
-            interpolator = interp1d(data[column], data[ik], axis=0)
+            interpolator = interp1d(data[column], data[ik], axis=0, bounds_error=False, fill_value=fill_value)
             dataout[ik] = interpolator(interpvalues)
             #dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
     dataout[column] = interpvalues

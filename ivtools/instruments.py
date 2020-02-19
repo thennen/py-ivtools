@@ -822,8 +822,17 @@ class RigolDG5000(object):
             self.write(':SOURCE{}:BURST:TRIG IMM'.format(ch))
 
     def burstmode(self, mode=None, ch=1):
-        '''Set the mode of burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity'''
-        return self.set_or_query(f':SOURCE{ch}:BURST:MODE', mode)
+        '''
+        Set the mode of burst mode.  I don't know what it means. 'TRIGgered|GATed|INFinity
+        Resets your idle level to zero for some reason!
+        therefore only sets the mode if you are not already in the mode
+        '''
+        currentmode = self.set_or_query(f':SOURCE{ch}:BURST:MODE', None)
+        if mode is None:
+            return currentmode
+        # If already in the requested state, don't send this command because it has side effects
+        elif currentmode != mode:
+            return self.set_or_query(f':SOURCE{ch}:BURST:MODE', mode)
 
     def burst(self, state=None, ch=1):
         ''' Turn the burst mode on or off '''
@@ -1102,7 +1111,11 @@ class RigolDG5000(object):
         self.interp(interp)
 
     def setup_burstmode(self, n=1, burstmode='TRIG', trigsource='MAN', ch=1):
-        # Set up bursting
+        '''
+        Several commands grouped togother to set up bursting
+        MIGHT temporarily mess with your idle level until you send the first pulse
+        this is because of the burstmode command
+        '''
         self.burstmode(burstmode, ch=ch)
         self.trigsource(trigsource, ch=ch)
         self.ncycles(n, ch=ch)
