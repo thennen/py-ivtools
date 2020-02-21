@@ -124,8 +124,8 @@ class Picoscope(object):
 
     def print_settings(self):
         print('Picoscope channel settings:')
-        print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range],
-                           index=['Couplings', 'Attenuations', 'Offsets', 'Ranges']))
+        print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range, self.BWlimit],
+                           index=['Couplings', 'Attenuations', 'Offsets', 'Ranges', 'BWlimit']))
 
     # Settings are a class because I wanted a slightly more convenient syntax for typing in repeatedly
     # Namely, ps.range.b = 2 vs ps.range['B'] = 2
@@ -1147,6 +1147,10 @@ class RigolDG5000(object):
 
 
     def continuous_builtin(self, shape='SIN', duration=None, freq=None, amp=1, offset=0, ch=1):
+        '''
+        SINusoid|SQUare|RAMP|PULSe|NOISe|USER|DC|SINC|EXPRise|EXPFall|CARDiac|
+        GAUSsian |HAVersine|LORentz|ARBPULSE|DUAltone
+        '''
         self.load_builtin_wfm(shape=shape, duration=duration, freq=freq, amp=amp, offset=offset, ch=ch)
         # Get out of burst mode
         self.burst(False, ch=ch)

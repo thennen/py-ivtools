@@ -1579,7 +1579,10 @@ def fit_sine_array(array, dt=1, guess_freq=1, debug=False):
 
 @ivfunc
 def fft_iv(data, columns=None):
-    ''' Calculate fft of arrays.  Return with same name as original arrays. '''
+    '''
+    Calculate fft of arrays.  Return with same name as original arrays.
+    I divide by length/2 because I always get confused with the fft normalization.
+    '''
     if columns is None:
         columns = find_data_arrays(data)
 
@@ -1592,7 +1595,8 @@ def fft_iv(data, columns=None):
     # Make dict of dicts
     dataout = {}
     for c in columns:
-        dataout[c] = np.fft.fft(data[c])
+        norm = len(data[c])/2
+        dataout[c] = np.fft.fft(data[c]) / norm
     add_missing_keys(data, dataout)
 
     # TODO: Units change due to fft...
