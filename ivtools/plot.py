@@ -37,8 +37,10 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
 
     if hasattr(Y, '__iter__'):
         lenY = len(Y)
+        Yscalar = False
     else:
         lenY = 1
+        Yscalar = True
 
     if x is None:
         X = np.arange(lenY)
@@ -57,12 +59,6 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     else:
         lenX = 1
         Xscalar = True
-    if hasattr(Y, '__iter__'):
-        lenY = len(Y)
-        Yscalar = False
-    else:
-        lenY = 1
-        Yscalar = True
 
     # X and Y should be the same length, if they are not, truncate one
     if lenX != lenY:

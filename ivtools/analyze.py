@@ -749,10 +749,10 @@ def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
 def concativ(data, columns=None):
     ''' Inverse of splitiv.  Can only be called on multiple loops.  Keeps only keys from 0th loop.'''
     if columns is None:
-        concatkeys = find_data_arrays(data)
+        columns = find_data_arrays(data)
 
     out = {}
-    for k in concatkeys:
+    for k in columns:
         if type(data) is pd.DataFrame:
             out[k] = np.concatenate(list(data[k]))
         elif type(data) is list:
