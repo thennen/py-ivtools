@@ -86,7 +86,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     kwargs go nowhere
     '''
-    import ivtools.analyze
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -164,7 +163,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         # TODO: What if we want to retain a copy of the non-smoothed data?
         # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
         # Maybe only smoothimate I and V?
-        ivdata = analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit and (n > 1):
         print('Splitting data into individual pulses')
@@ -173,13 +172,13 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             if 'downsampling' in ivdata:
                 # Not exactly correct but I hope it's close enough
                 nsamples /= ivdata['downsampling']
-            ivdata = analyze.splitiv(ivdata, nsamples=nsamples)
+            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
         elif splitbylevel is not None:
             # splitbylevel can split loops even if they are not the same length
             # Could take more time though?
             # This is not a genius way to determine to split at + or - dV/dt
             increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
-            ivdata = analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
     return ivdata
 
