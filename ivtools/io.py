@@ -421,10 +421,10 @@ class MetaHandler(object):
         May modify the input data in addition to returning it
         # TODO make it always modify the input data, or never
         '''
-        if len(self.meta) > 0:
-            print('Attaching the following metadata:')
+        #if len(self.meta) > 0:
+            #print('Attaching the following metadata:')
             # TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
-            self.print()
+            #self.print()
         dtype = type(data)
         if dtype is dict:
             # Make shallow copy
