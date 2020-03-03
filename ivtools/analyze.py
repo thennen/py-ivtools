@@ -9,6 +9,10 @@ I try to make every function compatible with any of these four datatypes (wherev
 There is some pain involved with this, which I try to abstract away, but python is only so good of a language and I'm only so good of a programmer.
 
 Generally, analyzing list of dicts will be faster, but DataFrames more convenient
+
+TODO: organize this better
+TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
+TODO make a small file with test data (single iv and multiple iv) and load them here, so we can test the functions
 """
 
 # Local imports
@@ -27,14 +31,11 @@ from matplotlib import pyplot as plt
 import sys
 from scipy.signal import savgol_filter as savgol
 
-
-# TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
-
-# TODO make a small file with test data (single iv and multiple iv) and load them here, so we can test the functions
+#### Some infrastructure
 
 def ivfunc(func):
     '''
-    Decorator which allows the same function to be used on a single loop, as
+    Function decorator which allows the same function to be used on a single loop, as
     well as a container of loops.
 
     Decorated function should take a single loop and return anything
@@ -159,10 +160,9 @@ def ivfunc(func):
 
 
 class paramlist(list):
-    # Only a class so that ivfunc can know what you want to do with it
-    # Which is pass a list of parameters to use for each individual loop
+    # Wraps a list to identify itself to ivfunc as a list that it should index into
+    # This is so you can pass a list of parameters to use for each individual IV curve
     pass
-
 
 def paramfunc(func):
     # Wraps a function to identify itself to ivfunc as a function to be called on the data to determine input parameters
@@ -201,42 +201,16 @@ def find_data_arrays(data):
         return [ak for ak,l in zip(arraykeys, lens) if l == Alen]
 
 
-@ivfunc
-def diffiv(data, stride=1, columns=None):
-    ''' Calculate first difference of arrays.'''
-    if columns is None:
-        columns = find_data_arrays(data)
-    arrays = [data[c] for c in columns]
-    diffarrays = [ar[stride:] - ar[:-stride] for ar in arrays]
-    dataout = {c:diff for c,diff in zip(columns, diffarrays)}
-    add_missing_keys(data, dataout)
-    return dataout
+def add_missing_keys(datain, dataout):
+    # kind of like dataout.update(datain) but doesn't overwrite values
+    # TODO: return the new dict instead of modifying the input
+    for k in datain.keys():
+        if k not in dataout.keys():
+            dataout[k] = datain[k]
 
 
-### Determine "switching" thresholds ###
-# Basically use some criteria to identify a single point on the IV curve
-# having the data point index is useful, so there's a separate function for doing that
-# TODO: rename things (don't use the word threshold) for the general concept of choosing a datapoint
-# select?
-
-@ivfunc
-def select_by_maxdiff(data, column='I', stride=1):
-    '''
-    Find switching thresholds by finding the maximum differences.
-    Return index of the threshold datapoint
-    '''
-    diff = data[column][stride:] - data[column][:-stride]
-    argmaxdiff = np.argmax(diff)
-
-    return argmaxdiff
-
-@ivfunc
-def thresholds_bydiff(data, stride=1):
-    ''' Find switching thresholds by finding the maximum differences. '''
-    argmaxdiffI = select_by_maxdiff(data, column='I', stride=stride)
-
-    return indexiv(data, argmaxdiffI)
-
+#### These are for pulling single points, or sets of points out of each IV curve using some criteria
+# 'select' returns the indices of the array matching the criteria, which at some point I considered a useful thing
 
 @ivfunc
 def select_by_crossing(data, column='I', thresh=0.5, direction=True):
@@ -262,15 +236,15 @@ def select_by_crossing(data, column='I', thresh=0.5, direction=True):
 
 
 @ivfunc
-def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
+def select_by_maxdiff(data, column='I', stride=1):
     '''
-    Determine threshold datapoint by the first to cross a certain value
-    return the whole datastructure with the data arrays replaced by the value at the threshold point
-    If data in column is decreasing, specify direction=False
-    Return a new iv structure with the values at the threshold in place of data arrays
+    Find switching thresholds by finding the maximum differences.
+    Return index of the threshold datapoint
     '''
-    index = select_by_crossing(data, column=column, thresh=thresh, direction=direction)
-    return indexiv(data, index)
+    diff = data[column][stride:] - data[column][:-stride]
+    argmaxdiff = np.argmax(diff)
+
+    return argmaxdiff
 
 
 @ivfunc
@@ -321,6 +295,51 @@ def select_by_derivative(data, threshold=None, debug=False):
 
 
 @ivfunc
+def select_from_func():
+    ''' Select data index by function '''
+    pass
+
+
+@ivfunc
+def select_nclosest(data, n=2, x=None, y=None, xarr='V', yarr='I'):
+    # Return the indices of the n data points nearest to the indicated x, y value
+    X = data[xarr]
+    Y = data[yarr]
+    if x is None:
+        distance = (Y - y)**2
+    elif y is None:
+        distance = (X - x)**2
+    else:
+        distance = (X - x)**2 + (Y - y)**2
+
+    nclosest = np.argsort(distance)[:n]
+
+    return nclosest
+
+
+# All these do is index into the arrays of the datastructure by combining select_??? and indexiv
+
+@ivfunc
+def thresholds_bydiff(data, stride=1):
+    ''' Find switching thresholds by finding the maximum differences. '''
+    argmaxdiffI = select_by_maxdiff(data, column='I', stride=stride)
+
+    return indexiv(data, argmaxdiffI)
+
+
+@ivfunc
+def threshold_bycrossing(data, column='I', thresh=0.5, direction=True):
+    '''
+    Determine threshold datapoint by the first to cross a certain value
+    return the whole datastructure with the data arrays replaced by the value at the threshold point
+    If data in column is decreasing, specify direction=False
+    Return a new iv structure with the values at the threshold in place of data arrays
+    '''
+    index = select_by_crossing(data, column=column, thresh=thresh, direction=direction)
+    return indexiv(data, index)
+
+
+@ivfunc
 def threshold_byderivative(data, threshold=None, interp=False, debug=False):
     '''
     Find thresholds by derivative method
@@ -340,13 +359,6 @@ def threshold_byderivative(data, threshold=None, interp=False, debug=False):
 
     return dataout
 
-@ivfunc
-def select_from_func():
-    ''' Select data index by function '''
-    pass
-
-
-### End determine switching thresholds ###
 
 
 '''
@@ -354,6 +366,8 @@ def select_from_func():
 def thresholds_byval(data, value):
     pindex(data, 'I', value)
 '''
+
+###
 
 @ivfunc
 def arrayfun(func, columns=None):
@@ -367,6 +381,23 @@ def arrayfun(func, columns=None):
     dataout = {c:fa for c,fa in zip(columns, funarrays)}
     add_missing_keys(data, dataout)
     return dataout
+
+
+@ivfunc
+def maketimearray(data, basedon=None):
+    ''' Make the time array based on number of samples, sample rate, and downsampling'''
+    if basedon is None:
+        # Don't know what data columns exist
+        columns = find_data_arrays(data)
+    else:
+        columns = [basedon]
+    t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
+    if 'downsampling' in data:
+        t *= data['downsampling']
+    return t
+
+
+#### Filtering/resampling/signal processing
 
 @ivfunc
 def moving_avg(data, window=5, columns=None):
@@ -405,6 +436,7 @@ def medfilt(data, window=5, columns=('I', 'V')):
     dataout = {c:sm for c,sm in zip(columns, smootharrays)}
     add_missing_keys(data, dataout)
     return dataout
+
 
 @ivfunc
 def savgolfilt(window, order, columns=None):
@@ -488,18 +520,57 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
 
 
 @ivfunc
-def maketimearray(data, basedon=None):
-    ''' Make the time array based on number of samples, sample rate, and downsampling'''
-    if basedon is None:
-        # Don't know what data columns exist
-        columns = find_data_arrays(data)
-    else:
-        columns = [basedon]
-    t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
-    if 'downsampling' in data:
-        t *= data['downsampling']
-    return t
+def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, fill_value='extrapolate'):#, left=None, right=None):
+    '''
+    Interpolate all the arrays in ivloop to new values of one of the columns
+    Right now this sorts the arrays according to "column"
+    would be nice if newvalues could be a function, or an array of arrays ...
+    '''
+    lenI = len(data[column])
+    interpkeys = [k for k,v in data.items() if (type(v) == np.ndarray and np.shape(v)[0] == lenI)]
+    interpkeys = [ik for ik in interpkeys if ik != column]
 
+    # Get the largest monotonic subsequence of data, with 'column' increasing
+    if findmonotonic:
+        data = largest_monotonic(data)
+
+    # not doing this anymore, but might want the code for something else
+    #saturated = abs(dataout[column]/dataout[column][-1]) - 1 < 0.0001
+    #lastindex = np.where(saturated)[0][0]
+    #dataout[column] = dataout[column][:lastindex
+
+    dataout = {}
+    for ik in interpkeys:
+        if reverse:
+            interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0, bounds_error=False, fill_value=fill_value)
+            dataout[ik] = interpolator(interpvalues)
+            #dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
+        else:
+            interpolator = interp1d(data[column], data[ik], axis=0, bounds_error=False, fill_value=fill_value)
+            dataout[ik] = interpolator(interpvalues)
+            #dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
+    dataout[column] = interpvalues
+    add_missing_keys(data, dataout)
+
+    return dataout
+
+
+@ivfunc
+def downsample_dumb(data, nsamples, columns=None):
+    ''' Downsample arrays with equal spacing. Probably won't be exactly nsamples'''
+    if columns is None:
+        columns = find_data_arrays(data)
+        l = len(data[columns[0]])
+        step = round(l / (nsamples - 1))
+    if step <= 1:
+        return data
+    dataout = {c:data[c][::step] for c in columns}
+    add_missing_keys(data, dataout)
+    return dataout
+
+
+
+#### These take one piece out of each IV measurement, and throws away the rest
 
 @ivfunc
 def indexiv(data, index):
@@ -571,8 +642,11 @@ def slicefraction(data, stop=1/2, start=0, step=1):
     return dataout
 
 
+#### These split each IV curve up into multiple pieces
+#### Use the word "split", like str.split()
+
 @ivfunc
-def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
+def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1, dupe_endpts=True):
     '''
     Split loops into multiple loops, by threshold crossing
     Only implemented V threshold crossing
@@ -625,7 +699,10 @@ def split_by_crossing(data, column='V', thresh=0, direction=None, hyspts=1):
     for i, j in zip(trigger[:-1], trigger[1:]):
         splitloop = {}
         for k in splitkeys:
-            splitloop[k] = data[k][i:j]
+            if dupe_endpts:
+                splitloop[k] = data[k][i:j+1]
+            else:
+                splitloop[k] = data[k][i:j]
         add_missing_keys(data, splitloop)
         outlist.append(splitloop)
 
@@ -696,7 +773,10 @@ def splitbranch(data, columns=None, dupe_endpoints=True, make_increasing=False):
 
 
 def split_updown():
-    ''' dunno I am sick of writing updown = splitbranch(data), up =updown[::2], down=updown[1::2]'''
+    '''
+    NOT IMPLEMENTED
+    dunno I am sick of writing updown = splitbranch(data), up =updown[::2], down=updown[1::2]
+    '''
     pass
 
 
@@ -745,6 +825,9 @@ def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
     # If you pass a Series, you get a list of dicts anyway
     # This is slightly complicated to fix and I don't want to do it now
     return outlist
+
+
+#####
 
 def concativ(data, columns=None):
     ''' Inverse of splitiv.  Can only be called on multiple loops.  Keeps only keys from 0th loop.'''
@@ -867,6 +950,18 @@ def reversearrays(data, columns=None):
 
 
 @ivfunc
+def diffiv(data, stride=1, columns=None):
+    ''' Calculate first difference of arrays.'''
+    if columns is None:
+        columns = find_data_arrays(data)
+    arrays = [data[c] for c in columns]
+    diffarrays = [ar[stride:] - ar[:-stride] for ar in arrays]
+    dataout = {c:diff for c,diff in zip(columns, diffarrays)}
+    add_missing_keys(data, dataout)
+    return dataout
+
+
+@ivfunc
 def diffsign(data, column='V'):
     '''
     Return boolean array indicating if V is increasing, decreasing, or constant.
@@ -879,15 +974,18 @@ def diffsign(data, column='V'):
 
 @ivfunc
 def nanmask(data, column='I', value=9.9100000000000005e+37):
-    ''' Replace a value with nan.  Wrote this for replacing keithley special nan value ..'''
+    '''
+    Replace a value with nan.  Wrote this for replacing keithley special nan value
+    Dumb function name
+    '''
     mask = data[column] == value
     dataout = data.copy()
     dataout[column][mask] = np.nan
     return dataout
 
+
 # I guess a func that just calls ivfuncs doesn't need to be an ivfunc itself
 #@ivfunc
-
 def decreasing(data, column='V', sort=False):
     decreased = indexiv(data, lambda l: diffsign(l, column) < 0)
     if sort:
@@ -903,42 +1001,6 @@ def increasing(data, column='V', sort=False):
         return sortvalues(increased, column='V', ascending=True)
     else:
         return increased
-
-
-@ivfunc
-def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, fill_value='extrapolate'):#, left=None, right=None):
-    '''
-    Interpolate all the arrays in ivloop to new values of one of the columns
-    Right now this sorts the arrays according to "column"
-    would be nice if newvalues could be a function, or an array of arrays ...
-    '''
-    lenI = len(data[column])
-    interpkeys = [k for k,v in data.items() if (type(v) == np.ndarray and np.shape(v)[0] == lenI)]
-    interpkeys = [ik for ik in interpkeys if ik != column]
-
-    # Get the largest monotonic subsequence of data, with 'column' increasing
-    if findmonotonic:
-        data = largest_monotonic(data)
-
-    # not doing this anymore, but might want the code for something else
-    #saturated = abs(dataout[column]/dataout[column][-1]) - 1 < 0.0001
-    #lastindex = np.where(saturated)[0][0]
-    #dataout[column] = dataout[column][:lastindex
-
-    dataout = {}
-    for ik in interpkeys:
-        if reverse:
-            interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0, bounds_error=False, fill_value=fill_value)
-            dataout[ik] = interpolator(interpvalues)
-            #dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
-        else:
-            interpolator = interp1d(data[column], data[ik], axis=0, bounds_error=False, fill_value=fill_value)
-            dataout[ik] = interpolator(interpvalues)
-            #dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
-    dataout[column] = interpvalues
-    add_missing_keys(data, dataout)
-
-    return dataout
 
 
 @ivfunc
@@ -981,6 +1043,9 @@ def largest_monotonic(data, column='I'):
     add_missing_keys(data, dataout)
 
     return dataout
+
+
+####  primitive step detection -- mostly obsolete
 
 @ivfunc
 def jumps(loop, column='I', thresh=0.25, normalize=True, abs=True):
@@ -1041,18 +1106,9 @@ def nth_jump(loop, n, **kwargs):
         last_jump = np.nan
     return last_jump 
 
-'''
-Can't do this because ivfunc doesn't know it also iterate through the "index", which is different for every loop
-could do it if index was a function (i.e. first_jump)
-@ivfunc
-def pindex(loop, column, index):
-    if np.isnan(index):
-        return np.nan
-    else:
-        return loop[column][index]
-'''
 
-# These are dumb names.  Supposed to be pindex for parallel index
+# Supposed to be pindex for parallel index
+# These are dumb names.
 # What it is doing is indexing a single column of multiple dicts (dataframe) at the same time
 
 @ivfunc
@@ -1152,12 +1208,6 @@ def normalize(data):
     return dataout
 
 
-def add_missing_keys(datain, dataout):
-    # kind of like dataout.update(datain) but doesn't overwrite values
-    # TODO: return the new dict instead of modifying the input
-    for k in datain.keys():
-        if k not in dataout.keys():
-            dataout[k] = datain[k]
 
 @ivfunc
 def resistance(data, v0=0.5, v1=None, x='V', y='I'):
@@ -1239,22 +1289,6 @@ def polyfitiv(data, order=1, x='V', y='I', xmin=None, xmax=None, ymin=None, ymax
 
     return pf
 
-@ivfunc
-def select_nclosest(data, n=2, x=None, y=None, xarr='V', yarr='I'):
-    # Return the indices of the n data points nearest to the indicated x, y value
-    X = data[xarr]
-    Y = data[yarr]
-    if x is None:
-        distance = (Y - y)**2
-    elif y is None:
-        distance = (X - x)**2
-    else:
-        distance = (X - x)**2 + (Y - y)**2
-
-    nclosest = np.argsort(distance)[:n]
-
-    return nclosest
-
 
 @ivfunc
 def resistance_states(data, v0=0.1, v1=None):
@@ -1268,19 +1302,6 @@ def convert_unit(column='I', prefix='u'):
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
 
-
-@ivfunc
-def downsample_dumb(data, nsamples, columns=None):
-    ''' Downsample arrays with equal spacing. Probably won't be exactly nsamples'''
-    if columns is None:
-        columns = find_data_arrays(data)
-        l = len(data[columns[0]])
-        step = round(l / (nsamples - 1))
-    if step <= 1:
-        return data
-    dataout = {c:data[c][::step] for c in columns}
-    add_missing_keys(data, dataout)
-    return dataout
 
 
 #### datatype conversion/ non-trivial pandas operations ####
@@ -1970,7 +1991,6 @@ def filter_byhand(df, groupby=None, **kwargs):
             if s is not None:
                 selected.append(s)
         return pd.DataFrame(selected)
-
 
 
 
