@@ -1503,18 +1503,33 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
 
-def plot_multicolor(x, y, c=None, cmap='rainbow', ax=None, **kwargs):
+def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     ''' line plot whose color changes along its length '''
     from matplotlib.collections import LineCollection
     if ax is None:
         fig, ax = plt.subplots()
+    cm = plt.get_cmap(cmap)
     if c is None:
-        c = np.arange(len(x))
+        #c = np.arange(len(x))
+        c = cm(np.linspace(0, 1, len(x)))
+    else:
+        # be able to scale/clip the range of colors using vmin and vmax (like imshow)
+        cmin = np.min(c)
+        cmax = np.max(c)
+        if vmin is None:
+            vmin = cmin
+        if vmax is None:
+            vmax = cmax
+
+        scaledc = (np.linspace(cmin, cmax, len(x)) - vmin) / (vmax - vmin)
+        c = cm(np.clip(scaledc, 0, 1))
+
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
     lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
-    lc.set_array(c)
+    #lc.set_array(c)
+    lc.set_color(c)
     lc.set_linewidth(2)
     lc.set(**kwargs)
 

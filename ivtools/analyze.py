@@ -1903,6 +1903,7 @@ def synchronize(data, column='I', to=0):
 ### Interactive
 # TODO: dig up some other interactive stuff you have written
 
+
 def filter_byhand(df, groupby=None, **kwargs):
     '''
     Select a subset of loops by hand.
