@@ -15,69 +15,220 @@ from numbers import Number
 from functools import wraps
 from collections import deque
 
-def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yfunc=None, **kwargs):
+
+def arrowpath(x, y, ax=None, **kwargs):
+    # make a quiver style plot along a path
+    # Draws one arrow per pair of data points
+    # Should use interpolation or downsampling beforehand so the arrows are not too smallh
+    if ax is None:
+        ax = plt.gca()
+    qkwargs = dict(scale_units='xy', angles='xy', scale=1, width=.005)
+    if 'c' in kwargs:
+        qkwargs['color'] = kwargs['c']
+    # only pass these keywords through
+    kws = ['alpha', 'scale', 'scale_units', 'width', 'headwidth', 'headlength',
+           'headaxislength', 'minshaft', 'minlength', 'color', 'pivot', 'label']
+    for k,v in kwargs.items():
+        if k in kws:
+            qkwargs[k] = v
+    ax.quiver(x[:-1], y[:-1], x[1:]-x[:-1], y[1:]-y[:-1], **qkwargs)
+
+def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     '''
-    Plot an array vs another array contained in iv object
-    if None is passed for x, then plots vs range(len(x))
+    line plot whose color changes along its length
     '''
+    from matplotlib.collections import LineCollection
+    if ax is None:
+        fig, ax = plt.subplots()
+    cm = plt.get_cmap(cmap)
+    if c is None:
+        #c = np.arange(len(x))
+        c = cm(np.linspace(0, 1, len(x)))
+    else:
+        # be able to scale/clip the range of colors using vmin and vmax (like imshow)
+        cmin = np.min(c)
+        cmax = np.max(c)
+        if vmin is None:
+            vmin = cmin
+        if vmax is None:
+            vmax = cmax
+
+        scaledc = (np.linspace(cmin, cmax, len(x)) - vmin) / (vmax - vmin)
+        c = cm(np.clip(scaledc, 0, 1))
+
+    points = np.array([x, y]).T.reshape(-1, 1, 2)
+    segments = np.concatenate([points[:-1], points[1:]], axis=1)
+
+    lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
+    #lc.set_array(c)
+    lc.set_color(c)
+    lc.set_linewidth(2)
+    lc.set(**kwargs)
+
+    ax.add_collection(lc)
+    ax.autoscale()
+
+def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
+           plotfunc=plt.plot, autotitle=False, labels=None, labelfmt=None, colorbyval=True,
+           hold=False , **kwargs):
+    '''
+    IV loop plotting which can handle single or multiple loops.
+    the point is mainly to do coloring and labeling in a nice way.
+
+    data structure should be dict-like or list-like of dict-like
+    Can plot any column vs any other column
+    Automatically labels the axes, with name and units if they are in the data structure
+    Can assign a colormap to the lines
+    if you want a single color for all lines, use the "color" keyword
+    Can transform the x and y data by passing functions to xfunc and/or yfunc arguments
+    if x and y specify a scalar value, then just one scatter plot is made
+    if x is None, then y is plotted vs range(len(y))
+    maxsamples : downsample to this number of data points if necessary
+    kwargs passed through to ax.plot (can customize line properties this way)
+
+    Maybe unexpected behavior: A new figure is created if ax=None
+
+    Can pass an arbitrary plotting function, which defaults to plt.plot
+    Could then define some other plots that take IV data and reuse plotiv functionality.
+    '''
+    if hold:
+        # you can type hold=1 instead of ax=plt.gca()
+        fig = plt.gcf()
+        ax = plt.gca()
     if ax is None:
         fig, ax = plt.subplots()
 
-    # Can pass non strings to plot on the x,y axes
-    # But turn them into strings for subsequent part of the code
-    if type(y) == str:
-        Y = iv[y]
-    elif hasattr(y, '__call__'):
-        Y = y(iv)
-        y = y.__name__
-    else:
-        Y = y
-        # Don't know if this is a good idea
-        y = '[{}, ..., {}]'.format(y[0], y[-1])
+    # check if plotfunc uses any of the same keywords as plotiv
+    plotiv_args = inspect.getfullargspec(plotiv).args
+    plotfunc_args = inspect.getfullargspec(plotfunc).args
+    overlap_args = set(plotiv_args) & set(plotfunc_args)
+    # We know how to deal with these ones
+    overlap_args -= set(('x', 'y', 'c', 'ax'))
+    if any(overlap_args):
+        print(f'the following args are used by both plotiv and plotfunc, and will not pass through: {overlap_args}')
 
-    if hasattr(Y, '__iter__'):
-        lenY = len(Y)
-        Yscalar = False
-    else:
-        lenY = 1
-        Yscalar = True
+    # might be one curve, might be many
+    dtype = type(data)
+    assert dtype in (list, dict, pd.Series, pd.DataFrame)
+    # Convert to a list of dict-like, so we can use a consistent syntax below
+    if dtype in (dict, pd.Series):
+        data = [data]
+    elif dtype == pd.DataFrame:
+        data = data.to_dict(orient='records')
 
-    if x is None:
-        X = np.arange(lenY)
-    elif type(x) == str:
-        X = iv[x]
-    elif hasattr(x, '__call__'):
-        X = x(iv)
-        x = x.__name__
-    else:
-        X = x
-        x = '[{}, ..., {}]'.format(x[0], x[-1])
+    lendata = len(data)
 
-    if hasattr(X, '__iter__'):
-        lenX = len(X)
-        Xscalar = False
-    else:
-        lenX = 1
-        Xscalar = True
-
-    # X and Y should be the same length, if they are not, truncate one
-    if lenX != lenY:
-        print('_plot_single_iv: X and Y arrays are not the same length! Truncating the longer one.')
-        if lenX > lenY:
-            X = X[:lenY]
-            lenX = lenY
+    ##### Line coloring #####
+    if lendata > 1:
+        # There are several loops
+        # Pick colors for each line
+        # you can either pass a list of colors, or a colormap
+        if isinstance(cm, list):
+            colors = cm
+        elif 'color' in kwargs:
+            # color overrides everything
+            colors = [kwargs['color']] * len(data)
         else:
-            Y = Y[:lenX]
-            lenY = lenX
+            if isinstance(cm, str):
+                # Str refers to the name of a colormap
+                cmap = plt.cm.get_cmap(cm)
+            elif type(cm) in (mpl.colors.LinearSegmentedColormap, mpl.colors.ListedColormap):
+                cmap = cm
+            # TODO: add vmin and vmax arguments to stretch the color map
+            if c is None:
+                colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
+            elif type(c) is str:
+                cdata = np.array([d[c] for d in data])
+                if colorbyval:
+                    # color by value of the column given
+                    cmax = np.max(cdata)
+                    cmin = np.min(cdata)
+                    normc = (cdata - cmin) / (cmax - cmin)
+                    colors = cmap(normc)
+                else:
+                    # this means we want to color by the category of the value in the column
+                    # Should put in increasing order, but equally spaced on the color map,
+                    # not proportionally spaced according to the value of the data column
+                    uvals, category = np.unique(cdata, return_inverse=True)
+                    colors = cmap(category / max(category))
+            else:
+                # It should be either a list of colors or a list of values
+                # Cycle through it if it's not long enough
+                firstval = next(iter(c))
+                if hasattr(firstval, '__iter__'):
+                    #it's a list of strings, or of RGB values or something
+                    colors = [c[i%len(c)] for i in range(lendata)]
+                else:
+                    # It's probably an array of values?  Map them to colors
+                    normc = (c - np.min(c)) / (np.max(c) - np.min(c))
+                    colors = cmap(normc)
+    else:
+        # Use default color cycling
+        colors = [None]
 
-    if maxsamples is not None and maxsamples < lenX:
-        # Down sample data
-        print('Downsampling data for plot!!')
-        step = int(lenX/maxsamples)
-        X = X[np.arange(0, lenX, step)]
-        Y = Y[np.arange(0, lenY, step)]
+    ##### Line labeling #####
+    if labels is not None:
+        if type(labels) is str:
+            # TODO: allow passing a list of strings, which can label by multiple values
+            #       but there is an ambiguity if the length of that list happens to be the
+            #       same as the length of the data..
+            # label by the key with this name
+            if type(data) == list:
+                label_list = [d[labels] for d in data]
+            else:
+                #should be dataframe
+                label_list = data[labels]
+        else:
+            # otherwise we will iterate through labels directly (so you can pass a list of labels)
+            # make np.nan count as None (not labelled)
+            label_list = list(map(lambda v: None if (isinstance(v, Number) and np.isnan(v)) else v, labels))
+        assert len(label_list) == len(data)
+        # reformat the labels in case they are numbers
+        if labelfmt:
+            label_list = list(map(lambda v: None if v is None else format(v, labelfmt), label_list))
+    else:
+        # even if we did not specify labels, we will still iterate through a list of labels
+        # Make them all None (unlabeled)
+        label_list = [None] * len(data)
 
-    # Name the axes
+    # Drop repeat labels that have the same line style, because we don't need hundreds of repeat labeled objects
+    # right now only the color identifies the line style
+    # Python loop style.. will not be efficient, but it's the first solution I thought of.
+    lineset = set()
+    if lendata > 1:
+        for i in range(len(data)):
+            l = label_list[i]
+            cc = colors[i]
+            if type(cc) is np.ndarray:
+                # need a hashable type...
+                cc = tuple(cc)
+            if (l,cc) in lineset:
+                label_list[i] = None
+            else:
+                lineset.add((l,cc))
+
+    ##### Come up with axis labels #####
+    if type(y) == str:
+        yname = y
+    elif hasattr(y, '__call__'):
+        yname = y.__name__
+    elif hasattr(y, '__iter__'):
+        # Don't know if this is a good idea
+        yname = '[{}, ..., {}]'.format(y[0], y[-1])
+    else:
+        raise exception('I do not know wtf you are trying to plot')
+    if x is None:
+        xname = None
+    elif type(x) == str:
+        xname = x
+    elif hasattr(x, '__call__'):
+        xname = x.__name__
+    elif hasattr(x, '__iter__'):
+        # Don't know if this is a good idea
+        xname = '[{}, ..., {}]'.format(x[0], x[-1])
+    else:
+        raise exception('I do not know wtf you are trying to plot')
+
     defaultunits = {'V':     ('Voltage', 'V'),
                     'Vcalc': ('Device Voltage', 'V'),
                     'Vd':    ('Device Voltage', 'V'),
@@ -94,181 +245,121 @@ def _plot_single_iv(iv, ax=None, x='V', y='I', maxsamples=500000, xfunc=None, yf
     if y in defaultunits.keys():
         longnamey, unity = defaultunits[y]
 
-    # Overwrite the guess with value from dict if it exists
-    if ('longnames' in iv.keys()) and (type(iv['longnames']) == dict):
-        if x in iv['longnames'].keys():
-            longnamex = iv['longnames'][x]
-        if y in iv['longnames'].keys():
-            longnamey = iv['longnames'][y]
-    if ('units' in iv.keys()) and (type(iv['units']) == dict):
-        if x in iv['units'].keys():
-            unitx = iv['units'][x]
-        if y in iv['units'].keys():
-            unity = iv['units'][y]
+    # Overwrite the label guess with value from dict if it exists
+    # Only consider the first data -- hopefully there are not different units passed at once
+    iv0 = data[0]
+    if ('longnames' in iv0.keys()) and (type(iv0['longnames']) == dict):
+        if x in iv0['longnames'].keys():
+            longnamex = iv0['longnames'][x]
+        if y in iv0['longnames'].keys():
+            longnamey = iv0['longnames'][y]
+    if ('units' in iv0.keys()) and (type(iv0['units']) == dict):
+        if x in iv0['units'].keys():
+            unitx = iv0['units'][x]
+        if y in iv0['units'].keys():
+            unity = iv0['units'][y]
 
     xlabel = longnamex
     if unitx != '?':
-        xlabel += ' [{}]'.format(unitx)
+        xlabel += f' [{unitx}]'
     ylabel = longnamey
     if unity != '?':
-        ylabel += ' [{}]'.format(unity)
+        ylabel += f' [{unity}]'
 
     if xfunc is not None:
-        # Apply a function to x array
-        X = xfunc(X)
         xlabel = '{}({})'.format(xfunc.__name__, xlabel)
     if yfunc is not None:
-        # Apply a function to y array
-        Y = yfunc(Y)
         ylabel = '{}({})'.format(yfunc.__name__, ylabel)
+    # We will label the axes at the end, in case the plotfunc tries to set its own labels
 
-    ax.set_xlabel(xlabel)
-    ax.set_ylabel(ylabel)
 
-    if Xscalar and Yscalar:
-        # X and Y were scalars
-        if 'c' in kwargs:
-            # Stop matplotlib warning (maybe)
-            kwargs['c'] = [kwargs['c']]
-        # Not actually a line, might lead to really strange bugs..
-        line = ax.scatter(X, Y, **kwargs)
-    else:
-        line = ax.plot(X, Y, **kwargs)[0]
+    ##### Make the lines #####
+    lines = []
+    for iv, c, l in zip(data, colors, label_list):
+        ivtype = type(iv)
+        if ivtype not in (dict, pd.Series):
+            # what the F, you passed a list with something weird in it
+            print('plotiv did not understand the input datatype {}'.format(ivtype))
+            continue
 
-    return line
-
-def arrowplot(data, x, y, ax, **kwargs):
-    # Needed by plotiv to make a quiver style plot
-    # pass this function to plotiv as plotfunc=arrowplot
-    xd = data[x]
-    yd = data[y]
-    qkwargs = {}
-    if 'c' in kwargs:
-        qkwargs['color'] = kwargs['c']
-    ax.quiver(xd[:-1], yd[:-1], xd[1:]-xd[:-1], yd[1:]-yd[:-1], scale_units='xy', angles='xy', scale=1, width=.005, **qkwargs)
-
-def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
-           plotfunc=_plot_single_iv, autotitle=False, labels=None, labelfmt=None, colorbyval=True,
-           hold=False , **kwargs):
-    '''
-    IV loop plotting which can handle single or multiple loops.
-    Can plot any column vs any other column
-    Can assign a colormap to the lines, or use all one color using e.g. color='black'
-    Can transform the x and y data by passing functions to xfunc and/or yfunc arguments
-    if x and y specify a scalar values, then just one scatter plot is made
-    if x is None, then y is plotted vs range(len(y))
-    maxsamples : downsample to this number of data points if necessary
-    kwargs passed through to ax.plot (can customize line properties this way)
-    if you want a single color for all lines, use the "color" keyword
-    New figure is created if ax=None
-
-    Can pass an arbitrary plotting function, which defaults to _plot_single_iv, haven't tested it yet
-    Could then define some other plots that take IV data and reuse plotiv functionality.
-    '''
-    if hold:
-        # if you are sick of typing ax=plt.gca(), you can type hold=1
-        fig = plt.gcf()
-        ax = plt.gca()
-    if ax is None:
-        fig, ax = plt.subplots()
-
-    dtype = type(data)
-
-    if dtype in (np.ndarray, list, pd.DataFrame):
-        # There are several loops
-        # Pick colors
-        # you can pass a list of colors, or a colormap
-        if isinstance(cm, list):
-            colors = cm
-        elif 'color' in kwargs:
-            # color overrides everything
-            colors = [kwargs['color']] * len(data)
+        ## construct the x and y arrays that you actually want to plot
+        # Can pass non dict keys to plot on the x,y axes (func, list..)
+        if type(y) == str:
+            Y = iv[y]
+        elif hasattr(y, '__call__'):
+            # can pass a function as y, this will be called on the whole data structure
+            Y = y(iv)
         else:
-            if isinstance(cm, str):
-                # Str refers to the name of a colormap
-                cmap = plt.cm.get_cmap(cm)
-            elif type(cm) in (mpl.colors.LinearSegmentedColormap, mpl.colors.ListedColormap):
-                cmap = cm
-            # TODO: add vmin and vmax arguments to stretch the color map
-            if c is None:
-                colors = [cmap(c) for c in np.linspace(0, 1, len(data))]
-            elif type(c) is str:
-                if colorbyval:
-                    # color by value of the column given
-                    normc = (data[c] - np.min(data[c])) / (np.max(data[c]) - np.min(data[c]))
-                    colors = cmap(normc)
-                else:
-                    # this means we want to color by the category of the value in the column
-                    # Should put in increasing order, but equally spaced on the color map,
-                    # not proportionally spaced according to the value of the data column
-                    uvals, category = np.unique(data[c], return_inverse=True)
-                    colors = cmap(category / max(category))
-            else:
-                # It should be either a list of colors or a list of values
-                firstval = next(iter(c))
-                if hasattr(firstval, '__iter__'):
-                    colors = c
-                else:
-                    # It's probably an array of values?  Map them to colors
-                    normc = (c - np.min(c)) / (np.max(c) - np.min(c))
-                    colors = cmap(normc)
+            Y = y
 
-        # If there's only one line to plot, then use 'label' not 'labels'
-        if labels is not None:
-            if type(labels) is str:
-                # TODO: allow passing a list of strings, which can label by multiple values
-                #       but there is an ambiguity if the length of that list happens to be the
-                #       same as the length of the data..
-                # label by the key with this name
-                if type(data) == list:
-                    label_list = [d[labels] for d in data]
-                else:
-                    #should be dataframe
-                    label_list = data[labels]
-            else:
-                # otherwise we will iterate through labels directly (so you can pass a list of labels)
-                # make np.nan count as None (not labelled)
-                label_list = list(map(lambda v: None if (isinstance(v, Number) and np.isnan(v)) else v, labels))
-            assert len(label_list) == len(data)
-            # reformat the labels in case they are numbers
-            if labelfmt:
-                label_list = list(map(lambda v: None if v is None else format(v, labelfmt), label_list))
+        if hasattr(Y, '__iter__'):
+            lenY = len(Y)
+            Yscalar = False
         else:
-            # even if we did not specify labels, we will still iterate through a list of labels
-            # Make them all None (unlabeled)
-            label_list = [None] * len(data)
+            lenY = 1
+            Yscalar = True
 
-        # Drop repeat labels that have the same line style, because we don't need hundreds of repeat labeled objects
-        # right now only the color identifies the line style
-        # Python loop style.. will not be efficient, but it's the first solution I thought of.
-        lineset = set()
-        for i in range(len(data)):
-            l = label_list[i]
-            c = tuple(colors[i])
-            if (l,c) in lineset:
-                label_list[i] = None
-            else:
-                lineset.add((l,c))
-
-        if dtype == pd.DataFrame:
-            # Plot x array vs y array.  x can be none, then it will just turn into data point number
-            line = []
-            for (row, iv), c, l in zip(data.iterrows(), colors, label_list):
-                kwargs.update(c=c)
-                line.append(plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs))
+        if x is None:
+            X = np.arange(lenY)
+        elif type(x) == str:
+            X = iv[x]
+        elif hasattr(x, '__call__'):
+            X = x(iv)
         else:
-            line = []
-            for iv, c, l in zip(data, colors, label_list):
-                kwargs.update(c=c)
-                newline = plotfunc(iv, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, label=l, **kwargs)
-                line.append(newline)
+            X = x
 
-    elif dtype in (dict, pd.Series):
-        # Just one IV
-        line = plotfunc(data, ax=ax, x=x, y=y, maxsamples=maxsamples, xfunc=xfunc, yfunc=yfunc, **kwargs)
-    else:
-        print('plotiv did not understand the input datatype {}'.format(dtype))
-        return
+        if hasattr(X, '__iter__'):
+            lenX = len(X)
+            Xscalar = False
+        else:
+            lenX = 1
+            Xscalar = True
+
+        if xfunc is not None:
+            X = xfunc(X)
+        if yfunc is not None:
+            Y = yfunc(Y)
+
+        # X and Y should be the same length, if they are not, truncate one
+        if lenX != lenY:
+            print('_plot_single_iv: X and Y arrays are not the same length! Truncating the longer one.')
+            if lenX > lenY:
+                X = X[:lenY]
+                lenX = lenY
+            else:
+                Y = Y[:lenX]
+                lenY = lenX
+
+        if maxsamples is not None and maxsamples < lenX:
+            # Down sample data
+            print('Downsampling data for plot!!')
+            step = int(lenX/maxsamples)
+            X = X[np.arange(0, lenX, step)]
+            Y = Y[np.arange(0, lenY, step)]
+
+        if Xscalar and Yscalar:
+            # there's only one datapoint per iv loop
+            # the way this is set up, we plot one line per iv loop
+            # so we cannot easily connect the points in the plot
+            # Will be invisible if e.g. plotfunc == plt.plot and there's no marker
+            #if plotfunc == plt.plot
+            #    plotfunc = plt.scatter
+            pass
+
+        plotfunc_kwargs = dict(c=c, label=l)
+        if 'ax' in plotfunc_args:
+            # If the plotfunc takes an axis argument, pass it through,
+            # otherwise have to assume it plots on the current axis..
+            plotfunc_kwargs['ax'] = ax
+        # all plotiv kwargs get passed through to plotfunc, even if they overwrite something (i.e. label)
+        plotfunc_kwargs.update(kwargs)
+        if ('x' not in plotfunc_args) or ('y' not in plotfunc_args):
+            # stupid plotfunc didn't label x and y keywords, assume they are the first two arguments
+            newline = plotfunc(X, Y, **plotfunc_kwargs)
+        else:
+            newline = plotfunc(x=X, y=Y, **plotfunc_kwargs)
+        # probably going to be a list of length 1 lists...
+        lines.append(newline)
 
     # Use EngFormatter if the plotted values are small or large
     xlims = np.array(ax.get_xlim())
@@ -278,7 +369,11 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     if any(ylims > 1e3) or all(ylims < 1e-1):
         ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
-    if labels and any(labels):
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    # put on a legend if there are labels
+    if labels and ((type(labels) is str) or any(labels)):
         leg = ax.legend()
         if type(labels) is str:
             leg.set_title(labels)
@@ -289,7 +384,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         auto_title(data, keys=None, ax=ax)
 
     # should I really return this?  usually I don't assign the values and then they get cached by ipython forever
-    # I have never actually used the return value.
+    # Can always get them with plt.gca()...
     # return ax, line
 
 ## Linearized plots for conduction mechanisms
@@ -340,7 +435,7 @@ def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=
     if minv is None:
         minv = 0.05
     vs = np.linspace(minv, maxv, numv)
-    colors = cm(np.linspace(0, 1, len(vs)))
+    colors = cmap(np.linspace(0, 1, len(vs)))
     fits = []
     for v,c in zip(vs, colors):
         it = ivtools.analyze.interpiv(data, v, column=V, left=np.nan, right=np.nan, findmonotonic=True)
@@ -352,7 +447,7 @@ def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=
         #plt.plot(fitx, np.polyval(fits[-1], fitx), color=color, alpha=.7)
         #ax.lines[-1].set_label(None)
     #plt.legend(title='Device Voltage')
-    colorbar_manual(minv, maxv, cmap=cm, label='Applied Voltage [V]')
+    colorbar_manual(minv, maxv, cmap=cmap, label='Applied Voltage [V]')
     plt.xlabel('Temperature [K] (scale 1/T)')
     plt.ylabel('log(I)')
     formatter = mpl.ticker.FuncFormatter(lambda x, y: format(1000/x, '.0f'))
@@ -1502,39 +1597,6 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
-
-def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
-    ''' line plot whose color changes along its length '''
-    from matplotlib.collections import LineCollection
-    if ax is None:
-        fig, ax = plt.subplots()
-    cm = plt.get_cmap(cmap)
-    if c is None:
-        #c = np.arange(len(x))
-        c = cm(np.linspace(0, 1, len(x)))
-    else:
-        # be able to scale/clip the range of colors using vmin and vmax (like imshow)
-        cmin = np.min(c)
-        cmax = np.max(c)
-        if vmin is None:
-            vmin = cmin
-        if vmax is None:
-            vmax = cmax
-
-        scaledc = (np.linspace(cmin, cmax, len(x)) - vmin) / (vmax - vmin)
-        c = cm(np.clip(scaledc, 0, 1))
-
-    points = np.array([x, y]).T.reshape(-1, 1, 2)
-    segments = np.concatenate([points[:-1], points[1:]], axis=1)
-
-    lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
-    #lc.set_array(c)
-    lc.set_color(c)
-    lc.set_linewidth(2)
-    lc.set(**kwargs)
-
-    ax.add_collection(lc)
-    ax.autoscale()
 
 def xylim():
     # return the command to set a plot xlim,ylim to the xlim and ylim of the current plot

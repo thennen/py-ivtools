@@ -1366,9 +1366,9 @@ def whats_different(df):
     # Got a better way to tell which columns have arrays nested in them?
     # This is the clunkiest thing ever
     arrays = df.apply(lambda x: type(x[0])) == np.ndarray
-    arraycols = df.columns[arrays].to_list()
+    arraycols = df.columns[arrays].tolist()
     dicts = df.apply(lambda x: type(x[0])) == dict
-    dictcols = df.columns[dicts].to_list()
+    dictcols = df.columns[dicts].tolist()
     notarraysordicts = df.drop(arraycols + dictcols, 1)
     equaltofirst = notarraysordicts.apply(lambda r: r == notarraysordicts.iloc[0], 1)
     mask = ~equaltofirst.apply(all)
