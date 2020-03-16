@@ -19,7 +19,7 @@ from collections import deque
 def arrowpath(x, y, ax=None, **kwargs):
     # make a quiver style plot along a path
     # Draws one arrow per pair of data points
-    # Should use interpolation or downsampling beforehand so the arrows are not too smallh
+    # Should use interpolation or downsampling beforehand so the arrows are not too small
     if ax is None:
         ax = plt.gca()
     qkwargs = dict(scale_units='xy', angles='xy', scale=1, width=.005)
@@ -53,7 +53,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None,
         if vmax is None:
             vmax = cmax
 
-        scaledc = (np.linspace(cmin, cmax, len(x)) - vmin) / (vmax - vmin)
+        scaledc = (c - vmin) / (vmax - vmin)
         c = cm(np.clip(scaledc, 0, 1))
 
     points = np.array([x, y]).T.reshape(-1, 1, 2)
