@@ -27,7 +27,8 @@ def arrowpath(x, y, ax=None, **kwargs):
         qkwargs['color'] = kwargs['c']
     # only pass these keywords through
     kws = ['alpha', 'scale', 'scale_units', 'width', 'headwidth', 'headlength',
-           'headaxislength', 'minshaft', 'minlength', 'color', 'pivot', 'label']
+           'headaxislength', 'minshaft', 'minlength', 'color', 'pivot', 'label',
+           'clim', 'cmap', 'linestyle', 'zorder']
     for k,v in kwargs.items():
         if k in kws:
             qkwargs[k] = v
