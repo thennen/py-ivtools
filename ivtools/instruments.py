@@ -1281,7 +1281,7 @@ class Keithley2600(object):
             self.read_raw = self.conn.read_raw
             self.close = self.conn.close
             # Store up to 100 loops in memory in case you forget to save them to disk
-            self.data= deque(maxlen=100)
+            self.data = deque(maxlen=100)
         # Always re-run lua file
         moduledir = os.path.split(__file__)[0]
         self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
@@ -2148,15 +2148,11 @@ class Eurotherm2408(object):
     '''
     This uses some dumb proprietary EI-BISYNCH protocol over serial.
     Make the connections DB2 -> HF, DB3 -> HE, DB5 -> HD.
-    Link together DB1, DB4, DB6
     You can also use modbus.
     '''
     def __init__(self, addr='COM32', gid=0, uid=1):
         # BORG
-        statename = '_'.join((self.__class__.__name__, addr, str(gid), str(uid)))
-        if statename not in ivtools.instrument_states:
-            ivtools.instrument_states[statename] = {}
-        self.__dict__ = ivtools.instrument_states[statename]
+        self.__dict__ = persistent_state.eurotherm_state
         self.connect(addr, gid, uid)
 
     def connect(self, addr='COM32', gid=0, uid=1):
@@ -2166,10 +2162,7 @@ class Eurotherm2408(object):
             self.uid = uid
 
     def connected(self):
-        if hasattr(self,'conn'):
-            return self.conn.isOpen()
-        else:
-            return False
+        return hasattr(self, 'conn')
 
     def write_data(self, mnemonic, data):
         # Select
@@ -2188,10 +2181,13 @@ class Eurotherm2408(object):
         bcc = chr(reduce(xor, (mnemonic + data + ETX).encode()))
         msg = EOT + gid + gid + uid + uid + STX + mnemonic + data + ETX + bcc
         # print(msg)
+        # Clear the buffer in case there is some garbage in there for some reason
+        # have recieved this reply before: b'\x18\x06'
+        self.conn.read_all()
         self.conn.write(msg.encode())
 
         # Wait?
-        time.sleep(.05)
+        time.sleep(.1)
 
         # Should reply
         # [NAK] - failed to write
@@ -2200,14 +2196,17 @@ class Eurotherm2408(object):
         ACK = '\x06'
         NAK = '\x15'
         reply = self.conn.read_all()
+        #print(reply)
         if reply == ACK.encode():
             return True
         elif reply == NAK.encode():
             return False
         else:
-            raise Exception('Eurotherm not connected properly')
+            #raise Exception('Eurotherm not connected properly')
+            # Sometimes the eurotherm actually got the message, but we failed to read the acknowledgement
+            print('Trouble with Eurotherm communication (wrong/no acknowledgement)')
 
-    def read_data(self, mnemonic):
+    def read_data(self, mnemonic, attempt=0):
         EOT = '\x04'
         ENQ = '\x05'
         gid = str(self.gid)
@@ -2219,16 +2218,23 @@ class Eurotherm2408(object):
         self.conn.write(poll.encode())
 
         # Wait?
-        time.sleep(.05)
+        time.sleep(.1)
 
         # Reply
         # [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
         reply = self.conn.read_all()
+        #print(reply)
         try:
             return float(reply[3:-2])
         except:
-            print('Failed to read Eurotherm 2408 temperature.')
-            return np.nan
+            print('Failed to read Eurotherm 2408')
+            # Just try again?
+            # Sometimes there is a lot of noise on the serial line ???
+            if attempt < 10:
+                time.sleep(.1)
+                return self.read_data(mnemonic, attempt+1)
+            else:
+                return np.nan
 
     def read_temp(self):
         return float(self.read_data('PV'))
