@@ -1477,11 +1477,11 @@ rf_file = None,
 t_meas = [],
 v_meas = [],  
 do_plots = False,
+show_results = True,
 time_shift = 0,
 reflection_offset = 0,
-sg_filt = False,
-window_length = 151, 
-polyorder = 4):
+transmission_offset = 0,
+return_figs = False):
     '''uses scattering parameters of a device and a applied signal to calculate the transmission through and the reflection from the device'''
     ntwk_kHz = rf.Network(file)
     frequencies_kHz = ntwk_kHz.f
@@ -1490,9 +1490,9 @@ polyorder = 4):
     s11angle_kHz = ntwk_kHz.s11.s_rad[:,0,0]
     s11mag_kHz = ntwk_kHz.s11.s_db[:,0,0]
 
-    s12_kHz = ntwk_kHz.s12.s[:,0,0]
-    s12angle_kHz = ntwk_kHz.s12.s_rad[:,0,0]
-    s12mag_kHz = ntwk_kHz.s12.s_db[:,0,0]
+    s21_kHz = ntwk_kHz.s21.s[:,0,0]
+    s21angle_kHz = ntwk_kHz.s21.s_rad[:,0,0]
+    s21mag_kHz = ntwk_kHz.s21.s_db[:,0,0]
 
     if rf_file != None:
         ntwk_MHz = rf.Network(rf_file)
@@ -1502,14 +1502,14 @@ polyorder = 4):
         s11angle_MHz = ntwk_MHz.s11.s_rad[:,0,0]
         s11mag_MHz = ntwk_MHz.s11.s_db[:,0,0]
 
-        s12_MHz = ntwk_MHz.s12.s[:,0,0]
-        s12angle_MHz = ntwk_MHz.s12.s_rad[:,0,0]
-        s12mag_MHz = ntwk_MHz.s12.s_db[:,0,0]
+        s21_MHz = ntwk_MHz.s21.s[:,0,0]
+        s21angle_MHz = ntwk_MHz.s21.s_rad[:,0,0]
+        s21mag_MHz = ntwk_MHz.s21.s_db[:,0,0]
 
-    if do_plots:
+    if do_plots or return_figs:
         fig_s, ax_s = plt.subplots()
-        ax_s.semilogx(frequencies_kHz, s12mag_kHz, color = 'blue', label = 'S$_{12}$ (k)')
-        ax_s.semilogx(frequencies_MHz, s12mag_MHz,'--', color = 'blue', label = 'S$_{12}$ (M)')
+        ax_s.semilogx(frequencies_kHz, s21mag_kHz, color = 'blue', label = 'S$_{21}$ (k)')
+        ax_s.semilogx(frequencies_MHz, s21mag_MHz,'--', color = 'blue', label = 'S$_{21}$ (M)')
         ax_s.semilogx(frequencies_kHz, s11mag_kHz, color = 'green', label = 'S$_{11}$ (k)')
         ax_s.semilogx(frequencies_MHz, s11mag_MHz,'--', color = 'green', label = 'S$_{11}$ (M)')
         ax_s.set_xbound(np.min(frequencies_kHz), np.max(frequencies_MHz))
@@ -1518,11 +1518,12 @@ polyorder = 4):
         ax_s.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
         ax_s.legend()
         fig_s.tight_layout()
-        fig_s.show()
+        if do_plots:
+            fig_s.show()
 
         fig_ph, ax_ph = plt.subplots()
-        ax_ph.semilogx(frequencies_kHz, s12angle_kHz/np.pi, color = 'blue', label = 'S$_{12}$ (k)')
-        ax_ph.semilogx(frequencies_MHz, s12angle_MHz/np.pi,'--', color = 'blue', label = 'S$_{12}$ (M)')
+        ax_ph.semilogx(frequencies_kHz, s21angle_kHz/np.pi, color = 'blue', label = 'S$_{21}$ (k)')
+        ax_ph.semilogx(frequencies_MHz, s21angle_MHz/np.pi,'--', color = 'blue', label = 'S$_{21}$ (M)')
         ax_ph.semilogx(frequencies_kHz, s11angle_kHz/np.pi, color = 'green', label = 'S$_{11}$ (k)')
         ax_ph.semilogx(frequencies_MHz, s11angle_MHz/np.pi,'--', color = 'green', label = 'S$_{11}$ (M)')
         ax_ph.set_xbound(np.min(frequencies_kHz), np.max(frequencies_MHz))
@@ -1532,7 +1533,8 @@ polyorder = 4):
         ax_ph.yaxis.set_major_formatter(mpl.ticker.FormatStrFormatter('%g $\pi$'))
         ax_ph.legend()
         fig_ph.tight_layout()
-        fig_ph.show()
+        if do_plots:
+            fig_ph.show()
 
     ################  interpolation and concatenation of the kMz and MHz regime ##################
 
@@ -1540,24 +1542,38 @@ polyorder = 4):
         idx_overlap = (frequencies_kHz >= np.min(frequencies_MHz)) & (frequencies_kHz <= np.max(frequencies_kHz))
         overlapFrequencies = frequencies_kHz[idx_overlap]
         overlap_s11_MHz_interp= complex_interpolation(overlapFrequencies, frequencies_MHz, s11_MHz, kind='cubic')
-        overlap_s12_MHz_interp= complex_interpolation(overlapFrequencies, frequencies_MHz, s12_MHz, kind='cubic')
+        overlap_s21_MHz_interp= complex_interpolation(overlapFrequencies, frequencies_MHz, s21_MHz, kind='cubic')
 
         idx_kHz = (frequencies_kHz < np.min(frequencies_MHz)) 
         idx_MHz = (frequencies_MHz > np.max(frequencies_kHz)) 
         frequencies_combined = np.concatenate([frequencies_kHz[idx_kHz], overlapFrequencies, frequencies_MHz[idx_MHz]])
         s11_combined = np.concatenate([s11_kHz[idx_kHz], overlap_s11_MHz_interp, s11_MHz[idx_MHz]]) 
-        s12_combined = np.concatenate([s12_kHz[idx_kHz], overlap_s12_MHz_interp, s12_MHz[idx_MHz]]) 
+        s21_combined = np.concatenate([s21_kHz[idx_kHz], overlap_s21_MHz_interp, s21_MHz[idx_MHz]]) 
 
-        if do_plots:
+        if do_plots or return_figs:
                 fig_tf, ax_tf = plt.subplots(2,1)
-                ax_tf[0].loglog(frequencies_combined, np.abs(s12_combined))
-                ax_tf[1].semilogx(frequencies_combined, np.angle(s12_combined))
+                ax_tf[0].loglog(frequencies_combined, np.abs(s21_combined))
+                ax_tf[1].semilogx(frequencies_combined, np.angle(s21_combined))
 
-        transferFunction = s12_combined
+                fig_rf, ax_rf = plt.subplots(2,1)
+                ax_rf[0].loglog(frequencies_combined, np.abs(s11_combined))
+                ax_rf[1].semilogx(frequencies_combined, np.angle(s11_combined))
+
+        transferFunction = s21_combined
         reflectionFunction = s11_combined
     else:
         frequencies_combined = frequencies_kHz
-        transferFunction = s12_kHz
+
+        if do_plots or return_figs:
+                fig_tf, ax_tf = plt.subplots(2,1)
+                ax_tf[0].loglog(frequencies_combined, np.abs(s21_kHz))
+                ax_tf[1].semilogx(frequencies_combined, np.angle(s21_kHz))
+
+                fig_rf, ax_rf = plt.subplots(2,1)
+                ax_rf[0].loglog(frequencies_combined, np.abs(s11_kHz))
+                ax_rf[1].semilogx(frequencies_combined, np.angle(s11_kHz))
+
+        transferFunction = s21_kHz
         reflectionFunction = s11_kHz
 
     ################################### get signal and perform fft #####################################
@@ -1568,31 +1584,36 @@ polyorder = 4):
 
     Signal_f = np.fft.rfft(v_signal)
 
-    if do_plots:
+    if do_plots or return_figs:
         fig_fft, ax_fft = plt.subplots()
         ax_fft.grid(True)
-        ax_fft.semilogx(f, np.abs(Signal_f), linewidth = 1)
+        ax_fft.loglog(f, np.abs(Signal_f), linewidth = 1)
         ax_fft.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
         ax_fft.set_title('Single-Sided Amplitude Spectrum of Signal. Fs = ' + str(round(Fs/1e9, 2)) + ' GHz')
         ax_fft.set_xlabel('Frequency [Hz]')
         ax_fft.set_ylabel('|P1(f)|')
-        fig_fft.show()
+        if do_plots:
+            fig_fft.show()
 
     ###################### interpolate transfer function to frequency content of signal #################################
-        
-    abs_transferFunction_interp_f = interp1d(frequencies_combined, np.abs(transferFunction), kind = 'cubic', fill_value="extrapolate")
-    angle_transferFunction_interp_f = interp1d(frequencies_combined, np.unwrap(np.angle(transferFunction)), kind = 'cubic', fill_value="extrapolate")
+    idx_extrapolation = np.where(f>np.max(frequencies_combined))[0]
+
+    abs_transferFunction_interp_f = interp1d(frequencies_combined, np.abs(transferFunction), kind = 'cubic', fill_value = "extrapolate")
+    angle_transferFunction_interp_f = interp1d(frequencies_combined, np.unwrap(np.angle(transferFunction)), kind = 'cubic', fill_value = "extrapolate")
     abs_transferFunction_interp = abs_transferFunction_interp_f(f)
+    abs_transferFunction_interp[idx_extrapolation] = abs_transferFunction_interp[idx_extrapolation[0]-1]
     
     abs_reflectionFunction_interp_f = interp1d(frequencies_combined, np.abs(reflectionFunction), kind = 'cubic', fill_value="extrapolate")
     angle_reflectionFunction_interp_f = interp1d(frequencies_combined, np.unwrap(np.angle(reflectionFunction)), kind = 'cubic', fill_value="extrapolate")
     abs_reflectionFunction_interp = abs_reflectionFunction_interp_f(f)
+    abs_reflectionFunction_interp[idx_extrapolation] = abs_reflectionFunction_interp[idx_extrapolation[0]-1]
 
     idx = (abs_transferFunction_interp > np.max(np.abs(transferFunction)))   
     abs_transferFunction_interp[idx] = np.max(np.abs(transferFunction))    
     if abs_transferFunction_interp[0] < 0:
         abs_transferFunction_interp[0] =  np.max(np.abs(transferFunction))
     angle_transferFunction_interp = angle_transferFunction_interp_f(f)
+    angle_transferFunction_interp[idx_extrapolation] = angle_transferFunction_interp[idx_extrapolation[0]-1]
     transferFunction_interp = abs_transferFunction_interp*np.exp(1j*np.unwrap(angle_transferFunction_interp))
     
     idx_r = (abs_reflectionFunction_interp > np.max(np.abs(reflectionFunction)))
@@ -1600,9 +1621,10 @@ polyorder = 4):
     if abs_reflectionFunction_interp[0] < 0:
         abs_reflectionFunction_interp[0] =  np.max(np.abs(reflectionFunction))
     angle_reflectionFunction_interp = angle_reflectionFunction_interp_f(f)
+    angle_reflectionFunction_interp[idx_extrapolation] = angle_reflectionFunction_interp[idx_extrapolation[0]-1]
     reflectionFunction_interp = abs_reflectionFunction_interp*np.exp(1j*np.unwrap(angle_reflectionFunction_interp))
 
-    if do_plots:
+    if do_plots or return_figs:
         ax_tf[0].loglog(f, np.abs(transferFunction_interp), 'r-')
         ax_tf[1].semilogx(f, np.angle(transferFunction_interp), 'r-') 
         ax_tf[0].set_ylabel('abs(Tf)')
@@ -1610,39 +1632,56 @@ polyorder = 4):
         for a in ax_tf:
             a.set_xlabel('Frequency [Hz]')
             a.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        fig_tf.show()
+        if do_plots:
+            fig_tf.show()
+
+        ax_rf[0].loglog(f, np.abs(reflectionFunction_interp), 'r-')
+        ax_rf[1].semilogx(f, np.angle(reflectionFunction_interp), 'r-') 
+        ax_rf[0].set_ylabel('abs(Rf)')
+        ax_rf[1].set_ylabel('angle(Rf)')
+        for a in ax_rf:
+            a.set_xlabel('Frequency [Hz]')
+            a.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        if do_plots:
+            fig_tf.show()
 
     ############################# convolute and inverse fourier transformat #######################################
 
     Signal_f_conv = Signal_f*transferFunction_interp
     Signal_f_conv_r = Signal_f*reflectionFunction_interp
-    Signal_t_conv  = np.fft.irfft(Signal_f_conv)
-    Signal_t_conv_r  = np.fft.irfft(Signal_f_conv_r)-reflection_offset
+    Signal_t_conv  = np.fft.irfft(Signal_f_conv) - transmission_offset
+    Signal_t_conv_r  = np.fft.irfft(Signal_f_conv_r) - reflection_offset
     v_stimulus = v_signal + Signal_t_conv_r
 
-    dt = t_signal[1]-t_signal[0]
-    index_shift = int(time_shift/dt)
-    time_shifted = t_signal[0:len(t_signal)-index_shift]-time_shift
+    if show_results or return_figs:
+        fig_sig, ax_sig = plt.subplots()
+        ax_sig.set_xlabel('Time [s]')
+        ax_sig.set_ylabel('Voltage [V]')
+        ax_sig.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        
+        if len(t_meas) >= 1 and len(v_meas) >= 1:
+            ax_sig.plot(t_meas, v_meas, label = 'Measurement')
+        ax_sig.plot(t_signal, Signal_t_conv, label = 'Calculation')
+        ax_sig.legend()
+        if show_results:
+            fig_sig.show()
 
-    fig_sig, ax_sig = plt.subplots()
-    ax_sig.set_xlabel('Time [s]')
-    ax_sig.set_ylabel('Voltage [V]')
-    ax_sig.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    
-    if len(t_meas) >= 1 and len(v_meas) >= 1:
-        ax_sig.plot(t_meas, v_meas, label = 'Measurement')
-    ax_sig.plot(time_shifted, Signal_t_conv, label = 'Calculation')
-    ax_sig.legend()
-    fig_sig.show()
+        fig_refl, ax_refl = plt.subplots()
+        ax_refl.set_xlabel('Time [s]')
+        ax_refl.set_ylabel('Voltage [V]')
+        ax_refl.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+        ax_refl.plot(t_signal, v_signal, label = 'Signal')
+        ax_refl.plot(t_signal, Signal_t_conv_r, label = 'Reflection')
+        ax_refl.plot(t_signal, v_stimulus, label = 'Stimulus')
+        ax_refl.legend()
+        if show_results:
+            fig_refl.show()
 
-    fig_refl, ax_refl = plt.subplots()
-    ax_refl.set_xlabel('Time [s]')
-    ax_refl.set_ylabel('Voltage [V]')
-    ax_refl.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    ax_refl.plot(t_signal, v_signal, label = 'Signal')
-    ax_refl.plot(time_shifted, Signal_t_conv_r, label = 'Reflection')
-    ax_refl.plot(time_shifted, v_stimulus, label = 'Stimulus')
-    ax_refl.legend()
-    fig_refl.show()
+    if return_figs == False:
+        return t_signal, Signal_t_conv_r, Signal_t_conv
+    else:
+        fig = [fig_s, fig_ph, fig_tf, fig_rf, fig_fft, fig_sig, fig_refl]
+        ax = [ax_s, ax_ph, ax_tf[0], ax_tf[1], ax_rf[0], ax_rf[1], ax_fft, ax_sig, ax_refl]
+        return t_signal, Signal_t_conv_r, Signal_t_conv, fig, ax
 
-    return time_shifted, Signal_t_conv_r, Signal_t_conv
+
