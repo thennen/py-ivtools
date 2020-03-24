@@ -1508,11 +1508,16 @@ return_figs = False):
 
     if do_plots or return_figs:
         fig_s, ax_s = plt.subplots()
-        ax_s.semilogx(frequencies_kHz, s21mag_kHz, color = 'blue', label = 'S$_{21}$ (k)')
-        ax_s.semilogx(frequencies_MHz, s21mag_MHz,'--', color = 'blue', label = 'S$_{21}$ (M)')
-        ax_s.semilogx(frequencies_kHz, s11mag_kHz, color = 'green', label = 'S$_{11}$ (k)')
-        ax_s.semilogx(frequencies_MHz, s11mag_MHz,'--', color = 'green', label = 'S$_{11}$ (M)')
-        ax_s.set_xbound(np.min(frequencies_kHz), np.max(frequencies_MHz))
+        if rf_file != None:
+            ax_s.semilogx(frequencies_kHz, s21mag_kHz, color = 'blue', label = 'S$_{21}$ (k)')
+            ax_s.semilogx(frequencies_MHz, s21mag_MHz,'--', color = 'blue', label = 'S$_{21}$ (M)')
+            ax_s.semilogx(frequencies_kHz, s11mag_kHz, color = 'green', label = 'S$_{11}$ (k)')
+            ax_s.semilogx(frequencies_MHz, s11mag_MHz,'--', color = 'green', label = 'S$_{11}$ (M)')
+            ax_s.set_xbound(np.min(frequencies_kHz), np.max(frequencies_MHz))
+        else:
+            ax_s.semilogx(frequencies_kHz, s21mag_kHz, color = 'blue', label = 'S$_{21}$')
+            ax_s.semilogx(frequencies_kHz, s11mag_kHz, color = 'green', label = 'S$_{11}$')
+            ax_s.set_xbound(np.min(frequencies_kHz), np.max(frequencies_kHz))
         ax_s.set_xlabel('Frequency [Hz]')
         ax_s.set_ylabel('Magnitude [dB]')
         ax_s.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -1522,11 +1527,16 @@ return_figs = False):
             fig_s.show()
 
         fig_ph, ax_ph = plt.subplots()
-        ax_ph.semilogx(frequencies_kHz, s21angle_kHz/np.pi, color = 'blue', label = 'S$_{21}$ (k)')
-        ax_ph.semilogx(frequencies_MHz, s21angle_MHz/np.pi,'--', color = 'blue', label = 'S$_{21}$ (M)')
-        ax_ph.semilogx(frequencies_kHz, s11angle_kHz/np.pi, color = 'green', label = 'S$_{11}$ (k)')
-        ax_ph.semilogx(frequencies_MHz, s11angle_MHz/np.pi,'--', color = 'green', label = 'S$_{11}$ (M)')
-        ax_ph.set_xbound(np.min(frequencies_kHz), np.max(frequencies_MHz))
+        if rf_file != None:
+            ax_ph.semilogx(frequencies_kHz, s21angle_kHz/np.pi, color = 'blue', label = 'S$_{21}$ (k)')
+            ax_ph.semilogx(frequencies_MHz, s21angle_MHz/np.pi,'--', color = 'blue', label = 'S$_{21}$ (M)')
+            ax_ph.semilogx(frequencies_kHz, s11angle_kHz/np.pi, color = 'green', label = 'S$_{11}$ (k)')
+            ax_ph.semilogx(frequencies_MHz, s11angle_MHz/np.pi,'--', color = 'green', label = 'S$_{11}$ (M)')
+            ax_ph.set_xbound(np.min(frequencies_kHz), np.max(frequencies_MHz))
+        else:
+            ax_ph.semilogx(frequencies_kHz, s21angle_kHz/np.pi, color = 'blue', label = 'S$_{21}$')
+            ax_ph.semilogx(frequencies_kHz, s11angle_kHz/np.pi, color = 'green', label = 'S$_{11}$')
+            ax_ph.set_xbound(np.min(frequencies_kHz), np.max(frequencies_kHz))
         ax_ph.set_xlabel('Frequency [Hz]')
         ax_ph.set_ylabel('Angle [rad]')
         ax_ph.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -1589,7 +1599,7 @@ return_figs = False):
         ax_fft.grid(True)
         ax_fft.loglog(f, np.abs(Signal_f), linewidth = 1)
         ax_fft.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        ax_fft.set_title('Single-Sided Amplitude Spectrum of Signal. Fs = ' + str(round(Fs/1e9, 2)) + ' GHz')
+        ax_fft.set_title('Frequency content of Signal. Fs = ' + str(round(Fs/1e9, 0)) + ' GHz')
         ax_fft.set_xlabel('Frequency [Hz]')
         ax_fft.set_ylabel('|P1(f)|')
         if do_plots:
