@@ -1399,25 +1399,43 @@ def get_R_median(all_data):
     R = R[sorted_index]     
     return fwhm_array, R
 
-def Boxplot_array(all_data):
+def Boxplot_array(all_data, return_resistance = False):
     R = []
     fwhm_array = []
+    R_lrs = []
+    R_hrs = []
     for data in all_data:
         ratio = np.array(data['R_lrs']/data['R_hrs'])
         index = where(~np.isnan(ratio))
         ratio = ratio[index]
+        rl = np.array(data['R_lrs'])[index]
+        rh = np.array(data['R_hrs'])[index]
         if np.size(ratio)>0:
             R.append(ratio)
+            R_lrs.append(rl)
+            R_hrs.append(rh)
             fwhm_array.append(np.mean(data['fwhm']))
+
     fwhm_array = np.array(fwhm_array)
     R = np.array(R)
+    R_lrs = np.array(R_lrs)
+    R_hrs = np.array(R_hrs)
+
     sorted_index = np.argsort(np.array(fwhm_array))
     fwhm_array = fwhm_array[sorted_index]
     R = R[sorted_index]
+    R_lrs = R_lrs[sorted_index]
+    R_hrs = R_hrs[sorted_index]
+
     R = np.ndarray.tolist(R)
     fwhm_array = np.ndarray.tolist(fwhm_array)
+    R_lrs = np.ndarray.tolist(R_lrs)
+    R_hrs = np.ndarray.tolist(R_hrs)
 
-    return fwhm_array, R
+    if return_resistance:
+        return fwhm_array, R_lrs, R_hrs
+    else:
+        return fwhm_array, R
 
 def plot_R_threshold(r, t):
     fig, ax = plt.subplots()
