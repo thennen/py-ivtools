@@ -178,7 +178,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
                 label_list = [d[labels] for d in data]
             else:
                 #should be dataframe
-                label_list = data[labels]
+                label_list = list(data[labels])
         else:
             # otherwise we will iterate through labels directly (so you can pass a list of labels)
             # make np.nan count as None (not labelled)
