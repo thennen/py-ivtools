@@ -1407,6 +1407,8 @@ def Boxplot_array(all_data, return_resistance = False):
     for data in all_data:
         ratio = np.array(data['R_lrs']/data['R_hrs'])
         index = where(~np.isnan(ratio))
+        #index = where((data['R_lrs']<35e3) & (data['R_hrs']>10e3)) # ZrOx
+        #index = where((data['R_lrs']<35e3) & (data['R_hrs']>10e3)) # TaOx
         ratio = ratio[index]
         rl = np.array(data['R_lrs'])[index]
         rh = np.array(data['R_hrs'])[index]
@@ -1499,7 +1501,8 @@ show_results = True,
 time_shift = 0,
 reflection_offset = 0,
 transmission_offset = 0,
-return_figs = False):
+return_figs = False, 
+conjugate = False):
     '''uses scattering parameters of a device and a applied signal to calculate the transmission through and the reflection from the device'''
     ntwk_kHz = rf.Network(file)
     frequencies_kHz = ntwk_kHz.f
@@ -1579,13 +1582,15 @@ return_figs = False):
         s21_combined = np.concatenate([s21_kHz[idx_kHz], overlap_s21_MHz_interp, s21_MHz[idx_MHz]]) 
 
         if do_plots or return_figs:
-                fig_tf, ax_tf = plt.subplots(2,1)
-                ax_tf[0].loglog(frequencies_combined, np.abs(s21_combined))
-                ax_tf[1].semilogx(frequencies_combined, np.angle(s21_combined))
+                fig_tf0, ax_tf0 = plt.subplots()
+                fig_tf1, ax_tf1 = plt.subplots()
+                ax_tf0.loglog(frequencies_combined, np.abs(s21_combined))
+                ax_tf1.semilogx(frequencies_combined, np.angle(s21_combined))
 
-                fig_rf, ax_rf = plt.subplots(2,1)
-                ax_rf[0].loglog(frequencies_combined, np.abs(s11_combined))
-                ax_rf[1].semilogx(frequencies_combined, np.angle(s11_combined))
+                fig_rf0, ax_rf0 = plt.subplots()
+                fig_rf1, ax_rf1 = plt.subplots()
+                ax_rf0.loglog(frequencies_combined, np.abs(s11_combined))
+                ax_rf1.semilogx(frequencies_combined, np.angle(s11_combined))
 
         transferFunction = s21_combined
         reflectionFunction = s11_combined
@@ -1593,31 +1598,37 @@ return_figs = False):
         frequencies_combined = frequencies_kHz
 
         if do_plots or return_figs:
-                fig_tf, ax_tf = plt.subplots(2,1)
-                ax_tf[0].loglog(frequencies_combined, np.abs(s21_kHz))
-                ax_tf[1].semilogx(frequencies_combined, np.angle(s21_kHz))
+                fig_tf0, ax_tf0 = plt.subplots()
+                fig_tf1, ax_tf1 = plt.subplots()
+                ax_tf0.loglog(frequencies_combined, np.abs(s21_kHz))
+                ax_tf1.semilogx(frequencies_combined, np.angle(s21_kHz))
 
-                fig_rf, ax_rf = plt.subplots(2,1)
-                ax_rf[0].loglog(frequencies_combined, np.abs(s11_kHz))
-                ax_rf[1].semilogx(frequencies_combined, np.angle(s11_kHz))
+                fig_rf0, ax_rf0 = plt.subplots()
+                fig_rf1, ax_rf1 = plt.subplots()
+                ax_rf0.loglog(frequencies_combined, np.abs(s11_kHz))
+                ax_rf1.semilogx(frequencies_combined, np.angle(s11_kHz))
 
         transferFunction = s21_kHz
         reflectionFunction = s11_kHz
-
+        if conjugate:
+            transferFunction = np.conj(transferFunction)
+            reflectionFunction = np.conj(reflectionFunction)
+    ax_tf = [ax_tf0, ax_tf1]
+    ax_rf = [ax_rf0, ax_rf1]
     ################################### get signal and perform fft #####################################
 
-    L = len(t_signal) # length of the signal
-    Fs = L/abs(max(t_signal)-min(t_signal)) #sampling Frequency
-    f = Fs*np.arange(0, L/2+1)/L # frequency content of the signal
+    #L = len(t_signal) # length of the signal
+    #Fs = L/abs(max(t_signal)-min(t_signal)) #sampling Frequency
+    #f = Fs*np.arange(0, L/2+1)/L # frequency content of the signal
 
     Signal_f = np.fft.rfft(v_signal)
-
+    f = np.fft.rfftfreq(np.size(t_signal), t_signal[1]-t_signal[0])
     if do_plots or return_figs:
         fig_fft, ax_fft = plt.subplots()
         ax_fft.grid(True)
         ax_fft.loglog(f, np.abs(Signal_f), linewidth = 1)
         ax_fft.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-        ax_fft.set_title('Frequency content of Signal. Fs = ' + str(round(Fs/1e9, 0)) + ' GHz')
+        #ax_fft.set_title('Frequency content of Signal. Fs = ' + str(round(Fs/1e9, 0)) + ' GHz')
         ax_fft.set_xlabel('Frequency [Hz]')
         ax_fft.set_ylabel('|P1(f)|')
         if do_plots:
@@ -1653,25 +1664,28 @@ return_figs = False):
     reflectionFunction_interp = abs_reflectionFunction_interp*np.exp(1j*np.unwrap(angle_reflectionFunction_interp))
 
     if do_plots or return_figs:
-        ax_tf[0].loglog(f, np.abs(transferFunction_interp), 'r-')
-        ax_tf[1].semilogx(f, np.angle(transferFunction_interp), 'r-') 
-        ax_tf[0].set_ylabel('abs(Tf)')
-        ax_tf[1].set_ylabel('angle(Tf)')
+        ax_tf0.loglog(f, np.abs(transferFunction_interp), 'r-')
+        ax_tf1.semilogx(f, np.angle(transferFunction_interp), 'r-') 
+        ax_tf0.set_ylabel('abs(Tf)')
+        ax_tf1.set_ylabel('angle(Tf)')
         for a in ax_tf:
             a.set_xlabel('Frequency [Hz]')
             a.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
         if do_plots:
-            fig_tf.show()
+            fig_tf0.show()
+            fig_tf1.show()
 
-        ax_rf[0].loglog(f, np.abs(reflectionFunction_interp), 'r-')
-        ax_rf[1].semilogx(f, np.angle(reflectionFunction_interp), 'r-') 
-        ax_rf[0].set_ylabel('abs(Rf)')
-        ax_rf[1].set_ylabel('angle(Rf)')
+        ax_rf0.loglog(f, np.abs(reflectionFunction_interp), 'r-')
+        ax_rf1.semilogx(f, np.angle(reflectionFunction_interp), 'r-') 
+        ax_rf0.set_ylabel('abs(Rf)')
+        ax_rf1.set_ylabel('angle(Rf)')
         for a in ax_rf:
             a.set_xlabel('Frequency [Hz]')
             a.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
         if do_plots:
-            fig_tf.show()
+            fig_rf0.show()
+            fig_rf1.show()
+
 
     ############################# convolute and inverse fourier transformat #######################################
 
@@ -1708,8 +1722,7 @@ return_figs = False):
     if return_figs == False:
         return t_signal, Signal_t_conv_r, Signal_t_conv
     else:
-        fig = [fig_s, fig_ph, fig_tf, fig_rf, fig_fft, fig_sig, fig_refl]
-        ax = [ax_s, ax_ph, ax_tf[0], ax_tf[1], ax_rf[0], ax_rf[1], ax_fft, ax_sig, ax_refl]
+        fig = [fig_s, fig_ph, fig_tf0, fig_tf1, fig_rf0, fig_rf1, fig_fft, fig_sig, fig_refl]
+        ax = [ax_s, ax_ph, ax_tf0, ax_tf1, ax_rf0, ax_rf1, ax_fft, ax_sig, ax_refl]
         return t_signal, Signal_t_conv_r, Signal_t_conv, fig, ax
-
 
