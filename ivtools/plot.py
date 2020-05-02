@@ -511,11 +511,116 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_xlabel('Cycle #')
     ax.set_ylabel('Resistance [$\\Omega$]')
 
+
+def violinhist(data, x, range, bins=50, alpha=.8, color='C0', logbin=True, logx=True, ax=None):
+    # histogram version of violin plot (when there's not a lot of data so the KDE looks weird)
+    # data should be a list of arrays of values
+    if ax is None:
+        ax = plt.gca()
+    order = np.argsort(x)
+    x = np.array(x)[order]
+    data = [data[o] for o in order]
+    # we could scale the histograms so that their max value is half the minimum x distance
+    scale = 0.45
+    if logx:
+        assert(all(x>0))
+        # how to make them look the same amplitude on log scale, without any possible overlapping?
+        # a slightly tricky problem. we e.g. need different amplitudes for the left and right bar for them to look equal
+        logx = np.log10(x)
+        logamp = np.min(np.diff(logx)) * scale
+        ampleft = x - 10**(logx - logamp)
+        ampright = 10**(logx + logamp) - x
+        ax.set_xscale('log')
+    else:
+        amp = np.min(np.diff(x)) * scale
+        ampleft = ampright = [amp] * len(x)
+    for d,xi,aleft,aright in zip(data, x, ampleft, ampright):
+        if logbin:
+            logd = np.log10(d[d > 0])
+            logrange = [np.log10(r) for r in range]
+            hist, edges = np.histogram(logd, bins=bins, range=logrange)
+            edges = 10**edges
+            ax.set_yscale('log')
+        else:
+            hist, edges = np.histogram(d, bins=bins, range=range)
+        hist = hist / np.max(hist)
+        heights = np.diff(edges)
+        ax.barh(edges[:-1], aright*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1)
+        ax.barh(edges[:-1], -aleft*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1)
+    ax.xaxis.set_ticks(histx)
+    ax.xaxis.set_ticklabels(histx)
+    ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
+    ax.vlines(x, *range, color='black', alpha=.5)
+    ax.set_ylim(range)
+
+def loghist(data, bins=50, range=None, density=False, ax=None, **kwargs):
+    '''
+    Just like a plt.hist except the binning is done on the logged data
+    kwargs to go plt.bar
+    '''
+    # TODO it could also be ok if they are ALL negative
+    data = data[data > 0]
+    if ax is None:
+        ax = plt.gca()
+    ax.set_xscale('log')
+    logd = np.log10(data)
+    if range is not None:
+        range = [np.log10(r) for r in range]
+    hist, edges = np.histogram(logd, bins=bins, density=density, range=range)
+    edges = 10**edges
+    hist = hist
+    widths = np.diff(edges)
+    ax.bar(edges[:-1], hist, width=widths, align='edge', **kwargs)
+
+def grouped_hist(df, col, groupby=None, range=None, bins=30, logx=True, ax=None):
+    '''
+    Histogram where the bars are split into colors by group
+    I don't know if this is a good idea or not.  maybe for < 4 groups
+    '''
+    if ax is None:
+        ax = plt.gca()
+
+    if range is None:
+        # every subset needs to have the same range
+        if logx:
+            range = np.nanpercentile(df[col][df[col] > 0], (0, 100))
+        else:
+            range = np.nanpercentile(df[col], (0, 100))
+
+    params = []
+    hists = []
+    for k, g in df.groupby(groupby):
+        if logx:
+            x = np.log10(g[col][g[col] > 0])
+            logrange = [np.log10(v) for v in range]
+            hist, edges = np.histogram(x[~np.isnan(x)], bins=bins, range=logrange)
+            if any(hist < 0):
+                print('wtf')
+            edges = 10**edges
+            ax.set_xscale('log')
+        else:
+            hist, edges = np.histogram(g[col][~np.isnan(g[col])], bins=bins, range=range)
+        params.append(k)
+        hists.append(hist)
+    # edges will all be the same
+    widths = np.diff(edges)
+    heights = np.stack(hists)
+    bottoms = np.vstack((np.zeros(bins), np.cumsum(heights, 0)[:-1]))
+    tops = bottoms + heights
+    for p,bot,height in zip(params, bottoms, heights):
+        ax.bar(edges[:-1], height, widths, align='edge', bottom=bot, label=p, edgecolor='white')
+
+    ax.legend(title=groupby)
+    ax.set_xlabel(col)
+    ax.set_ylabel('N')
+
+
+
 def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
               ax=None, **kwargs):
     '''
-    Plot y vs x for any number of parameters
+    Plot y vs x grouping by any number of parameters
     Can choose a subset of the parameter values to plot, and the colors will be the same as if the
     subset was not passed.  does that make any sense? sorry.
     '''
