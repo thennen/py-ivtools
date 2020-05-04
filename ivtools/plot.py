@@ -512,9 +512,10 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_ylabel('Resistance [$\\Omega$]')
 
 
-def violinhist(data, x, range, bins=50, alpha=.8, color='C0', logbin=True, logx=True, ax=None):
+def violinhist(data, x, range, bins=50, alpha=.8, color=None, logbin=True, logx=True, ax=None, label=None, **kwargs):
     # histogram version of violin plot (when there's not a lot of data so the KDE looks weird)
     # data should be a list of arrays of values
+    # kwargs go to plt.bar
     if ax is None:
         ax = plt.gca()
     order = np.argsort(x)
@@ -537,7 +538,7 @@ def violinhist(data, x, range, bins=50, alpha=.8, color='C0', logbin=True, logx=
     for d,xi,aleft,aright in zip(data, x, ampleft, ampright):
         if logbin:
             logd = np.log10(d[d > 0])
-            logrange = [np.log10(r) for r in range]
+            logrange = [np.log10(r) if r > 0 else 1 for r in range]
             hist, edges = np.histogram(logd, bins=bins, range=logrange)
             edges = 10**edges
             ax.set_yscale('log')
@@ -545,14 +546,26 @@ def violinhist(data, x, range, bins=50, alpha=.8, color='C0', logbin=True, logx=
             hist, edges = np.histogram(d, bins=bins, range=range)
         hist = hist / np.max(hist)
         heights = np.diff(edges)
-        ax.barh(edges[:-1], aright*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1)
-        ax.barh(edges[:-1], -aleft*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1)
-    ax.xaxis.set_ticks(histx)
-    ax.xaxis.set_ticklabels(histx)
+        rightbar = ax.barh(edges[:-1], aright*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+        # this makes sure all the subsequent colors are the same
+        # even if color was initially None
+        color = rightbar.get_children()[0].get_facecolor()
+        label = None # only label the first one
+        ax.barh(edges[:-1], -aleft*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+    # only label the x axis where there are histograms
+    ax.xaxis.set_ticks(x)
+    ax.xaxis.set_ticklabels(x)
     ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-    ax.vlines(x, *range, color='black', alpha=.5)
+    ax.vlines(x, *range, color='black', alpha=.3)
     ax.set_ylim(range)
 
+def violinhist_fromdf(df, col, xcol, **kwargs):
+    histd = []
+    histx = []
+    for k, g in df.groupby(xcol):
+        histx.append(k)
+        histd.append(g[col].values)
+    violinhist(histd, histx, **kwargs)
 def loghist(data, bins=50, range=None, density=False, ax=None, **kwargs):
     '''
     Just like a plt.hist except the binning is done on the logged data
