@@ -8,6 +8,13 @@ import os
 pjoin = os.path.join
 import pandas as pd
 import numpy as np
+from shutil import copyfile
+
+metatxtfolder = 'D:/t/ivdata/metatxts'
+if not os.path.isdir(metatxtfolder):
+    os.makedirs(metatxtfolder)
+
+ignore = ['metatxts', 'hgst_reram_cycles']
 
 # I added an important column 'die_rel' at some point
 # Need to create it if it wasn't in some of the earlier data files
@@ -36,6 +43,7 @@ def newcolnames(old):
     return new
 
 for root, folders, files in os.walk(r'D:/t/ivdata/'):
+    folders[:] = [fo for fo in folders if fo not in ignore]
     for f in files:
         metafile = pjoin(root, os.path.splitext(f)[0] + '.meta')
         if os.path.exists(metafile):
@@ -70,12 +78,15 @@ for root, folders, files in os.walk(r'D:/t/ivdata/'):
         s.to_csv(metafile, sep='\t', encoding='utf-8')
         print('Wrote ' + metafile)
 
-
 metas = []
 for root, folders, files in os.walk(r'D:/t/ivdata/'):
+    folders[:] = [fo for fo in folders if fo not in ignore]
     for f in files:
         metafile = pjoin(root, os.path.splitext(f)[0] + '.meta')
         if f.endswith('.meta'):
+            # bad idea
+            #copyfile(metafile, os.path.join(metatxtfolder, f))
+            # insert contents into dataframe
             with open(pjoin(root, f), 'r') as thisfile:
                 # Using file pointer because from_csv pukes if you have utf-8 characters in the filename
                 meta = pd.Series.from_csv(thisfile, sep='\t')
@@ -89,5 +100,5 @@ for root, folders, files in os.walk(r'D:/t/ivdata/'):
 metadf = pd.DataFrame([m[~m.index.duplicated()] for m in metas])
 #metadf = pd.DataFrame(metas)
 # Excel because people might be retarded -- takes a long time
-metadf.to_excel('D:/t/ivdata/metadata.xls', encoding='utf-8')
+#metadf.to_excel('D:/t/ivdata/metadata.xls', encoding='utf-8')
 metadf.to_pickle('D:/t/ivdata/metadata.pkl')
