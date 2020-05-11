@@ -515,7 +515,8 @@ def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
               ax=None, **kwargs):
     '''
-    Plot y vs x for any number of parameters
+    line plot y vs x, grouping lines by any number of parameters
+
     Can choose a subset of the parameter values to plot, and the colors will be the same as if the
     subset was not passed.  does that make any sense? sorry.
     '''

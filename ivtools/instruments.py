@@ -34,7 +34,6 @@ def ping(host):
 # TODO: Maybe split this up into one file per instrument
 
 import numpy as np
-import visa
 import time
 import os
 import pandas as pd
@@ -49,7 +48,12 @@ import ivtools
 # Store visa resource manager in the visa module, so it doesn't get clobbered on reload
 import visa
 if not hasattr(visa, 'visa_rm'):
-    visa.visa_rm = visa.ResourceManager()
+    try:
+        visa.visa_rm = visa.ResourceManager()
+    except ValueError as e:
+        # don't raise exception if you didn't install visa
+        print(e)
+        visa.visa_rm = None
 visa_rm = visa.visa_rm
 
 
