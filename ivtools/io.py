@@ -22,6 +22,7 @@ except:
     import pickle
 import scipy.io as spio
 from scipy.io import savemat
+import sqlite3
 pjoin = os.path.join
 splitext = os.path.splitext
 psplit = os.path.split
@@ -354,7 +355,6 @@ class MetaHandler(object):
         # Print some information about the device
         self.print(hlkeys=hlkeys)
 
-
     def step(self, n):
         ''' Select the another device by taking a step through meta df '''
         lastmeta = self.meta
@@ -458,6 +458,192 @@ class MetaHandler(object):
             elif fnkey in self.static.keys():
                 filename += '_{}'.format(self.static[fnkey])
         return filename
+
+    def attach_filepath(self, data, filepath):
+        dict_file = {'File': filepath}
+        pd_file = pd.Series(dict_file)
+        print(pd_file, type(pd_file))
+        dtype = type(data)
+        if dtype is dict:
+            # Make shallow copy
+            dataout = data.copy()
+            dataout.update(pd_file)
+        elif dtype is list:
+            dataout = [d.copy() for d in data]
+            for d in dataout:
+                d.update(pd_file)
+        elif dtype is pd.Series:
+            # Series can't be updated by dicts
+            dataout = data.append(pd.Series(pd_file))
+        elif dtype is pd.DataFrame:
+            dupedmeta = pd.DataFrame([pd_file] * len(data), index=data.index)
+            dataout = data.join(dupedmeta)
+        else:
+            print('MetaHandler does not understand what kind of data you are trying to attach to.')
+            dataout = data.append(pd_file)
+        return dataout
+
+    def savedata(self, data, file_folder=None, database_path=None, table_name=None):
+        # I'm supposing that the corresponding metadata has been already loaded
+        data = self.attach(data)
+        filename = self.filename()
+        if file_folder is None:
+            filepath = filename
+        else:
+            filepath = file_folder + '/' + filename
+        write_pandas_pickle(data, filepath)
+        data = self.attach_filepath(data, filepath)
+        print(data)
+        if database_path is not None:
+            if exist_table(database_path, table_name) is False:
+                create_table(database_path, table_name, data)
+            else:
+                insert_row(database_path, table_name, data)
+
+
+def create_table(db_name, table_name, data):
+    '''
+    Creates a table from the 'pandas.series' array of data.
+    It names columns and insert the first row of data.
+    All column's names will be in lower case
+    '''
+
+    db_file = sqlite3.connect(db_name)
+    c = db_file.cursor()
+
+
+    ### Creating table and naming columns.
+    col_names = list(data.keys())
+    def blacklist_filter(col_name):
+        val = data[col_name]
+        val_ch = change_type(val)
+        dtype = type(val)
+        if val_ch is None:
+            print(f"Data type {dtype} is not allowed, '{col_name}' won't de saved.")
+            return None
+        else:
+            return col_name
+    params = tuple(filter(None,[blacklist_filter(name) for name in col_names]))
+    print(f"CREATE TABLE {table_name} {params}")
+    c.execute(f"CREATE TABLE {table_name} {params}")
+
+
+    ### Adding values to the first row
+    params = tuple(filter(None, [change_type(val) for val in data]))
+    print(params)
+    qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
+    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    db_file.commit()
+
+def insert_row(db_name, table_name, data):
+    '''
+    Insert a row of data of any length, creating new columns if necessary.
+    data must be pandas.Series
+    '''
+
+    db_file = sqlite3.connect(db_name)
+    c = db_file.cursor()
+
+    old_col_names = get_col_names(db_name, table_name)
+    new_col_names = list(data.keys())
+
+    # This loop fills the cells of the existing columns.
+    def fill_cols(col_name):
+        if col_name in new_col_names:
+            val = data[col_name]
+            dtype = type(val)
+            val_ch = change_type(val)
+            if val_ch is None:
+                print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
+                return None
+            else:
+                return val_ch
+        else:
+            return None
+    params = [fill_cols(name) for name in old_col_names]
+
+
+    # This loop add new columns if needed.
+    for name in new_col_names:
+        if name not in old_col_names:
+            val = data[name]
+            dtype = type(val)
+            val_ch = change_type(val)
+            if val_ch is not None:
+                add_col(db_name, table_name, name)
+                print(f"New column added: {name}")
+                params.append(val_ch)
+            else:
+                print(f"Data type '{dtype}' not suported.'{name}' won't be saved")
+
+
+    qmarks = "(?" + ", ?"*(len(params)-1) + ")"
+    params = tuple(params)
+
+    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    db_file.commit()
+
+def get_col_names(db_name, table_name):
+    '''Returns a list with the name of the columns, in lower case.'''
+
+    db_file = sqlite3.connect(db_name)
+    c = db_file.cursor()
+
+    get_names = c.execute(f"select * from {table_name} limit 1")
+    col_names = [i[0] for i in get_names.description]
+    return list(col_names)
+
+def add_col(db_name, table_name, col_name):
+    '''Adds a new column at the end of the table'''
+
+    db_file = sqlite3.connect(db_name)
+    c = db_file.cursor()
+
+    c.execute(f"ALTER TABLE {table_name} ADD '{col_name}'")
+
+def change_type(val):
+    types_dict = {np.ndarray: None, list: None, dict: str, pd._libs.tslibs.timestamps.Timestamp: str, np.float64: float,
+                  np.float32: float, np.int64: int, np.int32: int, np.int16: int, str: str, int: int, float: float,
+                  np.uint8: int, np.uint16: int, np.uint32: int}
+    dtype = type(val)
+    if dtype in types_dict.keys():
+        if types_dict[dtype] == None:
+            val = None
+        elif types_dict[dtype] == str:
+            val = str(val)
+        elif types_dict[dtype] == datetime:
+            val = val.to_pydatetime()
+        elif types_dict[dtype] == float:
+            val = float(val)
+        elif types_dict[dtype] == int:
+            val = int(val)
+    else:
+        print(f"Data type {dtype} is not registered, it will be save as str")
+        val = repr(val)
+    return val
+
+def load_db(db_name, table_name):
+    db_file = sqlite3.connect(db_name)
+    query = db_file.execute(f"SELECT * From {table_name}")
+    cols = [column[0] for column in query.description]
+    return pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
+
+def exist_table(db_name, table_name):
+    db_file = sqlite3.connect(db_name)
+    c = db_file.cursor()
+    # get the count of tables with the name
+    c.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}'")
+    # if the count is 1, then table exists
+    if c.fetchone()[0] == 1:
+        return True
+    else:
+        return False
+    # close the connection
+    db_file.close()
+
+
 
 def validvarname(varStr):
     # Make valid variable name from string
@@ -1048,7 +1234,8 @@ def set_readonly(filepath):
     os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None, plotfunc=ivtools.plot.plotiv, **kwargs):
+def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None,
+                   plotfunc=ivtools.plot.plotiv, **kwargs):
     # Make a plot of all the .s and .df files in a directory
     # Save as pngs with the same name
     # kwargs go to plotfunc
