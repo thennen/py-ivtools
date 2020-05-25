@@ -350,8 +350,10 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         plotfunc_kwargs = dict(c=c, label=l)
         if 'ax' in plotfunc_args:
             # If the plotfunc takes an axis argument, pass it through,
-            # otherwise have to assume it plots on the current axis..
             plotfunc_kwargs['ax'] = ax
+        else:
+            # otherwise have to assume it plots on the current axis..
+            plt.sca(ax)
         # all plotiv kwargs get passed through to plotfunc, even if they overwrite something (i.e. label)
         plotfunc_kwargs.update(kwargs)
         if ('x' not in plotfunc_args) or ('y' not in plotfunc_args):
@@ -1183,7 +1185,7 @@ def vtplotter(data, ax=None, **kwargs):
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Voltage [V]', color=color)
     ax.set_ylabel('Voltage [V]')
-    ax.set_xlabel('Time [S]')
+    ax.set_xlabel('Time [s]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 def itplotter(data, ax=None, **kwargs):
@@ -1198,7 +1200,7 @@ def itplotter(data, ax=None, **kwargs):
     #ax.set_ylabel('Current [$\mu$A]', color=color)
     ax.set_ylabel('Current [A]')
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
-    ax.set_xlabel('Time [S]')
+    ax.set_xlabel('Time [s]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 def VoverIplotter(data, ax=None, **kwargs):
