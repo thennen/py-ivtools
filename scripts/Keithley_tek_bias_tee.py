@@ -1596,7 +1596,6 @@ conjugate = False):
         reflectionFunction = s11_combined
     else:
         frequencies_combined = frequencies_kHz
-
         if do_plots or return_figs:
                 fig_tf0, ax_tf0 = plt.subplots()
                 fig_tf1, ax_tf1 = plt.subplots()
@@ -1613,8 +1612,9 @@ conjugate = False):
         if conjugate:
             transferFunction = np.conj(transferFunction)
             reflectionFunction = np.conj(reflectionFunction)
-    ax_tf = [ax_tf0, ax_tf1]
-    ax_rf = [ax_rf0, ax_rf1]
+    if do_plots or return_figs:
+        ax_tf = [ax_tf0, ax_tf1]
+        ax_rf = [ax_rf0, ax_rf1]
     ################################### get signal and perform fft #####################################
 
     #L = len(t_signal) # length of the signal
@@ -1623,6 +1623,7 @@ conjugate = False):
 
     Signal_f = np.fft.rfft(v_signal)
     f = np.fft.rfftfreq(np.size(t_signal), t_signal[1]-t_signal[0])
+
     if do_plots or return_figs:
         fig_fft, ax_fft = plt.subplots()
         ax_fft.grid(True)
@@ -1640,19 +1641,22 @@ conjugate = False):
     abs_transferFunction_interp_f = interp1d(frequencies_combined, np.abs(transferFunction), kind = 'cubic', fill_value = "extrapolate")
     angle_transferFunction_interp_f = interp1d(frequencies_combined, np.unwrap(np.angle(transferFunction)), kind = 'cubic', fill_value = "extrapolate")
     abs_transferFunction_interp = abs_transferFunction_interp_f(f)
-    abs_transferFunction_interp[idx_extrapolation] = abs_transferFunction_interp[idx_extrapolation[0]-1]
+    if len(idx_extrapolation) > 0:
+        abs_transferFunction_interp[idx_extrapolation] = abs_transferFunction_interp[idx_extrapolation[0]-1]
     
     abs_reflectionFunction_interp_f = interp1d(frequencies_combined, np.abs(reflectionFunction), kind = 'cubic', fill_value="extrapolate")
     angle_reflectionFunction_interp_f = interp1d(frequencies_combined, np.unwrap(np.angle(reflectionFunction)), kind = 'cubic', fill_value="extrapolate")
     abs_reflectionFunction_interp = abs_reflectionFunction_interp_f(f)
-    abs_reflectionFunction_interp[idx_extrapolation] = abs_reflectionFunction_interp[idx_extrapolation[0]-1]
+    if len(idx_extrapolation) > 0:
+        abs_reflectionFunction_interp[idx_extrapolation] = abs_reflectionFunction_interp[idx_extrapolation[0]-1]
 
     idx = (abs_transferFunction_interp > np.max(np.abs(transferFunction)))   
     abs_transferFunction_interp[idx] = np.max(np.abs(transferFunction))    
     if abs_transferFunction_interp[0] < 0:
         abs_transferFunction_interp[0] =  np.max(np.abs(transferFunction))
     angle_transferFunction_interp = angle_transferFunction_interp_f(f)
-    angle_transferFunction_interp[idx_extrapolation] = angle_transferFunction_interp[idx_extrapolation[0]-1]
+    if len(idx_extrapolation) > 0:
+        angle_transferFunction_interp[idx_extrapolation] = angle_transferFunction_interp[idx_extrapolation[0]-1]
     transferFunction_interp = abs_transferFunction_interp*np.exp(1j*np.unwrap(angle_transferFunction_interp))
     
     idx_r = (abs_reflectionFunction_interp > np.max(np.abs(reflectionFunction)))
@@ -1660,7 +1664,8 @@ conjugate = False):
     if abs_reflectionFunction_interp[0] < 0:
         abs_reflectionFunction_interp[0] =  np.max(np.abs(reflectionFunction))
     angle_reflectionFunction_interp = angle_reflectionFunction_interp_f(f)
-    angle_reflectionFunction_interp[idx_extrapolation] = angle_reflectionFunction_interp[idx_extrapolation[0]-1]
+    if len(idx_extrapolation) > 0:
+        angle_reflectionFunction_interp[idx_extrapolation] = angle_reflectionFunction_interp[idx_extrapolation[0]-1]
     reflectionFunction_interp = abs_reflectionFunction_interp*np.exp(1j*np.unwrap(angle_reflectionFunction_interp))
 
     if do_plots or return_figs:
@@ -1693,7 +1698,7 @@ conjugate = False):
     Signal_f_conv_r = Signal_f*reflectionFunction_interp
     Signal_t_conv  = np.fft.irfft(Signal_f_conv) - transmission_offset
     Signal_t_conv_r  = np.fft.irfft(Signal_f_conv_r) - reflection_offset
-    v_stimulus = v_signal + Signal_t_conv_r
+    v_stimulus = v_signal + Signal_t_conv_r - Signal_t_conv 
 
     if show_results or return_figs:
         fig_sig, ax_sig = plt.subplots()
