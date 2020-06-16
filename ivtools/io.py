@@ -493,15 +493,13 @@ class MetaHandler(object):
             filepath = file_folder + '/' + filename
         write_pandas_pickle(data, filepath)
         data = self.attach_filepath(data, filepath)
-        print(data)
         if database_path is not None:
-            if exist_table(database_path, table_name) is False:
-                create_table(database_path, table_name, data)
+            if db_exist_table(database_path, table_name) is False:
+                db_create_table(database_path, table_name, data)
             else:
-                insert_row(database_path, table_name, data)
+                db_insert_row(database_path, table_name, data)
 
-
-def create_table(db_name, table_name, data):
+def db_create_table(db_name, table_name, data):
     '''
     Creates a table from the 'pandas.series' array of data.
     It names columns and insert the first row of data.
@@ -511,32 +509,32 @@ def create_table(db_name, table_name, data):
     db_file = sqlite3.connect(db_name)
     c = db_file.cursor()
 
-
     ### Creating table and naming columns.
     col_names = list(data.keys())
+
     def blacklist_filter(col_name):
         val = data[col_name]
-        val_ch = change_type(val)
+        val_ch = db_change_type(val)
         dtype = type(val)
         if val_ch is None:
             print(f"Data type {dtype} is not allowed, '{col_name}' won't de saved.")
             return None
         else:
             return col_name
-    params = tuple(filter(None,[blacklist_filter(name) for name in col_names]))
-    print(f"CREATE TABLE {table_name} {params}")
+
+    params = tuple(filter(None, [blacklist_filter(name) for name in col_names]))
+    col_names = list(params)
+    # print(f"CREATE TABLE {table_name} {params}")
     c.execute(f"CREATE TABLE {table_name} {params}")
 
-
     ### Adding values to the first row
-    params = tuple(filter(None, [change_type(val) for val in data]))
-    print(params)
+    params = [db_change_type(data[col_name]) for col_name in col_names]
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
-    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
-def insert_row(db_name, table_name, data):
+def db_insert_row(db_name, table_name, data):
     '''
     Insert a row of data of any length, creating new columns if necessary.
     data must be pandas.Series
@@ -545,7 +543,7 @@ def insert_row(db_name, table_name, data):
     db_file = sqlite3.connect(db_name)
     c = db_file.cursor()
 
-    old_col_names = get_col_names(db_name, table_name)
+    old_col_names = db_get_col_names(db_name, table_name)
     new_col_names = list(data.keys())
 
     # This loop fills the cells of the existing columns.
@@ -553,7 +551,7 @@ def insert_row(db_name, table_name, data):
         if col_name in new_col_names:
             val = data[col_name]
             dtype = type(val)
-            val_ch = change_type(val)
+            val_ch = db_change_type(val)
             if val_ch is None:
                 print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
                 return None
@@ -561,31 +559,30 @@ def insert_row(db_name, table_name, data):
                 return val_ch
         else:
             return None
-    params = [fill_cols(name) for name in old_col_names]
 
+    params = [fill_cols(name) for name in old_col_names]
 
     # This loop add new columns if needed.
     for name in new_col_names:
         if name not in old_col_names:
             val = data[name]
             dtype = type(val)
-            val_ch = change_type(val)
+            val_ch = db_change_type(val)
             if val_ch is not None:
-                add_col(db_name, table_name, name)
+                db_add_col(db_name, table_name, name)
                 print(f"New column added: {name}")
                 params.append(val_ch)
             else:
                 print(f"Data type '{dtype}' not suported.'{name}' won't be saved")
 
-
-    qmarks = "(?" + ", ?"*(len(params)-1) + ")"
+    qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
-def get_col_names(db_name, table_name):
+def db_get_col_names(db_name, table_name):
     '''Returns a list with the name of the columns, in lower case.'''
 
     db_file = sqlite3.connect(db_name)
@@ -595,7 +592,7 @@ def get_col_names(db_name, table_name):
     col_names = [i[0] for i in get_names.description]
     return list(col_names)
 
-def add_col(db_name, table_name, col_name):
+def db_add_col(db_name, table_name, col_name):
     '''Adds a new column at the end of the table'''
 
     db_file = sqlite3.connect(db_name)
@@ -603,8 +600,9 @@ def add_col(db_name, table_name, col_name):
 
     c.execute(f"ALTER TABLE {table_name} ADD '{col_name}'")
 
-def change_type(val):
-    types_dict = {np.ndarray: None, list: None, dict: str, pd._libs.tslibs.timestamps.Timestamp: str, np.float64: float,
+def db_change_type(val):
+    types_dict = {np.ndarray: None, list: None, dict: str, pd._libs.tslibs.timestamps.Timestamp: str,
+                  np.float64: float,
                   np.float32: float, np.int64: int, np.int32: int, np.int16: int, str: str, int: int, float: float,
                   np.uint8: int, np.uint16: int, np.uint32: int}
     dtype = type(val)
@@ -624,13 +622,13 @@ def change_type(val):
         val = repr(val)
     return val
 
-def load_db(db_name, table_name):
+def db_load_db(db_name, table_name):
     db_file = sqlite3.connect(db_name)
     query = db_file.execute(f"SELECT * From {table_name}")
     cols = [column[0] for column in query.description]
     return pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
 
-def exist_table(db_name, table_name):
+def db_exist_table(db_name, table_name):
     db_file = sqlite3.connect(db_name)
     c = db_file.cursor()
     # get the count of tables with the name
