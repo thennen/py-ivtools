@@ -16,6 +16,7 @@ import subprocess
 import numpy as np
 import time
 from matplotlib import pyplot as plt
+
 try:
     import cPickle as pickle
 except:
@@ -23,6 +24,7 @@ except:
 import scipy.io as spio
 from scipy.io import savemat
 import sqlite3
+
 pjoin = os.path.join
 splitext = os.path.splitext
 psplit = os.path.split
@@ -30,6 +32,7 @@ psplit = os.path.split
 gitdir = os.path.split(__file__)[0]
 
 logger = None
+
 
 class MetaHandler(object):
     '''
@@ -52,6 +55,7 @@ class MetaHandler(object):
     MetaHandler is Borg.  Its state lives in an separate module.
     This is so if io module is reloaded, Metahandler instance keeps the metadata
     '''
+
     def __init__(self, clear_state=False):
         statename = self.__class__.__name__
         if statename not in ivtools.class_states:
@@ -74,13 +78,13 @@ class MetaHandler(object):
         # This controls which keys will be used to construct a filename
         self.filenamekeys = []
         # TODO: This will be called with str.format
-        #self.filenameformatter = None
+        # self.filenameformatter = None
         # These keys get printed when you step through the list of metadata
         self.prettykeys = []
         self.moduledir = os.path.split(__file__)[0]
 
     def __repr__(self):
-        #return self.meta.__repr__()
+        # return self.meta.__repr__()
         return pd.Series({**self.meta, **self.static}).__repr__()
 
     def asdict(self):
@@ -93,8 +97,8 @@ class MetaHandler(object):
 
     def __iter__(self):
         # Implementing this because then you can just write dict(meta)
-        for k,v in self.asdict().items():
-            yield k,v
+        for k, v in self.asdict().items():
+            yield k, v
 
     def __getitem__(self, key):
         return self.meta[key]
@@ -115,7 +119,7 @@ class MetaHandler(object):
 
     def load_sample_table(self, **filters):
         ''' load data (pd.read_excel) from some tabular format'''
-        fpath='sampledata/CeRAM_Depositions.xlsx'
+        fpath = 'sampledata/CeRAM_Depositions.xlsx'
         if not os.path.isfile(fpath):
             # Maybe it's a relative path
             fpath = os.path.join(self.moduledir, fpath)
@@ -155,7 +159,7 @@ class MetaHandler(object):
                 devicemetalist = devicemetalist[devicemetalist[name].isin(value)]
             else:
                 devicemetalist[name] = [kwargs[name]] * len(devicemetalist)
-        #filenamekeys = ['X', 'Y', 'width_nm', 'device']
+        # filenamekeys = ['X', 'Y', 'width_nm', 'device']
         filenamekeys = ['id']
         if 'sample_name' in kwargs:
             filenamekeys = ['sample_name'] + filenamekeys
@@ -165,7 +169,6 @@ class MetaHandler(object):
         self.filenamekeys = filenamekeys
         print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print()
-
 
     def load_lassen(self, **kwargs):
         '''
@@ -190,7 +193,7 @@ class MetaHandler(object):
         non_coupon_specific = lassen_df[lassen_df.coupon == 42][non_coupon_cols]
         # sort breaks reverse compatibility with old pandas versions
         # not passing sort can cause an annoying warning
-        lassen_df = pd.concat((lassen_df, non_coupon_specific))#, sort=False)
+        lassen_df = pd.concat((lassen_df, non_coupon_specific))  # , sort=False)
 
         if any([(k in deposition_df) for k in kwargs.keys()]):
             meta_df = pd.merge(lassen_df, deposition_df, how='left', on=merge_deposition_data_on, sort=False)
@@ -208,8 +211,8 @@ class MetaHandler(object):
         for key, values in kwargs.items():
             meta_df = meta_df[meta_df[key].isin(values)]
         #### Filter devices to be measured #####
-        devices001 = [2,3,4,5,6,7,8]
-        devices014 = [4,5,6,7,8,9]
+        devices001 = [2, 3, 4, 5, 6, 7, 8]
+        devices014 = [4, 5, 6, 7, 8, 9]
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
         meta_df = meta_df.dropna(1, 'all')
@@ -228,7 +231,7 @@ class MetaHandler(object):
                         dep_temp=np.uint16,
                         etch_time=np.float32,
                         etch_depth=np.float32)
-        for k,v in typedict.items():
+        for k, v in typedict.items():
             if k in meta_df:
                 # int arrays don't support missing data, because python sucks and computers suck
                 if not any(meta_df[k].isnull()):
@@ -236,7 +239,8 @@ class MetaHandler(object):
 
         self.df = meta_df
         self.select(0)
-        self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die_rel', 'module', 'device', 'width_nm', 'R_series', 'layer_1', 'thickness_1']
+        self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die_rel', 'module', 'device', 'width_nm', 'R_series',
+                           'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'die_rel', 'module', 'device']
         print('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
@@ -289,7 +293,7 @@ class MetaHandler(object):
         # Sort top to bottom, left to right
         meta_df['icol'] = meta_df.col.apply(columns.index)
         meta_df['irow'] = meta_df.row.apply(rows.index)
-        meta_df = meta_df.sort_values(by=['icol', 'irow'], ascending=[True, False])#.drop(columns=['icol', 'irow'])
+        meta_df = meta_df.sort_values(by=['icol', 'irow'], ascending=[True, False])  # .drop(columns=['icol', 'irow'])
 
         self.df = meta_df
         self.select(0)
@@ -386,7 +390,7 @@ class MetaHandler(object):
     def goto(self, **kwargs):
         ''' Assuming you loaded metadata already, this goes to the first row that matches the keys'''
         mask = np.ones(len(self.df), bool)
-        for k,v in kwargs.items():
+        for k, v in kwargs.items():
             mask &= self.df[k] == v
 
         w = np.where(mask)
@@ -421,10 +425,10 @@ class MetaHandler(object):
         May modify the input data in addition to returning it
         # TODO make it always modify the input data, or never
         '''
-        #if len(self.meta) > 0:
-            #print('Attaching the following metadata:')
-            # TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
-            #self.print()
+        # if len(self.meta) > 0:
+        # print('Attaching the following metadata:')
+        # TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
+        # self.print()
         dtype = type(data)
         if dtype is dict:
             # Make shallow copy
@@ -483,33 +487,45 @@ class MetaHandler(object):
             dataout = data.append(pd_file)
         return dataout
 
-    def savedata(self, data, file_folder=None, database_path=None, table_name=None):
-        # I'm supposing that the corresponding metadata has been already loaded
+    def savedata(self, data=None, folder_path='C:/Users/munoz/Desktop/py-ivtools/ivtools/saves',
+                 database_path='C:/Users/munoz/Desktop/py-ivtools/ivtools/saves/DataBase.db',
+                 table_name='Meta', drop=None):
+        """
+        :param data: Data with metadata attached. If no data is passed, try to use the global variable d.
+        :param folder_path: Folder where the file will be saved. If None, save it in the current directory.
+        :param database_path: Path of the database. If it doesn't exist create a new one.
+        :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
+        :param drop: drop columns to save disk space.
+        """
+        # TODO: Think a better default folder_path and database_path
+        if data is None:
+            global d
+            if type(d) in (dict, list, pd.Series, pd.DataFrame):
+                print('No data passed to savedata(). Using global variable d.')
+                data = d
         data = self.attach(data)
-        filename = self.filename()
-        if file_folder is None:
-            filepath = filename
+        file_name = self.filename()
+        file_path = folder_path + '/' + file_name
+        write_pandas_pickle(data, file_path, drop=drop)
+        data = self.attach_filepath(data, file_path)
+        if db_exist_table(database_path, table_name) is False:
+            db_create_table(database_path, table_name, data)
         else:
-            filepath = file_folder + '/' + filename
-        write_pandas_pickle(data, filepath)
-        data = self.attach_filepath(data, filepath)
-        if database_path is not None:
-            if db_exist_table(database_path, table_name) is False:
-                db_create_table(database_path, table_name, data)
-            else:
-                db_insert_row(database_path, table_name, data)
+            db_insert_row(database_path, table_name, data)
+
+
 
 def db_create_table(db_name, table_name, data):
-    '''
+    """
     Creates a table from the 'pandas.series' array of data.
     It names columns and insert the first row of data.
     All column's names will be in lower case
-    '''
+    """
 
     db_file = sqlite3.connect(db_name)
     c = db_file.cursor()
 
-    ### Creating table and naming columns.
+    # Creating table and naming columns.
     col_names = list(data.keys())
 
     def blacklist_filter(col_name):
@@ -527,12 +543,13 @@ def db_create_table(db_name, table_name, data):
     # print(f"CREATE TABLE {table_name} {params}")
     c.execute(f"CREATE TABLE {table_name} {params}")
 
-    ### Adding values to the first row
+    # Adding values to the first row
     params = [db_change_type(data[col_name]) for col_name in col_names]
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
+
 
 def db_insert_row(db_name, table_name, data):
     '''
@@ -582,6 +599,7 @@ def db_insert_row(db_name, table_name, data):
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
+
 def db_get_col_names(db_name, table_name):
     '''Returns a list with the name of the columns, in lower case.'''
 
@@ -592,6 +610,7 @@ def db_get_col_names(db_name, table_name):
     col_names = [i[0] for i in get_names.description]
     return list(col_names)
 
+
 def db_add_col(db_name, table_name, col_name):
     '''Adds a new column at the end of the table'''
 
@@ -599,6 +618,7 @@ def db_add_col(db_name, table_name, col_name):
     c = db_file.cursor()
 
     c.execute(f"ALTER TABLE {table_name} ADD '{col_name}'")
+
 
 def db_change_type(val):
     types_dict = {np.ndarray: None, list: None, dict: str, pd._libs.tslibs.timestamps.Timestamp: str,
@@ -622,11 +642,13 @@ def db_change_type(val):
         val = repr(val)
     return val
 
+
 def db_load_db(db_name, table_name):
     db_file = sqlite3.connect(db_name)
     query = db_file.execute(f"SELECT * From {table_name}")
     cols = [column[0] for column in query.description]
     return pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
+
 
 def db_exist_table(db_name, table_name):
     db_file = sqlite3.connect(db_name)
@@ -642,15 +664,15 @@ def db_exist_table(db_name, table_name):
     db_file.close()
 
 
-
 def validvarname(varStr):
     # Make valid variable name from string
-    sub_ = re.sub('\W|^(?=\d)','_', varStr)
+    sub_ = re.sub('\W|^(?=\d)', '_', varStr)
     sub_strip = sub_.strip('_')
     if sub_strip[0].isdigit():
-       # Can't start with a digit
-       sub_strip = 'm_' + sub_strip
+        # Can't start with a digit
+        sub_strip = 'm_' + sub_strip
     return sub_strip
+
 
 def valid_filename(s):
     s = str(s).strip().replace(' ', '_')
@@ -661,7 +683,8 @@ def hash_array(arr):
     import hashlib
     return hashlib.md5(arr).hexdigest()
     # There is also this?
-    #hash(arr.tostring())
+    # hash(arr.tostring())
+
 
 def timestamp(date=True, time=True, ms=True, us=False):
     now = datetime.now()
@@ -681,14 +704,16 @@ def timestamp(date=True, time=True, ms=True, us=False):
 
     return '_'.join(parts)
 
+
 def getGitRevision():
     rev = subprocess.getoutput('cd \"{}\" & git rev-parse --short HEAD'.format(gitdir))
-    #return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+    # return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
     if 'not recognized' in rev:
         # git not installed probably
         return 'Dunno'
     else:
         return rev
+
 
 def getGitStatus():
     # attempt to parse the git status
@@ -698,12 +723,13 @@ def getGitStatus():
     output = {}
     if any(status[0]):
         for l in status:
-            k,v = l
+            k, v = l
             if k in output:
                 output[k].append(v)
             else:
                 output[k] = [v]
     return output
+
 
 def gitCommit(message='AUTOCOMMIT'):
     # I think it will give an error if there is nothing to commit..
@@ -732,6 +758,7 @@ def log_ipy(start=True, logfilepath=None):
 
     class Logger(object):
         ''' Something to replace stdout '''
+
         def __init__(self):
             self.terminal = sys.stdstdout
             self.log = open(logfilepath, 'a')
@@ -750,13 +777,12 @@ def log_ipy(start=True, logfilepath=None):
         logger.log.close()
 
     if start:
-        #logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
+        # logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
         magic('logstart -o {} append'.format(logfilepath))
         logger = Logger()
         sys.stdout = logger
     else:
         sys.stdout = sys.stdstdout
-
 
 
 def read_txt(filepath, **kwargs):
@@ -846,19 +872,19 @@ def read_txt(filepath, **kwargs):
             # If a column is not already named with the standard name
             for altname in colnamemap[k]:
                 if altname in dfcols:
-                    df.rename(columns={altname:k}, inplace=True)
+                    df.rename(columns={altname: k}, inplace=True)
 
     # My preferred format for a single IV loop is a dict with arrays and scalars and whatever else
     # Pandas equivalent is a pd.Series.
 
-    longnames = {'I':'Current', 'V':'Voltage', 't':'Time', 'T':'Temperature'}
+    longnames = {'I': 'Current', 'V': 'Voltage', 't': 'Time', 'T': 'Temperature'}
     # Note that the unit names are simply assumed here -- no attempt to read the units from the file
-    units = {'I':'A', 'V':'V', 't':'s', 'T':'K'}
+    units = {'I': 'A', 'V': 'V', 't': 's', 'T': 'K'}
 
-    dataout = {k:df[k].as_matrix() for k in df.columns}
+    dataout = {k: df[k].as_matrix() for k in df.columns}
     dataout['mtime'] = os.path.getmtime(filepath)
-    dataout['units'] = {k:v for k,v in units.items() if k in dataout.keys()}
-    dataout['longnames'] = {k:v for k,v in longnames.items() if k in dataout.keys()}
+    dataout['units'] = {k: v for k, v in units.items() if k in dataout.keys()}
+    dataout['longnames'] = {k: v for k, v in longnames.items() if k in dataout.keys()}
     dataout['filepath'] = os.path.abspath(filepath)
     dataout['header'] = header
 
@@ -867,8 +893,8 @@ def read_txt(filepath, **kwargs):
         nanmask = dataout['I'] == 9.9100000000000005e+37
         dataout['I'][nanmask] = np.nan
 
-
     return pd.Series(dataout)
+
 
 def read_txts(filepaths, sort=True, **kwargs):
     # Try to sort by file number, even if fixed width numbers are not used
@@ -900,6 +926,7 @@ def glob(pattern='*', directory='.', subdirs=False, exclude=None):
             fpaths.extend([os.path.join(root, f) for f in files])
     else:
         fpaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+
     # filter by filename only, but keep absolute path
     def condition(fpath):
         filename = os.path.split(fpath)[-1]
@@ -909,9 +936,11 @@ def glob(pattern='*', directory='.', subdirs=False, exclude=None):
                 return False
         # Does it match
         return fnmatch.fnmatch(filename, pattern)
+
     filtfpaths = [fp for fp in fpaths if condition(fp)]
     abspaths = [os.path.abspath(fp) for fp in filtfpaths]
     return abspaths
+
 
 def multiglob(names, *patterns):
     ''' filter list of names with potentially multiple glob patterns '''
@@ -964,7 +993,7 @@ def read_pandas(filepaths, concat=True, dropcols=None):
                 # Took me a while to figure out how to convert series into single row dataframe
                 pdlist.append(pd.DataFrame.from_records([pdobject]))
                 # This resets all the datatypes to object !!
-                #pdlist.append(pd.DataFrame(pdobject).transpose())
+                # pdlist.append(pd.DataFrame(pdobject).transpose())
             else:
                 print('Do not know wtf this file is:')
             print('Loaded {}.'.format(f))
@@ -972,6 +1001,7 @@ def read_pandas(filepaths, concat=True, dropcols=None):
             return pd.concat(pdlist).reset_index()
         else:
             return pdlist
+
 
 # to not break old scripts
 read_pandas_files = read_pandas
@@ -1001,10 +1031,11 @@ def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subd
         filepaths = filepaths[-n:]
         ctimes = ctimes[-n:]
     if seconds is not None:
-        filepaths = [fp for fp,ct in zip(filepaths, ctimes) if now - ct < seconds]
+        filepaths = [fp for fp, ct in zip(filepaths, ctimes) if now - ct < seconds]
     if maxlen is not None:
         filepaths = filepaths[:maxlen]
     return [os.path.abspath(fp) for fp in filepaths]
+
 
 def write_pandas_pickle(data, filepath=None, drop=None):
     ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
@@ -1040,31 +1071,33 @@ def write_pandas_pickle(data, filepath=None, drop=None):
     set_readonly(filepath)
     print('Wrote {}'.format(os.path.abspath(filepath)))
 
+
 def write_matlab(data, filepath, varname=None, compress=True):
-   # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
-   # Haven't figured out what sucks less to work with in matlab
-   # Each IV loop is a struct, has to be
-   # For multiple IV loops, can either make a cell array of structs (plot(cell{1,1}.V, cell{1,1}.I))
-   # Or just dump a whole bunch of structs into the namespace (plot(loop1.V, loop1.I))
-   # There's no DataFrame equivalent in matlab as far as I know, but they might get around to adding one in 2050
-   if varname is None:
-      varname = validvarname(splitext(os.path.split(filepath)[-1])[0])
-      print(varname)
-   dtype = type(data)
-   if dtype is list:
-      savemat(filepath, {varname:data}, do_compression=compress)
-   elif dtype is dict:
-      # This will dump a bunch of names into namespace unless encapsulated in a list
-      savemat(filepath, {varname:[data]}, do_compression=compress)
-   elif dtype is pd.Series:
-      # Same
-      savemat(filepath, {varname:[dict(data)]}, do_compression=compress)
-   elif dtype is pd.DataFrame:
-      savemat(filepath, {varname: data.to_dict('records')}, do_compression=compress)
+    # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
+    # Haven't figured out what sucks less to work with in matlab
+    # Each IV loop is a struct, has to be
+    # For multiple IV loops, can either make a cell array of structs (plot(cell{1,1}.V, cell{1,1}.I))
+    # Or just dump a whole bunch of structs into the namespace (plot(loop1.V, loop1.I))
+    # There's no DataFrame equivalent in matlab as far as I know, but they might get around to adding one in 2050
+    if varname is None:
+        varname = validvarname(splitext(os.path.split(filepath)[-1])[0])
+        print(varname)
+    dtype = type(data)
+    if dtype is list:
+        savemat(filepath, {varname: data}, do_compression=compress)
+    elif dtype is dict:
+        # This will dump a bunch of names into namespace unless encapsulated in a list
+        savemat(filepath, {varname: [data]}, do_compression=compress)
+    elif dtype is pd.Series:
+        # Same
+        savemat(filepath, {varname: [dict(data)]}, do_compression=compress)
+    elif dtype is pd.DataFrame:
+        savemat(filepath, {varname: data.to_dict('records')}, do_compression=compress)
+
 
 def read_matlab(filepath):
-   # Read matlab file into dataframe or series
-   '''
+    # Read matlab file into dataframe or series
+    '''
    These functions solve the problem of not properly recovering python dictionaries
    from mat files. It calls the function _check_keys to cure all entries
    which are still mat-objects
@@ -1073,71 +1106,72 @@ def read_matlab(filepath):
    https://stackoverflow.com/questions/7008608/scipy-io-loadmat-nested-structures-i-e-dictionaries
    Tyler's edit only recurses into level 0 np.arrays
    '''
-   def _check_keys(d):
-      '''
+
+    def _check_keys(d):
+        '''
       checks if entries in dictionary are mat-objects. If yes
       todict is called to change them to nested dictionaries
       '''
-      for key in d:
+        for key in d:
             if isinstance(d[key], spio.matlab.mio5_params.mat_struct):
-               d[key] = _todict(d[key])
+                d[key] = _todict(d[key])
             elif isinstance(d[key], np.ndarray):
-               d[key] = _tolist(d[key])
-      return d
+                d[key] = _tolist(d[key])
+        return d
 
-   def _todict(matobj):
-      '''
+    def _todict(matobj):
+        '''
       A recursive function which constructs from matobjects nested dictionaries
       '''
-      d = {}
-      for strg in matobj._fieldnames:
+        d = {}
+        for strg in matobj._fieldnames:
             elem = matobj.__dict__[strg]
             if isinstance(elem, spio.matlab.mio5_params.mat_struct):
-               d[strg] = _todict(elem)
+                d[strg] = _todict(elem)
             # Don't do this, in my case I want to preserve nd.arrays that are not lists containing dicts
-            #elif isinstance(elem, np.ndarray):
+            # elif isinstance(elem, np.ndarray):
             #    d[strg] = _tolist(elem)
             else:
-               d[strg] = elem
-      return d
+                d[strg] = elem
+        return d
 
-   def _tolist(ndarray):
-      '''
+    def _tolist(ndarray):
+        '''
       A recursive function which constructs lists from cellarrays
       (which are loaded as numpy ndarrays), recursing into the elements
       if they contain matobjects.
       '''
-      elem_list = []
-      for sub_elem in ndarray:
+        elem_list = []
+        for sub_elem in ndarray:
             if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):
-               elem_list.append(_todict(sub_elem))
+                elem_list.append(_todict(sub_elem))
             # Only the first level -- in case it's a list of dicts with np arrays
             # Better not be a list of dicts of list of dicts ....
-            #elif isinstance(sub_elem, np.ndarray):
+            # elif isinstance(sub_elem, np.ndarray):
             #    elem_list.append(_tolist(sub_elem))
             else:
-               elem_list.append(sub_elem)
-      return elem_list
+                elem_list.append(sub_elem)
+        return elem_list
 
-   # Squeeze me gets rid of dimensions that have length 1
-   # So if you saved a 1x1 cell array, you just get back the element
-   mat_in = spio.loadmat(filepath, struct_as_record=False, squeeze_me=True)
-   mat_in = _check_keys(mat_in)
-   # Should only be one key
-   mat_vars = [k for k in mat_in.keys() if not k.startswith('__')]
-   if len(mat_vars) > 1:
-      print('More than one matlab variable stored in {}. Returning dict.'.format(filepath))
-      return mat_in
-   else:
-      # List of dicts
-      #return mat_in[mat_vars[0]]
-      # DataFrame
-      var_in = mat_in[mat_vars[0]]
-      if type(var_in) is list:
-         # More than one loop
-         return pd.DataFrame(var_in)
-      else:
-         return pd.Series(var_in)
+    # Squeeze me gets rid of dimensions that have length 1
+    # So if you saved a 1x1 cell array, you just get back the element
+    mat_in = spio.loadmat(filepath, struct_as_record=False, squeeze_me=True)
+    mat_in = _check_keys(mat_in)
+    # Should only be one key
+    mat_vars = [k for k in mat_in.keys() if not k.startswith('__')]
+    if len(mat_vars) > 1:
+        print('More than one matlab variable stored in {}. Returning dict.'.format(filepath))
+        return mat_in
+    else:
+        # List of dicts
+        # return mat_in[mat_vars[0]]
+        # DataFrame
+        var_in = mat_in[mat_vars[0]]
+        if type(var_in) is list:
+            # More than one loop
+            return pd.DataFrame(var_in)
+        else:
+            return pd.Series(var_in)
 
 
 def write_csv(data, filepath, columns=None, overwrite=False):
@@ -1157,6 +1191,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
                     return line.replace('\n', '\\n')
                 else:
                     return line
+
             header = '\n'.join(['# {}\t{}'.format(k, replacenewline(data[k])) for k in notarray])
             if columns is None:
                 columns = isarray
@@ -1166,8 +1201,8 @@ def write_csv(data, filepath, columns=None, overwrite=False):
             with open(filepath, 'w') as f:
                 f.write(header)
                 f.write('\n')
-            pd.DataFrame({k:data[k] for k in columns}).to_csv(filepath, sep='\t', index=False, mode='a')
-                #np.savetxt(f, np.vstack([data[c] for c in columns]).T, delimiter='\t', header=header)
+            pd.DataFrame({k: data[k] for k in columns}).to_csv(filepath, sep='\t', index=False, mode='a')
+            # np.savetxt(f, np.vstack([data[c] for c in columns]).T, delimiter='\t', header=header)
     elif type(data) in (list, pd.DataFrame):
         # Come up with unique filenames, and pass it back to write_csv one by one
         if type(data) == pd.DataFrame:
@@ -1182,6 +1217,7 @@ def write_csv(data, filepath, columns=None, overwrite=False):
                 write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
         # TODO: Don't write thousands of files
         # TODO: Don't write a 10 GB text file
+
 
 def write_csv_multi(data, filepath, columns=None, overwrite=False):
     '''
@@ -1205,11 +1241,11 @@ def write_meta_csv(data, filepath):
     ''' Write the non-array data to a text file.  Only first row of dataframe considered!'''
     dtype = type(data)
     if dtype is pd.Series:
-        #s = pd.read_pickle(pjoin(root, f))
+        # s = pd.read_pickle(pjoin(root, f))
         s = data
     elif dtype is pd.DataFrame:
         # Only save first row metadata -- Usually it's the same for all
-        #df = pd.read_pickle(pjoin(root, f))
+        # df = pd.read_pickle(pjoin(root, f))
         s = data.iloc[0]
         s['nloops'] = len(data)
     elif dtype is list:
@@ -1227,12 +1263,13 @@ def write_sql(data, db):
     data.to_sql(db, con, if_exists='append')
     # TODO: figure out what to do if data has columns that aren't already in the database.
 
+
 def set_readonly(filepath):
     from stat import S_IREAD, S_IRGRP, S_IROTH
-    os.chmod(filepath, S_IREAD|S_IRGRP|S_IROTH)
+    os.chmod(filepath, S_IREAD | S_IRGRP | S_IROTH)
 
 
-def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, groupby=None,
+def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, groupby=None,
                    plotfunc=ivtools.plot.plotiv, **kwargs):
     # Make a plot of all the .s and .df files in a directory
     # Save as pngs with the same name
@@ -1248,7 +1285,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, gro
             g = ivtools.analyze.moving_avg(g, smoothn)
         if 'R_series' in g:
             g['Vd'] = g['V'] - g['R_series'] * g['I']
-        #ivtools.analyze.convert_to_uA(g)
+        # ivtools.analyze.convert_to_uA(g)
         return g
 
     def plotgroup(g):
@@ -1269,8 +1306,8 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, gro
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
                 df = pd.read_pickle(fn)
-                #if type(df) is pd.Series:
-                    #df = ivtools.analyze.series_to_df(df)
+                # if type(df) is pd.Series:
+                # df = ivtools.analyze.series_to_df(df)
                 df = processgroup(df)
                 print('plotting')
                 plotgroup(df)
@@ -1280,7 +1317,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, gro
     else:
         # Read all the data in the directory into memory at once
         df = read_pandas(files)
-        for k,g in df.groupby(groupby):
+        for k, g in df.groupby(groupby):
             # Fukken thing errors if you are only grouping by one key
             pngfn = 'group_' + '_'.join(format(val) for pair in zip(groupby, k) for val in pair) + '.png'
             pngfp = os.path.join(datadir, pngfn)
@@ -1291,6 +1328,7 @@ def plot_datafiles(datadir, maxloops=500,  smoothpercent=0, overwrite=False, gro
                 writefig(pngfp)
 
     plt.close(fig)
+
 
 def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
@@ -1344,6 +1382,7 @@ def makefolder(*args):
     else:
         print('Folder already exists: {}'.format(subfolder))
 
+
 def psplitall(path):
     # get all parts of the filepath why the heck isn't this in os.path?
     allparts = []
@@ -1352,7 +1391,7 @@ def psplitall(path):
         if parts[0] == path:  # sentinel for absolute paths
             allparts.insert(0, parts[0])
             break
-        elif parts[1] == path: # sentinel for relative paths
+        elif parts[1] == path:  # sentinel for relative paths
             allparts.insert(0, parts[1])
             break
         else:

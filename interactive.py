@@ -162,7 +162,7 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.USB2708HS:'daq'}
 
 # Make varnames None until connected
-for kk,v in instrument_varnames.items():
+for kk, v in instrument_varnames.items():
     globalvars[v] = None
 
 visa_resources = visa.visa_rm.list_resources()
@@ -271,7 +271,7 @@ def savedata(data=None, filepath=None, drop=None):
             data = d
     if filepath is None:
         filepath = os.path.join(datadir(), meta.filename())
-    # meta will be attached already if you used interactive_wrapper..
+    # meta will be attached already if you used interactive_wrapper.
     # TODO detect if metadata is there or not, because I still want to attach it in either case
     #io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
     io.write_pandas_pickle(data, filepath, drop=drop)
