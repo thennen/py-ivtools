@@ -359,7 +359,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = meta.attach(data)
                 iplots.newline(data)
         if autosave:
-            old_savedata(data)
+            savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
         measure.beep()
