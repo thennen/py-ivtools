@@ -487,6 +487,32 @@ class MetaHandler(object):
             dataout = data.append(pd_file)
         return dataout
 
+    def savedata(self, data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
+        """
+        :param data: If no data is passed, try to use the global variable d.
+        :param folder_path: Folder where all data will be saved. If None, data will be saved in Desktop.
+        :param database_path: Path of the database where data will be saved. If None, data will be saved in Desktop.
+        :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
+        :param drop: drop columns to save disk space.
+        """
+        if data is None:
+            global d
+            if type(d) in (dict, list, pd.Series, pd.DataFrame):
+                print('No data passed to savedata(). Using global variable d.')
+                data = d
+        if folder_path is None:
+            folder_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
+        if database_path is None:
+            database_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop', 'database.db')
+        file_path = os.path.join(folder_path, self.filename())
+        data = self.attach(data)
+        write_pandas_pickle(data, file_path, drop=drop)
+        data = self.attach_filepath(data, file_path)
+        if db_exist_table(database_path, table_name) is False:
+            db_create_table(database_path, table_name, data)
+        else:
+            db_insert_row(database_path, table_name, data)
+
 
 def db_create_table(db_name, table_name, data):
     """
@@ -616,7 +642,7 @@ def db_change_type(val):
     return val
 
 
-def db_load_db(db_name, table_name):
+def db_load(db_name, table_name):
     db_file = sqlite3.connect(db_name)
     query = db_file.execute(f"SELECT * From {table_name}")
     cols = [column[0] for column in query.description]

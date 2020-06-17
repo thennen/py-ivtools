@@ -88,6 +88,7 @@ username = settings.username
 datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
+'''
 if 'M' in gitstatus:
     print('The following files have uncommited changes:')
     print('\n'.join(gitstatus['M']))
@@ -96,6 +97,7 @@ if 'M' in gitstatus:
 if '??' in gitstatus:
     print('The following files are untracked by git:')
     print('\n'.join(gitstatus['??']))
+'''
 # TODO: auto commit to some kind of auto commit branch
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
@@ -280,30 +282,20 @@ def old_savedata(data=None, filepath=None, drop=None):
 old_s = autocaller(old_savedata)
 
 
-def savedata(data=None, file_path=None, database_path=None, table_name='Meta', drop=None):
+def savedata(data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
     """
+    
     :param data: If no data is passed, try to use the global variable d.
-    :param folder_path:
-    :param database_path: If
+    :param folder_path: Folder where all data will be saved. If None, data will be saved in username/ivdata.
+    :param database_path: Path of the database where data will be saved. If None, data will be saved in username/ivdata.
     :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
     :param drop: drop columns to save disk space.
     """
-    if data is None:
-        global d
-        if type(d) in (dict, list, pd.Series, pd.DataFrame):
-            print('No data passed to savedata(). Using global variable d.')
-            data = d
-    if file_path is None:
-        file_path = os.path.join(datadir(), meta.filename())
+    if folder_path is None:
+        folder_path = datadir()
     if database_path is None:
         database_path = os.path.join(datafolder, 'database.db')
-    data = meta.attach(data)
-    write_pandas_pickle(data, file_path, drop=drop)
-    data = meta.attach_filepath(data, file_path)
-    if db_exist_table(database_path, table_name) is False:
-        db_create_table(database_path, table_name, data)
-    else:
-        db_insert_row(database_path, table_name, data)
+    meta.savedata(data, folder_path, database_path, table_name, drop)
 
 s = autocaller(savedata)
 
