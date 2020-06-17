@@ -284,13 +284,14 @@ old_s = autocaller(old_savedata)
 
 def savedata(data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
     """
-    
+
     :param data: If no data is passed, try to use the global variable d.
     :param folder_path: Folder where all data will be saved. If None, data will be saved in username/ivdata.
     :param database_path: Path of the database where data will be saved. If None, data will be saved in username/ivdata.
     :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
     :param drop: drop columns to save disk space.
     """
+    # TODO: Add a general path for the database in settings.py
     if folder_path is None:
         folder_path = datadir()
     if database_path is None:
