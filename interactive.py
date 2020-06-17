@@ -257,7 +257,7 @@ plotters = iplots.plotters
 add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
-def savedata(data=None, filepath=None, drop=None):
+def old_savedata(data=None, filepath=None, drop=None):
     '''
     Save data with metadata attached, as determined by the state of the global MetaHandler instance
     if no data is passed, try to use the global variable d
@@ -267,7 +267,7 @@ def savedata(data=None, filepath=None, drop=None):
     if data is None:
         global d
         if type(d) in (dict, list, pd.Series, pd.DataFrame):
-            print('No data passed to savedata(). Using global variable d.')
+            print('No data passed to old_savedata(). Using global variable d.')
             data = d
     if filepath is None:
         filepath = os.path.join(datadir(), meta.filename())
@@ -277,7 +277,9 @@ def savedata(data=None, filepath=None, drop=None):
     io.write_pandas_pickle(data, filepath, drop=drop)
     # TODO: append metadata to a sql table
 # just typing s will save the d variable
-s = autocaller(savedata)
+old_s = autocaller(old_savedata)
+
+s = autocaller(meta.savedata)
 
 
 #############################################################
@@ -331,7 +333,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = meta.attach(data)
                 iplots.newline(data)
         if autosave:
-            savedata(data)
+            old_savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
         measure.beep()
