@@ -279,7 +279,33 @@ def old_savedata(data=None, filepath=None, drop=None):
 # just typing s will save the d variable
 old_s = autocaller(old_savedata)
 
-s = autocaller(meta.savedata)
+
+def savedata(data=None, file_path=None, database_path=None, table_name='Meta', drop=None):
+    """
+    :param data: If no data is passed, try to use the global variable d.
+    :param folder_path: Folder where the file will be saved. If None, save it in the current directory.
+    :param database_path: Path of the database. If it doesn't exist create a new one.
+    :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
+    :param drop: drop columns to save disk space.
+    """
+    if data is None:
+        global d
+        if type(d) in (dict, list, pd.Series, pd.DataFrame):
+            print('No data passed to savedata(). Using global variable d.')
+            data = d
+    if file_path is None:
+        file_path = os.path.join(datadir(), meta.filename())
+    if database_path is None:
+        database_path = os.path.join(datafolder, 'database.db')
+    data = meta.attach(data)
+    write_pandas_pickle(data, file_path, drop=drop)
+    data = meta.attach_filepath(data, file_path)
+    if db_exist_table(database_path, table_name) is False:
+        db_create_table(database_path, table_name, data)
+    else:
+        db_insert_row(database_path, table_name, data)
+
+s = autocaller(savedata)
 
 
 #############################################################

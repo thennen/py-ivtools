@@ -487,7 +487,7 @@ class MetaHandler(object):
             dataout = data.append(pd_file)
         return dataout
 
-    def savedata(self, data=None, folder_path='C:/Users/munoz/Desktop/py-ivtools/ivtools/saves',
+    def savedata(self, data=None, file_path = None,
                  database_path='C:/Users/munoz/Desktop/py-ivtools/ivtools/saves/DataBase.db',
                  table_name='Meta', drop=None):
         """
