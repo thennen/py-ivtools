@@ -514,52 +514,114 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_ylabel('Resistance [$\\Omega$]')
 
 
-def violinhist(data, x, range, bins=50, alpha=.8, color=None, logbin=True, logx=True, ax=None, label=None, **kwargs):
-    # histogram version of violin plot (when there's not a lot of data so the KDE looks weird)
-    # data should be a list of arrays of values
-    # kwargs go to plt.bar
+def violinhist(data, x, histrange=None, bins=50, alpha=.8, color=None, logbin=True, logx=True, ax=None,
+               label=None, sharescale=True, **kwargs):
+    '''
+    histogram version of violin plot (when there's not a lot of data so the KDE looks weird)
+    Can handle log scaling the x-axis, which plt.violinplot cannot do
+    widths are automatically scaled, attempting to make them visible and not overlapping
+    data should be a list of arrays of values
+    kwargs go to plt.bar
+    This was pretty difficult to write -- mostly because I want the log ticks..
+    TODO: could extend to make a real violin plot by increasing # of bins, adding some gaussian noise to the data, and doing line plots
+    TODO: make a very simplistic box plot instead of a full vertical line, plt.violinplot just uses plt.hlines/vlines
+    '''
     if ax is None:
         ax = plt.gca()
+    if color is None:
+        color = ax._get_lines.get_next_color()
     order = np.argsort(x)
     x = np.array(x)[order]
     data = [data[o] for o in order]
-    # we could scale the histograms so that their max value is half the minimum x distance
-    scale = 0.45
+    if histrange is None:
+        #histrange = np.percentile(np.concatenate(data), (1,99))
+        alldata = np.concatenate(data)
+        histrange = (np.min(alldata), np.max(alldata))
+
+    # values will be converted back to linear scale before plotting
+    # so that we can use the log-scale axes
+    if logbin:
+        data = [np.log(d) for d in data]
+        histrange = np.log(histrange)
+        ax.set_yscale('log')
     if logx:
-        assert(all(x>0))
-        # how to make them look the same amplitude on log scale, without any possible overlapping?
-        # a slightly tricky problem. we e.g. need different amplitudes for the left and right bar for them to look equal
-        logx = np.log10(x)
-        logamp = np.min(np.diff(logx)) * scale
-        ampleft = x - 10**(logx - logamp)
-        ampright = 10**(logx + logamp) - x
+        x = np.log(x)
         ax.set_xscale('log')
-    else:
-        amp = np.min(np.diff(x)) * scale
-        ampleft = ampright = [amp] * len(x)
-    for d,xi,aleft,aright in zip(data, x, ampleft, ampright):
+
+    dx = np.diff(x)
+    # Calculate stats
+    n = [len(d) for d in data]
+    means = [np.mean(d) for d in data]
+    maxs = [np.max(d) for d in data]
+    mins = [np.min(d) for d in data]
+    p99s = [np.percentile(d, 99) for d in data]
+    p01s = [np.percentile(d, 1) for d in data]
+
+    # Calculate the histograms
+    hists = []
+    for d,xi in zip(data, x):
+        edges = np.linspace(*histrange, nbins+1)
+        hist, edges = np.histogram(d, bins=edges)
         if logbin:
-            logd = np.log10(d[d > 0])
-            logrange = [np.log10(r) if r > 0 else 1 for r in range]
-            hist, edges = np.histogram(logd, bins=bins, range=logrange)
-            edges = 10**edges
-            ax.set_yscale('log')
-        else:
-            hist, edges = np.histogram(d, bins=bins, range=range)
-        hist = hist / np.max(hist)
+            # normalize to account for different bin widths
+            hist = hist / np.diff(np.exp(edges))
+        hists.append((hist, edges))
+
+    ### try linear x case
+    # for log case, you just do the same to the logged values, then exp them all before plotting
+
+
+    # Figure out how to scale everything
+    # scale should not be hugely different for different hists
+    # so we should scale them so the peak doesn't exceed the minimum 
+    maxscale = 0.49
+    maxamp = np.min(dx) * maxscale
+
+    if sharescale:
+        # scale all hists by the same factor so that the globally maximum bin reaches maxamp
+        maxbin = np.max([h for h,e in hists])
+        hists = [(h*maxamp/maxbin, e) for h,e in hists]
+    else:
+        # scale every hist to maxscale
+        hists = [(h*maxamp/np.max(h), e) for h,e in hists]
+
+    if logx:
+        x = np.exp(x)
+    if logbin:
+        maxs = [np.exp(v) for v in maxs]
+        mins = [np.exp(v) for v in mins]
+        means = [np.exp(v) for v in means]
+
+    # Plot the histograms
+    for (hist, edges), xi in zip(hists, x):
+        if logbin:
+            edges = np.exp(edges)
         heights = np.diff(edges)
-        rightbar = ax.barh(edges[:-1], aright*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
-        # this makes sure all the subsequent colors are the same
-        # even if color was initially None
-        color = rightbar.get_children()[0].get_facecolor()
-        label = None # only label the first one
-        ax.barh(edges[:-1], -aleft*hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+        if logx:
+            ax.barh(edges[:-1], xi*np.exp(hist) - xi, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+            label = None # only label the first one
+            ax.barh(edges[:-1], xi*np.exp(-hist) - xi, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+        else:
+            ax.barh(edges[:-1], hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+            label = None # only label the first one
+            ax.barh(edges[:-1], -hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+
+    # Plot bars
+    # Bars should all have the same scale
+    barwidth = np.min(dx * .2)
+    if logx:
+        ax.hlines([mins, means ,maxs], x*np.exp(-barwidth) - x, x*np.exp(barwidth) - x, colors=color)
+    else:
+        ax.hlines([mins, means ,maxs], x-barwidth, x+barwidth, colors=color)
+    ax.vlines(x, mins, maxs, colors=color)
+
     # only label the x axis where there are histograms
     ax.xaxis.set_ticks(x)
     ax.xaxis.set_ticklabels(x)
     ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-    ax.vlines(x, *range, color='black', alpha=.3)
-    ax.set_ylim(range)
+    r0, r1 = histrange
+    m = (r0 + r1) / 2
+    ax.set_ylim((r0-m)*1.05 + m, (r1-m)*1.05 +m)
 
 def violinhist_fromdf(df, col, xcol, **kwargs):
     histd = []
@@ -568,24 +630,6 @@ def violinhist_fromdf(df, col, xcol, **kwargs):
         histx.append(k)
         histd.append(g[col].values)
     violinhist(histd, histx, **kwargs)
-def loghist(data, bins=50, range=None, density=False, ax=None, **kwargs):
-    '''
-    Just like a plt.hist except the binning is done on the logged data
-    kwargs to go plt.bar
-    '''
-    # TODO it could also be ok if they are ALL negative
-    data = data[data > 0]
-    if ax is None:
-        ax = plt.gca()
-    ax.set_xscale('log')
-    logd = np.log10(data)
-    if range is not None:
-        range = [np.log10(r) for r in range]
-    hist, edges = np.histogram(logd, bins=bins, density=density, range=range)
-    edges = 10**edges
-    hist = hist
-    widths = np.diff(edges)
-    ax.bar(edges[:-1], hist, width=widths, align='edge', **kwargs)
 
 def grouped_hist(df, col, groupby=None, range=None, bins=30, logx=True, ax=None):
     '''
