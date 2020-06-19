@@ -327,7 +327,7 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
     monitor_channel = ivtools.settings.MONITOR_PICOCHANNEL
     if monitor_channel in ch:
         # Assuming CHA is directly sampling the output waveform, we can easily optimize the range
-        arange, aoffs = ps.best_range((v1, v2), atten=ps.atten[monitor_channel])
+        arange, aoffs = ps.best_range((v1, v2), atten=ps.atten[monitor_channel], coupling=ps.coupling[monitor_channel])
         ps.range[monitor_channel] = arange
         ps.offset[monitor_channel] = aoffs
 
