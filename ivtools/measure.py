@@ -311,13 +311,19 @@ def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
-    # TODO: don't let this function change the pico state.  Just return the calculated ranges.
+    '''
+    Tries to choose the best range, offset for input channels, given the minimum and maximum values of the applied waveform
+    This is easy to do for the monitor channel, but hard to do for channels that depend on the load (DUT)
+    TODO: Somehow have reconfigurable auto-ranging functions for different setups.  Function attributes on pico_to_iv?
+    TODO: don't let this function change the pico state.  Just return the calculated ranges.
+    '''
     ps = instruments.Picoscope()
     # Auto offset for current input
     possible_ranges = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
     # Each range has a maximum possible offset
     max_offsets = np.array((.5, .5, .5, 2.5, 2.5, 2.5, 20, 20, 20))
 
+    # TODO allow multiple monitors?
     monitor_channel = ivtools.settings.MONITOR_PICOCHANNEL
     if monitor_channel in ch:
         # Assuming CHA is directly sampling the output waveform, we can easily optimize the range

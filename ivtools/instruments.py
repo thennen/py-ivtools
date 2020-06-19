@@ -389,7 +389,7 @@ class Picoscope(object):
         mask = possible_ranges >= padamp
         for selectedrange, max_offset in zip(possible_ranges[mask], max_offsets[mask]):
             # Is middle an acceptable offset?
-            if middle < max_offset:
+            if np.abs(middle) < max_offset:
                 return (selectedrange, -middle)
                 break
             # Can we reduce the offset without the signal going out of range?
