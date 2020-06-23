@@ -284,7 +284,6 @@ old_s = autocaller(old_savedata)
 
 def savedata(data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
     """
-
     :param data: If no data is passed, try to use the global variable d.
     :param folder_path: Folder where all data will be saved. If None, data will be saved in username/ivdata.
     :param database_path: Path of the database where data will be saved. If None, data will be saved in username/ivdata.

@@ -518,7 +518,6 @@ def db_create_table(db_name, table_name, data):
     """
     Creates a table from the 'pandas.series' array of data.
     It names columns and insert the first row of data.
-    All column's names will be in lower case
     """
 
     db_file = sqlite3.connect(db_name)
@@ -526,6 +525,23 @@ def db_create_table(db_name, table_name, data):
 
     # Creating table and naming columns.
     col_names = list(data.keys())
+
+    # It is not possible to have two column names that only differ in case.
+    # To solve that, '&' is added at the end of the second name
+    col_names_lower = [col.lower() for col in col_names]
+    col_names_fixed = list(data.keys())
+    poped = 0
+    while poped < len(col_names):
+        name = col_names_lower.pop(0)
+        poped += 1
+        rep = 0
+        while name in col_names_lower:
+            rep += 1
+            i = col_names_lower.index(name)
+            col_names_fixed[i + poped] += '&' * rep
+            col_names_lower.pop(i)
+            poped += 1
+
 
     def blacklist_filter(col_name):
         val = data[col_name]
@@ -535,17 +551,22 @@ def db_create_table(db_name, table_name, data):
             print(f"Data type {dtype} is not allowed, '{col_name}' won't de saved.")
             return None
         else:
-            return col_name
+            return col_names_fixed[col_names.index(col_name)]
 
     params = tuple(filter(None, [blacklist_filter(name) for name in col_names]))
-    col_names = list(params)
-    # print(f"CREATE TABLE {table_name} {params}")
+    col_names_fixed = list(params)
+    col_names = []
+    for name in col_names_fixed:
+        while name[-1] == '&':
+            name = name[:-1]
+        col_names.append(name)
+    print(f"CREATE TABLE {table_name} {params}")
     c.execute(f"CREATE TABLE {table_name} {params}")
 
     # Adding values to the first row
-    params = [db_change_type(data[col_name]) for col_name in col_names]
+    params = tuple([db_change_type(data[col_name]) for col_name in col_names])
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
-    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
@@ -560,6 +581,7 @@ def db_insert_row(db_name, table_name, data):
     c = db_file.cursor()
 
     old_col_names = db_get_col_names(db_name, table_name)
+    old_col_names_lower = [col.lower() for col in old_col_names]
     new_col_names = list(data.keys())
 
     # This loop fills the cells of the existing columns.
@@ -581,11 +603,16 @@ def db_insert_row(db_name, table_name, data):
     # This loop add new columns if needed.
     for name in new_col_names:
         if name not in old_col_names:
+            name_lower = name.lower()
+            name_fixed = name
+            while name_lower in old_col_names_lower:
+                name_lower += '&'
+                name_fixed += '&'
             val = data[name]
             dtype = type(val)
             val_ch = db_change_type(val)
             if val_ch is not None:
-                db_add_col(db_name, table_name, name)
+                db_add_col(db_name, table_name, name_fixed)
                 print(f"New column added: {name}")
                 params.append(val_ch)
             else:
@@ -594,7 +621,7 @@ def db_insert_row(db_name, table_name, data):
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
