@@ -36,11 +36,8 @@ def create_big_db():
     '''
 
     data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
-
-    data = data.drop(columns=['offset', 'T'])
     row0 = data.iloc[0]
     io.db_create_table("metadata.db", "metadata", row0)
-
     prev = 0
     start = time.time()
     times = []
@@ -145,12 +142,17 @@ def small_test2():
 
 #### Functions to run ####
 
-# start = time.time()
-# create_big_db()
-# elapsed = time.time() - start
-# mins = int(elapsed/60)
-# secs = (elapsed/60 - mins)*60
-# print(f'Elapsed time: {mins} minutes and {secs} seconds')
+start = time.time()
+create_big_db()
+elapsed = time.time() - start
+mins = int(elapsed/60)
+secs = (elapsed/60 - mins)*60
+print(f'Elapsed time: {mins} minutes and {secs} seconds')
 
-small_test1()
+# data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
+# row0 = data.iloc[0]
+# col_names = list(row0.keys())
+# col_names_encoded = io.db_encode(col_names)
+# print(col_names)
+# print(col_names_encoded)
 

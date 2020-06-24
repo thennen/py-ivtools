@@ -528,19 +528,7 @@ def db_create_table(db_name, table_name, data):
 
     # It is not possible to have two column names that only differ in case.
     # To solve that, '&' is added at the end of the second name
-    col_names_lower = [col.lower() for col in col_names]
-    col_names_encoded = list(data.keys())
-    poped = 0
-    while poped < len(col_names):
-        name = col_names_lower.pop(0)
-        poped += 1
-        rep = 0
-        while name in col_names_lower:
-            rep += 1
-            i = col_names_lower.index(name)
-            col_names_encoded[i + poped] += '&' * rep
-            col_names_lower.pop(i)
-            poped += 1
+    col_names_encoded = db_encode(col_names)
 
 
     def blacklist_filter(col_name):
@@ -682,6 +670,27 @@ def db_load(db_name, table_name):
     return df
 
 
+def db_encode(col_names):
+    col_names_low = [col.lower() for col in col_names]
+    col_names_encoded_low = list(col_names_low)
+    col_names_encoded = list(col_names)
+    removed = 0
+    N = len(col_names)
+    # It's ugly but since I'm changing names in lists this is the easier way I've found
+    for n in range(N):
+        name = col_names_low[n]
+        del col_names_encoded_low[0]
+        removed += 1
+        rep = 0
+        while name in col_names_encoded_low:
+            rep += 1
+            i = col_names_encoded_low.index(name)
+            col_names_encoded_low[i] += '&' * rep
+            col_names_encoded[i + removed] += '&' * rep
+            print(f'Column name {i + removed} was changed from {col_names[i + removed]} to {col_names_encoded[i + removed]}')
+
+
+    return col_names_encoded
 
 
 def db_decode(col_names_encoded):
@@ -691,8 +700,6 @@ def db_decode(col_names_encoded):
             name = name[:-1]
         col_names.append(name)
     return col_names
-
-
 
 
 def db_exist_table(db_name, table_name):
