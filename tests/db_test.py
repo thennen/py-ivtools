@@ -6,6 +6,7 @@ import time
 from ivtools import io
 import numpy as np
 import pandas as pd
+from line_profiler import LineProfiler
 
 meta = io.MetaHandler()
 
@@ -140,19 +141,24 @@ def small_test2():
     print(a)
     print(type(a))
 
+def time_test():
+    data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
+    row0 = data.iloc[0]
+    row = data.iloc[3056]
+    io.db_insert_row("metadata.db", "metadata", row)
+
 #### Functions to run ####
 
-start = time.time()
-create_big_db()
-elapsed = time.time() - start
-mins = int(elapsed/60)
-secs = (elapsed/60 - mins)*60
-print(f'Elapsed time: {mins} minutes and {secs} seconds')
+# start = time.time()
+# create_big_db()
+# elapsed = time.time() - start
+# mins = int(elapsed/60)
+# secs = int((elapsed/60 - mins)*60)
+# print(f'Elapsed time: {mins} minutes and {secs} seconds')
 
-# data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
-# row0 = data.iloc[0]
-# col_names = list(row0.keys())
-# col_names_encoded = io.db_encode(col_names)
-# print(col_names)
-# print(col_names_encoded)
+lp = LineProfiler()
+lp.add_function(io.db_insert_row)
+lp_wrapper = lp(time_test)
+lp_wrapper()
+lp.print_stats()
 

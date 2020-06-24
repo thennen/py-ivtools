@@ -513,6 +513,7 @@ class MetaHandler(object):
         else:
             db_insert_row(database_path, table_name, data)
 
+# TODO: create a function for db.commit() to avoid committing after every row
 
 def db_create_table(db_name, table_name, data):
     """
@@ -569,29 +570,17 @@ def db_insert_row(db_name, table_name, data):
     in_col_names = list(data.keys())
 
     # This loop fills the cells of the existing columns.
-    def fill_cols(col_name):
-        if col_name in in_col_names:
-            val = data[col_name]
-            dtype = type(val)
-            val_ch = db_change_type(val)
-            if val_ch is None:
-                print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
-                return None
-            else:
-                return val_ch
-        else:
-            return None
 
-    params = [fill_cols(name) for name in prev_col_names]
+    params = [db_fill_cols(name, in_col_names, data[name]) for name in prev_col_names]
 
     # This loop add new columns if needed.
-    prev_col_names_encoded_lower = [i.lower() for i in prev_col_names_encoded]
+    prev_col_names_encoded_low = [i.lower() for i in prev_col_names_encoded]
     for name in in_col_names:
         if name not in prev_col_names:
-            name_lower = name.lower()
+            name_low = name.lower()
             name_encoded = name
-            while name_lower in prev_col_names_encoded_lower:
-                name_lower += '&'
+            while name_low in prev_col_names_encoded_low:
+                name_low += '&'
                 name_encoded += '&'
             val = data[name]
             val_ch = db_change_type(val)
@@ -609,6 +598,19 @@ def db_insert_row(db_name, table_name, data):
     # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
+
+
+def db_fill_cols(col_name, in_col_names, val):
+    if col_name in in_col_names:
+        dtype = type(val)
+        val_ch = db_change_type(val)
+        if val_ch is None:
+            print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
+            return None
+        else:
+            return val_ch
+    else:
+        return None
 
 
 def db_get_col_names(db_name, table_name):
@@ -638,14 +640,14 @@ def db_change_type(val):
                   np.uint8: int, np.uint16: int, np.uint32: int}
     dtype = type(val)
     if dtype in types_dict.keys():
-        if types_dict[dtype] == None:
-            val = None
+        if types_dict[dtype] == float:
+            val = float(val)
         elif types_dict[dtype] == str:
             val = str(val)
+        elif types_dict[dtype] == None:
+            val = None
         elif types_dict[dtype] == datetime:
             val = val.to_pydatetime()
-        elif types_dict[dtype] == float:
-            val = float(val)
         elif types_dict[dtype] == int:
             val = int(val)
     else:
@@ -688,7 +690,6 @@ def db_encode(col_names):
             col_names_encoded_low[i] += '&' * rep
             col_names_encoded[i + removed] += '&' * rep
             print(f'Column name {i + removed} was changed from {col_names[i + removed]} to {col_names_encoded[i + removed]}')
-
 
     return col_names_encoded
 
