@@ -108,35 +108,40 @@ def merge_repeated():
 
 def small_test1():
     # TODO: check what happens with 'pandas.core.series.Series' data type
-    data = pd.DataFrame(np.array([[1, 2, 3]]), columns=['Hola', 'Adios', 'hola'])
-    print(data)
+    data1 = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=['Hola', 'Adios', 'hola'])
+    data2 = pd.DataFrame(np.array([[7, 8, 9, 10]]), columns=['Hola', 'Adios', 'hola', 'adios'])
+    data3 = pd.DataFrame(np.array([[11, 12, 13]]), columns=['adios', 'hola', 'HOLA'])
+    print(data1)
+    print(data2)
+    print(data3)
+
     if os.path.isfile("test.db") is True:
         os.remove("test.db")
-    io.db_create_table("test.db", "test", data)
-    io.db_insert_row("test.db", "test", data)
-    data = pd.DataFrame(np.array([[1, 2, 3, 4]]), columns=['Hola', 'Adios', 'hola', 'adios'])
-    print(data)
-    io.db_insert_row("test.db", "test", data)
+
+    row = data1.iloc[0]
+    io.db_create_table("test.db", "test", row)
+    row = data1.iloc[1]
+    io.db_insert_row("test.db", "test", row)
+    row = data2.iloc[0]
+    io.db_insert_row("test.db", "test", row)
+    row = data3.iloc[0]
+    io.db_insert_row("test.db", "test", row)
 
     df = io.db_load("test.db", "test")
     print(df)
 
 def small_test2():
-    col_names = ['Hola', 'Adios', 'me', 'llamo', 'Alex', 'hola', 'yo', 'no', 'HOLA', 'adios']
-    print(col_names)
-    col_names_lower = [col.lower() for col in col_names]
-    poped = 0
-    while poped < len(col_names):
-        name = col_names_lower.pop(0)
-        poped += 1
-        rep = 0
-        while name in col_names_lower:
-            rep += 1
-            i = col_names_lower.index(name)
-            col_names[i + poped] += '&' * rep
-            col_names_lower.pop(i)
-            poped += 1
-    print(col_names)
+    data = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=['Hola', 'Adios', 'hola'])
+    print(data)
+    print(type(data))
+    print('-'*20)
+    a = data.iloc[0]
+    print(a)
+    print(type(a))
+    print('-' * 20)
+    a = a['Hola']
+    print(a)
+    print(type(a))
 
 #### Functions to run ####
 

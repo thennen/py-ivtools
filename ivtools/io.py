@@ -529,7 +529,7 @@ def db_create_table(db_name, table_name, data):
     # It is not possible to have two column names that only differ in case.
     # To solve that, '&' is added at the end of the second name
     col_names_lower = [col.lower() for col in col_names]
-    col_names_fixed = list(data.keys())
+    col_names_encoded = list(data.keys())
     poped = 0
     while poped < len(col_names):
         name = col_names_lower.pop(0)
@@ -538,7 +538,7 @@ def db_create_table(db_name, table_name, data):
         while name in col_names_lower:
             rep += 1
             i = col_names_lower.index(name)
-            col_names_fixed[i + poped] += '&' * rep
+            col_names_encoded[i + poped] += '&' * rep
             col_names_lower.pop(i)
             poped += 1
 
@@ -551,22 +551,18 @@ def db_create_table(db_name, table_name, data):
             print(f"Data type {dtype} is not allowed, '{col_name}' won't de saved.")
             return None
         else:
-            return col_names_fixed[col_names.index(col_name)]
+            return col_names_encoded[col_names.index(col_name)]
 
     params = tuple(filter(None, [blacklist_filter(name) for name in col_names]))
-    col_names_fixed = list(params)
-    col_names = []
-    for name in col_names_fixed:
-        while name[-1] == '&':
-            name = name[:-1]
-        col_names.append(name)
-    print(f"CREATE TABLE {table_name} {params}")
+    col_names_encoded = list(params)
+    col_names = db_decode(col_names_encoded)
+    # print(f"CREATE TABLE {table_name} {params}")
     c.execute(f"CREATE TABLE {table_name} {params}")
 
     # Adding values to the first row
     params = tuple([db_change_type(data[col_name]) for col_name in col_names])
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
-    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
@@ -580,13 +576,13 @@ def db_insert_row(db_name, table_name, data):
     db_file = sqlite3.connect(db_name)
     c = db_file.cursor()
 
-    old_col_names = db_get_col_names(db_name, table_name)
-    old_col_names_lower = [col.lower() for col in old_col_names]
-    new_col_names = list(data.keys())
+    prev_col_names_encoded = db_get_col_names(db_name, table_name)
+    prev_col_names = db_decode(prev_col_names_encoded)
+    in_col_names = list(data.keys())
 
     # This loop fills the cells of the existing columns.
     def fill_cols(col_name):
-        if col_name in new_col_names:
+        if col_name in in_col_names:
             val = data[col_name]
             dtype = type(val)
             val_ch = db_change_type(val)
@@ -598,30 +594,31 @@ def db_insert_row(db_name, table_name, data):
         else:
             return None
 
-    params = [fill_cols(name) for name in old_col_names]
+    params = [fill_cols(name) for name in prev_col_names]
 
     # This loop add new columns if needed.
-    for name in new_col_names:
-        if name not in old_col_names:
+    prev_col_names_encoded_lower = [i.lower() for i in prev_col_names_encoded]
+    for name in in_col_names:
+        if name not in prev_col_names:
             name_lower = name.lower()
-            name_fixed = name
-            while name_lower in old_col_names_lower:
+            name_encoded = name
+            while name_lower in prev_col_names_encoded_lower:
                 name_lower += '&'
-                name_fixed += '&'
+                name_encoded += '&'
             val = data[name]
-            dtype = type(val)
             val_ch = db_change_type(val)
             if val_ch is not None:
-                db_add_col(db_name, table_name, name_fixed)
+                db_add_col(db_name, table_name, name_encoded)
                 print(f"New column added: {name}")
                 params.append(val_ch)
             else:
+                dtype = type(val)
                 print(f"Data type '{dtype}' not suported.'{name}' won't be saved")
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     db_file.commit()
 
@@ -672,8 +669,30 @@ def db_change_type(val):
 def db_load(db_name, table_name):
     db_file = sqlite3.connect(db_name)
     query = db_file.execute(f"SELECT * From {table_name}")
-    cols = [column[0] for column in query.description]
-    return pd.DataFrame.from_records(data=query.fetchall(), columns=cols)
+    col_names_encoded = [column[0] for column in query.description]
+    df = pd.DataFrame.from_records(data=query.fetchall(), columns=col_names_encoded)
+    col_names = db_decode(col_names_encoded)
+    changes = {}
+    for name_encoded in col_names_encoded:
+        if name_encoded[-1] == '&':
+            i = col_names_encoded.index(name_encoded)
+            name = col_names[i]
+            changes[name_encoded] = name
+    df = df.rename(columns=changes)
+    return df
+
+
+
+
+def db_decode(col_names_encoded):
+    col_names = []
+    for name in col_names_encoded:
+        while name[-1] == '&':
+            name = name[:-1]
+        col_names.append(name)
+    return col_names
+
+
 
 
 def db_exist_table(db_name, table_name):
