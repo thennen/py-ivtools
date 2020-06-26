@@ -54,14 +54,14 @@ datafolder = r'C:\data\{}'.format(username)
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
 inst_connections = []
 
-db_file = os.path.join(ivtools_dir, 'metadata.db')
+db_path = os.path.join(ivtools_dir, 'metadata.db')
 
 #################################################
 ######## Hostname/user specific settings ########
 #################################################
 
 if hostname == 'pciwe46':
-    db_file = 'D:\metadata.db'
+    db_path = 'D:\metadata.db'
     if username == 'hennen':
         datafolder = r'D:\t\ivdata'
     else:

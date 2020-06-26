@@ -487,19 +487,37 @@ class MetaHandler(object):
             dataout = data.append(pd_file)
         return dataout
 
-    def savedata(self, data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
+    def savedata(self, data, folder_path=None, database_path=None, table_name='Meta', drop=None):
         """
-        :param data: If no data is passed, try to use the global variable d.
+        Save a row of data into a table in a database.
+
+        :param data: Row of data to be add to the database.
         :param folder_path: Folder where all data will be saved. If None, data will be saved in Desktop.
         :param database_path: Path of the database where data will be saved. If None, data will be saved in Desktop.
         :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
         :param drop: drop columns to save disk space.
         """
-        if data is None:
-            global d
-            if type(d) in (dict, list, pd.Series, pd.DataFrame):
-                print('No data passed to savedata(). Using global variable d.')
-                data = d
+
+        datatype = type(data)
+
+        if datatype is list:
+            rowtype = type(data[0])
+            if rowtype in (dict, pd.core.series.Series):
+                data = data[0]
+                print("You are trying to load many rows. Only first one will be load.")
+            else:
+                raise Exception(f"Data type {datatype} inside a list is not compatible.")
+        elif datatype is pd.core.frame.DataFrame:
+            data = data.iloc[0]
+            print("You are trying to load many rows. Only first one will be load.")
+        elif datatype is dict:
+            pass
+        elif datatype is pd.core.series.Series:
+            pass
+        else:
+            raise Exception(f"Data type {datatype} is not compatible.")
+
+
         if folder_path is None:
             folder_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
         if database_path is None:
@@ -508,21 +526,28 @@ class MetaHandler(object):
         data = self.attach(data)
         write_pandas_pickle(data, file_path, drop=drop)
         data = self.attach_filepath(data, file_path)
-        if db_exist_table(database_path, table_name) is False:
-            db_create_table(database_path, table_name, data)
+
+        db_conn = db_connect(database_path)
+        if db_exist_table(db_conn, table_name) is False:
+            db_create_table(db_conn, table_name, data)
         else:
-            db_insert_row(database_path, table_name, data)
+            db_insert_row(db_conn, table_name, data)
+        db_commit(db_conn)
 
-# TODO: create a function for db.commit() to avoid committing after every row
 
-def db_create_table(db_name, table_name, data):
+def db_create_table(db_conn, table_name, data):
     """
     Creates a table from the 'pandas.series' array of data.
     It names columns and insert the first row of data.
+    To apply this change, the function "db_commit()" must be ran.
+
+    :param db_conn: Connection with the database estiblished by db_connect()
+    :param table_name: Name of the table in the database.
+    :param data: pandas.series array from wich to crate the table
+    :return: None
     """
 
-    db_file = sqlite3.connect(db_name)
-    c = db_file.cursor()
+    c = db_conn.cursor()
 
     # Creating table and naming columns.
     col_names = list(data.keys())
@@ -530,7 +555,6 @@ def db_create_table(db_name, table_name, data):
     # It is not possible to have two column names that only differ in case.
     # To solve that, '&' is added at the end of the second name
     col_names_encoded = db_encode(col_names)
-
 
     def blacklist_filter(col_name):
         val = data[col_name]
@@ -545,6 +569,8 @@ def db_create_table(db_name, table_name, data):
     params = tuple(filter(None, [blacklist_filter(name) for name in col_names]))
     col_names_encoded = list(params)
     col_names = db_decode(col_names_encoded)
+    if len(params) == 0:
+        raise Exception("An empty table can't be used to create a table")
     # print(f"CREATE TABLE {table_name} {params}")
     c.execute(f"CREATE TABLE {table_name} {params}")
 
@@ -553,25 +579,44 @@ def db_create_table(db_name, table_name, data):
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
-    db_file.commit()
 
 
-def db_insert_row(db_name, table_name, data):
-    '''
+def db_insert_row(db_conn, table_name, row):
+    """
     Insert a row of data of any length, creating new columns if necessary.
-    data must be pandas.Series
-    '''
+    To apply this change, the function "db_commit()" must be ran.
 
-    db_file = sqlite3.connect(db_name)
-    c = db_file.cursor()
+    :param db_conn: Connection with the database estiblished by db_connect()
+    :param table_name: Name of the table in the database.
+    :param row: Row in be added to the table.
+    :return: None
+    """
 
-    prev_col_names_encoded = db_get_col_names(db_name, table_name)
+    datatype = type(row)
+    if datatype not in (dict, pd.core.series.Series):
+        raise Exception(f'Data type {datatype} is not compatible. Use "dict" or "pandas.core.series.Series".')
+
+    c = db_conn.cursor()
+
+    prev_col_names_encoded = db_get_col_names(db_conn, table_name)
     prev_col_names = db_decode(prev_col_names_encoded)
-    in_col_names = list(data.keys())
+    in_col_names = list(row.keys())
 
     # This loop fills the cells of the existing columns.
+    def db_fill_cols(col_name):
+        if col_name in in_col_names:
+            val = row[col_name]
+            dtype = type(val)
+            val_ch = db_change_type(val)
+            if val_ch is None:
+                print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
+                return None
+            else:
+                return val_ch
+        else:
+            return None
 
-    params = [db_fill_cols(name, in_col_names, data[name]) for name in prev_col_names]
+    params = [db_fill_cols(name) for name in prev_col_names]
 
     # This loop add new columns if needed.
     prev_col_names_encoded_low = [i.lower() for i in prev_col_names_encoded]
@@ -582,10 +627,10 @@ def db_insert_row(db_name, table_name, data):
             while name_low in prev_col_names_encoded_low:
                 name_low += '&'
                 name_encoded += '&'
-            val = data[name]
+            val = row[name]
             val_ch = db_change_type(val)
             if val_ch is not None:
-                db_add_col(db_name, table_name, name_encoded)
+                db_add_col(db_conn, table_name, name_encoded)
                 print(f"New column added: {name}")
                 params.append(val_ch)
             else:
@@ -597,68 +642,79 @@ def db_insert_row(db_name, table_name, data):
 
     # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
-    db_file.commit()
 
 
-def db_fill_cols(col_name, in_col_names, val):
-    if col_name in in_col_names:
-        dtype = type(val)
-        val_ch = db_change_type(val)
-        if val_ch is None:
-            print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
-            return None
-        else:
-            return val_ch
-    else:
-        return None
+def db_get_col_names(db_conn, table_name):
+    """
+    Return a list with the name of the columns.
 
+    :param db_conn: Connection with the database established by db_connect()
+    :param table_name:
+    :return: List of the names.
+    """
 
-def db_get_col_names(db_name, table_name):
-    '''Returns a list with the name of the columns, in lower case.'''
-
-    db_file = sqlite3.connect(db_name)
-    c = db_file.cursor()
+    c = db_conn.cursor()
 
     get_names = c.execute(f"select * from {table_name} limit 1")
     col_names = [i[0] for i in get_names.description]
     return list(col_names)
 
 
-def db_add_col(db_name, table_name, col_name):
-    '''Adds a new column at the end of the table'''
+def db_add_col(db_conn, table_name, col_name):
+    """
+    Add a new columns at the end of the table.
 
-    db_file = sqlite3.connect(db_name)
-    c = db_file.cursor()
+    :param db_conn: Connection with the database established by db_connect().
+    :param table_name: Table i nthe database.
+    :param col_name: Name of the new column
+    :return: None
+    """
+
+    c = db_conn.cursor()
 
     c.execute(f"ALTER TABLE {table_name} ADD '{col_name}'")
 
 
-def db_change_type(val):
+def db_change_type(var):
+    """
+    Change the type of a variable to the best option to be in the database.
+
+    :param var: variable to change its type
+    :return: Changed variable
+    """
     types_dict = {np.ndarray: None, list: None, dict: str, pd._libs.tslibs.timestamps.Timestamp: str,
                   np.float64: float,
                   np.float32: float, np.int64: int, np.int32: int, np.int16: int, str: str, int: int, float: float,
-                  np.uint8: int, np.uint16: int, np.uint32: int}
-    dtype = type(val)
+                  np.uint8: int, np.uint16: int, np.uint32: int,
+                  pd.core.series.Series: None}
+    dtype = type(var)
     if dtype in types_dict.keys():
         if types_dict[dtype] == float:
-            val = float(val)
+            var = float(var)
         elif types_dict[dtype] == str:
-            val = str(val)
+            var = str(var)
         elif types_dict[dtype] == None:
-            val = None
+            var = None
         elif types_dict[dtype] == datetime:
-            val = val.to_pydatetime()
+            var = var.to_pydatetime()
         elif types_dict[dtype] == int:
-            val = int(val)
+            var = int(var)
     else:
         print(f"Data type {dtype} is not registered, it will be save as str")
-        val = repr(val)
-    return val
+        var = repr(var)
+    return var
 
 
-def db_load(db_name, table_name):
-    db_file = sqlite3.connect(db_name)
-    query = db_file.execute(f"SELECT * From {table_name}")
+def db_load(db_path, table_name):
+    """
+    Load a dataframe from a database table.
+
+    :param db_path: Path of the database
+    :param table_name: name of the table
+    :return: dataframe
+    """
+    db_conn = sqlite3.connect(db_path)
+    query = db_conn.execute(f"SELECT * From {table_name}")
     col_names_encoded = [column[0] for column in query.description]
     df = pd.DataFrame.from_records(data=query.fetchall(), columns=col_names_encoded)
     col_names = db_decode(col_names_encoded)
@@ -673,6 +729,12 @@ def db_load(db_name, table_name):
 
 
 def db_encode(col_names):
+    """
+    Crete a list of names where names that only differed in case are encoded like This, this&, THIS&&, tHIs&&&...
+
+    :param col_names_encoded: list of names
+    :return: encoded list of names
+    """
     col_names_low = [col.lower() for col in col_names]
     col_names_encoded_low = list(col_names_low)
     col_names_encoded = list(col_names)
@@ -689,12 +751,19 @@ def db_encode(col_names):
             i = col_names_encoded_low.index(name)
             col_names_encoded_low[i] += '&' * rep
             col_names_encoded[i + removed] += '&' * rep
-            print(f'Column name {i + removed} was changed from {col_names[i + removed]} to {col_names_encoded[i + removed]}')
+            print(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
+                  f' {col_names_encoded[i + removed]} in the database file.')
 
     return col_names_encoded
 
 
 def db_decode(col_names_encoded):
+    """
+    Remove the & from the encoded names (This, this&, THIS&&, tHIs&&&).
+
+    :param col_names_encoded: encoded list of names
+    :return: decoded list of names
+    """
     col_names = []
     for name in col_names_encoded:
         while name[-1] == '&':
@@ -703,9 +772,16 @@ def db_decode(col_names_encoded):
     return col_names
 
 
-def db_exist_table(db_name, table_name):
-    db_file = sqlite3.connect(db_name)
-    c = db_file.cursor()
+def db_exist_table(db_conn, table_name):
+    """
+    Cheeck if a table exist in a databse.
+
+    :param db_conn: Connection with the database established by db_connect()
+    :param table_name: table to check if exists
+    :return: bool
+    """
+
+    c = db_conn.cursor()
     # get the count of tables with the name
     c.execute(f"SELECT count(name) FROM sqlite_master WHERE type='table' AND name='{table_name}'")
     # if the count is 1, then table exists
@@ -714,7 +790,33 @@ def db_exist_table(db_name, table_name):
     else:
         return False
     # close the connection
-    db_file.close()
+    db_conn.close()
+
+
+def db_connect(db_path):
+    """
+    Establish a connection with the database.
+
+    :param db_path: Path of the database.
+    :return: Connection var.
+    """
+    db_conn = sqlite3.connect(db_path)
+    return db_conn
+
+
+def db_commit(db_conn):
+    """
+    Commit changes to a database, and close connection.
+    It has an independent function to avoid using it unnecessarily, since it takes too long.
+
+    :param db_conn: Name of the connection established previously
+    :return: None
+    """
+    db_conn.commit()
+    db_conn.close()
+
+
+
 
 
 def validvarname(varStr):

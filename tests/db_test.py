@@ -4,11 +4,27 @@ import statistics
 
 import time
 from ivtools import io
+import interactive
 import numpy as np
 import pandas as pd
 from line_profiler import LineProfiler
 
 meta = io.MetaHandler()
+
+
+def to_time_test(row):
+    col_names = list(row.keys())
+    print(col_names)
+    col_name = col_names[100]
+    val = row[col_name]
+    print(val)
+
+
+def time_test(data):
+    lp = LineProfiler()
+    lp_wrapper = lp(to_time_test)
+    lp_wrapper(data)
+    lp.print_stats()
 
 
 def fake_measurement():
@@ -29,31 +45,37 @@ def fake_measurement():
     savedata(d)
     '''
 
+
 def create_big_db():
-    '''
-    This has been made especially for matadata.pkl
-    It takes around 15 mins
-    Some columns are repeated in metadata.pkl so merge_repeated() should be run first.
-    '''
+    """
+    This has been made especially for matadata.pkl, but can be change to anything easily.
+    Since it could take long, it plots expected remaining time every 1000 rows added.
+    """
 
     data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
     row0 = data.iloc[0]
-    io.db_create_table("metadata.db", "metadata", row0)
+    if os.path.isfile("metadata.db") is True:
+        os.remove("metadata.db")
+    db_conn = io.db_connect("metadata.db")
+    io.db_create_table(db_conn, "metadata", row0)
     prev = 0
     start = time.time()
     times = []
-    for N in range(len(data)):
-        row = data.iloc[N]
-        io.db_insert_row("metadata.db", "metadata", row)
-        if int(N/1000) > prev:
+    N = 1000
+    for n in range(N):
+        row = data.iloc[n]
+        io.db_insert_row(db_conn, "metadata", row)
+        if int(n/1000) > prev:
             elapsed = time.time() - start
             times.append(elapsed)
             mean = statistics.mean(times)
-            mins = int(mean / 1000 * (len(data) - N) / 60)
-            secs = int((mean / 1000 * (len(data) - N) / 60 - mins) * 60)
+            mins = int(mean / 1000 * (len(data) - n) / 60)
+            secs = int((mean / 1000 * (len(data) - n) / 60 - mins) * 60)
             prev += 1
-            print(f"Row {N} loaded. Expected remaining time: {mins} minutes and {secs} seconds")
+            print(f"Row {n} loaded. Expected remaining time: {mins} minutes and {secs} seconds")
             start = time.time()
+    io.db_commit(db_conn)
+
 
 def merge_repeated():
     """
@@ -104,61 +126,34 @@ def merge_repeated():
 
     return data
 
-def small_test1():
-    # TODO: check what happens with 'pandas.core.series.Series' data type
-    data1 = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=['Hola', 'Adios', 'hola'])
-    data2 = pd.DataFrame(np.array([[7, 8, 9, 10]]), columns=['Hola', 'Adios', 'hola', 'adios'])
-    data3 = pd.DataFrame(np.array([[11, 12, 13]]), columns=['adios', 'hola', 'HOLA'])
-    print(data1)
-    print(data2)
-    print(data3)
 
-    if os.path.isfile("test.db") is True:
-        os.remove("test.db")
+def test1():
+    ser = pd.Series([11, 12, 13, 14], index=['Hola', 'Ey', 'hola', 'Adios'])
+    dct = {'Hola': 7, 'hola': 9, 'Adios': 8, 'List': [1, 2, 3]}
+    df = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=['Hola', 'Adios', 'hola'])
+    ld = [{'Hola': 21, 'hola': 22, 'Adios': 23}, {'Hola': 24, 'hola': 25, 'Adios': 26}]
 
-    row = data1.iloc[0]
-    io.db_create_table("test.db", "test", row)
-    row = data1.iloc[1]
-    io.db_insert_row("test.db", "test", row)
-    row = data2.iloc[0]
-    io.db_insert_row("test.db", "test", row)
-    row = data3.iloc[0]
-    io.db_insert_row("test.db", "test", row)
-
-    df = io.db_load("test.db", "test")
-    print(df)
-
-def small_test2():
-    data = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=['Hola', 'Adios', 'hola'])
+    data = ser
     print(data)
-    print(type(data))
-    print('-'*20)
-    a = data.iloc[0]
-    print(a)
-    print(type(a))
-    print('-' * 20)
-    a = a['Hola']
-    print(a)
-    print(type(a))
 
-def time_test():
+    # if os.path.isfile("test.db") is True:
+    #     os.remove("test.db")
+
+    interactive.savedata(data)
+
+    # df = io.db_load("test.db", "test")
+    # print(df)
+    # print(type(df))
+
+
+def test2(data):
     data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
-    row0 = data.iloc[0]
-    row = data.iloc[3056]
-    io.db_insert_row("metadata.db", "metadata", row)
+
+
 
 #### Functions to run ####
 
-# start = time.time()
-# create_big_db()
-# elapsed = time.time() - start
-# mins = int(elapsed/60)
-# secs = int((elapsed/60 - mins)*60)
-# print(f'Elapsed time: {mins} minutes and {secs} seconds')
+test1()
 
-lp = LineProfiler()
-lp.add_function(io.db_insert_row)
-lp_wrapper = lp(time_test)
-lp_wrapper()
-lp.print_stats()
+
 
