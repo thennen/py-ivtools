@@ -586,7 +586,7 @@ def db_insert_row(db_conn, table_name, row):
             dtype = type(val)
             val_ch = db_change_type(val)
             if val_ch is None:
-                print(f"Data type {dtype} not supported. '{col_name}' was saved as 'None'")
+                #print(f"Data type {dtype} not supported. '{col_name}' was saved as 'None'")
                 return None
             else:
                 return val_ch
@@ -608,11 +608,11 @@ def db_insert_row(db_conn, table_name, row):
             val_ch = db_change_type(val)
             if val_ch is not None:
                 db_add_col(db_conn, table_name, name_encoded)
-                print(f"New column added: {name}")
+                #print(f"New column added: {name}")
                 params.append(val_ch)
             else:
                 dtype = type(val)
-                print(f"Data type '{dtype}' not supported. '{name}' won't be saved")
+                #print(f"Data type '{dtype}' not supported. '{name}' won't be saved")
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
