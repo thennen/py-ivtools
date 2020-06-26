@@ -1841,6 +1841,7 @@ def correct_phase(phase, test=False):
     strategy is to detect large steps in the phase array and add or subtract 2pi at those points.
     '''
     # Get it in between -pi, pi
+    pi = np.pi
     phase = (phase + pi) % (2*pi) - pi
     diff = np.diff(phase)
     direction = np.sign(diff)
