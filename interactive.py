@@ -38,7 +38,7 @@ from datetime import datetime
 from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
-warnings.filterwarnings("ignore",".*GUI is implemented.*")
+warnings.filterwarnings("ignore", ".*GUI is implemented.*")
 import visa
 
 import ivtools
@@ -85,6 +85,7 @@ if firstrun:
 
 hostname = settings.hostname
 username = settings.username
+db_path = settings.db_path  # Database path
 datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
@@ -162,7 +163,7 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.USB2708HS:'daq'}
 
 # Make varnames None until connected
-for kk,v in instrument_varnames.items():
+for kk, v in instrument_varnames.items():
     globalvars[v] = None
 
 visa_resources = visa.visa_rm.list_resources()
@@ -257,26 +258,43 @@ plotters = iplots.plotters
 add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
-def savedata(data=None, filepath=None, drop=None):
-    '''
-    Save data with metadata attached, as determined by the state of the global MetaHandler instance
-    if no data is passed, try to use the global variable d
-    filepath automatic by default.
-    can drop columns to save disk space.
-    '''
+
+# noinspection SpellCheckingInspection
+def savedata(data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
+    """
+    Save data to disk and write a row of metadata to an sqlite3 database
+    This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
+
+    :param data: Row of data to be add to the database.
+    :param folder_path: Folder where all data will be saved. If None, data will be saved in username/ivdata.
+    :param database_path: Path of the database where data will be saved. If None, data will be saved in username/ivdata.
+    :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
+    :param drop: drop columns to save disk space.
+    """
     if data is None:
         global d
         if type(d) in (dict, list, pd.Series, pd.DataFrame):
             print('No data passed to savedata(). Using global variable d.')
             data = d
-    if filepath is None:
-        filepath = os.path.join(datadir(), meta.filename())
-    # meta will be attached already if you used interactive_wrapper..
-    # TODO detect if metadata is there or not, because I still want to attach it in either case
-    #io.write_pandas_pickle(meta.attach(data), filepath, drop=drop)
-    io.write_pandas_pickle(data, filepath, drop=drop)
-    # TODO: append metadata to a sql table
-# just typing s will save the d variable
+    if folder_path is None:
+        folder_path = datadir()
+    if database_path is None:
+        database_path = db_path
+    meta.savedata(data, folder_path, database_path, table_name, drop)
+
+def load_metadb(database_path=None, table_name='Meta'):
+    """
+    Load the database into a data frame.
+    Not sure if this is necessary.
+    :param database_path: Path of the database to load.
+    :param table_name: Name of the database to load.
+    :return: Table of the database as a pandas.DataFrame.
+    """
+    if database_path is None:
+        database_path = db_path
+    db = db_load(database_path, table_name)
+    return db
+
 s = autocaller(savedata)
 
 
