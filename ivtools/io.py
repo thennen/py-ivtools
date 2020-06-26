@@ -425,6 +425,8 @@ class MetaHandler(object):
         May modify the input data in addition to returning it
         # TODO make it always modify the input data, or never
         '''
+        # Old version below, I don't know if it's faster but it's surely harder to read
+        '''
         #if len(self.meta) > 0:
         #    print('Attaching the following metadata:')
         #    TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
@@ -452,6 +454,31 @@ class MetaHandler(object):
             print('MetaHandler does not understand what kind of data you are trying to attach to.')
             dataout = data.append(self.meta).append(self.static)
         return dataout
+        '''
+
+        dataout = self.attach_keys(data, **self.meta)
+        dataout = self.attach_keys(dataout, **self.static)
+        return dataout
+
+    def attach_keys(self, data, **kwargs):
+        '''
+        Return shallow copy of input data with metadata keys attached
+        data can be list, list of dict, pd.Series, or pd.DataFrame
+        '''
+        dtype = type(data)
+        if dtype is dict:
+            dataout = {**data, **kwargs}
+        elif dtype is pd.Series:
+            dataout = pd.Series({**dict(data), **kwargs})
+        elif dtype is list:
+            # should be a list of dicts
+            dataout = [{**d, **kwargs} for d in data]
+        elif dtype is pd.DataFrame:
+            # Faster than .iterrows()?
+            datadict = data.to_dict(orient='records')
+            dataout = pd.DataFrame([{**d, **kwargs} for d in datadict])
+        return dataout
+
 
     def timestamp(self):
         return datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
@@ -482,7 +509,17 @@ class MetaHandler(object):
         if database_path is None:
             database_path = 'metadata.db'
 
+        file_name = self.filename()
+        file_path = os.path.abspath(os.path.join(folder_path, file_name))
+        file_timestamp = file_name[:len(self.timestamp())]
+
+        ext = pandas_pickle_extension(data)
+        file_path += ext
+
+        # could be some inefficiency here?
         data = self.attach(data)
+        data = self.attach_keys(data, filepath=file_path)
+        data = self.attach_keys(data, file_timestamp=file_timestamp)
 
         datatype = type(data)
         if datatype in (list, pd.DataFrame):
@@ -497,11 +534,6 @@ class MetaHandler(object):
         else:
             raise Exception(f"Data type {datatype} is not compatible.")
 
-        file_name = self.filename()
-        file_path = os.path.join(folder_path, file_name)
-        file_path = os.path.abspath(file_path)
-        data['filepath'] = file_path
-        data['file_timestamp'] = file_name[:len(self.timestamp())]
         write_pandas_pickle(data, file_path, drop=drop)
 
         db_conn = db_connect(database_path)
@@ -1175,9 +1207,14 @@ def write_pandas_pickle(data, filepath=None, drop=None):
     if (filedir != '') and not os.path.isdir(filedir):
         os.makedirs(filedir)
 
+    # give it a standard type-dependent extension if one isn't specified
+    filename, ext = os.path.splitext(filepath)
+    if not ext:
+        ext = pandas_pickle_extension(data)
+        filepath += ext
+
     dtype = type(data)
     if dtype in (dict, pd.Series):
-        filepath += '.s'
         if dtype == dict:
             print('Converting data to pd.Series for storage.')
             data = pd.Series(data)
@@ -1187,7 +1224,6 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 print('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop)
     elif dtype in (list, pd.DataFrame):
-        filepath += '.df'
         if dtype == list:
             print('Converting data to pd.DataFrame for storage.')
             data = pd.DataFrame(data)
@@ -1198,7 +1234,19 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
     set_readonly(filepath)
-    print('Wrote {}'.format(os.path.abspath(filepath)))
+    abspath = os.path.abspath(filepath)
+    print('Wrote {}'.format(abspath))
+    return abspath
+
+def pandas_pickle_extension(data):
+    # defines how we name the extension of dataframes and series
+    dtype = type(data)
+    if dtype in (dict, pd.Series):
+        return '.s'
+    elif dtype in (list, pd.DataFrame):
+        return '.df'
+    else:
+        return ''
 
 
 def write_matlab(data, filepath, varname=None, compress=True):
