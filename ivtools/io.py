@@ -425,10 +425,10 @@ class MetaHandler(object):
         May modify the input data in addition to returning it
         # TODO make it always modify the input data, or never
         '''
-        # if len(self.meta) > 0:
-        # print('Attaching the following metadata:')
-        # TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
-        # self.print()
+        #if len(self.meta) > 0:
+        #    print('Attaching the following metadata:')
+        #    TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
+        #    self.print()
         dtype = type(data)
         if dtype is dict:
             # Make shallow copy
@@ -453,39 +453,18 @@ class MetaHandler(object):
             dataout = data.append(self.meta).append(self.static)
         return dataout
 
+    def timestamp(self):
+        return datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+
     def filename(self):
         ''' Create a timestamped filename from selected metadata '''
-        filename = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+        filename = self.timestamp()
         for fnkey in self.filenamekeys:
             if fnkey in self.meta.keys():
                 filename += '_{}'.format(self.meta[fnkey])
             elif fnkey in self.static.keys():
                 filename += '_{}'.format(self.static[fnkey])
         return filename
-
-    def attach_filepath(self, data, filepath):
-        dict_file = {'File': filepath}
-        pd_file = pd.Series(dict_file)
-        print(pd_file, type(pd_file))
-        dtype = type(data)
-        if dtype is dict:
-            # Make shallow copy
-            dataout = data.copy()
-            dataout.update(pd_file)
-        elif dtype is list:
-            dataout = [d.copy() for d in data]
-            for d in dataout:
-                d.update(pd_file)
-        elif dtype is pd.Series:
-            # Series can't be updated by dicts
-            dataout = data.append(pd.Series(pd_file))
-        elif dtype is pd.DataFrame:
-            dupedmeta = pd.DataFrame([pd_file] * len(data), index=data.index)
-            dataout = data.join(dupedmeta)
-        else:
-            print('MetaHandler does not understand what kind of data you are trying to attach to.')
-            dataout = data.append(pd_file)
-        return dataout
 
     def savedata(self, data, folder_path=None, database_path=None, table_name='Meta', drop=None):
         """
@@ -497,53 +476,51 @@ class MetaHandler(object):
         :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
         :param drop: drop columns to save disk space.
         """
+        # save in current directory by default
+        if folder_path is None:
+            folder_path = '.'
+        if database_path is None:
+            database_path = 'metadata.db'
+
+        data = self.attach(data)
 
         datatype = type(data)
-
-        if datatype is list:
-            rowtype = type(data[0])
-            if rowtype in (dict, pd.core.series.Series):
-                data = data[0]
-                print("You are trying to load many rows. Only first one will be load.")
-            else:
-                raise Exception(f"Data type {datatype} inside a list is not compatible.")
-        elif datatype is pd.core.frame.DataFrame:
-            data = data.iloc[0]
-            print("You are trying to load many rows. Only first one will be load.")
-        elif datatype is dict:
-            pass
-        elif datatype is pd.core.series.Series:
-            pass
+        if datatype in (list, pd.DataFrame):
+            # You are saving a list of data
+            # only the first element will be used for saving the metadata
+            metadata = ivtools.analyze.iloc(data, 0)
+            rowtype = type(metadata)
+            if rowtype not in (dict, pd.Series):
+                raise Exception(f"List of {rowtype} is not compatible.")
+        elif datatype in (dict, pd.Series):
+            metadata = data
         else:
             raise Exception(f"Data type {datatype} is not compatible.")
 
-
-        if folder_path is None:
-            folder_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop')
-        if database_path is None:
-            database_path = os.path.join(os.path.join(os.environ['USERPROFILE']), 'Desktop', 'database.db')
-        file_path = os.path.join(folder_path, self.filename())
-        data = self.attach(data)
+        file_name = self.filename()
+        file_path = os.path.join(folder_path, file_name)
+        file_path = os.path.abspath(file_path)
+        data['filepath'] = file_path
+        data['file_timestamp'] = file_name[:len(self.timestamp())]
         write_pandas_pickle(data, file_path, drop=drop)
-        data = self.attach_filepath(data, file_path)
 
         db_conn = db_connect(database_path)
-        if db_exist_table(db_conn, table_name) is False:
-            db_create_table(db_conn, table_name, data)
+        if db_exist_table(db_conn, table_name):
+            db_insert_row(db_conn, table_name, metadata)
         else:
-            db_insert_row(db_conn, table_name, data)
+            db_create_table(db_conn, table_name, metadata)
         db_commit(db_conn)
 
 
 def db_create_table(db_conn, table_name, data):
     """
     Creates a table from the 'pandas.series' array of data.
-    It names columns and insert the first row of data.
+    It names columns and inserts the first row of data.
     To apply this change, the function "db_commit()" must be ran.
 
     :param db_conn: Connection with the database estiblished by db_connect()
     :param table_name: Name of the table in the database.
-    :param data: pandas.series array from wich to crate the table
+    :param data: pandas.series array from which to create the table
     :return: None
     """
 
@@ -561,7 +538,7 @@ def db_create_table(db_conn, table_name, data):
         val_ch = db_change_type(val)
         dtype = type(val)
         if val_ch is None:
-            print(f"Data type {dtype} is not allowed, '{col_name}' won't de saved.")
+            #print(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
             return None
         else:
             return col_names_encoded[col_names.index(col_name)]
@@ -588,7 +565,7 @@ def db_insert_row(db_conn, table_name, row):
 
     :param db_conn: Connection with the database estiblished by db_connect()
     :param table_name: Name of the table in the database.
-    :param row: Row in be added to the table.
+    :param row: Row to be added to the table.
     :return: None
     """
 
@@ -609,7 +586,7 @@ def db_insert_row(db_conn, table_name, row):
             dtype = type(val)
             val_ch = db_change_type(val)
             if val_ch is None:
-                print(f"Data type {dtype} not suported.'{col_name}' was saved as 'None'")
+                print(f"Data type {dtype} not supported. '{col_name}' was saved as 'None'")
                 return None
             else:
                 return val_ch
@@ -618,7 +595,7 @@ def db_insert_row(db_conn, table_name, row):
 
     params = [db_fill_cols(name) for name in prev_col_names]
 
-    # This loop add new columns if needed.
+    # This loop adds new columns if needed.
     prev_col_names_encoded_low = [i.lower() for i in prev_col_names_encoded]
     for name in in_col_names:
         if name not in prev_col_names:
@@ -635,7 +612,7 @@ def db_insert_row(db_conn, table_name, row):
                 params.append(val_ch)
             else:
                 dtype = type(val)
-                print(f"Data type '{dtype}' not suported.'{name}' won't be saved")
+                print(f"Data type '{dtype}' not supported. '{name}' won't be saved")
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
@@ -725,12 +702,14 @@ def db_load(db_path, table_name):
             name = col_names[i]
             changes[name_encoded] = name
     df = df.rename(columns=changes)
+    db_conn.close()
     return df
 
 
 def db_encode(col_names):
     """
-    Crete a list of names where names that only differed in case are encoded like This, this&, THIS&&, tHIs&&&...
+    Sqlite cannot store keys that only differ in case
+    Return a list of names where names that only differed in case are encoded like This, this&, THIS&&, tHIs&&&...
 
     :param col_names_encoded: list of names
     :return: encoded list of names
@@ -764,17 +743,12 @@ def db_decode(col_names_encoded):
     :param col_names_encoded: encoded list of names
     :return: decoded list of names
     """
-    col_names = []
-    for name in col_names_encoded:
-        while name[-1] == '&':
-            name = name[:-1]
-        col_names.append(name)
-    return col_names
+    return [cn.strip('&') for cn in col_names_encoded]
 
 
 def db_exist_table(db_conn, table_name):
     """
-    Cheeck if a table exist in a databse.
+    Check if a table exists in a databse.
 
     :param db_conn: Connection with the database established by db_connect()
     :param table_name: table to check if exists

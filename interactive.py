@@ -89,7 +89,6 @@ db_path = settings.db_path  # Database path
 datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
-'''
 if 'M' in gitstatus:
     print('The following files have uncommited changes:')
     print('\n'.join(gitstatus['M']))
@@ -98,7 +97,6 @@ if 'M' in gitstatus:
 if '??' in gitstatus:
     print('The following files are untracked by git:')
     print('\n'.join(gitstatus['??']))
-'''
 # TODO: auto commit to some kind of auto commit branch
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
@@ -262,10 +260,10 @@ del_plotters = iplots.del_plotters
 
 
 # noinspection SpellCheckingInspection
-def savedata(data, folder_path=None, database_path=None, table_name='Meta', drop=None):
+def savedata(data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
     """
-    Save a row of data into a table in a database.
-    This is a "io.Metahandler.savedata" wrapping but making use of "settings.py" parameters.
+    Save data to disk and write a row of metadata to an sqlite3 database
+    This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
 
     :param data: Row of data to be add to the database.
     :param folder_path: Folder where all data will be saved. If None, data will be saved in username/ivdata.
@@ -273,13 +271,18 @@ def savedata(data, folder_path=None, database_path=None, table_name='Meta', drop
     :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
     :param drop: drop columns to save disk space.
     """
+    if data is None:
+        global d
+        if type(d) in (dict, list, pd.Series, pd.DataFrame):
+            print('No data passed to savedata(). Using global variable d.')
+            data = d
     if folder_path is None:
         folder_path = datadir()
     if database_path is None:
         database_path = db_path
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
-def loaddata(database_path=None, table_name='Meta'):
+def load_metadb(database_path=None, table_name='Meta'):
     """
     Load the database into a data frame.
     Not sure if this is necessary.
