@@ -76,6 +76,8 @@ class LevelFilter(logging.Filter):
 
 log_format = '%(levelname)s : %(asctime)s : %(message)s'
 
+logging.addLevelName(45, 'testlevel')
+
 log_config = {
     'version': 1,
     'filters': {
@@ -97,6 +99,11 @@ log_config = {
         'error_filter': {
             '()': LevelFilter,
             'level': 40,
+            'show': True
+        },
+        'testlevel_filter': {
+            '()': LevelFilter,
+            'level': 45,
             'show': True
         },
         'critical_filter': {
@@ -149,6 +156,11 @@ log_config = {
             'filters': ['error_filter'],
             'formatter': 'red'
         },
+        'testlevel_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['testlevel_filter'],
+            'formatter': 'back_magenta'
+        },
         'critical_stream': {
             'class': 'logging.StreamHandler',
             'filters': ['critical_filter'],
@@ -163,11 +175,14 @@ log_config = {
     },
     'root': {
         'level': 'DEBUG',
-        'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file']
+        'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'testlevel_stream',
+                     'critical_stream', 'file']
     },
 }
 
 logging.config.dictConfig(log_config)
+log = logging.getLogger()
+
 
 #################################################
 ######## Hostname/user specific settings ########

@@ -1,8 +1,10 @@
-import logging
 from ivtools import settings
 
-settings.("This is a debug message.")
-# logging.info("This is an info message.")
-# logging.warning('This is a warning')
-# logging.error('This is an error')
-# logging.critical("This is critical!")
+log = settings.log
+
+log.debug("This is a debug message.")
+log.info("This is an info message.")
+log.warning('This is a warning.')
+log.error('This is an error.')
+log.testlevel('This a level created by me.')
+log.critical("This is critical!")
