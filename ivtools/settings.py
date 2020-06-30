@@ -16,9 +16,12 @@ import getpass  # to get user name
 import socket
 import os
 from functools import partial
+import logging.config
+from colorama import Fore, Back, Style
 # circular import?
 import ivtools.measure
 import ivtools.instruments as instruments
+
 
 ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
@@ -55,6 +58,116 @@ datafolder = r'C:\data\{}'.format(username)
 inst_connections = []
 
 db_path = os.path.join(ivtools_dir, 'metadata.db')
+
+
+### Settings for the logging module
+class LevelFilter(logging.Filter):
+    def __init__(self, level=None, show=True):
+        self.level = level
+        self.show = show  # Define if the log will be printed or not
+
+    def filter(self, record):
+        if record.levelno == self.level and self.show:
+            allow = True
+        else:
+            allow = False
+        return allow
+
+
+log_format = '%(levelname)s : %(asctime)s : %(message)s'
+
+log_config = {
+    'version': 1,
+    'filters': {
+        'debug_filter': {
+            '()': LevelFilter,
+            'level': 10,
+            'show': True
+        },
+        'info_filter': {
+            '()': LevelFilter,
+            'level': 20,
+            'show': True
+        },
+        'warning_filter': {
+            '()': LevelFilter,
+            'level': 30,
+            'show': True
+        },
+        'error_filter': {
+            '()': LevelFilter,
+            'level': 40,
+            'show': True
+        },
+        'critical_filter': {
+            '()': LevelFilter,
+            'level': 50,
+            'show': True
+        }
+    },
+    'formatters': {
+        'standard': {
+            'format': log_format
+        },
+        'black': {
+            'format': Fore.BLACK + log_format + Style.RESET_ALL
+        },
+        'blue': {
+            'format': Fore.CYAN + log_format + Style.RESET_ALL
+        },
+        'yellow': {
+            'format': Fore.YELLOW + log_format + Style.RESET_ALL
+        },
+        'red': {
+            'format': Fore.RED + log_format + Style.RESET_ALL
+        },
+        'magenta': {
+            'format': Fore.MAGENTA + log_format + Style.RESET_ALL
+        },
+        'back_magenta': {
+            'format': Back.MAGENTA + Fore.BLACK + log_format + Style.RESET_ALL
+        },
+    },
+    'handlers': {
+        'debug_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['debug_filter'],
+            'formatter': 'black'
+        },
+        'info_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['info_filter'],
+            'formatter': 'blue'
+        },
+        'warning_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['warning_filter'],
+            'formatter': 'yellow'
+        },
+        'error_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['error_filter'],
+            'formatter': 'red'
+        },
+        'critical_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['critical_filter'],
+            'formatter': 'magenta'
+        },
+        'file': {
+            'level': 'DEBUG',
+            'formatter': 'standard',
+            'class': 'logging.FileHandler',
+            'filename': 'LogFile.log'
+        }
+    },
+    'root': {
+        'level': 'DEBUG',
+        'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file']
+    },
+}
+
+logging.config.dictConfig(log_config)
 
 #################################################
 ######## Hostname/user specific settings ########
