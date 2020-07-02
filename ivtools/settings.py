@@ -16,8 +16,6 @@ import getpass  # to get user name
 import socket
 import os
 from functools import partial
-import logging.config
-from colorama import Fore, Back, Style
 # circular import?
 import ivtools.measure
 import ivtools.instruments as instruments
@@ -52,8 +50,8 @@ hostname = socket.gethostname()
 username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
-log_file = os.path.join(datafolder, 'log_file.log')
-log_prints = {'level1': False, 'level2': False, 'level3': True, 'level4': True, 'level5': True}
+logging_prints = {'level1': False, 'level2': False, 'level3': True, 'level4': True, 'level5': True,
+              'debug': False, 'info': False, 'warning': True, 'error': True, 'critical': True}
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
 # Could also use it to specify different addresses needed on different PCs to connect to the same kind of instrument
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
@@ -71,11 +69,11 @@ if hostname == 'pciwe46':
     if username == 'hennen':
         datafolder = r'D:\t\ivdata'
     elif username == 'munoz':
-        datafolder = r'D:\t\ivdata'
-        log_prints = {'level1': True, 'level2': True, 'level3': True, 'level4': True, 'level5': True}
+        datafolder = r'D:\{}\ivdata'.format(username)
+        logging_prints = {'level1': True, 'level2': True, 'level3': True, 'level4': True, 'level5': True,
+                      'debug': True, 'info': True, 'warning': True, 'error': True, 'critical': True}
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
-        log_prints = {}
 
     inst_connections = [('ps', instruments.Picoscope),
                         ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),

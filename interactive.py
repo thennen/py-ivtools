@@ -30,6 +30,7 @@ import getpass # to get user name
 import sys
 import time
 import pandas as pd
+import logging.config
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
 import subprocess
@@ -190,6 +191,8 @@ if len(sys.argv) > 1:
 print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
 print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 io.makefolder(datafolder, subfolder)
+
+
 def datadir():
     return os.path.join(datafolder, subfolder)
 def open_datadir():
@@ -197,6 +200,12 @@ def open_datadir():
 def cd_data():
     magic('cd ' + datadir())
 
+
+### Logging configuration
+logging_file = os.path.join(datadir(), 'logging_file.log')
+logging_config = ivtools.logging_config
+logging_config['handlers']['file']['filename'] = logging_file
+logging.config.dictConfig(logging_config)
 
 # What the plots should do by default
 if not iplots.plotters:

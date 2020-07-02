@@ -34,9 +34,12 @@ class LevelFilter(logging.Filter):
 
 
 datafolder = ivtools.settings.datafolder
-log_prints = ivtools.settings.log_prints
-log_format = '%(levelname)s : %(asctime)s : %(message)s'
-log_config = {
+username = ivtools.settings.username
+logging_file = os.path.join(datafolder, 'logging_file.log')
+os.makedirs(datafolder, exist_ok=True)
+logging_prints = ivtools.settings.logging_prints
+logging_format = f'%(levelname)s : {username} : %(asctime)s : %(message)s'
+logging_config = {
     'version': 1,
     'filters': {
         'level1': {
@@ -63,26 +66,51 @@ log_config = {
             '()': LevelFilter,
             'level': 45,
             'show': True
+        },
+        'debug': {
+            '()': LevelFilter,
+            'level': 10,
+            'show': True
+        },
+        'info': {
+            '()': LevelFilter,
+            'level': 20,
+            'show': True
+        },
+        'warning': {
+            '()': LevelFilter,
+            'level': 30,
+            'show': True
+        },
+        'error': {
+            '()': LevelFilter,
+            'level': 40,
+            'show': True
+        },
+        'critical': {
+            '()': LevelFilter,
+            'level': 50,
+            'show': True
         }
     },
     'formatters': {
         'standard': {
-            'format': log_format
+            'format': logging_format
         },
         'level1': {
-            'format': Fore.BLACK + log_format + Style.RESET_ALL
+            'format': Fore.BLACK + logging_format + Style.RESET_ALL
         },
         'level2': {
-            'format': Fore.CYAN + log_format + Style.RESET_ALL
+            'format': Fore.CYAN + logging_format + Style.RESET_ALL
         },
         'level3': {
-            'format': Fore.YELLOW + log_format + Style.RESET_ALL
+            'format': Fore.YELLOW + logging_format + Style.RESET_ALL
         },
         'level4': {
-            'format': Fore.RED + log_format + Style.RESET_ALL
+            'format': Fore.RED + logging_format + Style.RESET_ALL
         },
         'level5': {
-            'format': Fore.MAGENTA + log_format
+            'format': Fore.MAGENTA + logging_format
         }
     },
     'handlers': {
@@ -111,23 +139,47 @@ log_config = {
             'filters': ['level5'],
             'formatter': 'level5'
         },
+        'debug_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['debug'],
+            'formatter': 'level1'
+        },
+        'info_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['info'],
+            'formatter': 'level2'
+        },
+        'warning_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['warning'],
+            'formatter': 'level3'
+        },
+        'error_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['error'],
+            'formatter': 'level4'
+        },
+        'critical_stream': {
+            'class': 'logging.StreamHandler',
+            'filters': ['critical'],
+            'formatter': 'level5'
+        },
         'file': {
             'level': 5,
             'formatter': 'standard',
             'class': 'logging.FileHandler',
-            'filename': os.path.join(datafolder, 'log_file.log')
+            'filename': logging_file
         }
     },
-    'root': {},
-    'loggers': {
-        'iv_logger': {
-            'handlers': ['level1_stream', 'level2_stream', 'level3_stream', 'level4_stream', 'level5_stream', 'file']
-        }
+    'root': {
+        'level': 5,
+        'handlers': ['level1_stream', 'level2_stream', 'level3_stream', 'level4_stream', 'level5_stream',
+                     'debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file']
     }
 }
-for lvl, val in log_prints.items():
-    log_config['filters'][lvl]['show'] = val
-logging.config.dictConfig(log_config)
+for lvl, val in logging_prints.items():
+    logging_config['filters'][lvl]['show'] = val
+logging.config.dictConfig(logging_config)
 
 
 def level1(self, message, *args, **kws):
@@ -162,8 +214,6 @@ logging.addLevelName(15, 'Level 2')
 logging.addLevelName(25, 'Level 3')
 logging.addLevelName(35, 'Level 4')
 logging.addLevelName(45, 'Level 5')
-
-log = logging.getLogger('iv_logger')
 
 
 # this is so you can do
