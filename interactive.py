@@ -30,7 +30,7 @@ import getpass # to get user name
 import sys
 import time
 import pandas as pd
-import logging.config
+import logging
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
 import subprocess
@@ -206,6 +206,9 @@ logging_file = os.path.join(datadir(), 'logging_file.log')
 logging_config = ivtools.logging_config
 logging_config['handlers']['file']['filename'] = logging_file
 logging.config.dictConfig(logging_config)
+log = logging.getLogger('interactive')
+
+log.info(f'Logs are now saved in {logging_file}')
 
 # What the plots should do by default
 if not iplots.plotters:

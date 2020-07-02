@@ -15,11 +15,15 @@ TODO: some way to export and load settings
 import getpass  # to get user name
 import socket
 import os
+import logging
 from functools import partial
 # circular import?
 import ivtools.measure
 import ivtools.instruments as instruments
 
+log = logging.getLogger('settings')
+
+log.warning('hola')
 
 ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
@@ -50,8 +54,7 @@ hostname = socket.gethostname()
 username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
-logging_prints = {'level1': False, 'level2': False, 'level3': True, 'level4': True, 'level5': True,
-              'debug': False, 'info': False, 'warning': True, 'error': True, 'critical': True}
+logging_prints = {'debug': False, 'info': False, 'warning': True, 'error': True, 'critical': True}
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
 # Could also use it to specify different addresses needed on different PCs to connect to the same kind of instrument
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
@@ -70,8 +73,7 @@ if hostname == 'pciwe46':
         datafolder = r'D:\t\ivdata'
     elif username == 'munoz':
         datafolder = r'D:\{}\ivdata'.format(username)
-        logging_prints = {'level1': True, 'level2': True, 'level3': True, 'level4': True, 'level5': True,
-                      'debug': True, 'info': True, 'warning': True, 'error': True, 'critical': True}
+        logging_prints = {'debug': True, 'info': True, 'warning': True, 'error': True, 'critical': True}
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 

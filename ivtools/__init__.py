@@ -19,7 +19,7 @@ def clear_instrument_states():
     global instrument_states
     instrument_states = {}
 
-### Logging module configuration ###
+#### Logging module configuration ####
 class LevelFilter(logging.Filter):
     def __init__(self, level=None, show=True):
         self.level = level
@@ -38,35 +38,10 @@ username = ivtools.settings.username
 logging_file = os.path.join(datafolder, 'logging_file.log')
 os.makedirs(datafolder, exist_ok=True)
 logging_prints = ivtools.settings.logging_prints
-logging_format = f'%(levelname)s : {username} : %(asctime)s : %(message)s'
+logging_format = f'%(levelname)s : %(name)s : {username} : %(asctime)s : %(message)s'
 logging_config = {
     'version': 1,
     'filters': {
-        'level1': {
-            '()': LevelFilter,
-            'level': 5,
-            'show': True
-        },
-        'level2': {
-            '()': LevelFilter,
-            'level': 15,
-            'show': True
-        },
-        'level3': {
-            '()': LevelFilter,
-            'level': 25,
-            'show': True
-        },
-        'level4': {
-            '()': LevelFilter,
-            'level': 35,
-            'show': True
-        },
-        'level5': {
-            '()': LevelFilter,
-            'level': 45,
-            'show': True
-        },
         'debug': {
             '()': LevelFilter,
             'level': 10,
@@ -97,72 +72,47 @@ logging_config = {
         'standard': {
             'format': logging_format
         },
-        'level1': {
+        'debug': {
             'format': Fore.BLACK + logging_format + Style.RESET_ALL
         },
-        'level2': {
+        'info': {
             'format': Fore.CYAN + logging_format + Style.RESET_ALL
         },
-        'level3': {
+        'warning': {
             'format': Fore.YELLOW + logging_format + Style.RESET_ALL
         },
-        'level4': {
+        'error': {
             'format': Fore.RED + logging_format + Style.RESET_ALL
         },
-        'level5': {
+        'critical': {
             'format': Fore.MAGENTA + logging_format
         }
     },
     'handlers': {
-        'level1_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['level1'],
-            'formatter': 'level1'
-        },
-        'level2_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['level2'],
-            'formatter': 'level2'
-        },
-        'level3_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['level3'],
-            'formatter': 'level3'
-        },
-        'level4_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['level4'],
-            'formatter': 'level4'
-        },
-        'level5_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['level5'],
-            'formatter': 'level5'
-        },
         'debug_stream': {
             'class': 'logging.StreamHandler',
             'filters': ['debug'],
-            'formatter': 'level1'
+            'formatter': 'debug'
         },
         'info_stream': {
             'class': 'logging.StreamHandler',
             'filters': ['info'],
-            'formatter': 'level2'
+            'formatter': 'info'
         },
         'warning_stream': {
             'class': 'logging.StreamHandler',
             'filters': ['warning'],
-            'formatter': 'level3'
+            'formatter': 'warning'
         },
         'error_stream': {
             'class': 'logging.StreamHandler',
             'filters': ['error'],
-            'formatter': 'level4'
+            'formatter': 'error'
         },
         'critical_stream': {
             'class': 'logging.StreamHandler',
             'filters': ['critical'],
-            'formatter': 'level5'
+            'formatter': 'critical'
         },
         'file': {
             'level': 5,
@@ -173,47 +123,26 @@ logging_config = {
     },
     'root': {
         'level': 5,
-        'handlers': ['level1_stream', 'level2_stream', 'level3_stream', 'level4_stream', 'level5_stream',
-                     'debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file']
+        'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file']
+    },
+    'loggers': {
+        'settings': {
+            'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file'],
+            'propagate': False
+        },
+        'interactive': {
+            'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file'],
+            'propagate': False
+        },
+        'test': {
+            'handlers': ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file'],
+            'propagate': False
+        }
     }
 }
 for lvl, val in logging_prints.items():
     logging_config['filters'][lvl]['show'] = val
 logging.config.dictConfig(logging_config)
-
-
-def level1(self, message, *args, **kws):
-    # Yes, logger takes its '*args' as 'args'.
-    self._log(5, message, args, **kws)
-
-
-def level2(self, message, *args, **kws):
-    self._log(15, message, args, **kws)
-
-
-def level3(self, message, *args, **kws):
-    self._log(25, message, args, **kws)
-
-
-def level4(self, message, *args, **kws):
-    self._log(35, message, args, **kws)
-
-
-def level5(self, message, *args, **kws):
-    self._log(45, message, args, **kws)
-
-
-logging.Logger.level1 = level1
-logging.Logger.level2 = level2
-logging.Logger.level3 = level3
-logging.Logger.level4 = level4
-logging.Logger.level5 = level5
-
-logging.addLevelName(5, 'Level 1')
-logging.addLevelName(15, 'Level 2')
-logging.addLevelName(25, 'Level 3')
-logging.addLevelName(35, 'Level 4')
-logging.addLevelName(45, 'Level 5')
 
 
 # this is so you can do
