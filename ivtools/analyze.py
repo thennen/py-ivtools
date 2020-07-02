@@ -1307,11 +1307,12 @@ def convert_unit(column='I', prefix='u'):
 #### datatype conversion/ non-trivial pandas operations ####
 
 # operations that are easy:
-# dict --> series      (pd.Series(dict))
-# series --> dict      (dict(series))
-# list of dict --> df  (pd.DataFrame(list of dict))
+# dict --> series:      pd.Series(dict)
+# series --> dict:      dict(series)
+# list of dict --> df:  pd.DataFrame(list of dict)
 
 def df_to_listofdicts(df):
+    # df can have nested arrays
     return df.to_dict(orient='records')
 
 def df_to_listofdicts_sparse(df):
@@ -1323,10 +1324,17 @@ def series_to_df(series):
     return pd.DataFrame.from_records([series])
 
 def df_to_nested_series(df):
-    # Don't know the best way to do this..
-    return pd.Series({k:v.values for k,v in d.items()})
+    '''
+    If you have a dataframe with some numeric columns (i.e. as loaded from some shitty csv file)
+    and want to convert the arrays into the nested structure that we are using in this code
+    '''
+    # This is close but it turns arrays into lists
+    # df.to_dict(orient='list')
+    # dictionary with series in it? that's weird
+    # df.to_dict(orient='series')
+    df_dict = {k:v.values for k,v in df.items()}
+    return pd.Series(df_dict)
 
-# TODO: Some others I have struggled with but don't remember at the moment
 
 #### ####
 
@@ -1348,14 +1356,12 @@ def iloop(data):
     figure out the non-loop way
     this is supposed to provide a consistent syntax so you can loop without knowing the datatype
     now you can use "for d in iloop(df):" instead of checking if it's a dataframe
-    thanks python for not being a very good language
     '''
     if type(data) == pd.DataFrame:
         for i,d in data.iterrows():
             yield d
     else:
         yield from data
-
 
 def whats_different(df):
     '''
@@ -1376,16 +1382,24 @@ def whats_different(df):
 
 def unpack_nested_dicts(df):
     '''
-    NOT IMPLEMENTED
     sometimes I have dictionaries like RANGE=dict(A=1, B=2, C=5, D=0.5) nested inside dataframes
     this helps tidy up the column names, but the inner keys are then not easily addressable in parallel
     this looks for such nested dictionaries and flattens them
+    new columns will be named like outerkey_innerkey
     '''
+    # test df
+    # df = pd.DataFrame([{'a':{'x':1, 'y':3}, 'b':{'i':5, 'j':4}, 'c':42}, {'a':{'x':0, 'y':6}, 'b':{'i':8, 'j':10}, 'c':24}])
     # Find dicts
     keys = df.keys()
-    types = [type(df[k]) for k in keys]
+    types = [type(df[k][0]) for k in keys]
     dicts = [k for k,t in zip(keys, types) if t == dict]
-    pass
+    out = df.copy(deep=False)
+    # I will assume all the dicts with the same name have the same keys..
+    for key in dicts:
+        flattened = df[key].apply(pd.Series)
+        flattened.columns = [f'{key}_{c}' for c in flattened.columns]
+        out = out.join(flattened).drop(key, 1)
+    return out
 
 def flatten_nested_dicts(nested):
     '''
@@ -1396,15 +1410,14 @@ def flatten_nested_dicts(nested):
     #nested = dict(X=dict(A=3, B=5, dict(C=3)), Y=dict(A=2, B=5))
     un = {f'{k}_{kk}':vv for k,v in nested.items() for kk,vv in v.items()}
 
-
-
 @ivfunc
 def set_dict_kv(data, dictname, key, value):
     '''
     Set a dict key:value pair for all dicts in iv list.
     basically setting second level k:v for nested dicts
     i.e. set_dict_kv(df, 'longnames', 'T', 'Temperature')
-    Won't work for dataframes that don't already have the dictname column, because it tries to add data to the individual series, without ever seeing the real dataframe
+    Won't work for dataframes that don't already have the dictname column,
+    because it tries to add data to the individual series, without ever seeing the real dataframe
     '''
     if dictname in data:
         data[dictname][key] = value
@@ -1448,43 +1461,6 @@ def apply(data, func, column):
     add_missing_keys(data, dataout)
     return dataout
 
-
-@ivfunc
-def subtract_offset(data, x='V', y='I', percentile=1, debug=False):
-    '''
-    Subtract an offset from y by looking at data points with small values of x
-
-    Possibilities for data selection:
-    1. Certain low percentile of x data? (fixed percentile or data dependent?)
-    2. Fixed number of datapoints nearest to x=0?
-    3. Values below a fixed threshold of abs(x)?
-    then:
-    4. Subtract the average of the selected y values
-    5. Do a linear fit to the selected x,y values and subtract the y intercept
-
-    4 is better than 5 in the case that you don't have symmetric data
-    '''
-    X = data[x]
-    lenX = len(X)
-    absX = np.abs(X)
-    Y = data[y]
-    ### Select datapoints close to x=0
-    # Need at least two datapoints, so change the percentile if necessary
-    percentile = max(percentile, 2*100/lenX)
-    p = np.percentile(absX, percentile)
-    mask = absX < p
-    line = np.polyfit(X[mask], Y[mask], 1)
-    slope, intercept = line
-    #print(intercept)
-    out = data.copy()
-    out['I'] = out['I'] - intercept
-    if debug:
-        plt.figure()
-        plt.scatter(X, Y)
-        plt.scatter(X[mask], Y[mask])
-        xfit = np.linspace(np.min(X), np.max(X), 10)
-        plt.plot(xfit, np.polyval(line, xfit))
-    return out
 
 def insert(data, key, vals):
     '''
@@ -1546,6 +1522,42 @@ def convert_to_uA(data):
     set_unit(data, 'I', '$\mu$A')
     return data
 
+@ivfunc
+def subtract_offset(data, x='V', y='I', percentile=1, debug=False):
+    '''
+    Subtract an offset from y by looking at data points with small values of x
+
+    Possibilities for data selection:
+    1. Certain low percentile of x data? (fixed percentile or data dependent?)
+    2. Fixed number of datapoints nearest to x=0?
+    3. Values below a fixed threshold of abs(x)?
+    then:
+    4. Subtract the average of the selected y values
+    5. Do a linear fit to the selected x,y values and subtract the y intercept
+
+    4 is better than 5 in the case that you don't have symmetric data
+    '''
+    X = data[x]
+    lenX = len(X)
+    absX = np.abs(X)
+    Y = data[y]
+    ### Select datapoints close to x=0
+    # Need at least two datapoints, so change the percentile if necessary
+    percentile = max(percentile, 2*100/lenX)
+    p = np.percentile(absX, percentile)
+    mask = absX < p
+    line = np.polyfit(X[mask], Y[mask], 1)
+    slope, intercept = line
+    #print(intercept)
+    out = data.copy()
+    out['I'] = out['I'] - intercept
+    if debug:
+        plt.figure()
+        plt.scatter(X, Y)
+        plt.scatter(X[mask], Y[mask])
+        xfit = np.linspace(np.min(X), np.max(X), 10)
+        plt.plot(xfit, np.polyval(line, xfit))
+    return out
 
 @ivfunc
 def drop_arrays(data):
