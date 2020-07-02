@@ -385,13 +385,22 @@ def arrayfun(func, columns=None):
 
 @ivfunc
 def maketimearray(data, basedon=None):
-    ''' Make the time array based on number of samples, sample rate, and downsampling'''
+    '''
+    Sometimes the time array is dropped from data to save memory/disk space,
+    because it can easily be reconstructed from the sample rate, number of samples, downsampling
+    data should contain 'sample_rate' key
+    can also contain a 'downsampling' key
+    otherwise the duration between each sample will be 1/sample_rate
+
+    basedon should be the name of the array with which to infer number of samples
+    '''
     if basedon is None:
         # Don't know what data columns exist
         columns = find_data_arrays(data)
+        nsamples = len(data[columns[0]])
     else:
-        columns = [basedon]
-    t = np.arange(len(data[columns[0]])) * 1/data['sample_rate']
+        nsamples = len(data[basedon])
+    t = np.linspace(0, nsamples/data['sample_rate'], nsamples)
     if 'downsampling' in data:
         t *= data['downsampling']
     return t
@@ -506,9 +515,10 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
         if dtype == np.float64:
             # Datatype was already float64, don't convert float64 to float64
             dataout[c] = ar
-        #elif dtype == np.int8:
+        elif dtype == np.int8:
             # Maybe we should allow low resolution data (like scope samples) turn high resolution when smoothed
-            #dataout[c] = ar
+            # 64 bit still probably not needed
+            dataout[c] = np.float32(ar)
         else:
             # Convert back to original data type (like float32)
             dataout[c] = dtype(ar)
@@ -1841,7 +1851,7 @@ def time_shift(data, column='I', dt=13e-9):
     else:
         t = maketimearray(data)
     # Interpolate the array to get its past value
-    colinterp = np.interp(t - dt, t, data[column])
+    colinterp = np.interp(t - dt, t, data[column], left=np.nan, right=np.nan)
     dataout = {column:colinterp}
     add_missing_keys(data, dataout)
     return dataout

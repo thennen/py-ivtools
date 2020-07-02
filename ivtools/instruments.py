@@ -531,7 +531,9 @@ class Picoscope(object):
         data['sample_rate'] = self.ps.sampleRate
         # Specify samples captured, because this field will persist even after splitting for example
         # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
-        data['nsamples_capture'] = len(data[ch[0]])
+        nsamples = len(data[ch[0]])
+        data['nsamples_capture'] = nsamples
+        data['t'] = np.linspace(0, nsamples/data['sample_rate'], nsamples)
         # Sample frequency?
         self.data = data
         return data
