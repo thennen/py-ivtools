@@ -23,134 +23,74 @@ def clear_instrument_states():
 
 username = ivtools.settings.username
 logging_format = f'%(levelname)s : {username} : %(asctime)s : %(message)s'
+datafolder = ivtools.settings.datafolder
+logging_file = ivtools.settings.logging_file
+logging_dir = os.path.split(logging_file)[0]
+logging_prints = ivtools.settings.logging_prints
+os.makedirs(logging_dir, exist_ok=True)
+logging_levels = {
+    'DEBUG':       Fore.RED + logging_format + Style.RESET_ALL,
+    'INFO':        Fore.RED + logging_format + Style.RESET_ALL,
+    'WARNING':     Fore.RED + logging_format + Style.RESET_ALL,
+    'ERROR':       Fore.RED + logging_format + Style.RESET_ALL,
+    'CRITICAL':    Fore.RED + logging_format + Style.RESET_ALL,
+    'instruments': Fore.BLACK + logging_format + Style.RESET_ALL,
+    'io':          Fore.CYAN + logging_format + Style.RESET_ALL,
+    'plots':       Fore.YELLOW + logging_format + Style.RESET_ALL,
+    'analysis':    Fore.BLUE + logging_format + Style.RESET_ALL,
+    'interactive': Fore.MAGENTA + logging_format + Style.RESET_ALL
+}
 
-# Define custom logging levels and the format that they will be printed
-# levelname: print format
-custom_levels = {'instruments': Fore.BLACK + logging_format + Style.RESET_ALL,
-                 'io':          Fore.CYAN + logging_format + Style.RESET_ALL,
-                 'plots':       Fore.YELLOW + logging_format + Style.RESET_ALL,
-                 'analysis':    Fore.RED + logging_format + Style.RESET_ALL,
-                 'interactive': Fore.MAGENTA + logging_format + Style.RESET_ALL,
-                }
 
 class LevelFilter(logging.Filter):
-    def __init__(self, level=None, show=True):
-        self.level = level
-        self.show = show  # Define if the log will be printed or not
+    def __init__(self, name=None):
+        self.name = name
 
     def filter(self, record):
-        if record.levelno == self.level and self.show:
-            allow = True
+        if record.levelname == self.name:
+            allow = logging_prints[record.levelname]
         else:
             allow = False
         return allow
 
 
-datafolder = ivtools.settings.datafolder
-logging_file = ivtools.settings.logging_file
-logging_dir = os.path.split(logging_file)[0]
-os.makedirs(logging_dir, exist_ok=True)
-logging_prints = ivtools.settings.logging_prints
-logging_config = {
-    'version': 1,
-    'filters': {
-        **{k:{'()': LevelFilter,
-               'level':60+i,
-               'show':True} # prints all on by default
-                for i,k in enumerate(custom_levels.keys())},
-        'debug': {
-            '()': LevelFilter,
-            'level': 10,
-            'show': True
-        },
-        'info': {
-            '()': LevelFilter,
-            'level': 20,
-            'show': True
-        },
-        'warning': {
-            '()': LevelFilter,
-            'level': 30,
-            'show': True
-        },
-        'error': {
-            '()': LevelFilter,
-            'level': 40,
-            'show': True
-        },
-        'critical': {
-            '()': LevelFilter,
-            'level': 50,
-            'show': True
-        }
-    },
-    'formatters': {
-        **{k:{'format':v} for k,v in custom_levels.items()},
-        'standard': {
-            'format': logging_format
-        }
-    },
-    'handlers': {
-        **{f'{k}_stream':
-           {'class': 'logging.StreamHandler',
-            'filters':[k],
-            'formatter': k}
-            for k in custom_levels.keys()},
-        'debug_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['debug'],
-            'formatter': 'standard'
-        },
-        'info_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['info'],
-            'formatter': 'standard'
-        },
-        'warning_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['warning'],
-            'formatter': 'standard'
-        },
-        'error_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['error'],
-            'formatter': 'standard'
-        },
-        'critical_stream': {
-            'class': 'logging.StreamHandler',
-            'filters': ['critical'],
-            'formatter': 'interactive'
-        },
-        'file': {
-            'level': 5,
-            'formatter': 'standard',
-            'class': 'logging.FileHandler',
-            'filename': logging_file
-        }
-    },
-    'root': {
-        'level': 5,
-        'handlers': [f'{k}_stream' for k in custom_levels.keys()] +
-                    ['debug_stream', 'info_stream', 'warning_stream', 'error_stream', 'critical_stream', 'file']
-    }
-}
+log = logging.getLogger('my_logger')
+log.setLevel(1)
 
-for lvl, val in logging_prints.items():
-    filter_config = logging_config['filters'].get(lvl)
-    if filter_config is not None:
-        filter_config['show'] = val
+# File Handler
+file_handler = logging.FileHandler('LogFile.log')
+file_handler.setLevel(1)
+file_formatter = logging.Formatter(logging_format)
+file_handler.setFormatter(file_formatter)
+log.addHandler(file_handler)
 
-logging.config.dictConfig(logging_config)
+# Stream Handlers
+for level in logging_levels.keys():
+    handler = logging.StreamHandler()
+    handler.setLevel(1)
+    formatter = logging.Formatter(logging_levels[level])
+    handler.setFormatter(formatter)
+    handler.addFilter(LevelFilter(level))
+    log.addHandler(handler)
 
-# Monkeypatch Logger to have the custom level names as methods
-for i,k in enumerate(custom_levels.keys()):
+custom_levels = list(logging_levels.keys())[5:7]
+print(custom_levels)
+
+def monkeymethod(self, message, *args, **kws):
+    self._log(60, message, args, **kws)
+setattr(logging.Logger, 'instruments', monkeymethod)
+logging.addLevelName(60, 'instruments')
+
+def monkeymethod(self, message, *args, **kws):
+    self._log(61, message, args, **kws)
+setattr(logging.Logger, 'io', monkeymethod)
+logging.addLevelName(61, 'io')
+
+for index, level in enumerate(custom_levels):
     def monkeymethod(self, message, *args, **kws):
-        self._log(60+i, message, args, **kws)
-    setattr(logging.Logger, k, monkeymethod)
-for i,k in enumerate(custom_levels.keys()):
-    logging.addLevelName(60+i, k)
-
-log = logging.getLogger('root')
+        self._log(60 + index, message, args, **kws)
+    setattr(logging.Logger, f'{level}', monkeymethod)
+    logging.addLevelName(60 + index, f'{level}')
 
 # this is so you can do
 # import ivtools
