@@ -51,16 +51,18 @@ username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
 
-logging_prints = {'instruments': True,
-                  'io': True,
-                  'plots': True,
-                  'analysis': True,
-                  'interactive': True,
-                  'debug': False,
-                  'info': False,
-                  'warning': True,
-                  'error': True,
-                  'critical': True}
+logging_prints = {
+    'DEBUG': False,
+    'INFO': False,
+    'WARNING': True,
+    'ERROR': True,
+    'CRITICAL': True,
+    'instruments': True,
+    'io': True,
+    'plots': True,
+    'analysis': True,
+    'interactive': True
+}
 
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
 # Could also use it to specify different addresses needed on different PCs to connect to the same kind of instrument
@@ -82,8 +84,18 @@ if hostname == 'pciwe46':
         datafolder = r'D:\t\ivdata'
     elif username == 'munoz':
         datafolder = r'D:\{}\ivdata'.format(username)
-        logging_prints = {'level1': True, 'level2': True, 'level3': True, 'level4': True, 'level5': True,
-                      'debug': True, 'info': True, 'warning': True, 'error': True, 'critical': True}
+        logging_prints = {
+            'DEBUG': True,
+            'INFO': True,
+            'WARNING': True,
+            'ERROR': True,
+            'CRITICAL': True,
+            'instruments': True,
+            'io': True,
+            'plots': True,
+            'analysis': True,
+            'interactive': True
+        }
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
