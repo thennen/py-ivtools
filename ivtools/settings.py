@@ -50,14 +50,26 @@ hostname = socket.gethostname()
 username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
-logging_prints = {'level1': False, 'level2': False, 'level3': True, 'level4': True, 'level5': True,
-              'debug': False, 'info': False, 'warning': True, 'error': True, 'critical': True}
+
+logging_prints = {'instruments': True,
+                  'io': True,
+                  'plots': True,
+                  'analysis': True,
+                  'interactive': True,
+                  'debug': False,
+                  'info': False,
+                  'warning': True,
+                  'error': True,
+                  'critical': True}
+
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
 # Could also use it to specify different addresses needed on different PCs to connect to the same kind of instrument
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
 inst_connections = []
 
-db_path = os.path.join(ivtools_dir, 'metadata.db')
+db_path = os.path.join(pyivtools_dir, 'metadata.db')
+
+logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
 
 #################################################
