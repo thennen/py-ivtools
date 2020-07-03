@@ -746,11 +746,13 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     ax.collections = []
     for c in channels:
         if c in chdata.keys():
-            if chdata[c].dtype == np.int8:
+            # Channel data may have been smoothed, in which case it may have been converted to float
+            # Here I assume that it was not converted to voltage, and still needs to be scaled
+            #if chdata[c].dtype == np.int8:
                # Convert to voltage for plot
-                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
-            else:
-                chplotdata = chdata[c]
+            chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
+            #else:
+                #chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
                 x = ivtools.analyze.maketimearray(chdata, c)
