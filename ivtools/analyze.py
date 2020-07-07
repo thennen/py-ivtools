@@ -30,6 +30,9 @@ import pandas as pd
 from matplotlib import pyplot as plt
 import sys
 from scipy.signal import savgol_filter as savgol
+import logging
+
+log = logging.getLogger('my_logger')
 
 #### Some infrastructure
 
@@ -155,7 +158,7 @@ def ivfunc(func):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
-            print('ivfunc did not understand the input datatype {}'.format(dtype))
+            log.analysis('ivfunc did not understand the input datatype {}'.format(dtype))
     return func_wrapper
 
 
@@ -872,7 +875,7 @@ def meaniv(data, truncate=False, columns=None):
         # If the arrays are different sizes, truncate them all to the smallest size so that they can be averaged
         if not np.all(np.diff(lens) == 0):
             trunc = np.min(lens)
-            print(f'Truncating data to length {trunc}')
+            log.analysis(f'Truncating data to length {trunc}')
             data = sliceiv(data, stop=trunc)
 
     dataout = {}
@@ -1180,7 +1183,7 @@ def longest_monotonic(data, column='I'):
     segment_lengths = [len(gp[1]) for gp in monolists]
     longest = np.argmax(segment_lengths)
     if segment_lengths[longest] < lenI * 0.4:
-        print('No monotonic segments longer than 40% of the {} array were found!'.format(column))
+        log.analysis('No monotonic segments longer than 40% of the {} array were found!'.format(column))
     direction = int(monolists[longest][0])
     startind = monolists[longest][1][0][0]
     endind = monolists[longest][1][-1][0] + 2
@@ -1224,7 +1227,7 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     I = data[y]
     mask = (V <= vmax) & (V >= vmin) & ~np.isnan(V) & ~np.isnan(I)
     if not any(mask):
-        print('Nothing to fit!')
+        log.analysis('Nothing to fit!')
         return np.nan
     poly = np.polyfit(I[mask], V[mask], 1)
     if 'units' in data:
@@ -1237,7 +1240,7 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
             elif Iunit == 'mA':
                 return poly[0] * 1e3
             else:
-                print('Did not understand current unit!')
+                log.analysis('Did not understand current unit!')
     return poly[0]
 
 
@@ -1475,7 +1478,7 @@ def subtract_offset(data, x='V', y='I', percentile=1, debug=False):
     mask = absX < p
     line = np.polyfit(X[mask], Y[mask], 1)
     slope, intercept = line
-    #print(intercept)
+    #log.analysis(intercept)
     out = data.copy()
     out['I'] = out['I'] - intercept
     if debug:
@@ -1813,7 +1816,7 @@ def osc_analyze(data, x='V', y='I', ithresh=200e-6, hys=25, debug=False):
         dfcycle['i'] = i[:-1]
         return dfcycle
     else:
-        print('No cycles detected!')
+        log.analysis('No cycles detected!')
         return {}
 
 
@@ -1911,15 +1914,15 @@ def filter_byhand(df, groupby=None, **kwargs):
     Can also truncate each loop with the up/down arrows
     Can select one or zero per group
     '''
-    print('\n\n')
-    print('left arrow: previous loop')
-    print('right arrow: next loop')
-    print('down arrow: truncate n data points')
-    print('left arrow: untruncate n data points')
-    print('[1-9]: Set n')
-    print('Enter: select loop and move to the next')
-    print('q: discard')
-    print('\n\n')
+    log.analysis('\n\n')
+    log.analysis('left arrow: previous loop')
+    log.analysis('right arrow: next loop')
+    log.analysis('down arrow: truncate n data points')
+    log.analysis('left arrow: untruncate n data points')
+    log.analysis('[1-9]: Set n')
+    log.analysis('Enter: select loop and move to the next')
+    log.analysis('q: discard')
+    log.analysis('\n\n')
 
     # Shitty manual loop selection written as fast as I could
     def selectloop(data):
@@ -1933,7 +1936,7 @@ def filter_byhand(df, groupby=None, **kwargs):
                 self.step = 1
                 self.select = False
             def press(self, event):
-                print('press', event.key)
+                log.analysis('press', event.key)
                 if event.key == 'right':
                     # plot next loop
                     self.l = None
@@ -1964,11 +1967,11 @@ def filter_byhand(df, groupby=None, **kwargs):
 
                 if len(data) >= self.n + 1:
                     del ax.lines[-1]
-                    print(self.n, self.l)
-                    #print(data.iloc[self.n].Irange[0])
+                    log.analysis(self.n, self.l)
+                    #log.analysis(data.iloc[self.n].Irange[0])
                     ivtools.plot.plotiv(sliceiv(data.iloc[self.n], stop=self.l), x='Vcalc', color='red', ax=ax)
                 else:
-                    print('no more data')
+                    log.analysis('no more data')
                     self.n -= 1
 
                 sys.stdout.flush()
@@ -2016,3 +2019,4 @@ def compose(*funcs):
             result = f(result)
         return result
     return inner
+

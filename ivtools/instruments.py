@@ -45,14 +45,18 @@ import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
 import ivtools
+import logging
 # Store visa resource manager in the visa module, so it doesn't get clobbered on reload
 import visa
+
+log = logging.getLogger('my_logger')
+
 if not hasattr(visa, 'visa_rm'):
     try:
         visa.visa_rm = visa.ResourceManager()
     except ValueError as e:
         # don't raise exception if you didn't install visa
-        print(e)
+        log.instruments(e)
         visa.visa_rm = None
 visa_rm = visa.visa_rm
 
@@ -101,13 +105,13 @@ class Picoscope(object):
         # We are borg, so might already be connected!
         if self.connected():
             #info = self.ps.getUnitInfo('VariantInfo')
-            #print('Picoscope {} already connected!'.format(info))
+            #log.instruments('Picoscope {} already connected!'.format(info))
             pass
         else:
             try:
                 self.ps = self.ps6000.PS6000(connect=True)
                 model = self.ps.getUnitInfo('VariantInfo')
-                print('Picoscope {} connection succeeded.'.format(model))
+                log.instruments('Picoscope {} connection succeeded.'.format(model))
                 self.close = self.ps.close
                 self.handle = self.ps.handle
                 # TODO: methods of PS6000 to expose?
@@ -115,8 +119,8 @@ class Picoscope(object):
                 self.getUnitInfo = self.ps.getUnitInfo
             except Exception as e:
                 self.ps = None
-                print('Connection to picoscope failed. There could be an unclosed session.')
-                print(e)
+                log.instruments('Connection to picoscope failed. There could be an unclosed session.')
+                log.instruments(e)
 
     def connected(self):
         if hasattr(self, 'ps'):
@@ -127,8 +131,8 @@ class Picoscope(object):
                 return False
 
     def print_settings(self):
-        print('Picoscope channel settings:')
-        print(pd.DataFrame([self.coupling, self.atten, self.offset, self.range, self.BWlimit],
+        log.instruments('Picoscope channel settings:')
+        log.instruments(pd.DataFrame([self.coupling, self.atten, self.offset, self.range, self.BWlimit],
                            index=['Couplings', 'Attenuations', 'Offsets', 'Ranges', 'BWlimit']))
 
     # Settings are a class because I wanted a slightly more convenient syntax for typing in repeatedly
@@ -222,7 +226,7 @@ class Picoscope(object):
                 newvalue = possible_ranges[np.where(possible_ranges - value >= 0)][0]
 
             if value != newvalue:
-                print(f'Range {value}V is not possible for offset: {offset}, atten: {atten}, coupling: {coupling}. Using range {newvalue}V.')
+                log.instruments(f'Range {value}V is not possible for offset: {offset}, atten: {atten}, coupling: {coupling}. Using range {newvalue}V.')
 
             self[channel] = newvalue
 
@@ -258,7 +262,7 @@ class Picoscope(object):
                 newvalue = np.sign(value) * max_offset
 
             if value != newvalue:
-                print(f'Offset {value}V is not possible for range: {vrange}, atten: {atten}, coupling: {coupling}. Using offset {newvalue}V.')
+                log.instruments(f'Offset {value}V is not possible for range: {vrange}, atten: {atten}, coupling: {coupling}. Using offset {newvalue}V.')
 
             self[channel] = newvalue
 
@@ -290,7 +294,7 @@ class Picoscope(object):
             oldvalue = self[channel]
             self[channel] = value
 
-            print('Scaling the range and offset settings by the new attenuation setting')
+            log.instruments('Scaling the range and offset settings by the new attenuation setting')
             # Don't use the set methods, because they can assume that other settings are already valid
             self._parent.range[channel] *= value/oldvalue
             self._parent.offset[channel] *= value/oldvalue
@@ -325,7 +329,7 @@ class Picoscope(object):
             # Fukken logic structures
             if self[channel] != value:
                 # If we didn't make it to the bottom of the last set of conditions
-                print(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
+                log.instruments(f'Coupling {value} is not possible for range: {vrange}, offset: {offset}, atten: {atten}.')
 
     class _PicoBWLimit(_PicoSetting):
         # Used to limit the bandwidth of a particular channel to 20 MHz using an internal ANALOG filter (I hope)
@@ -356,7 +360,7 @@ class Picoscope(object):
                     rang, offs = self.best_range((minimum, maximum), padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
                 else:
                     rang, offs = self.best_range(data[c], padpercent=padpercent, atten=usedatten, coupling=usedcoupling)
-                print('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
+                log.instruments('Setting picoscope channel {} range {}, offset {}'.format(c, rang, offs))
                 self.range[c] = rang
                 self.offset[c] = offs
 
@@ -398,7 +402,7 @@ class Picoscope(object):
                 break
             # Neither worked, try increasing the range ...
         # If no range was enough to fit the signal
-        print('Signal out of pico range!')
+        log.instruments('Signal out of pico range!')
         return (max(possible_ranges), 0)
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
@@ -471,7 +475,7 @@ class Picoscope(object):
         chbwlimit = global_replace(chbwlimit, self.BWlimit)
 
         actualfreq, max_samples = self.ps.setSamplingFrequency(actualfreq, nsamples)
-        print('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
+        log.instruments('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
         if nsamples > max_samples:
             raise(Exception('Trying to sample more than picoscope memory capacity'))
         # Set up the channels
@@ -509,7 +513,7 @@ class Picoscope(object):
         for c in ch:
             rawint16, _, overflow = self.ps.getDataRaw(c)
             if overflow:
-                print(f'!! Picoscope overflow on Ch {c} !!')
+                log.instruments(f'!! Picoscope overflow on Ch {c} !!')
             if raw:
                 # For some reason pico-python gives the values as int16
                 # Probably because some scopes have 16 bit resolution
@@ -562,7 +566,7 @@ class Picoscope(object):
             fig, ax = plt.subplots()
         if chdata is None:
             if self.data is None:
-                print('No data to plot')
+                log.instruments('No data to plot')
             else:
                 chdata = self.data
         # Colors match the code on the picoscope
@@ -619,7 +623,7 @@ class RigolDG5000(object):
                     addr = self.get_visa_addr()
                 self.connect(addr)
         except:
-            print('Rigol connection failed.')
+            log.instruments('Rigol connection failed.')
             return
         # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
         # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
@@ -646,9 +650,9 @@ class RigolDG5000(object):
             self.ask = self.query
             self.close = self.conn.close
             idn = self.conn.ask('*IDN?').replace('\n', '')
-            #print('Rigol connection succeeded. *IDN?: {}'.format(idn))
+            #log.instruments('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
-            print('Connection to Rigol AWG failed.')
+            log.instruments('Connection to Rigol AWG failed.')
 
     def connected(self):
         if hasattr(self, 'conn'):
@@ -662,7 +666,7 @@ class RigolDG5000(object):
     def set_or_query(self, cmd, setting=None):
         # Sets or returns the current setting
         if setting is None:
-            if self.verbose: print(cmd + '?')
+            if self.verbose: log.instruments(cmd + '?')
             reply = self.query(cmd + '?').strip()
             # Convert to numeric?
             replymap = {'ON': 1, 'OFF': 0}
@@ -683,7 +687,7 @@ class RigolDG5000(object):
             else:
                 return reply
         else:
-            if self.verbose: print(f'{cmd} {setting}')
+            if self.verbose: log.instruments(f'{cmd} {setting}')
             self.write(f'{cmd} {setting}')
             return None
 
@@ -705,14 +709,14 @@ class RigolDG5000(object):
             filepath = os.path.splitext(filepath)[0] + '.RAF'
 
         if np.any(np.abs(wfm) > 1):
-            print('Waveform must be in [-1, 1].  Clipping it!')
+            log.instruments('Waveform must be in [-1, 1].  Clipping it!')
             A = np.clip(A, -1, 1)
         wfm = ((wfm + 1)/2 * (2**14 - 1))
         n = len(wfm)
         if (n > 2**19) and (np.log(n)/np.log(2)%1 != 0):
-            print('write_wfm_file: If waveform has more than 2^19 points, it should have a whole power of 2 points!')
+            log.instruments('write_wfm_file: If waveform has more than 2^19 points, it should have a whole power of 2 points!')
         wfm = np.round(wfm).astype(np.dtype('H'))
-        print(f'Writing binary waveform to {filepath}')
+        log.instruments(f'Writing binary waveform to {filepath}')
         with open(filepath, 'wb') as f:
             f.write(wfm.tobytes())
 
@@ -912,7 +916,7 @@ class RigolDG5000(object):
             # This shit causes an error every time now.  Used to work.
             if err:
             #    raise Exception(err)
-                print(err)
+                log.instruments(err)
 
     def load_wfm_binary(self, wfm, ch=1):
         """
@@ -929,13 +933,13 @@ class RigolDG5000(object):
         PADVAL = 2**13
 
         nA = len(wfm)
-        print(f'You are trying to program {nA} pts')
+        log.instruments(f'You are trying to program {nA} pts')
         if nA > 2**16:
-            print('Programming over 2^16 = 65,536 points by this method usually leads to problems!')
+            log.instruments('Programming over 2^16 = 65,536 points by this method usually leads to problems!')
 
         A = np.array(wfm)
         if np.any(np.abs(A) > 1):
-            print('Waveform must be in [-1, 1].  Clipping it!')
+            log.instruments('Waveform must be in [-1, 1].  Clipping it!')
             A = np.clip(A, -1, 1)
 
         # change from float interval [-1, 1] to int interval [0, 2^14-1]
@@ -949,7 +953,7 @@ class RigolDG5000(object):
 
         NptsProg = len(A)
         Nchunks = int(NptsProg / CHUNK)
-        print(f'I am sending {NptsProg} points in {Nchunks} chunks')
+        log.instruments(f'I am sending {NptsProg} points in {Nchunks} chunks')
 
         nptsProg = len(A)
 
@@ -1064,7 +1068,7 @@ class RigolDG5000(object):
         for i in range(1, numpoints + 1):
             # Takes about 5 ms, but I think much longer for different parts of the memory..
             val = int(self.query(f':TRACE:DATA:VAL? VOLATILE,{i}'))
-            print(val)
+            log.instruments(val)
             values.append(val)
             #time.sleep(.05)
 
@@ -1244,7 +1248,7 @@ class Keithley2600(object):
             # I don't trust the resource manager at all, but you didn't pass an address so..
             # I assume you are using ethernet
             ipresources = [r for r in visa_rm.list_resources() if r.startswith('TCPIP')]
-            #print('Looking for ip address for Keithley...')
+            #log.instruments('Looking for ip address for Keithley...')
             for ipr in ipresources:
                 # Sorry..
                 ip = re.search(valid_ip_re[1:-1] +':', ipr)[0][:-1]
@@ -1252,7 +1256,7 @@ class Keithley2600(object):
                 # for now, if it is in resource_manager and replies to a ping, it's a keithley
                 up = ping(ip)
                 if up:
-                    #print(f'{ip} is up. Is it keithley?')
+                    #log.instruments(f'{ip} is up. Is it keithley?')
                     addr = ipr
                     break
         elif re.match(valid_ip_re, addr):
@@ -1269,10 +1273,10 @@ class Keithley2600(object):
             self.__dict__ = ivtools.instrument_states[statename]
             self.connect(addr)
             if say_if_successful:
-                print('Keithley connection successful at {}'.format(addr))
+                log.instruments('Keithley connection successful at {}'.format(addr))
         except Exception as E:
-            print('Keithley connection failed at {}'.format(addr))
-            print(E)
+            log.instruments('Keithley connection failed at {}'.format(addr))
+            log.instruments(E)
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():
@@ -1705,7 +1709,7 @@ class UF2000Prober(object):
 
     def __exit__(self, exc_type, exc_val, exc_tb):
         self.zDn()
-        #print('Closing UF2000')
+        #log.instruments('Closing UF2000')
         return False
 
     ####### Communication ########
@@ -1748,7 +1752,7 @@ class UF2000Prober(object):
 
             """
             if a != old_a:
-                #print('STB '+str(a)+': '+self.getSTBMessage(a))
+                #log.instruments('STB '+str(a)+': '+self.getSTBMessage(a))
                 old_a = a
             if a in stb:
                 return a
@@ -1777,16 +1781,16 @@ class UF2000Prober(object):
 
             """
             if a != old_a:
-                #print('STB '+str(a)+': '+self.getSTBMessage(a))
+                #log.instruments('STB '+str(a)+': '+self.getSTBMessage(a))
                 old_a = a
             if (a in stb) :
                 return a
             if a==3 and _ > 6000:
-                print('**********\n**********\nSTB 3 Stall\n**********\n**********\n')
+                log.instruments('**********\n**********\nSTB 3 Stall\n**********\n**********\n')
                 return(a)
 
             if a==4 and _ >6000:  #ONLY FOR 'makeContact = No --comment out otherwise
-                print('**********\n**********\nSTB 4 Stall\n**********\n**********\n')
+                log.instruments('**********\n**********\nSTB 4 Stall\n**********\n**********\n')
                 return(a)
 
             time.sleep(.0005)
@@ -1951,7 +1955,7 @@ class UF2000Prober(object):
         while done == False:
             response = self.waitForSTB()
             time.sleep(1)
-            print(response)
+            log.instruments(response)
             ent = raw_input
             if response == doneResponse:
                 done = True
@@ -1980,7 +1984,7 @@ class UF2000Prober(object):
 
     def setChuckTemp(self, temp):
         if temp < 15 or temp > 150:
-            print('Temperature out of range, must be 15->150C')
+            log.instruments('Temperature out of range, must be 15->150C')
             return
 
         temp = temp*10 #conver degree C to 0.1 C
@@ -1991,7 +1995,7 @@ class UF2000Prober(object):
         self.inst.timeout = None
         tempStr = self.inst.query('f')
         if len(tempStr)!=11:
-            print('Hot Chuck not enabled!')
+            log.instruments('Hot Chuck not enabled!')
             raise UF2000ProberError
 
 
@@ -1999,7 +2003,7 @@ class UF2000Prober(object):
         setTemp =   float(tempStr[5:9])/10.
         spinner = itertools.cycle(['-', '/', '|', '\\'])
         #sys.stdout.write('Waiting on STB ')
-        #print(('Waiting for Temperature = {}...'.format(setTemp)))
+        #log.instruments(('Waiting for Temperature = {}...'.format(setTemp)))
         while abs(currTemp-setTemp)>0.2:
 
             time.sleep(10)
@@ -2008,12 +2012,12 @@ class UF2000Prober(object):
             # time.sleep(0.33)
             # sys.stdout.write('\b')            # erase the last written char
             tempStr = self.inst.query('f')
-            #print(tempStr)
+            #log.instruments(tempStr)
             currTemp =  float(tempStr[1:5])/10.
             setTemp =   float(tempStr[5:9])/10.
-            print(('Set Temp: {}, CurrentTemp: {}, Diff: {}'.format(setTemp, currTemp, abs(currTemp-setTemp))))
+            log.instruments(('Set Temp: {}, CurrentTemp: {}, Diff: {}'.format(setTemp, currTemp, abs(currTemp-setTemp))))
         self.inst.timeout = 3000
-        print('Set Temperature Achieved!')
+        log.instruments('Set Temperature Achieved!')
 
 
     ######## Movement ########
@@ -2028,7 +2032,7 @@ class UF2000Prober(object):
     def zUp(self):
         '''moves chuck unto CONTACT position'''
         #hp.shortAll()
-        #print('Zupping...')
+        #log.instruments('Zupping...')
         self.write('Z', [67])
         #self.pollStatusByte(67)
         #self.waitForSTB()
@@ -2138,8 +2142,8 @@ class UF2000Prober(object):
 
     def moveAbsolute_um(self, xum_abs, yum_abs):
         xum_curr, yum_curr = self.getPosition_um()
-        print(('Current position:     {}, {}'.format(xum_curr, yum_curr)))
-        print(('Destination position: {}, {}'.format(xum_abs, yum_abs)))
+        log.instruments(('Current position:     {}, {}'.format(xum_curr, yum_curr)))
+        log.instruments(('Destination position: {}, {}'.format(xum_abs, yum_abs)))
         xum_rel = int(xum_abs - xum_curr)
         yum_rel = int(yum_abs - yum_curr)
         self.moveRelative_um(xum_rel, yum_rel)
@@ -2184,7 +2188,7 @@ class Eurotherm2408(object):
         data = format(data, '.1f')
         bcc = chr(reduce(xor, (mnemonic + data + ETX).encode()))
         msg = EOT + gid + gid + uid + uid + STX + mnemonic + data + ETX + bcc
-        # print(msg)
+        # log.instruments(msg)
         # Clear the buffer in case there is some garbage in there for some reason
         # have recieved this reply before: b'\x18\x06'
         self.conn.read_all()
@@ -2200,7 +2204,7 @@ class Eurotherm2408(object):
         ACK = '\x06'
         NAK = '\x15'
         reply = self.conn.read_all()
-        #print(reply)
+        #log.instruments(reply)
         if reply == ACK.encode():
             return True
         elif reply == NAK.encode():
@@ -2208,7 +2212,7 @@ class Eurotherm2408(object):
         else:
             #raise Exception('Eurotherm not connected properly')
             # Sometimes the eurotherm actually got the message, but we failed to read the acknowledgement
-            print('Trouble with Eurotherm communication (wrong/no acknowledgement)')
+            log.instruments('Trouble with Eurotherm communication (wrong/no acknowledgement)')
 
     def read_data(self, mnemonic, attempt=0):
         EOT = '\x04'
@@ -2227,11 +2231,11 @@ class Eurotherm2408(object):
         # Reply
         # [STX] (CHAN) (C1) (C2) <DATA> [ETX] (BCC)
         reply = self.conn.read_all()
-        #print(reply)
+        #log.instruments(reply)
         try:
             return float(reply[3:-2])
         except:
-            print('Failed to read Eurotherm 2408')
+            log.instruments('Failed to read Eurotherm 2408')
             # Just try again?
             # Sometimes there is a lot of noise on the serial line ???
             if attempt < 10:
@@ -2291,19 +2295,19 @@ class USB2708HS(object):
         # Just protect against doing something that doesn't make sense
         # TODO: remove this restriction from this part of the code, should go in the application part
         if ch == 0 and volts > 0:
-            print('I disallow voltage value {} for analog output {}'.format(volts, ch))
+            log.instruments('I disallow voltage value {} for analog output {}'.format(volts, ch))
             return
         elif ch == 1 and volts < 0:
-            print('I disallow voltage value {} for analog output {}'.format(volts, ch))
+            log.instruments('I disallow voltage value {} for analog output {}'.format(volts, ch))
             return
         else:
-            print('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
+            log.instruments('Setting analog out {} to {} ({} V)'.format(ch, dacval, volts))
 
         try:
             self.ul.a_out(board_num, ch, ao_range, int(dacval))
         except ULError as e:
             # Display the error
-            print("A UL error occurred. Code: " + str(e.errorcode)
+            log.instruments("A UL error occurred. Code: " + str(e.errorcode)
                   + " Message: " + e.message)
 
 
@@ -2321,7 +2325,7 @@ class TektronixDPO73304D(object):
         try:
             self.connect(addr)
         except:
-            print('TektronixDPO73304D connection failed at {}'.format(addr))
+            log.instruments('TektronixDPO73304D connection failed at {}'.format(addr))
 
     def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
@@ -2410,7 +2414,7 @@ class TektronixDPO73304D(object):
         pre = self.query('WFMOutpre?')
         pre_split = pre.split(';')
         if len(pre_split) == 5:
-            print('Channel ' + str(channel) + ' is not used.')
+            log.instruments('Channel ' + str(channel) + ' is not used.')
             return None
 
         x_incr = float(pre_split[9])
@@ -2492,14 +2496,14 @@ class WichmannDigipot_new(object):
                 if any(matches):
                     addr = matches[0].device
                 else:
-                    print('WichmannDigipot could not find Leonardo')
+                    log.instruments('WichmannDigipot could not find Leonardo')
                     return
             self.conn = serial.Serial(addr, timeout=1)
             self.write = self.conn.write
             self.open = self.conn.open
             self.close = self.conn.close
             if self.connected():
-                print(f'Connected to digipot on {addr}')
+                log.instruments(f'Connected to digipot on {addr}')
 
     @property
     def Rstate(self):
@@ -2540,7 +2544,7 @@ class WichmannDigipot_new(object):
         '''
         self.write((textstr+' \n').encode())
         time.sleep(5e-3)
-        print(self.conn.read_all().decode())
+        log.instruments(self.conn.read_all().decode())
 
     def set_bypass(self, state):
         '''
@@ -2579,8 +2583,8 @@ class WichmannDigipot_new(object):
             i_closest = np.argmin(np.abs(R - np.array(Rmap)))
             R_closest = Rmap[i_closest]
             w_closest = wvals[i_closest]
-            print(i_closest)
-            print(self.Rmap[i_closest])
+            log.instruments(i_closest)
+            log.instruments(self.Rmap[i_closest])
             self.set_wiper(w_closest, n)
             # Could have sent one command, but I'm sending two
             self.set_bypass(0)
@@ -2648,7 +2652,7 @@ class WichmannDigipot(object):
                 if any(matches):
                     addr = matches[0].device
                 else:
-                    print('WichmannDigipot could not find Leonardo')
+                    log.instruments('WichmannDigipot could not find Leonardo')
                     return
             self.conn = serial.Serial(addr, timeout=1)
             self.write = self.conn.write
@@ -2660,7 +2664,7 @@ class WichmannDigipot(object):
             self.wiper2state = 0
             self.write('0 0 1'.encode())
             if self.connected():
-                print(f'Connected to digipot on {addr}')
+                log.instruments(f'Connected to digipot on {addr}')
 
     @property
     def Rstate(self):
@@ -2677,12 +2681,12 @@ class WichmannDigipot(object):
     def writeRead(self,textstr):
         # Simple send serial Command and print returned answer
         time.sleep(5e-3)
-        print(self.conn.read_all())
+        log.instruments(self.conn.read_all())
         self.write(textstr)
         time.sleep(5e-3)
-        print(self.conn.read_all())
+        log.instruments(self.conn.read_all())
         time.sleep(5e-3)
-        print(self.conn.read_all())
+        log.instruments(self.conn.read_all())
 
     def set_bypass(self, state):
         '''
@@ -2732,7 +2736,7 @@ class WichmannDigipot(object):
             i_closest = np.argmin(np.abs(R - np.array(Rmap)))
             R_closest = Rmap[i_closest]
             w_closest = wvals[i_closest]
-            print(i_closest)
+            log.instruments(i_closest)
             self.set_wiper(w_closest, n)
             # Could have sent one command, but I'm sending two
             self.set_bypass(0)
@@ -2755,7 +2759,7 @@ class PG5(object):
         try:
             self.connect(addr)
         except:
-            print('PG5 connection failed at {}'.format(addr))
+            log.instruments('PG5 connection failed at {}'.format(addr))
 
     def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
@@ -2775,7 +2779,7 @@ class PG5(object):
     def error(self):
         '''prints the last error'''
         error_msg = self.query(':SYST:ERR:NEXT?')
-        print(error_msg)
+        log.instruments(error_msg)
     # TODO: fix set_trigger_type (doesnt do anything right now, because commands dont do anything => ask company)
 
     # def set_trigger_type(self, type):
@@ -2790,7 +2794,7 @@ class PG5(object):
     #     elif type is 'MANUAL':
     #         self.write(':TRIG:SOUR MANUAL')
     #     else:
-    #         print('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
+    #         log.instruments('Unknown trigger type. Make sure it is \'IMM\', \'TTL\' or \'MANUAl\'')
 
     def set_pulse_width(self, pulse_width):
         '''sets the pulse width (between 50 and 250 ps)'''
@@ -2829,7 +2833,7 @@ class EugenTempStage(object):
         try:
             self.connect(addr, baudrate)
         except:
-            print('Arduino connection failed at {}'.format(addr))
+            log.instruments('Arduino connection failed at {}'.format(addr))
 
     def connect(self, addr=None, baudrate=9600):
         if not self.connected():
@@ -2839,13 +2843,13 @@ class EugenTempStage(object):
                 if any(matches):
                     addr = matches[0].device
                 else:
-                    print('EugenTempStage could not find Arduino Micro')
+                    log.instruments('EugenTempStage could not find Arduino Micro')
                     return
             self.conn = serial.Serial(addr, baudrate, timeout=1)
             self.write = self.conn.write
             self.close = self.conn.close
             if self.connected():
-                print(f'Connected to PID controller on {addr}')
+                log.instruments(f'Connected to PID controller on {addr}')
 
     def connected(self):
         if hasattr(self, 'conn'):
@@ -2882,7 +2886,7 @@ class EugenTempStage(object):
         '''Temperature Setpoint Function, should be between 0-100Celsius'''
 
         if temp > 100:
-            print('Its too HOT! DANGERZONE!')
+            log.instruments('Its too HOT! DANGERZONE!')
 
         if temp <= 100 and temp >= 0:
             pt_res = round((1000 * (1.00385**temp)), 1)
@@ -2891,9 +2895,9 @@ class EugenTempStage(object):
             volt_bruch = volt_zaehler / volt_nenner
             volt_set = volt_bruch * self.opamp_gain
             temp_set = self.analogOut(volt_set)
-            print('Temperature set to {0:.2f} \u00b0C'.format(temp))
+            log.instruments('Temperature set to {0:.2f} \u00b0C'.format(temp))
         else:
-            print('Its too COLD! Can not do that :-/')
+            log.instruments('Its too COLD! Can not do that :-/')
 
     def read_temperature(self):
         '''Function which reads temperature'''
@@ -2909,6 +2913,7 @@ class EugenTempStage(object):
         pt_res = round((pt_zaehler / pt_nenner), 1)
         temp_read = np.log(pt_res / 1000) / np.log(1.00385)
         return temp_read
+
 
 
 

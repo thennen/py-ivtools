@@ -21,6 +21,7 @@ def clear_instrument_states():
 
 ### Logging module configuration ###
 
+
 username = ivtools.settings.username
 logging_format = f'%(levelname)s : {username} : %(asctime)s : %(message)s'
 datafolder = ivtools.settings.datafolder
@@ -28,13 +29,21 @@ logging_file = ivtools.settings.logging_file
 logging_dir = os.path.split(logging_file)[0]
 logging_prints = ivtools.settings.logging_prints
 os.makedirs(logging_dir, exist_ok=True)
+'''
+Colorama options:
+    Fore: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
+    Back: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
+    Style: DIM, NORMAL, BRIGHT, RESET_ALL
+    
+    Some of them doesn't seem to work with QtConsole
+'''
 logging_levels = {
     'DEBUG':       Fore.RED + logging_format + Style.RESET_ALL,
     'INFO':        Fore.RED + logging_format + Style.RESET_ALL,
     'WARNING':     Fore.RED + logging_format + Style.RESET_ALL,
     'ERROR':       Fore.RED + logging_format + Style.RESET_ALL,
     'CRITICAL':    Fore.RED + logging_format + Style.RESET_ALL,
-    'instruments': Fore.BLACK + logging_format + Style.RESET_ALL,
+    'instruments': Fore.GREEN + logging_format + Style.RESET_ALL,
     'io':          Fore.CYAN + logging_format + Style.RESET_ALL,
     'plots':       Fore.YELLOW + logging_format + Style.RESET_ALL,
     'analysis':    Fore.BLUE + logging_format + Style.RESET_ALL,
