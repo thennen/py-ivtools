@@ -58,7 +58,7 @@ log = logging.getLogger('my_logger')
 log.setLevel(1)
 
 # File Handler
-file_handler = logging.FileHandler('LogFile.log')
+file_handler = logging.FileHandler(logging_file)
 file_handler.setLevel(1)
 file_formatter = logging.Formatter(logging_format)
 file_handler.setFormatter(file_formatter)
@@ -73,23 +73,13 @@ for level in logging_levels.keys():
     handler.addFilter(LevelFilter(level))
     log.addHandler(handler)
 
-custom_levels = list(logging_levels.keys())[5:7]
-
-def monkeymethod(self, message, *args, **kws):
-    self._log(60, message, args, **kws)
-setattr(logging.Logger, 'instruments', monkeymethod)
-logging.addLevelName(60, 'instruments')
-
-def monkeymethod(self, message, *args, **kws):
-    self._log(61, message, args, **kws)
-setattr(logging.Logger, 'io', monkeymethod)
-logging.addLevelName(61, 'io')
+custom_levels = list(logging_levels.keys())[5:]
 
 for index, level in enumerate(custom_levels):
-    def monkeymethod(self, message, *args, **kws):
+    def monkeymethod(self, message, index=index, *args, **kws):
         self._log(60 + index, message, args, **kws)
-    setattr(logging.Logger, f'{level}', monkeymethod)
-    logging.addLevelName(60 + index, f'{level}')
+    setattr(logging.Logger, level, monkeymethod)
+    logging.addLevelName(60 + index, level)
 
 # this is so you can do
 # import ivtools
