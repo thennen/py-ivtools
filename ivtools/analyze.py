@@ -1624,25 +1624,48 @@ def fit_sine_array(array, dt=1, guess_freq=1, debug=False):
 def fft_iv(data, columns=None):
     '''
     Calculate fft of arrays.  Return with same name as original arrays.
+    freq column is also created based on sample frequency/downsampling
     I divide by length/2 because I always get confused with the fft normalization.
+    '''
+    # TODO: window function?
+    # TODO: Units change due to fft...
+
+    '''
+    # test data:
+    # let's say I sampled these signals at 1 KHz for 1 second
+    fs = 1000
+    t = np.linspace(0, 1, fs)
+    pi = np.pi
+    data = {'A':0.5 * np.sin(40*2*pi*t), 'B':0.2 * np.sin(20*2*pi*t) + 0.6 * np.sin(30*2*pi*t + pi/4), 't':t, 'sample_rate':fs}
+    plotiv(data, 't', 'A')
+    plotiv(data, 't', 'B', hold=True)
+    ft = fft_iv(data)
+    plt.figure()
+    plt.plot(ft['freq'], np.abs(ft['A']), label='A')
+    plt.plot(ft['freq'], np.abs(ft['B']), label='B')
     '''
     if columns is None:
         columns = find_data_arrays(data)
 
+    n = len(data[columns[0]])
+    norm = n / 2
+
     if 'sample_rate' in data:
-        # Use sample rate to scale frequencies
-        pass
+        fs = data['sample_rate']
+        if 'downsampling' in data:
+            fs /= data['downsampling']
     else:
-        pass
+        fs = n # ?
 
     # Make dict of dicts
     dataout = {}
+
+    if 'freq' not in data:
+        dataout['freq'] = np.arange(n) * fs / n
+    # All columns should have the same length
     for c in columns:
-        norm = len(data[c])/2
         dataout[c] = np.fft.fft(data[c]) / norm
     add_missing_keys(data, dataout)
-
-    # TODO: Units change due to fft...
 
     return dataout
 
