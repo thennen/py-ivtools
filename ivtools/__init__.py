@@ -23,7 +23,8 @@ def clear_instrument_states():
 
 
 username = ivtools.settings.username
-logging_format = f'%(levelname)s : {username} : %(asctime)s : %(message)s'
+stream_format = f'%(message)s'
+file_format = f'%(levelname)s\t{username}\t%(asctime)s\t%(message)s'
 datafolder = ivtools.settings.datafolder
 logging_file = ivtools.settings.logging_file
 logging_dir = os.path.split(logging_file)[0]
@@ -38,16 +39,16 @@ Colorama options:
     Some of them doesn't seem to work with QtConsole
 '''
 logging_levels = {
-    'DEBUG':       Fore.RED + logging_format + Style.RESET_ALL,
-    'INFO':        Fore.RED + logging_format + Style.RESET_ALL,
-    'WARNING':     Fore.RED + logging_format + Style.RESET_ALL,
-    'ERROR':       Fore.RED + logging_format + Style.RESET_ALL,
-    'CRITICAL':    Fore.RED + logging_format + Style.RESET_ALL,
-    'instruments': Fore.GREEN + logging_format + Style.RESET_ALL,
-    'io':          Fore.CYAN + logging_format + Style.RESET_ALL,
-    'plots':       Fore.YELLOW + logging_format + Style.RESET_ALL,
-    'analysis':    Fore.BLUE + logging_format + Style.RESET_ALL,
-    'interactive': Fore.MAGENTA + logging_format + Style.RESET_ALL
+    'DEBUG':       Fore.RED + stream_format + Style.RESET_ALL,
+    'INFO':        Fore.RED + stream_format + Style.RESET_ALL,
+    'WARNING':     Fore.RED + stream_format + Style.RESET_ALL,
+    'ERROR':       Fore.RED + stream_format + Style.RESET_ALL,
+    'CRITICAL':    Fore.RED + stream_format + Style.RESET_ALL,
+    'instruments': Fore.GREEN + stream_format + Style.RESET_ALL,
+    'io':          Fore.CYAN + stream_format + Style.RESET_ALL,
+    'plots':       Fore.YELLOW + stream_format + Style.RESET_ALL,
+    'analysis':    Fore.BLUE + stream_format + Style.RESET_ALL,
+    'interactive': Fore.MAGENTA + stream_format + Style.RESET_ALL
 }
 
 
@@ -69,7 +70,7 @@ log.setLevel(1)
 # File Handler
 file_handler = logging.FileHandler(logging_file)
 file_handler.setLevel(1)
-file_formatter = logging.Formatter(logging_format)
+file_formatter = logging.Formatter(file_format)
 file_handler.setFormatter(file_formatter)
 log.addHandler(file_handler)
 
