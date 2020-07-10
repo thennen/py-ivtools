@@ -372,6 +372,8 @@ if k and hasattr(k, 'query'):
 
 if ts:
     def set_Rseries(val):
-        meta.static['R_series'] = dp.set_R(val)
+        Rs = dp.set_R(val)
+        meta.static['R_series'] = Rs
+        return Rs
 
 # TODO def reload_settings, def reset_state
