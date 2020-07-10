@@ -24,6 +24,10 @@ except:
 import scipy.io as spio
 from scipy.io import savemat
 import sqlite3
+import logging
+
+
+log = logging.getLogger('my_logger')
 
 pjoin = os.path.join
 splitext = os.path.splitext
@@ -167,7 +171,7 @@ class MetaHandler(object):
         self.select(0)
         self.prettykeys = filenamekeys
         self.filenamekeys = filenamekeys
-        print('Loaded {} devices into metadata list'.format(len(devicemetalist)))
+        log.io('Loaded {} devices into metadata list'.format(len(devicemetalist)))
         self.print()
 
     def load_lassen(self, **kwargs):
@@ -242,7 +246,7 @@ class MetaHandler(object):
         self.prettykeys = ['dep_code', 'sample_number', 'coupon', 'die_rel', 'module', 'device', 'width_nm', 'R_series',
                            'layer_1', 'thickness_1']
         self.filenamekeys = ['dep_code', 'sample_number', 'die_rel', 'module', 'device']
-        print('Loaded metadata for {} devices'.format(len(self.df)))
+        log.io('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
     def load_DomeB(self, **kwargs):
@@ -299,7 +303,7 @@ class MetaHandler(object):
         self.select(0)
         self.prettykeys = ['dep_code', 'sample_number', 'die_rel', 'row', 'col', 'Resistance', 'gap', 'radius']
         self.filenamekeys = ['dep_code', 'sample_number', 'row', 'col']
-        print('Loaded metadata for {} devices'.format(len(self.df)))
+        log.io('Loaded metadata for {} devices'.format(len(self.df)))
         self.print()
 
     def move_domeb(self, direction='l'):
@@ -338,7 +342,7 @@ class MetaHandler(object):
             if (icol < 0) or (icol >= len(columns)) or (irow < 0) or (irow >= len(rows)):
                 irow %= len(rows)
                 icol %= len(col)
-                print('Went over edge of coupon -- wrapping around')
+                log.io('Went over edge of coupon -- wrapping around')
                 return
             newcol = columns[icol]
             newrow = rows[irow]
@@ -347,7 +351,7 @@ class MetaHandler(object):
                 i = w[0]
             else:
                 # TODO: don't check every single row/column in between, this can print lots of times in a row
-                print('skipping a device that is not loaded into memory')
+                log.io('skipping a device that is not loaded into memory')
         self.select(i)
 
         # Highlight keys that have changed
@@ -355,7 +359,7 @@ class MetaHandler(object):
         for key in self.meta.keys():
             if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
                 hlkeys.append(key)
-        print('You have selected this device (index {}):'.format(self.i))
+        log.io('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
 
@@ -364,10 +368,10 @@ class MetaHandler(object):
         lastmeta = self.meta
         meta_i = self.i + n
         if meta_i < 0:
-            print('You are at the beginning of metadata list')
+            log.io('You are at the beginning of metadata list')
             return
         elif meta_i >= len(self.df):
-            print('You are at the end of metadata list')
+            log.io('You are at the end of metadata list')
             return
         else:
             self.select(meta_i)
@@ -377,7 +381,7 @@ class MetaHandler(object):
         for key in self.meta.keys():
             if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
                 hlkeys.append(key)
-        print('You have selected this device (index {}):'.format(self.i))
+        log.io('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
 
@@ -397,10 +401,10 @@ class MetaHandler(object):
         if any(w):
             i = w[0][0]
             self.select(i)
-            print('You have selected this device (index {}):'.format(self.i))
+            log.io('You have selected this device (index {}):'.format(self.i))
             self.print()
         else:
-            print('No matching devices found')
+            log.io('No matching devices found')
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
@@ -570,7 +574,7 @@ def db_create_table(db_conn, table_name, data):
         val_ch = db_change_type(val)
         dtype = type(val)
         if val_ch is None:
-            #print(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
+            #log.io(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
             return None
         else:
             return col_names_encoded[col_names.index(col_name)]
@@ -580,13 +584,13 @@ def db_create_table(db_conn, table_name, data):
     col_names = db_decode(col_names_encoded)
     if len(params) == 0:
         raise Exception("An empty table can't be used to create a table")
-    # print(f"CREATE TABLE {table_name} {params}")
+    # log.io(f"CREATE TABLE {table_name} {params}")
     c.execute(f"CREATE TABLE {table_name} {params}")
 
     # Adding values to the first row
     params = tuple([db_change_type(data[col_name]) for col_name in col_names])
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
-    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # log.io(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
 
 
@@ -618,7 +622,7 @@ def db_insert_row(db_conn, table_name, row):
             dtype = type(val)
             val_ch = db_change_type(val)
             if val_ch is None:
-                #print(f"Data type {dtype} not supported. '{col_name}' was saved as 'None'")
+                #log.io(f"Data type {dtype} not supported. '{col_name}' was saved as 'None'")
                 return None
             else:
                 return val_ch
@@ -640,16 +644,16 @@ def db_insert_row(db_conn, table_name, row):
             val_ch = db_change_type(val)
             if val_ch is not None:
                 db_add_col(db_conn, table_name, name_encoded)
-                #print(f"New column added: {name}")
+                #log.io(f"New column added: {name}")
                 params.append(val_ch)
             else:
                 dtype = type(val)
-                #print(f"Data type '{dtype}' not supported. '{name}' won't be saved")
+                #log.io(f"Data type '{dtype}' not supported. '{name}' won't be saved")
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    # print(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # log.io(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
 
 
@@ -709,7 +713,7 @@ def db_change_type(var):
         elif types_dict[dtype] == int:
             var = int(var)
     else:
-        print(f"Data type {dtype} is not registered, it will be save as str")
+        log.io(f"Data type {dtype} is not registered, it will be save as str")
         var = repr(var)
     return var
 
@@ -762,7 +766,7 @@ def db_encode(col_names):
             i = col_names_encoded_low.index(name)
             col_names_encoded_low[i] += '&' * rep
             col_names_encoded[i + removed] += '&' * rep
-            print(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
+            log.io(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
                   f' {col_names_encoded[i + removed]} in the database file.')
 
     return col_names_encoded
@@ -1066,11 +1070,11 @@ def read_txts(filepaths, sort=True, **kwargs):
         try:
             filepaths.sort(key=lambda fn: int(splitext(fn.split('_')[-1])[0]))
         except:
-            print('Failed to sort files by file number. Sorting by mtime instead.')
+            log.io('Failed to sort files by file number. Sorting by mtime instead.')
             filepaths.sort(key=lambda fn: os.path.getmtime(fn))
 
-    print('Loading the following files:')
-    print('\n'.join(fnames))
+    log.io('Loading the following files:')
+    log.io('\n'.join(fnames))
 
     datalist = []
     for fp in filepaths:
@@ -1135,7 +1139,7 @@ def read_pandas(filepaths, concat=True, dropcols=None):
                 # pdlist may have some combination of Series and DataFrames.  Series should be rows
                 pdobject = pd.read_pickle(f)
             except:
-                print('Failed to interpret {} as a pickle!'.format(f))
+                log.io('Failed to interpret {} as a pickle!'.format(f))
                 continue
 
             if type(pdobject) is pd.DataFrame:
@@ -1156,8 +1160,8 @@ def read_pandas(filepaths, concat=True, dropcols=None):
                 # This resets all the datatypes to object !!
                 # pdlist.append(pd.DataFrame(pdobject).transpose())
             else:
-                print('Do not know wtf this file is:')
-            print('Loaded {}.'.format(f))
+                log.io('Do not know wtf this file is:')
+            log.io('Loaded {}.'.format(f))
         if concat:
             return pd.concat(pdlist).reset_index()
         else:
@@ -1216,26 +1220,26 @@ def write_pandas_pickle(data, filepath=None, drop=None):
     dtype = type(data)
     if dtype in (dict, pd.Series):
         if dtype == dict:
-            print('Converting data to pd.Series for storage.')
+            log.io('Converting data to pd.Series for storage.')
             data = pd.Series(data)
         if drop is not None:
             todrop = [c for c in drop if c in data]
             if any(todrop):
-                print('Dropping data keys: {}'.format(todrop))
+                log.io('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop)
     elif dtype in (list, pd.DataFrame):
         if dtype == list:
-            print('Converting data to pd.DataFrame for storage.')
+            log.io('Converting data to pd.DataFrame for storage.')
             data = pd.DataFrame(data)
         if drop is not None:
             todrop = [c for c in drop if c in data]
             if any(todrop):
-                print('Dropping data keys: {}'.format(todrop))
+                log.io('Dropping data keys: {}'.format(todrop))
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
     set_readonly(filepath)
     abspath = os.path.abspath(filepath)
-    print('Wrote {}'.format(abspath))
+    log.io('Wrote {}'.format(abspath))
     return abspath
 
 def pandas_pickle_extension(data):
@@ -1258,7 +1262,7 @@ def write_matlab(data, filepath, varname=None, compress=True):
     # There's no DataFrame equivalent in matlab as far as I know, but they might get around to adding one in 2050
     if varname is None:
         varname = validvarname(splitext(os.path.split(filepath)[-1])[0])
-        print(varname)
+        log.io(varname)
     dtype = type(data)
     if dtype is list:
         savemat(filepath, {varname: data}, do_compression=compress)
@@ -1337,7 +1341,7 @@ def read_matlab(filepath):
     # Should only be one key
     mat_vars = [k for k in mat_in.keys() if not k.startswith('__')]
     if len(mat_vars) > 1:
-        print('More than one matlab variable stored in {}. Returning dict.'.format(filepath))
+        log.io('More than one matlab variable stored in {}. Returning dict.'.format(filepath))
         return mat_in
     else:
         # List of dicts
@@ -1473,12 +1477,12 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
 
     def writefig(pngfp):
         plt.savefig(pngfp)
-        print('Wrote {}'.format(pngfp))
+        log.io('Wrote {}'.format(pngfp))
 
     if groupby is None:
         # Load each file individually and plot
         for fn in files:
-            print(f'Reading {fn}')
+            log.io(f'Reading {fn}')
             pngfn = os.path.splitext(fn)[0] + '.png'
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
@@ -1486,11 +1490,11 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
                 # if type(df) is pd.Series:
                 # df = ivtools.analyze.series_to_df(df)
                 df = processgroup(df)
-                print('plotting')
+                log.io('plotting')
                 plotgroup(df)
                 writefig(pngfp)
             elif not overwrite:
-                print(f'not overwriting file {pngfp}')
+                log.io(f'not overwriting file {pngfp}')
     else:
         # Read all the data in the directory into memory at once
         df = read_pandas(files)
@@ -1525,10 +1529,10 @@ def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
             if fnkey in s.index:
                 newfilename += '_{}'.format(s[fnkey])
     newpath = os.path.join(filedir, newfilename + extension)
-    print('writing new file {}'.format(newpath))
+    log.io('writing new file {}'.format(newpath))
     datain.to_pickle(newpath)
     if deleteold:
-        print('deleting old file {}'.format(filepath))
+        log.io('deleting old file {}'.format(filepath))
         os.remove(filepath)
 
 
@@ -1540,24 +1544,24 @@ def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False
         os.makedirs(plotsubdir)
     plotfp = os.path.join(plotsubdir, filename)
     if os.path.isfile(plotfp + '.png') and not overwrite:
-        print('Not overwriting {}'.format(plotfp))
+        log.io('Not overwriting {}'.format(plotfp))
     else:
         plt.savefig(plotfp)
-        print('Wrote {}.png'.format(plotfp))
+        log.io('Wrote {}.png'.format(plotfp))
         if savefig:
             with open(plotfp + '.plt', 'wb') as f:
                 pickle.dump(plt.gcf(), f)
-            print('Wrote {}.plt'.format(plotfp))
+            log.io('Wrote {}.plt'.format(plotfp))
 
 
 def makefolder(*args):
     ''' Make a folder if it doesn't already exist. All args go to os.path.join'''
     subfolder = os.path.join(*args)
     if not os.path.isdir(subfolder):
-        print('Making folder: {}'.format(subfolder))
+        log.io('Making folder: {}'.format(subfolder))
         os.makedirs(subfolder)
     else:
-        print('Folder already exists: {}'.format(subfolder))
+        log.io('Folder already exists: {}'.format(subfolder))
 
 
 def psplitall(path):
@@ -1582,5 +1586,5 @@ def update_depsheet():
     moduledir = os.path.split(__file__)[0]
     localfile = os.path.join(moduledir, r'sampledata\CeRAM_Depositions.xlsx')
     sourcefile = r'X:\emrl\Pool\Projekte\HGST-CERAM\CeRAM_Depositions.xlsx'
-    print(f'copy {sourcefile} {localfile}')
+    log.io(f'copy {sourcefile} {localfile}')
     return subprocess.getoutput(f'copy {sourcefile} {localfile}')

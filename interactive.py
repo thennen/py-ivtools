@@ -65,6 +65,9 @@ from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
+import logging
+
+log = logging.getLogger('my_logger')
 
 magic = get_ipython().magic
 
@@ -90,13 +93,11 @@ datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
-    print('The following files have uncommited changes:')
-    print('\n'.join(gitstatus['M']))
-    print('Automatically committing changes')
+    log.interactive('The following files have uncommited changes:\n' + '\n'.join(gitstatus['M']))
+    log.interactive('Automatically committing changes')
     gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
-    print('The following files are untracked by git:')
-    print('\n'.join(gitstatus['??']))
+    log.interactive('The following files are untracked by git:\n' + '\n'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
@@ -187,16 +188,17 @@ subfolder = datestr
 if len(sys.argv) > 1:
     # Can give a folder name with command line argument
     subfolder += '_' + sys.argv[1]
-print('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
-print('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+log.interactive('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+log.interactive('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 io.makefolder(datafolder, subfolder)
+
+
 def datadir():
     return os.path.join(datafolder, subfolder)
 def open_datadir():
     os.system('explorer ' + datadir())
 def cd_data():
     magic('cd ' + datadir())
-
 
 # What the plots should do by default
 if not iplots.plotters:
@@ -274,7 +276,7 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='Meta',
     if data is None:
         global d
         if type(d) in (dict, list, pd.Series, pd.DataFrame):
-            print('No data passed to savedata(). Using global variable d.')
+            log.interactive('No data passed to savedata(). Using global variable d.')
             data = d
     if folder_path is None:
         folder_path = datadir()

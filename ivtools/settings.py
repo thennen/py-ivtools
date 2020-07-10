@@ -20,6 +20,7 @@ from functools import partial
 import ivtools.measure
 import ivtools.instruments as instruments
 
+
 ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
 
@@ -49,12 +50,29 @@ hostname = socket.gethostname()
 username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
+
+logging_prints = {
+    'DEBUG': False,
+    'INFO': False,
+    'WARNING': True,
+    'ERROR': True,
+    'CRITICAL': True,
+    'instruments': True,
+    'io': True,
+    'plots': True,
+    'analysis': True,
+    'interactive': True
+}
+
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
 # Could also use it to specify different addresses needed on different PCs to connect to the same kind of instrument
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
 inst_connections = []
 
-db_path = os.path.join(ivtools_dir, 'metadata.db')
+db_path = os.path.join(pyivtools_dir, 'metadata.db')
+
+logging_file = os.path.join(pyivtools_dir, 'logging.log')
+
 
 #################################################
 ######## Hostname/user specific settings ########
@@ -64,8 +82,23 @@ if hostname == 'pciwe46':
     db_path = 'D:\metadata.db'
     if username == 'hennen':
         datafolder = r'D:\t\ivdata'
+    elif username == 'munoz':
+        datafolder = r'D:\{}\ivdata'.format(username)
+        logging_prints = {
+            'DEBUG': True,
+            'INFO': True,
+            'WARNING': True,
+            'ERROR': True,
+            'CRITICAL': True,
+            'instruments': True,
+            'io': True,
+            'plots': True,
+            'analysis': True,
+            'interactive': True
+        }
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
+
     inst_connections = [('ps', instruments.Picoscope),
                         ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                         ('daq', instruments.USB2708HS),
