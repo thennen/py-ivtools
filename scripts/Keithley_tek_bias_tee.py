@@ -8,6 +8,7 @@ from pathlib import Path
 from collections import defaultdict
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
+from scipy.signal import savgol_filter
 
 def where(*args):
     return np.where(*args)[0]
@@ -710,12 +711,15 @@ points = 10
     return data
 def eval_pcm_measurement(data, manual_evaluation = False):
     '''evaluates saved data (location or variable) from an  measurements. In case of a two channel measurement it determines pulse amplitude and width'''
+    print('0')
     setup_pcm_plots()
     ########## declareation of buttons ###########
     def agree(self):
+        print('agree')
         waitVar1.set(True)
 
     def threhsold_visible(self):
+        print('threshold')
         pulse_minimum =min(v_answer)
         pulse_index = where(np.array(v_answer) < 0.5* pulse_minimum)
         pulse_start_index = pulse_index[0]
@@ -737,6 +741,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
 
 
     def threshold_invisible(self):
+        print('threshold_invisible')
         #print(threshold_written_class.state)
         if not threshold_written_class.state:
             data['t_threshold'].append(numpy.nan)
@@ -745,6 +750,7 @@ def eval_pcm_measurement(data, manual_evaluation = False):
         waitVar.set(True)
 
     def onpick(event):
+        print('onpick')
         ind = event.ind
         t_threshold = np.take(x_data, ind)
         print('onpick3 scatter:', ind, t_threshold, np.take(y_data, ind))
@@ -762,8 +768,9 @@ def eval_pcm_measurement(data, manual_evaluation = False):
     data['pulse_width'] = []
     data['pulse_amplitude'] = []
     data['t_threshold'] = []
+
     ########## if two channel experiment: ################
-    if data['v_pulse']:       
+    if data['v_pulse']:      
         for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
             pulse_minimum =min(v_pulse)
             pulse_index = where(np.array(v_pulse) < 0.5* pulse_minimum)
@@ -843,7 +850,6 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
     # def agree(self):
     #     waitVar1.set(True)
 
-
     def threhsold_visible(self):
         user_aproove = False
         pulse_minimum =min(v_answer)
@@ -858,7 +864,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
         # ax_agree = plt.axes([0.59, 0.05, 0.1, 0.075])
         # b_agree = Button(ax_agree,'Agree')
         # b_agree.on_clicked(agree)
-        above_threshold_level = where(np.array(v_diff/50 < -200e-6))
+        above_threshold_level = where(np.array(v_diff/50 < -100e-6))
         try:
             threshold_event = where(above_threshold_level>pulse_start_index+6)[0]
         except:
@@ -917,7 +923,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
     data['t_threshold'] = [list() for x in range(len(data.index))]
     ########## if two channel experiment: ################
     for x in range(len(data.index)):
-        if 'v_pulse' in data.keys():       
+        if 'v_pulse' in data.keys():   
             for t_scope, v_pulse in zip(data['t_scope'], data['v_pulse']):
                # pulse_minimum =min(v_pulse)
                 #pulse_index = where(np.array(v_pulse) < 0.15* pulse_minimum)
@@ -947,6 +953,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                 data['pulse_amplitude'][x].append(get_pulse_amplitude_of_PSPL125000(amplitude = data['amplitude'][x], bits = data['bits'][x]))
                 #import pdb; pdb.set_trace()
         ######## detection of threshold event by hand ###########
+
         if manual_evaluation:
             above_threshold_level = np.array(np.nan)
             threshold_event =np.nan
@@ -960,8 +967,9 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
             for t_scope, v_answer in zip(data['t_ttx'], data['V_ttx']):
                 threshold_written_class.state = False
                 x_data = t_scope
-                y_data = v_answer
+                y_data = savgol_filter(v_answer,11,3)
                 figure_handle, ax_dialog = plt.subplots()
+                figure_handle.show()
                 plt.title('Is a threshold visible?')
                 plt.subplots_adjust(bottom=0.25)
                 if type(t_cap) == float:
@@ -1046,6 +1054,7 @@ do_plots = True):
 
 def eval_all_pcm_measurements(filepath):
     ''' executes all eval_pcm_measurements in one directory and bundles the results'''
+    print('b0')
     if filepath[-1] != '/':
         filepath = filepath + '/'
     files = os.listdir(filepath)
@@ -1053,17 +1062,23 @@ def eval_all_pcm_measurements(filepath):
     for f in files:
         filename = filepath+f
         print(filename)
+        print('b01')
         all_data.append(eval_pcm_measurement(filename, manual_evaluation = True))
+        print('b02')
+    print('b1')
     t_threshold = np.array(all_data[0]['t_threshold'])
     pulse_amplitude = np.array(all_data[0]['pulse_amplitude'])
     t_threshold = []
     for data in all_data:
         if len(t_threshold)>0:
+            print('b2')
             t_threshold = np.append(t_threshold,np.array(data['t_threshold']))
             pulse_amplitude = np.append(pulse_amplitude,np.array(data['pulse_amplitude']))
         else:
+            print('b3')
             t_threshold = np.array(data['t_threshold'])
             pulse_amplitude = np.array(data['pulse_amplitude'])
+    print('b4')
     plot_pcm_vt(pulse_amplitude, t_threshold)
     return all_data, t_threshold, pulse_amplitude
 
@@ -1099,6 +1114,7 @@ def eval_all_vcm_measurements(filepath, **kwargs):
     return all_data, R_hrs_mean, R_hrs_std, R_lrs_mean, R_lrs_std, fwhm_mean, fwhm_std, R_ratio_mean, R_ratio_std
 
 def eval_all_pcm_r_measurements(filepath, t_cap = np.nan, v_cap = np.nan):
+    print('d1')
     if filepath[-1] != '/':
         filepath = filepath + '/'
     files = os.listdir(filepath)
@@ -1698,6 +1714,9 @@ conjugate = False):
     Signal_f_conv_r = Signal_f*reflectionFunction_interp
     Signal_t_conv  = np.fft.irfft(Signal_f_conv) - transmission_offset
     Signal_t_conv_r  = np.fft.irfft(Signal_f_conv_r) - reflection_offset
+    if len(v_signal) > len(Signal_t_conv_r):
+        t_signal = t_signal[1:]
+        v_signal = v_signal[1:]
     v_stimulus = v_signal + Signal_t_conv_r - Signal_t_conv 
 
     if show_results or return_figs:
@@ -1731,3 +1750,39 @@ conjugate = False):
         ax = [ax_s, ax_ph, ax_tf0, ax_tf1, ax_rf0, ax_rf1, ax_fft, ax_sig, ax_refl]
         return t_signal, Signal_t_conv_r, Signal_t_conv, fig, ax
 
+def calc_t_SET(t_meas_raw, v_meas_raw, v_capa_raw, factor = 0.2, do_plots = False):
+
+
+    v_meas_f = interp1d(t_meas_raw, v_meas_raw)#, kind = 'cubic')
+    v_capa_f = interp1d(t_meas_raw, v_capa_raw)#, kind = 'cubic')
+    t_meas = np.arange(t_meas_raw[0], t_meas_raw[-1], 1e-13)
+    v_meas = v_meas_f(t_meas)
+    v_capa = v_capa_f(t_meas)
+    v_meas = savgol_filter(v_meas, 10001, 3)
+    v_capa = savgol_filter(v_capa, 10001, 3)
+    v_capa_max = np.max(np.abs(v_capa))
+    idx_meas_10 = np.where(np.abs(v_meas) > factor*v_capa_max)[0][0]
+    idx_capa_10 = np.where(np.abs(v_capa) > factor*v_capa_max)[0][0]
+    difference = idx_capa_10 - idx_meas_10
+    if difference != 0: # idx_meas_10 > idx_capa_10
+       v_capa_new = shift(v_capa, -difference, cval=np.NaN)
+       v_capa = v_capa_new[~np.isnan(v_capa_new)]
+       v_meas = v_meas[~np.isnan(v_capa_new)]
+       t_meas = t_meas[~np.isnan(v_capa_new)]
+    v_device = v_meas-v_capa
+    #v_device = savgol_filter(v_device_, 10001, 3)
+    v_device_max = np.max(np.abs(v_device))
+    idx_meas_10 = np.where(np.abs(v_meas) > factor*v_capa_max)[0][0]
+    idx_device_10 = np.where(np.abs(v_device) > factor*v_device_max)[0][0]
+    t_meas = t_meas - t_meas[idx_meas_10]
+    t_set = t_meas[idx_device_10] - t_meas[idx_meas_10]
+    if do_plots:
+        fig, ax = plt.subplots()
+        ax.plot(t_meas, v_meas)
+        ax.plot(t_meas, v_capa)
+        #ax.plot(t_meas, v_device_raw)
+        ax.plot(t_meas, v_device)
+        ax.vlines([t_meas[idx_device_10], t_meas[idx_meas_10]], ymin = -0.85, ymax= 0.6)
+        fig.tight_layout()
+        fig.show()
+    return t_set
