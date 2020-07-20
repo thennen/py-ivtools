@@ -7,6 +7,16 @@ from ivtools import settings
 
 #__all__ = ['settings', 'io', 'plot', 'analyze', 'measure', 'instruments']
 
+# Use this if you want ivtools to import all its modules right away
+# e.g.:
+# import ivtools (then you have ivtools.plot, ivtools.analyze etc.)
+#from . import settings
+#from . import analyze
+#from . import plot
+#from . import instruments
+#from . import io
+#from . import measure
+
 # This holds the BORG instance states, to protect them from reload
 # Often just for reusing the instrument connections
 instrument_states = {}
@@ -20,11 +30,9 @@ def clear_instrument_states():
     instrument_states = {}
 
 ### Logging module configuration ###
-
-
 username = ivtools.settings.username
 stream_format = f'%(message)s'
-file_format = f'%(levelname)s\t{username}\t%(asctime)s\t%(message)s'
+file_format = f'%(asctime)s\t%(levelname)s\t{username}\t\"%(message)s\"'
 datafolder = ivtools.settings.datafolder
 logging_file = ivtools.settings.logging_file
 logging_dir = os.path.split(logging_file)[0]
@@ -35,8 +43,8 @@ Colorama options:
     Fore: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
     Back: BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, RESET.
     Style: DIM, NORMAL, BRIGHT, RESET_ALL
-    
-    Some of them doesn't seem to work with QtConsole
+
+    Some of them don't seem to work with QtConsole
 '''
 logging_levels = {
     'DEBUG':       Fore.RED + stream_format + Style.RESET_ALL,
@@ -63,7 +71,6 @@ class LevelFilter(logging.Filter):
             allow = False
         return allow
 
-
 log = logging.getLogger('my_logger')
 log.setLevel(1)
 
@@ -85,18 +92,9 @@ for level in logging_levels.keys():
 
 custom_levels = list(logging_levels.keys())[5:]
 
+# This is a monkey patch of the logger, so you can access the custom levels by method name
 for index, level in enumerate(custom_levels):
     def monkeymethod(self, message, index=index, *args, **kws):
         self._log(60 + index, message, args, **kws)
     setattr(logging.Logger, level, monkeymethod)
     logging.addLevelName(60 + index, level)
-
-# this is so you can do
-# import ivtools
-# and then you have ivtools.plot, ivtools.analyze etc.
-#from . import settings
-#from . import analyze
-#from . import plot
-#from . import instruments
-#from . import io
-#from . import measure
