@@ -1780,7 +1780,7 @@ def xylim():
     xlim = plt.xlim()
     ylim = plt.ylim()
     cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
-    log.plots(cmd)
+    print(cmd)
     # I don't know how to copy a new line onto the clipboard
     df = pd.DataFrame([cmd.replace('\n', ';')])
     df.to_clipboard(index=False,header=False)
