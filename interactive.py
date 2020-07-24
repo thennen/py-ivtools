@@ -167,7 +167,11 @@ instrument_varnames = {instruments.Picoscope:'ps',
 for kk, v in instrument_varnames.items():
     globalvars[v] = None
 
-visa_resources = visa.visa_rm.list_resources()
+if visa.visa_rm is not None:
+    visa_resources = visa.visa_rm.list_resources()
+else:
+    # you don't have visa installed
+    visa_resources = []
 # Connect to all the instruments
 # Instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
