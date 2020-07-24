@@ -37,7 +37,8 @@ def clear_instrument_states():
 ### Logging module configuration ###
 username = ivtools.settings.username
 stream_format = f'%(message)s'
-file_format = f'%(asctime)s\t%(levelname)s\t{username}\t\"%(message)s\"'
+# TODO: how can we strip out any \t or \n from the message before writing to disk?
+file_format = f'%(asctime)s\t{username}\t%(levelname)s\t\"%(message)s\"'
 datafolder = ivtools.settings.datafolder
 logging_file = ivtools.settings.logging_file
 logging_dir = os.path.split(logging_file)[0]
