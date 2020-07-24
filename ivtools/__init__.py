@@ -3,10 +3,6 @@ from colorama import Fore, Back, Style
 import os.path
 import ivtools
 import ivtools.settings
-from importlib import reload
-
-def reload_settings():
-    reload(ivtools.settings)
 
 # Order matters, because of crazy circular imports..
 

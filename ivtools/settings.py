@@ -16,10 +16,15 @@ import getpass  # to get user name
 import socket
 import os
 from functools import partial
+from importlib import reload
 # circular import?
 import ivtools.measure
 import ivtools.instruments as instruments
 
+# untested..
+def reload():
+    import ivtools.settings
+    reload(ivtools.settings)
 
 ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
