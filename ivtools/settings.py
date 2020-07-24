@@ -52,8 +52,8 @@ username = getpass.getuser()
 datafolder = r'C:\data\{}'.format(username)
 
 logging_prints = {
-    'DEBUG': False,
-    'INFO': False,
+    'DEBUG': True,
+    'INFO': True,
     'WARNING': True,
     'ERROR': True,
     'CRITICAL': True,
