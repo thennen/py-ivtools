@@ -210,8 +210,10 @@ def cd_data():
 if not iplots.plotters:
     if ps is not None:
         iplots.plotters = pico_plotters
+        log.interactive('Setting up default plots for picoscope')
     elif k is not None:
         iplots.plotters = keithley_plotters
+        log.interactive('Setting up default plots for keithley')
 
 ### Runs only the first time ###
 if firstrun:
