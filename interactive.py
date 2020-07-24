@@ -69,6 +69,10 @@ import logging
 
 log = logging.getLogger('my_logger')
 
+# Preview of the logging colors
+for k in ivtools.logging_levels.keys():
+    getattr(log, k.lower())(k)
+
 magic = get_ipython().magic
 
 # Define this on the first run only
