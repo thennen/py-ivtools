@@ -378,10 +378,18 @@ if k and hasattr(k, 'query'):
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
 
-if ts:
+# define this if digipot is connected
+if dp:
     def set_Rseries(val):
         Rs = dp.set_R(val)
         meta.static['R_series'] = Rs
         return Rs
+
+# define this if temperature stage is connected
+if ts:
+    def set_temperature(T, delay=30):
+        ts.set_temperature(T)
+        ivplot.mybreakablepause(delay)
+        meta.static['R_series'] = Rs
 
 # TODO def reload_settings, def reset_state

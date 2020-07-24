@@ -801,6 +801,15 @@ def mypause(interval):
             canvas.start_event_loop(interval)
             return
 
+def mybreakablepause(interval):
+    ''' pauses but allows you to press ctrl-c if the pause is long '''
+    subinterval = .5
+    npause, remainder = divmod(interval, subinterval)
+    for _ in range(int(npause)):
+        mypause(subinterval)
+    mypause(remainder)
+
+
 def plot_cumulative_dist(data, ax=None, **kwargs):
     ''' Because I always forget how to do it'''
     if ax is None:
