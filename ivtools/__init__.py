@@ -2,7 +2,7 @@ import logging.config
 from colorama import Fore, Back, Style
 import os.path
 import ivtools
-from ivtools import settings
+import ivtools.settings
 # Order matters, because of crazy circular imports..
 
 #__all__ = ['settings', 'io', 'plot', 'analyze', 'measure', 'instruments']

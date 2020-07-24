@@ -56,7 +56,7 @@ if not hasattr(visa, 'visa_rm'):
         visa.visa_rm = visa.ResourceManager()
     except ValueError as e:
         # don't raise exception if you didn't install visa
-        log.instruments(e)
+        log.warning(e)
         visa.visa_rm = None
 visa_rm = visa.visa_rm
 

@@ -1785,3 +1785,31 @@ def xylim():
     df = pd.DataFrame([cmd.replace('\n', ';')])
     df.to_clipboard(index=False,header=False)
 
+
+def auto_range(xy='y', ax=None):
+    # Pick a yrange that fits all the data, in the current x range,
+    # but you don't have to pass the data itself because that would be a pain in the ass
+    # Only works for collections of lines!
+    if ax is None:
+        ax = plt.gca()
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    xdata = np.hstack([l.get_data()[0] for l in ax.lines])
+    ydata = np.hstack([l.get_data()[1] for l in ax.lines])
+    xmask = (xdata >= xmin) & (xdata <= xmax)
+    ymask = (ydata >= ymin) & (ydata <= ymax)
+    # over writing variables like a chump
+    ymin = np.nanmin(ydata[xmask])
+    ymax = np.nanmax(ydata[xmask])
+    ymid = (ymin + ymax) / 2
+    ylim0 = ymid + (ymin - ymid) * 1.1
+    ylim1 = ymid + (ymax - ymid) * 1.1
+    xmin = np.nanmin(xdata[ymask])
+    xmax = np.nanmax(xdata[ymask])
+    xmid = (xmin + xmax) / 2
+    xlim0 = xmid + (xmin - xmid) * 1.1
+    xlim1 = xmid + (xmax - xmid) * 1.1
+    if 'y' in xy:
+        ax.set_ylim(ylim0, ylim1)
+    if 'x' in xy:
+        ax.set_xlim(xlim0, xlim1)
