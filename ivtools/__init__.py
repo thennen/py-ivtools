@@ -98,3 +98,7 @@ for index, level in enumerate(custom_levels):
         self._log(60 + index, message, args, **kws)
     setattr(logging.Logger, level, monkeymethod)
     logging.addLevelName(60 + index, level)
+
+# Preview of the logging colors
+for k in logging_levels.keys():
+    getattr(log, k.lower())(k)
