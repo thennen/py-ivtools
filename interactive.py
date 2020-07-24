@@ -69,9 +69,6 @@ import logging
 
 log = logging.getLogger('my_logger')
 
-# Preview of the logging colors
-for k in ivtools.logging_levels.keys():
-    getattr(log, k.lower())(k)
 
 magic = get_ipython().magic
 
@@ -89,6 +86,11 @@ if firstrun:
     # matplotlib state machine or whatever and nothing will update anymore
     # TODO find out whether it has been called already
     magic('matplotlib')
+
+    # Preview of the logging colors
+    print('Color code:')
+    for k in ivtools.logging_levels.keys():
+        getattr(log, k.lower())(k)
 
 hostname = settings.hostname
 username = settings.username
