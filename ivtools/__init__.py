@@ -3,6 +3,11 @@ from colorama import Fore, Back, Style
 import os.path
 import ivtools
 import ivtools.settings
+from importlib import reload
+
+def reload_settings():
+    reload(ivtools.settings)
+
 # Order matters, because of crazy circular imports..
 
 #__all__ = ['settings', 'io', 'plot', 'analyze', 'measure', 'instruments']
@@ -99,6 +104,3 @@ for index, level in enumerate(custom_levels):
     setattr(logging.Logger, level, monkeymethod)
     logging.addLevelName(60 + index, level)
 
-# Preview of the logging colors
-for k in logging_levels.keys():
-    getattr(log, k.lower())(k)
