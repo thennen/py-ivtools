@@ -150,7 +150,6 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
 
 #########
 
-
 datafolder = settings.datafolder
 inst_connections = settings.inst_connections
 
@@ -161,7 +160,9 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.PG5:'pg5',
                        instruments.Eurotherm2408:'et',
                        instruments.TektronixDPO73304D:'ttx',
-                       instruments.USB2708HS:'daq'}
+                       instruments.USB2708HS:'daq',
+                       instruments.WichmannDigipot: 'dp',
+                       instruments.EugenTempStage: 'ts'}
 
 # Make varnames None until connected
 for kk, v in instrument_varnames.items():
@@ -172,6 +173,7 @@ if visa.visa_rm is not None:
 else:
     # you don't have visa installed
     visa_resources = []
+
 # Connect to all the instruments
 # Instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
