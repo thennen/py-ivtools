@@ -88,7 +88,8 @@ if firstrun:
     magic('matplotlib')
 
     # Preview of the logging colors
-    print('Color code:')
+    print('')
+    print('Logging color code:')
     for k in ivtools.logging_levels.keys():
         getattr(log, k.lower())(k)
 
