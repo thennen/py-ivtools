@@ -94,7 +94,7 @@ datestr = time.strftime('%Y-%m-%d')
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     log.interactive('The following files have uncommited changes:\n' + '\n'.join(gitstatus['M']))
-    log.interactive('Automatically committing changes')
+    log.interactive('Automatically committing changes!')
     gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
     log.interactive('The following files are untracked by git:\n' + '\n'.join(gitstatus['??']))
