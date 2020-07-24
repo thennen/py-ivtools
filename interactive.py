@@ -93,11 +93,11 @@ datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
-    log.interactive('The following files have uncommited changes:\n' + '\n\t'.join(gitstatus['M']))
+    log.interactive('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
     log.interactive('Automatically committing changes!')
     gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
-    log.interactive('The following files are untracked by git:\n' + '\n\t'.join(gitstatus['??']))
+    log.interactive('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
