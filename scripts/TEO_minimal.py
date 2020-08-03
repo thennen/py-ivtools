@@ -1,4 +1,3 @@
-# Trying to clean this up and take the metaphoricaL banana out of the gorilla's hand
 # TH 2018-12-10
 # HJR 2018
 import win32com.client
