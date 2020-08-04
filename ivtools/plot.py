@@ -764,7 +764,8 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
             else:
                 x = range(len(chdata[c]))
                 ax.set_xlabel('Data Point')
-            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha, **kwargs)
+            chcoupling = chdata['COUPLINGS'][c]
+            ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
