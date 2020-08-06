@@ -277,7 +277,7 @@ del_plotters = iplots.del_plotters
 
 
 # noinspection SpellCheckingInspection
-def savedata(data=None, folder_path=None, database_path=None, table_name='Meta', drop=None):
+def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
@@ -299,7 +299,7 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='Meta',
         database_path = db_path
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
-def load_metadb(database_path=None, table_name='Meta'):
+def load_metadb(database_path=None, table_name='meta'):
     """
     Load the database into a data frame.
     Not sure if this is necessary.
@@ -366,6 +366,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = meta.attach(data)
                 iplots.newline(data)
         if autosave:
+            print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
