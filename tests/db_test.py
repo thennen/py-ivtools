@@ -7,10 +7,12 @@ from ivtools import io
 import interactive
 import numpy as np
 import pandas as pd
-from line_profiler import LineProfiler
+# from line_profiler import LineProfiler
 
 meta = io.MetaHandler()
-
+folder = "C:/Users/munoz/Desktop/database/dbtests"
+db = "C:/Users/munoz/Desktop/database/dbtests/dbtest.db"
+bigdb = "D:/metadata.db"
 
 def to_time_test(row):
     col_names = list(row.keys())
@@ -52,19 +54,21 @@ def create_big_db():
     Since it could take long, it plots expected remaining time every 1000 rows added.
     """
 
-    data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
+    data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/2019-04-26_151601_693_Lama_3_1_001G_2.s')
     row0 = data.iloc[0]
-    if os.path.isfile("metadata.db") is True:
-        os.remove("metadata.db")
-    db_conn = io.db_connect("metadata.db")
-    io.db_create_table(db_conn, "metadata", row0)
+    print(len(data))
+    print(type(data))
+    print(data)
+    db_path = "C:/Users/munoz/Desktop/database/dbtests.db"
+    db_conn = io.db_connect(db_path)
+    io.db_create_table(db_conn, "none_test", row0)
     prev = 0
     start = time.time()
     times = []
     N = 1000
     for n in range(N):
         row = data.iloc[n]
-        io.db_insert_row(db_conn, "metadata", row)
+        io.db_insert_row(db_conn, "none_test", row)
         if int(n/1000) > prev:
             elapsed = time.time() - start
             times.append(elapsed)
@@ -128,32 +132,73 @@ def merge_repeated():
 
 
 def test1():
-    ser = pd.Series([11, 12, 13, 14], index=['Hola', 'Ey', 'hola', 'Adios'])
-    dct = {'Hola': 7, 'hola': 9, 'Adios': 8, 'List': [1, 2, 3]}
-    df = pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6]]), columns=['Hola', 'Adios', 'hola'])
-    ld = [{'Hola': 21, 'hola': 22, 'Adios': 23}, {'Hola': 24, 'hola': 25, 'Adios': 26}]
+    meta = io.MetaHandler()
+    table = 'test'
+    db_conn = io.db_connect(db)
+    data = {'hola': 1, 'adios': 2, 'Hola': None, 'Hello': 3}
+    if io.db_exist_table(db_conn, table):
+        c = db_conn.cursor()
+        c.execute(f"DROP TABLE {table}")
+    meta.savedata(data, folder, db, table)
 
-    data = ser
-    print(data)
+    table = 'test2'
+    db_conn = io.db_connect(db)
+    if io.db_exist_table(db_conn, table):
+        c = db_conn.cursor()
+        c.execute(f"DROP TABLE {table}")
+    io.db_create_table(db_conn, table, data)
+    io.db_commit(db_conn)
 
-    # if os.path.isfile("test.db") is True:
-    #     os.remove("test.db")
+def test2():
+    data = io.db_load(db, 'none_test')
+    data = data.replace({'None': None})
+    data = data.replace({np.nan: None})
+    data = data.iloc[:,0:15]
 
-    interactive.savedata(data)
+    db_conn = io.db_connect(db)
+    table = 'test'
+    if io.db_exist_table(db_conn, table):
+        c = db_conn.cursor()
+        c.execute(f"DROP TABLE {table}")
 
-    # df = io.db_load("test.db", "test")
-    # print(df)
-    # print(type(df))
+    row0 = data.iloc[0]
+    io.db_create_table(db_conn, table, row0)
+    N = len(data)
+    for n in range(N-1):
+        row = data.iloc[n+1]
+        io.db_insert_row(db_conn, table, row)
+    io.db_commit(db_conn)
 
-
-def test2(data):
-    data = pd.read_pickle('C:/Users/munoz/Desktop/database/data_examples/metadata2.pkl')
+def change_None():
+    data = io.db_load('D:\metadata.db', 'meta')
+    data = data.replace({'None': None})
+    data = data.replace({np.nan: None})
+    db_conn = io.db_connect('D:\metadata2.db')
+    table = 'meta'
+    row0 = data.iloc[0]
+    io.db_create_table(db_conn, table, row0)
+    prev = 0
+    start = time.time()
+    times = []
+    N = len(data)
+    for n in range(N):
+        row = data.iloc[n]
+        io.db_insert_row(db_conn, table, row)
+        if int(n / 1000) > prev:
+            elapsed = time.time() - start
+            times.append(elapsed)
+            mean = statistics.mean(times)
+            mins = int(mean / 1000 * (len(data) - n) / 60)
+            secs = int((mean / 1000 * (len(data) - n) / 60 - mins) * 60)
+            prev += 1
+            print(f"Row {n} loaded. Expected remaining time: {mins} minutes and {secs} seconds")
+            start = time.time()
+    io.db_commit(db_conn)
 
 
 
 if __name__ == '__main__':
 
-    test1()
-
+    test2()
 
 

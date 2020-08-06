@@ -495,7 +495,7 @@ class MetaHandler(object):
                 filename += '_{}'.format(self.static[fnkey])
         return filename
 
-    def savedata(self, data, folder_path=None, database_path=None, table_name='Meta', drop=None):
+    def savedata(self, data, folder_path=None, database_path=None, table_name='meta', drop=None):
         """
         Save a row of data into a table in a database.
 
@@ -539,7 +539,8 @@ class MetaHandler(object):
         write_pandas_pickle(data, file_path, drop=drop)
 
         db_conn = db_connect(database_path)
-        if db_exist_table(db_conn, table_name):
+        exist = db_exist_table(db_conn, table_name)
+        if exist:
             db_insert_row(db_conn, table_name, metadata)
         else:
             db_create_table(db_conn, table_name, metadata)
@@ -566,17 +567,21 @@ def db_create_table(db_conn, table_name, data):
     # It is not possible to have two column names that only differ in case.
     # To solve that, '&' is added at the end of the second name
     col_names_encoded = db_encode(col_names)
-
     def blacklist_filter(col_name):
         val = data[col_name]
-        val_ch = db_change_type(val)
+        if val is not None:
+            val_ch = db_change_type(val)
+        else:
+            val_ch = None
+
         dtype = type(val)
         if val_ch is None:
-            #log.io(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
+            log.io(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
             return None
         else:
             return col_names_encoded[col_names.index(col_name)]
 
+    # Here all empty columns are deleted, one could save them just removing the None filter below.
     params = tuple(filter(None, [blacklist_filter(name) for name in col_names]))
     col_names_encoded = list(params)
     col_names = db_decode(col_names_encoded)
@@ -619,11 +624,7 @@ def db_insert_row(db_conn, table_name, row):
             val = row[col_name]
             dtype = type(val)
             val_ch = db_change_type(val)
-            if val_ch is None:
-                #log.io(f"Data type {dtype} not supported. '{col_name}' was saved as 'None'")
-                return None
-            else:
-                return val_ch
+            return val_ch
         else:
             return None
 
@@ -642,11 +643,15 @@ def db_insert_row(db_conn, table_name, row):
             val_ch = db_change_type(val)
             if val_ch is not None:
                 db_add_col(db_conn, table_name, name_encoded)
-                #log.io(f"New column added: {name}")
+                log.io(f"New column added: {name}")
                 params.append(val_ch)
             else:
                 dtype = type(val)
-                #log.io(f"Data type '{dtype}' not supported. '{name}' won't be saved")
+                NoneType = type(None)
+                if dtype is NoneType:
+                    log.io(f"'{name}' is empty so won't be saved")
+                else:
+                    log.io(f"Data type '{dtype}' not supported. '{name}' won't be saved")
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
@@ -710,6 +715,8 @@ def db_change_type(var):
             var = var.to_pydatetime()
         elif types_dict[dtype] == int:
             var = int(var)
+    elif var is None:
+        pass
     else:
         log.io(f"Data type {dtype} is not registered, it will be save as str")
         var = repr(var)
@@ -765,7 +772,7 @@ def db_encode(col_names):
             col_names_encoded_low[i] += '&' * rep
             col_names_encoded[i + removed] += '&' * rep
             log.io(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
-                  f' {col_names_encoded[i + removed]} in the database file.')
+                   f' {col_names_encoded[i + removed]} in the database file.')
 
     return col_names_encoded
 
@@ -797,8 +804,6 @@ def db_exist_table(db_conn, table_name):
         return True
     else:
         return False
-    # close the connection
-    db_conn.close()
 
 
 def db_connect(db_path):
