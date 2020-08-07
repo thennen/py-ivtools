@@ -35,8 +35,6 @@ psplit = os.path.split
 
 gitdir = os.path.split(__file__)[0]
 
-logger = None
-
 
 class MetaHandler(object):
     '''
@@ -909,7 +907,6 @@ def log_ipy(start=True, logfilepath=None):
     spyder just crashes, for example
     don't be surprised if it messes something up
     '''
-    global logger
     magic = get_ipython().magic
     magic('logstop')
 
@@ -938,8 +935,10 @@ def log_ipy(start=True, logfilepath=None):
             # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
             self.terminal.flush()
 
-    if logger is not None:
-        logger.log.close()
+    # No idea what I was doing here
+    #global logger
+    #if logger is not None:
+    #    logger.log.close()
 
     if start:
         # logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')

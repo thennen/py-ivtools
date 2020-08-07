@@ -69,6 +69,7 @@ import logging
 
 log = logging.getLogger('my_logger')
 
+
 magic = get_ipython().magic
 
 # Define this on the first run only
@@ -86,6 +87,12 @@ if firstrun:
     # TODO find out whether it has been called already
     magic('matplotlib')
 
+    # Preview of the logging colors
+    print('')
+    print('Logging color code:')
+    for k in ivtools.logging_levels.keys():
+        getattr(log, k.lower())(k)
+
 hostname = settings.hostname
 username = settings.username
 db_path = settings.db_path  # Database path
@@ -93,11 +100,11 @@ datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
-    log.interactive('The following files have uncommited changes:\n' + '\n'.join(gitstatus['M']))
-    log.interactive('Automatically committing changes')
+    log.interactive('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
+    log.interactive('Automatically committing changes!')
     gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
-    log.interactive('The following files are untracked by git:\n' + '\n'.join(gitstatus['??']))
+    log.interactive('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
@@ -150,7 +157,6 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
 
 #########
 
-
 datafolder = settings.datafolder
 inst_connections = settings.inst_connections
 
@@ -161,13 +167,20 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.PG5:'pg5',
                        instruments.Eurotherm2408:'et',
                        instruments.TektronixDPO73304D:'ttx',
-                       instruments.USB2708HS:'daq'}
+                       instruments.USB2708HS:'daq',
+                       instruments.WichmannDigipot: 'dp',
+                       instruments.EugenTempStage: 'ts'}
 
 # Make varnames None until connected
 for kk, v in instrument_varnames.items():
     globalvars[v] = None
 
-visa_resources = visa.visa_rm.list_resources()
+if visa.visa_rm is not None:
+    visa_resources = visa.visa_rm.list_resources()
+else:
+    # you don't have visa installed
+    visa_resources = []
+
 # Connect to all the instruments
 # Instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
@@ -204,8 +217,10 @@ def cd_data():
 if not iplots.plotters:
     if ps is not None:
         iplots.plotters = pico_plotters
+        log.interactive('Setting up default plots for picoscope')
     elif k is not None:
         iplots.plotters = keithley_plotters
+        log.interactive('Setting up default plots for keithley')
 
 ### Runs only the first time ###
 if firstrun:
@@ -372,10 +387,18 @@ if k and hasattr(k, 'query'):
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
     kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
 
-if ts:
+# define this if digipot is connected
+if dp:
     def set_Rseries(val):
         Rs = dp.set_R(val)
         meta.static['R_series'] = Rs
         return Rs
+
+# define this if temperature stage is connected
+if ts:
+    def set_temperature(T, delay=30):
+        ts.set_temperature(T)
+        ivplot.mybreakablepause(delay)
+        meta.static['R_series'] = Rs
 
 # TODO def reload_settings, def reset_state

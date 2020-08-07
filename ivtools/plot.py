@@ -764,7 +764,8 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
             else:
                 x = range(len(chdata[c]))
                 ax.set_xlabel('Data Point')
-            ax.plot(x, chplotdata, color=colors[c], label=c, alpha=alpha, **kwargs)
+            chcoupling = chdata['COUPLINGS'][c]
+            ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
             # lightly indicate the channel range
             choffset = chdata['OFFSET'][c]
             chrange = chdata['RANGE'][c]
@@ -800,6 +801,15 @@ def mypause(interval):
                 canvas.draw()
             canvas.start_event_loop(interval)
             return
+
+def mybreakablepause(interval):
+    ''' pauses but allows you to press ctrl-c if the pause is long '''
+    subinterval = .5
+    npause, remainder = divmod(interval, subinterval)
+    for _ in range(int(npause)):
+        mypause(subinterval)
+    mypause(remainder)
+
 
 def plot_cumulative_dist(data, ax=None, **kwargs):
     ''' Because I always forget how to do it'''
@@ -1780,8 +1790,36 @@ def xylim():
     xlim = plt.xlim()
     ylim = plt.ylim()
     cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
-    log.plots(cmd)
+    print(cmd)
     # I don't know how to copy a new line onto the clipboard
     df = pd.DataFrame([cmd.replace('\n', ';')])
     df.to_clipboard(index=False,header=False)
 
+
+def auto_range(xy='y', ax=None):
+    # Pick a yrange that fits all the data, in the current x range,
+    # but you don't have to pass the data itself because that would be a pain in the ass
+    # Only works for collections of lines!
+    if ax is None:
+        ax = plt.gca()
+    xmin, xmax = ax.get_xlim()
+    ymin, ymax = ax.get_ylim()
+    xdata = np.hstack([l.get_data()[0] for l in ax.lines])
+    ydata = np.hstack([l.get_data()[1] for l in ax.lines])
+    xmask = (xdata >= xmin) & (xdata <= xmax)
+    ymask = (ydata >= ymin) & (ydata <= ymax)
+    # over writing variables like a chump
+    ymin = np.nanmin(ydata[xmask])
+    ymax = np.nanmax(ydata[xmask])
+    ymid = (ymin + ymax) / 2
+    ylim0 = ymid + (ymin - ymid) * 1.1
+    ylim1 = ymid + (ymax - ymid) * 1.1
+    xmin = np.nanmin(xdata[ymask])
+    xmax = np.nanmax(xdata[ymask])
+    xmid = (xmin + xmax) / 2
+    xlim0 = xmid + (xmin - xmid) * 1.1
+    xlim1 = xmid + (xmax - xmid) * 1.1
+    if 'y' in xy:
+        ax.set_ylim(ylim0, ylim1)
+    if 'x' in xy:
+        ax.set_xlim(xlim0, xlim1)

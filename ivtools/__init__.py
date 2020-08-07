@@ -2,7 +2,8 @@ import logging.config
 from colorama import Fore, Back, Style
 import os.path
 import ivtools
-from ivtools import settings
+import ivtools.settings
+
 # Order matters, because of crazy circular imports..
 
 #__all__ = ['settings', 'io', 'plot', 'analyze', 'measure', 'instruments']
@@ -32,7 +33,8 @@ def clear_instrument_states():
 ### Logging module configuration ###
 username = ivtools.settings.username
 stream_format = f'%(message)s'
-file_format = f'%(asctime)s\t%(levelname)s\t{username}\t\"%(message)s\"'
+# TODO: how can we strip out any \t or \n from the message before writing to disk?
+file_format = f'%(asctime)s\t{username}\t%(levelname)s\t\"%(message)s\"'
 datafolder = ivtools.settings.datafolder
 logging_file = ivtools.settings.logging_file
 logging_dir = os.path.split(logging_file)[0]
@@ -98,3 +100,4 @@ for index, level in enumerate(custom_levels):
         self._log(60 + index, message, args, **kws)
     setattr(logging.Logger, level, monkeymethod)
     logging.addLevelName(60 + index, level)
+

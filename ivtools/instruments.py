@@ -56,7 +56,7 @@ if not hasattr(visa, 'visa_rm'):
         visa.visa_rm = visa.ResourceManager()
     except ValueError as e:
         # don't raise exception if you didn't install visa
-        log.instruments(e)
+        log.warning(e)
         visa.visa_rm = None
 visa_rm = visa.visa_rm
 
@@ -1662,6 +1662,339 @@ class Keithley2600(object):
         reply = self._set_or_query(f'smu{ch}.source.func', state)
         if reply is None: return None
         return 'remote' if int(reply) else 'local'
+
+
+class TeoSystem():
+    '''
+    Class for control of Teo Systems Memory Tester
+
+    TODO: put basic explanation of what the system does here
+    fixed 500 MSamples/s sample rate for internal AWG and ADCs
+    +-10V output voltage amplitude, with 14 bit resolution (~5 mV), 50 ohm output
+    rise/fall time < 1 ns
+    ADC has 12 bit resolution
+    ADC memory is 256 MSamples per channel
+    ADC bandwidth is about 200 MHz
+
+    COM objects directly exposed:
+    DriverID
+    DeviceID
+    DeviceControl
+    LF_Measurement
+    HF_Measurement
+    HF_Gain
+    AWG_WaveformManager
+
+    Brings some of the most used methods that are inconveniently deep
+    in the object tree to the top level and gives them shorter names
+
+    Adds some content-addressable features
+
+    # TODO: check what happens if you initialize twice
+    # TODO: does it need any internal state?  does it need to be BORG?
+    # TODO: write high level methods (e.g. pulse_and_capture..)
+    # TODO: only voltage amplitude is used for the hash, maybe we should hash the triggers as well
+
+    # TODO: there's a jumper on the board (J29) that sets return impedance to 100 ohm for some reason
+    #       I don't know if the software can detect the state of that jumper.  so we need some attribute here
+
+    # TODO: how can we be aware of the TEO memory state?  do we care?
+
+    # TODO: TEO remembers waveforms that you upload by name
+            this is to minimize unecessary data transfer, which takes time
+            we should also have this class remember the waveforms in a similar way
+            would be useful then to also have a method that synchronizes the memories
+
+    # TODO: methods to read the waveforms back that are already on TEO memory?
+
+    # TODO: figure out what the gain really does and document it
+            at what voltage does the ADC saturate vs gain?
+
+    # TODO: do all the commands work regardless of which mode we are in? e.g. waveform upload, gain setting
+
+    # TODO: what happens when we send commands while the board is busy?
+            is there a way to send consecutive shots of a wfm without a python for-loop?
+
+    # TODO: my understanding is that there is an idle voltage level set by
+            LF_Measurement.LF_Voltage.SetValue(DClevel)
+            is this always applied when a waveform is not playing?
+            does that mean the instrument switches into LF mode when a waveform is not playing?
+    '''
+    import win32com.client
+    from win32com.client import CastTo, WithEvents, Dispatch
+
+    def __init__(self):
+        '''
+        This will do software initialization but won't initialize the hardware
+        requires TEO software package and drivers to be installed on the pc
+        '''
+        # Launches program that knows about which TEO boards are connected via usb
+        HMan = Dispatch("TSX_HMan")
+
+        # Asks the program for a device called MEMORY_TESTER
+        MemTester = HMan.GetSystem('MEMORY_TESTER')
+
+        # Access a bunch of classes used to control the TEO board
+        DriverID =            TeoSystem.CastTo('ITS_DriverIdentity'     , MemTester)
+        DeviceID =            TeoSystem.CastTo('ITS_DeviceIdentity'     , DriverID)
+        DeviceControl =       TeoSystem.CastTo('ITS_DeviceControl'      , DriverID)
+        LF_Measurement =      TeoSystem.CastTo('ITS_LF_Measurement'     , DriverID)
+        HF_Measurement =      TeoSystem.CastTo('ITS_HF_Measurement'     , DriverID)
+        HF_Gain =             TeoSystem.CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
+        AWG_WaveformManager = TeoSystem.CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
+
+        # Assign methods/attributes to the instance
+        self.HMan = HMan
+        self.MemTester = MemTester
+        self.DriverID = DriverID
+        self.DeviceID = DeviceID
+        self.DeviceControl = DeviceControl
+        self.LF_Measurement = LF_Measurement
+        self.HF_Measurement = HF_Measurement
+        self.HF_Gain = HF_Gain
+        self.AWG_WaveformManager = AWG_WaveformManager
+
+        self.idn = self.get_idn()
+
+
+    @staticmethod
+    def CastTo(name, to):
+        # CastTo that prints a warning if it doesn't work for some reason
+        try:
+            result = win32com.client.CastTo(to, name)
+        except E:
+            print(f'CastTo({name}, {to}) has failed')
+            print(E)
+        if result is None:
+            print(f'CastTo({name}, {to}) has failed')
+        return result
+
+
+    @staticmethod
+    def hash_array(array):
+        '''
+        If you don't want to explicitly name the arrays, you can hash them and use that as the name
+        then everything is content-addressable
+        sha1 is ~fast and there's no security concern obviously
+        '''
+        import hashlib
+        return hashlib.sha1(arr).hexdigest()
+        #return hashlib.md5(arr).hexdigest()
+        # There is also this?
+        # hash(arr.tostring())
+
+
+    @staticmethod
+    def interp_wfm(t, wfm):
+        '''
+        interpolate arbitrarily (but monotonically) sampled waveform for the fixed 500 MHz sample rate
+        '''
+        max_t = np.max(t)
+        if max_t > 0.5:
+            raise Exception('Waveform duration is too long for TEO memory.')
+        new_t = np.arange(0, max_t, 1/500e6)
+        return np.interp(new_t, t, wfm)
+
+
+    def get_idn(self):
+        # Get and print some information from the board
+        DevName = self.DeviceID.GetDeviceName()
+        DevRevMajor = self.DeviceID.GetDeviceMajorRevision()
+        DevRevMinor = self.DeviceID.GetDeviceMinorRevision()
+        DevSN = self.DeviceID.GetDeviceSerialNumber()
+        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
+
+
+    def init_hardware(self, DClevel=0):
+        '''
+        Powers up the round board and sets DC voltage on the output
+        This must be done with a DUT NOT connected, otherwise you can kill it!
+
+        TODO: does this start up in LF mode?
+        TODO: what happens if we StartDevice() more than once?
+        '''
+        self.DeviceControl.StartDevice()
+        self.LF_Measurement.LF_Voltage.SetValue(DClevel)
+        self.HF_mode(external=False)
+
+
+    ##################################### HF mode #############################################
+
+    def HF_mode(self, external=False):
+        # Call to turn on HF mode
+        # True for external mode (use SMA ports to external equipment)
+        # False to use the internal ADC
+        # First argument (0) does nothing?
+        self.HF_Measurement.SetHF_Mode(0, external)
+
+
+    def gain(self, HFgain=None):
+        '''
+        Unit is "steps" and each step corresponds to 1dB
+        I think it can be 0 - 20?
+        TODO: clarify exactly what gain this is and roughly what the units are
+        TODO: can we also poll the value of gain?
+        '''
+        if HFgain is None:
+            # No idea if this works
+            return self.HF_Gain.GetValue()
+        elif float(HFgain) > self.HF_Gain.GetMaxValue():
+            raise Exception('Input error: Requested TEO gain too high')
+
+        self.HF_Gain.SetValue(HFgain)
+
+
+    def add_wfm(self, varray, name=None, trig1=None, trig2=None):
+        '''
+        Add waveform and associated trigger arrays to TEO memory
+
+        TODO: verify comments below are true
+        if internal ADC mode is on
+        trig1 defines where we will get readings on channel 1 (V monitor)
+        trig2 defines where we will get readings on channel 2 (current)
+        if external mode is on, these are just synchronous digital signals
+        that can be used however you want
+
+        TODO: what datatype are the triggers supposed to be?  bool?
+        TODO: what does CreateWaveform return if you use a name that already exists?
+              will it overwrite the last one or will it append to it?
+        '''
+        if name is None:
+            name = self.hash_array(varray)
+
+        wf = self.AWG_WaveformManager.CreateWaveform(name)
+
+        if trig1 is None:
+            trig1 = np.ones(len(varray), dtype=bool)
+
+        if trig2 is None:
+            trig2 = np.ones(len(varray), dtype=bool)
+
+        wf.AddSamples(varray, trig1, trig2)
+
+
+    def output_wfm(self, wfm=None, name=None):
+        '''
+        Output waveform by name or by values
+        in internal mode, this automatically captures on both channels (where trigger = True)
+        '''
+        if name is None:
+            name = self.hash_array(wfm)
+
+        # TODO: See if that waveform is defined, if not, define it
+        # if waveform_defined:
+        # else:
+        # self.add_wfm(wfm)
+
+        AWG_WaveformManager.Run(name, 1)
+
+
+    def get_data(self):
+        '''
+        Get the data for both ADC channels for the last capture
+        returns a dict of information
+
+        # TODO: align data?  we want arrays of the same length, even if the triggers are not always on
+        # TODO: return the programmed array?  but don't want to read it from TEO memory every time
+        # TODO: what units does Vreturn come back with? is gain factored in already or not?
+        # TODO: should we convert to current or not? needs the input impedance, which can change for some reason
+        '''
+
+        # We only get waveform samples where trigger is True, so these could be shorter than wfm
+        # Vmonitor waveform
+        wf00 = self.AWG_WaveformManager.GetLastResult(0)
+        # Iout waveform
+        wf01 = self.AWG_WaveformManager.GetLastResult(1)
+
+        Vmonitor = wf00.GetWaveformDataArray()
+        Vreturn = wf01.GetWaveformDataArray()
+
+        # TODO: time? sample rate is fixed, but not all samples are necessarily captured
+        #       requires knowledge of the trigger waveforms, which we don't want to read from TEO memory
+
+        return dict(V0=Vmonitor, V1=Vreturn, idn=self.idn)
+
+
+    def align_data(self, wfm, trig1, trig2, ch1, ch2):
+        # Align measured waveforms with programmed waveform array
+        # for the case where the triggers are not all True
+
+        # Or maybe we don't care about alignment with wfm, but just
+        # that ch1 and ch2 are aligned in the case that trig1 != trig2
+
+        pass
+
+
+    ##################################### LF mode #############################################
+
+    # Source meter mode
+    # I believe you just set voltages and read currents in a software defined sequence
+
+    def LF_mode(external=False):
+        '''
+        Switch to LF mode
+        TODO: no idea if this works, test it
+        '''
+        self.LF_Measurement.SetLF_Mode(0, external)
+
+    def LF_voltage(value=None):
+        ''' Gets or sets the LF source voltage value '''
+        if value is None:
+            return self.LF_Voltage.GetValue()
+        else:
+            self.LF_Measurement.LF_Voltage.SetValue(value)
+
+    def LF_current():
+        '''
+        Reads the LF current
+        Not sure if this is how it is done!
+        '''
+        return self.LF_Measurement.LF_Measure()
+
+
+    ##################################### Tests #############################################
+
+    def Test(self):
+        A = np.sin(np.linspace(0, 100*3.1415, 100000))
+        trig1 = np.sin(np.linspace(0, 3.1415, 100000)) > .3
+
+        name = 'test'
+
+        self.HF_mode()
+        self.gain(20)
+
+        self.add_wfm(wf, name)
+
+        HF_Measurement.SetHF_Mode(0, False)
+        HF_Gain.SetValue(20)
+
+        self.output_wfm(name=name)
+
+        wf_read_length = wf.Length()
+        AWG_WaveformManager.Run("test", 1)
+        # We only get waveform samples where trigger1 is True, so these could be shorter than A
+        # Vmonitor waveform
+        wf00 = AWG_WaveformManager.GetLastResult(0)
+        # Iout waveform
+        wf01 = AWG_WaveformManager.GetLastResult(1)
+        print('Getting data...')
+        # Have to get the data one point at a time ....  takes forever obviously.
+        # Allocate
+        wflen = wf00.GetWaveformLength()
+        t = np.where(trig1)[0]
+        Vmonitor = np.array([wf00.GetWaveformData(i) for i in range(wflen)])
+        Iout =     np.array([wf01.GetWaveformData(i) for i in range(wflen)])
+        print('Plotting Data...')
+        plt.figure()
+        plt.plot(A, label='Input Waveform')
+        plt.plot(trig1, label='Sampling Trigger')
+        plt.plot(t, Vmonitor, label='V monitor [?]')
+        plt.plot(t, Iout, label='Current [?]')
+        plt.legend()
+
+        fig, ax = plt.subplots()
+        ax.plot(Vmonitor, Iout)
+
 
 #########################################################
 # UF2000 Prober #########################################
