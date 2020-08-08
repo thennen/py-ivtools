@@ -521,6 +521,7 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
         elif dtype == np.int8:
             # Maybe we should allow low resolution data (like scope samples) turn high resolution when smoothed
             # 64 bit still probably not needed
+            # pitfall is that now it's not clear whether the 8-bit data has been converted to voltage or not.
             dataout[c] = np.float32(ar)
         else:
             # Convert back to original data type (like float32)

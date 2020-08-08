@@ -11,20 +11,20 @@ HMan = Dispatch("TSX_HMan")
 # Asks the program for a device called MEMORY_TESTER
 MemTester = HMan.GetSystem('MEMORY_TESTER')
 
-def CastTo(name, to):
+def CastTo2(name, to):
     # CastTo that prints a warning if it doesn't work for some reason
     result = CastTo(to, name)
     if result is None: print(f'{name} has failed')
     return result
 
 # Access a bunch of classes used to control the TEO board
-DriverID =            CastTo('ITS_DriverIdentity'     , MemTester)
-DeviceID =            CastTo('ITS_DeviceIdentity'     , DriverID)
-DeviceControl =       CastTo('ITS_DeviceControl'      , DriverID)
-LF_Measurement =      CastTo('ITS_LF_Measurement'     , DriverID)
-HF_Measurement =      CastTo('ITS_HF_Measurement'     , DriverID)
-HF_Gain =             CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
-AWG_WaveformManager = CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
+DriverID =            CastTo2('ITS_DriverIdentity'     , MemTester)
+DeviceID =            CastTo2('ITS_DeviceIdentity'     , DriverID)
+DeviceControl =       CastTo2('ITS_DeviceControl'      , DriverID)
+LF_Measurement =      CastTo2('ITS_LF_Measurement'     , DriverID)
+HF_Measurement =      CastTo2('ITS_HF_Measurement'     , DriverID)
+HF_Gain =             CastTo2('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
+AWG_WaveformManager = CastTo2('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
 
 DeviceControl.StartDevice()
 

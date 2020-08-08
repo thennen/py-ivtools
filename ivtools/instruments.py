@@ -24,6 +24,8 @@ Then one could simply copy-paste these classes and use them without the decorato
 Another approach could be to have the module maintain weak references to all instrument instances,
 and have a function that decides whether to instantiate a new instance or return an existing one.
 I tried this for a while and I think it's a worse solution.
+
+# TODO: Maybe split this up into one file per instrument
 '''
 def ping(host):
     ping_param = "-n 1"
@@ -31,9 +33,9 @@ def ping(host):
     reply = os.popen("ping " + ping_param + " " + host).read()
     return "TTL=" in reply
 
-# TODO: Maybe split this up into one file per instrument
 
 import numpy as np
+import itertools
 import time
 import os
 import pandas as pd
@@ -46,6 +48,9 @@ from matplotlib import pyplot as plt
 from collections import deque
 import ivtools
 import logging
+import win32com.client
+from win32com.client import CastTo, WithEvents, Dispatch
+from pythoncom import com_error
 # Store visa resource manager in the visa module, so it doesn't get clobbered on reload
 import visa
 
@@ -1667,8 +1672,9 @@ class Keithley2600(object):
 class TeoSystem():
     '''
     Class for control of Teo Systems Memory Tester
+    TEO: Name=TS_MemoryTester SN=201428 Rev=2.4
 
-    TODO: put basic explanation of what the system does here
+    TODO: put specs and basic explanation of what the system does here
     fixed 500 MSamples/s sample rate for internal AWG and ADCs
     +-10V output voltage amplitude, with 14 bit resolution (~5 mV), 50 ohm output
     rise/fall time < 1 ns
@@ -1688,10 +1694,17 @@ class TeoSystem():
     Brings some of the most used methods that are inconveniently deep
     in the object tree to the top level and gives them shorter names
 
-    Adds some content-addressable features
+    Most of the functions I add start with a lowercase letter.
+    All of TEOs functions are CapitalCamelCased, sometimes with underscores.
 
-    # TODO: check what happens if you initialize twice
-    # TODO: does it need any internal state?  does it need to be BORG?
+    Adds content-addressability of waveforms for effortless replay
+
+    Seems to handle re-initialization just fine.
+    You can make two instances and they will both work
+
+
+    # TODO: does it need any internal state?  should we make it BORG?
+
     # TODO: write high level methods (e.g. pulse_and_capture..)
     # TODO: only voltage amplitude is used for the hash, maybe we should hash the triggers as well
 
@@ -1719,31 +1732,74 @@ class TeoSystem():
             LF_Measurement.LF_Voltage.SetValue(DClevel)
             is this always applied when a waveform is not playing?
             does that mean the instrument switches into LF mode when a waveform is not playing?
+
+    # TODO: there are apparently restrictions on what size samples you should send to the AWG
+            there's a chunk size or something. e.g. 1024 plays fine but anything below that seems broken
+            we need code that pads arrays that don't conform to the right chunk size
+
+    # TODO: could wrap some of the functions only for the purpose of giving them signatures, docstrings,
+            default arguments.
+
+    # TODO: should we hide the entire COM interface in a container?  like
+            self.com.DeviceControl, self.com.LF_Measurement etc
+            then on the top level we have mostly stuff that we have defined that has docstrings and
+            so on, but we can still access the com interface if needed.
+
+            downside is that when we ask for support our code will be unrecognizable to Teo.
+            therefore:
+    # TODO: should we have some kind of a debug mode that prints out all the COM calls?
+
+
+    # TODO: since there seem to be a lot of situations that cause the output to go to the negative rail
+            and blow up your device, document them here
+            seems to be whenever TSX_DM.exe connects to the system
+            1. on first initialization (Dispatch('TSX_HMan'))
+            2. if you disconnect USB and plug it back in
     '''
-    import win32com.client
-    from win32com.client import CastTo, WithEvents, Dispatch
 
     def __init__(self):
         '''
-        This will do software initialization but won't initialize the hardware
+        This will do software/hardware initialization and set HFV output voltage to zero
         requires TEO software package and drivers to be installed on the pc
+
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        Make sure there is no DUT connected when you initialize!
+        HFV output goes to the negative rail!
+        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         '''
-        # Launches program that knows about which TEO boards are connected via usb
-        HMan = Dispatch("TSX_HMan")
+        # Launches programs for software interface to TEO board
+        # TSX_DM.exe is the process we communicate with to send commands to the board
+        # TSX_HardwareManager.exe is a gui that sits in the tray area that displays whether
+        # a board is connected.  it communicates with TSX_DM.exe and does not seem to be needed
+        # for the python code to function.
+        try:
+            # Takes a few seconds the first time it runs
+            # round board gets power and HFV output goes to the negative rail!!!
+            # subsequent runs seem to be fine.
+            HMan = Dispatch('TSX_HMan')
+        except com_error as e:
+            # TODO make sure this is necessarily the meaning of this error
+            raise type(e)(str(e) +
+                          ' TEO software not installed?').with_traceback(sys.exc_info()[2])
 
         # Asks the program for a device called MEMORY_TESTER
         MemTester = HMan.GetSystem('MEMORY_TESTER')
+        if MemTester is None:
+            raise Exception('Teo software cannot locate a connected memory tester. Check USB connection.')
 
-        # Access a bunch of classes used to control the TEO board
+        # Access a bunch of classes used to control the TEO board.
+        # The contained functions appear in tab completion, but the contained classes do not
         DriverID =            TeoSystem.CastTo('ITS_DriverIdentity'     , MemTester)
         DeviceID =            TeoSystem.CastTo('ITS_DeviceIdentity'     , DriverID)
         DeviceControl =       TeoSystem.CastTo('ITS_DeviceControl'      , DriverID)
         LF_Measurement =      TeoSystem.CastTo('ITS_LF_Measurement'     , DriverID)
+        #LF_Voltage =          LF_Measurement.LF_Voltage # ?
         HF_Measurement =      TeoSystem.CastTo('ITS_HF_Measurement'     , DriverID)
+        # Is this different from HF_Gain = HF_Measurement.HF_Gain?
         HF_Gain =             TeoSystem.CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
         AWG_WaveformManager = TeoSystem.CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
 
-        # Assign methods/attributes to the instance
+        # Assign com methods/attributes to the instance
         self.HMan = HMan
         self.MemTester = MemTester
         self.DriverID = DriverID
@@ -1754,19 +1810,63 @@ class TeoSystem():
         self.HF_Gain = HF_Gain
         self.AWG_WaveformManager = AWG_WaveformManager
 
-        self.idn = self.get_idn()
+        # TODO: Break the hierarchy for some functions?
+        self.GetFreeMemory = AWG_WaveformManager.GetFreeMemory
+        self.StopDevice = DeviceControl.StopDevice
 
+
+        # TODO: assign properties that do not change, like max/min values
+        #       so that we don't keep polling the instrument for fixed values
+        #       could put it in a dataclass if we want to be tidy
+        self.idn = self.get_idn()
+        self.max_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
+        self.min_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
+        self.max_HFgain = self.HF_Gain.GetMaxValue()
+        self.min_HFgain = self.HF_Gain.GetMinValue()
+
+        # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
+        self.J29 = True
+
+
+        # Teo says this powers up round board, but the LEDS are already on by the time we call it.
+        # it appears to be fine to call it multiple times:
+        # everything still works, and I didn't see any disturbances on the HFV output
+
+        # TODO: what state do we exactly start up in the first time this is called?
+        # it seems to start up in HF mode, but I don't see the internal pulses on HFV,
+        # so maybe it starts up in external mode
+        # subsequent calls seem to stay in whatever mode it was in before,
+        # even if we lost the python-TSX_DM connection for some reason
+        DeviceControl.StartDevice()
+        # This is output even on HF mode, when the waveform isn't playing!
+        LF_Measurement.LF_Voltage.SetValue(0)
+        #self.HF_mode(external=False)
+
+
+    ###### Direct wrappers for adding python function signatures and docstrings ####
+
+    def StopDevice():
+        '''
+        Lights should turn off on the round board and HFV output probably floats.
+        Controller board remains on.
+        '''
+        self.DeviceControl.StopDevice()
+
+    # TODO add more
+
+    ################################################################################
 
     @staticmethod
     def CastTo(name, to):
-        # CastTo that prints a warning if it doesn't work for some reason
+        # CastTo that clearly lets you know something isn't working right with the software setup
         try:
             result = win32com.client.CastTo(to, name)
-        except E:
-            print(f'CastTo({name}, {to}) has failed')
-            print(E)
+        except Exception as E:
+            raise Exception(f'Teo software connection failed! CastTo({name}, {to})')
+            #print(f'CastTo({name}, {to}) has failed')
+            #print(E)
         if result is None:
-            print(f'CastTo({name}, {to}) has failed')
+            raise Exception(f'Teo software connection failed! CastTo({name}, {to})')
         return result
 
 
@@ -1805,17 +1905,20 @@ class TeoSystem():
         return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
 
 
-    def init_hardware(self, DClevel=0):
-        '''
-        Powers up the round board and sets DC voltage on the output
-        This must be done with a DUT NOT connected, otherwise you can kill it!
+    def print_function_names(self):
+        ''' Because there's no manual yet '''
+        top_level_classes = ['DeviceID', 'DeviceControl', 'LF_Measurement', 'HF_Measurement']
 
-        TODO: does this start up in LF mode?
-        TODO: what happens if we StartDevice() more than once?
-        '''
-        self.DeviceControl.StartDevice()
-        self.LF_Measurement.LF_Voltage.SetValue(DClevel)
-        self.HF_mode(external=False)
+        for tlc in top_level_classes:
+            print(c)
+            c = getattr(self, tlc)
+            for node in dir(c):
+                if not node.startswith('_'):
+                    print(f'\t{node}')
+
+
+    #DeviceControl.IsStarted()
+    #DeviceControl.ResetDevice()
 
 
     ##################################### HF mode #############################################
@@ -1838,26 +1941,31 @@ class TeoSystem():
         if HFgain is None:
             # No idea if this works
             return self.HF_Gain.GetValue()
-        elif float(HFgain) > self.HF_Gain.GetMaxValue():
-            raise Exception('Input error: Requested TEO gain too high')
+        if HFgain > self.max_HFgain:
+            raise Exception('Input error: Requested TEO gain is too high')
+        if HFgain < self.min_HFgain:
+            raise Exception('Input error: Requested TEO gain is too low')
 
         self.HF_Gain.SetValue(HFgain)
 
 
-    def add_wfm(self, varray, name=None, trig1=None, trig2=None):
+    def upload_wfm(self, varray, name=None, trig1=None, trig2=None):
         '''
         Add waveform and associated trigger arrays to TEO memory
 
         TODO: verify comments below are true
         if internal ADC mode is on
-        trig1 defines where we will get readings on channel 1 (V monitor)
-        trig2 defines where we will get readings on channel 2 (current)
+        trig1 defines where we will get readings on both channels (Vmonitor, current)
+
         if external mode is on, these are just synchronous digital signals
         that can be used however you want
 
         TODO: what datatype are the triggers supposed to be?  bool?
         TODO: what does CreateWaveform return if you use a name that already exists?
               will it overwrite the last one or will it append to it?
+
+        TODO: is there a limit to the NUMBER of waveforms that can be stored?
+        TODO: is there a limit on the length of a waveforms name?
         '''
         if name is None:
             name = self.hash_array(varray)
@@ -1873,10 +1981,19 @@ class TeoSystem():
         wf.AddSamples(varray, trig1, trig2)
 
 
+    def download_wfm(name):
+        ''' If you want to read the waveform back from teo memory '''
+        wfm = teo.AWG_WaveformManager.GetWaveform(name)
+        #wfm.All_ADC_Gates() # tested and this is not trigger1
+        #wfm.All_BER_Gates() # and this is not trigger2
+        return np.array(wfm.AllSamples())
+
+
     def output_wfm(self, wfm=None, name=None):
         '''
         Output waveform by name or by values
         in internal mode, this automatically captures on both channels (where trigger = True)
+        TODO: accept wfm XOR name, not both
         '''
         if name is None:
             name = self.hash_array(wfm)
@@ -1884,9 +2001,9 @@ class TeoSystem():
         # TODO: See if that waveform is defined, if not, define it
         # if waveform_defined:
         # else:
-        # self.add_wfm(wfm)
+        # self.upload_wfm(wfm)
 
-        AWG_WaveformManager.Run(name, 1)
+        return self.AWG_WaveformManager.Run(name, 1)
 
 
     def get_data(self):
@@ -1894,9 +2011,11 @@ class TeoSystem():
         Get the data for both ADC channels for the last capture
         returns a dict of information
 
+        Gain setting is factored in already -- gain gets divided out
+
         # TODO: align data?  we want arrays of the same length, even if the triggers are not always on
         # TODO: return the programmed array?  but don't want to read it from TEO memory every time
-        # TODO: what units does Vreturn come back with? is gain factored in already or not?
+        # TODO: what units does Vreturn come back with? something strange.
         # TODO: should we convert to current or not? needs the input impedance, which can change for some reason
         '''
 
@@ -1906,23 +2025,39 @@ class TeoSystem():
         # Iout waveform
         wf01 = self.AWG_WaveformManager.GetLastResult(1)
 
+        if wf00.IsSaturated():
+            print('TEO channel 0 is saturated!')
+        if wf01.IsSaturated():
+            print('TEO channel 1 is saturated!')
+
         Vmonitor = wf00.GetWaveformDataArray()
         Vreturn = wf01.GetWaveformDataArray()
+
+        sample_rate = wf00.GetWaveformSamplingRate()
 
         # TODO: time? sample rate is fixed, but not all samples are necessarily captured
         #       requires knowledge of the trigger waveforms, which we don't want to read from TEO memory
 
-        return dict(V0=Vmonitor, V1=Vreturn, idn=self.idn)
+        # TODO somehow add gain value that was used
+
+        return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate)
 
 
     def align_data(self, wfm, trig1, trig2, ch1, ch2):
         # Align measured waveforms with programmed waveform array
         # for the case where the triggers are not all True
-
-        # Or maybe we don't care about alignment with wfm, but just
-        # that ch1 and ch2 are aligned in the case that trig1 != trig2
-
         pass
+
+
+    def get_wfm_names(self):
+        wfm_names = []
+        for i in itertools.count():
+            name = self.AWG_WaveformManager.GetWaveformName(i)
+            if name == '':
+                break
+            else:
+                wfm_names.append(name)
+        return wfm_names
 
 
     ##################################### LF mode #############################################
@@ -1930,26 +2065,32 @@ class TeoSystem():
     # Source meter mode
     # I believe you just set voltages and read currents in a software defined sequence
 
-    def LF_mode(external=False):
+    def LF_mode(self, external=False):
         '''
         Switch to LF mode
-        TODO: no idea if this works, test it
+        (HF LED should turn off)
         '''
         self.LF_Measurement.SetLF_Mode(0, external)
 
-    def LF_voltage(value=None):
-        ''' Gets or sets the LF source voltage value '''
+    def LF_voltage(self, value=None):
+        '''
+        Gets or sets the LF source voltage value
+        Also seems to be the idle level for HF mode..
+        TODO: check that we are in the possible output voltage range
+
+        '''
         if value is None:
-            return self.LF_Voltage.GetValue()
+            return self.LF_Measurement.LF_Voltage.GetValue()
         else:
             self.LF_Measurement.LF_Voltage.SetValue(value)
 
-    def LF_current():
+    def LF_current(self, duration=2):
         '''
         Reads the LF current
         Not sure if this is how it is done!
+
         '''
-        return self.LF_Measurement.LF_Measure()
+        return self.LF_Measurement.LF_MeasureCurrent(duration)
 
 
     ##################################### Tests #############################################

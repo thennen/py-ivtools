@@ -749,13 +749,19 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     ax.collections = []
     for c in channels:
         if c in chdata.keys():
-            # Channel data may have been smoothed, in which case it may have been converted to float
-            # Here I assume that it was not converted to voltage, and still needs to be scaled
-            #if chdata[c].dtype == np.int8:
-               # Convert to voltage for plot
-            chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
-            #else:
-                #chplotdata = chdata[c]
+            # Do we need to convert to voltage?  There's not a good way to tell for sure!
+            # 8-bit channel data may have been smoothed, in which case it may have been converted to float
+            if chdata[c].dtype == np.int8:
+                # Should definitely be 8-bit values, not yet converted to V
+                # Convert to voltage for plot
+                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
+            elif 'smoothing' in chdata:
+                # I am going to assume this is smoothed 8-bit values, not converted to V yet
+                # Sorry future self for the inevitable case when this not true..
+                # e.g. if you get data with ps.get_data(..., raw=False), then smooth it, then send it here
+                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
+            else:
+                chplotdata = chdata[c]
             if 'sample_rate' in chdata:
                 # If sample rate is available, plot vs time
                 x = ivtools.analyze.maketimearray(chdata, c)
