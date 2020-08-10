@@ -567,6 +567,10 @@ def db_create_table(db_conn, table_name, data):
     # It is not possible to have two column names that only differ in case.
     # To solve that, '&' is added at the end of the second name
     col_names_encoded = db_encode(col_names)
+<<<<<<< HEAD
+=======
+    # TODO: This is not finished
+>>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
     def blacklist_filter(col_name):
         val = data[col_name]
         if val is not None:
@@ -576,7 +580,11 @@ def db_create_table(db_conn, table_name, data):
 
         dtype = type(val)
         if val_ch is None:
+<<<<<<< HEAD
             log.io(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
+=======
+            # log.io(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
+>>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
             return None
         else:
             return col_names_encoded[col_names.index(col_name)]
@@ -643,6 +651,7 @@ def db_insert_row(db_conn, table_name, row):
             val_ch = db_change_type(val)
             if val_ch is not None:
                 db_add_col(db_conn, table_name, name_encoded)
+<<<<<<< HEAD
                 log.io(f"New column added: {name}")
                 params.append(val_ch)
             else:
@@ -652,6 +661,13 @@ def db_insert_row(db_conn, table_name, row):
                     log.io(f"'{name}' is empty so won't be saved")
                 else:
                     log.io(f"Data type '{dtype}' not supported. '{name}' won't be saved")
+=======
+                # log.io(f"New column added: {name}")
+                params.append(val_ch)
+            else:
+                dtype = type(val)
+                # log.io(f"Data type '{dtype}' not supported. '{name}' won't be saved")
+>>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
@@ -718,7 +734,7 @@ def db_change_type(var):
     elif var is None:
         pass
     else:
-        log.io(f"Data type {dtype} is not registered, it will be save as str")
+        # log.io(f"Data type {dtype} is not registered, it will be save as str")
         var = repr(var)
     return var
 
@@ -771,8 +787,13 @@ def db_encode(col_names):
             i = col_names_encoded_low.index(name)
             col_names_encoded_low[i] += '&' * rep
             col_names_encoded[i + removed] += '&' * rep
+<<<<<<< HEAD
             log.io(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
                    f' {col_names_encoded[i + removed]} in the database file.')
+=======
+            # log.io(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
+            #      f' {col_names_encoded[i + removed]} in the database file.')
+>>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
 
     return col_names_encoded
 
