@@ -1961,7 +1961,7 @@ class TeoSystem():
         self.HF_Gain.SetValue(HFgain)
 
 
-    def pad_wfms(self, varray, trig1, trig2):
+    def _pad_wfms(self, varray, trig1, trig2):
         '''
         Make sure the number of samples in the waveform is compatible with the system
         pad with the standby offset value (usually zero volts)
@@ -2009,7 +2009,7 @@ class TeoSystem():
         if trig2 is None:
             trig2 = np.ones(len(varray), dtype=bool)
 
-        varray, trig1, trig2 = self.pad_wfms(varray, trig1, trig2)
+        varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
 
         wf.AddSamples(varray, trig1, trig2)
 
@@ -2195,8 +2195,9 @@ class TeoSystem():
 
     ##################################### Tests #############################################
 
-    def pulse_and_capture(self, wfm, ):
+    def pulse_and_capture(self, wfm):
         self.output_wfm(wfm)
+        return self.get_data()
 
 
 #########################################################
