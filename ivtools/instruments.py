@@ -1703,7 +1703,7 @@ class TeoSystem():
     You can make two instances and they will both work
 
 
-    # TODO: does it need any internal state?  should we make it BORG?
+    # TODO: does the class need to store any internal state?  should we make it BORG?
 
     # TODO: write high level methods (e.g. pulse_and_capture..)
     # TODO: only voltage amplitude is used for the hash, maybe we should hash the triggers as well
@@ -1831,6 +1831,11 @@ class TeoSystem():
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
 
+        # Store the same waveform/trigger data that gets uploaded to the board
+        self.waveforms = {}
+        # Store the name of the last waveform output
+        self.last_waveform = None
+
 
         # Teo says this powers up round board, but the LEDS are already on by the time we call it.
         # it appears to be fine to call it multiple times:
@@ -1942,7 +1947,6 @@ class TeoSystem():
         Unit is "steps" and each step corresponds to 1dB
         I think it can be 0 - 20?
         TODO: clarify exactly what gain this is and roughly what the units are
-        TODO: can we also poll the value of gain?
         '''
         if HFgain is None:
             # No idea if this works
@@ -1959,16 +1963,17 @@ class TeoSystem():
         '''
         Add waveform and associated trigger arrays to TEO memory
 
-        TODO: verify comments below are true
         if internal ADC mode is on
         trig1 defines where we will get readings on both channels (Vmonitor, current)
 
-        if external mode is on, these are just synchronous digital signals
+        if external mode is on, both triggers are just synchronous digital signals
         that can be used however you want
 
-        TODO: what datatype are the triggers supposed to be?  bool?
+        TODO: what datatype are the triggers supposed to be?  bool? does it work if we upload ints?
+
         TODO: what does CreateWaveform return if you use a name that already exists?
               will it overwrite the last one or will it append to it?
+              I think it just overwrites it
 
         TODO: is there a limit to the NUMBER of waveforms that can be stored?
         TODO: is there a limit on the length of a waveforms name?
@@ -1986,10 +1991,16 @@ class TeoSystem():
 
         wf.AddSamples(varray, trig1, trig2)
 
+        # this is where you would also write all the information to the class instance
+        # and hope that you don't ever get a memory overflow...
+        # TODO: prevent memory overflow.
+        self.waveforms[name] = (varray, trig1, trig2)
+
 
     def download_wfm(self, name):
         ''' If you want to read the waveform back from teo memory '''
         wfm = teo.AWG_WaveformManager.GetWaveform(name)
+        # I don't know of a way to read back the trigger arrays
         #wfm.All_ADC_Gates() # tested and this is not trigger1
         #wfm.All_BER_Gates() # and this is not trigger2
         return np.array(wfm.AllSamples())
@@ -2014,7 +2025,10 @@ class TeoSystem():
             if type(wfm) in (np.ndarray, list, tuple):
                 # Upload the waveform and try again
                 self.upload_wfm(wfm, name=name, trig1=trig1, trig2=trig2)
-                return self.AWG_WaveformManager.Run(name, n)
+                success = self.AWG_WaveformManager.Run(name, n)
+
+        if success:
+            self.last_waveform = name
 
         return success
 
@@ -2029,7 +2043,7 @@ class TeoSystem():
         # TODO: align data?  we want arrays of the same length, even if the triggers are not always on
         # TODO: return the programmed array?  but don't want to read it from TEO memory every time
         # TODO: what units does Vreturn come back with? something strange.
-        # TODO: should we convert to current or not? needs the input impedance, which can change for some reason
+        # TODO: should we convert to current or not? needs the input impedance, which can change for some reason (self.J29)
         '''
 
         # We only get waveform samples where trigger is True, so these could be shorter than wfm
@@ -2048,21 +2062,65 @@ class TeoSystem():
 
         sample_rate = wf00.GetWaveformSamplingRate()
 
+        # TODO somehow add the programmed waveform name/values and gain value that was used
+        #      if the board has no provision for this, we will use values stored in the class instance
+        prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
+
         # TODO: time? sample rate is fixed, but not all samples are necessarily captured
         #       requires knowledge of the trigger waveforms, which we don't want to read from TEO memory
         #       because that would take a lot of time (and there might not be a way to do it)
+        #       it would technically be enough to just store the inital value of trigger and the
+        #       locations of the transitions, which would be a compression in many cases
+        #
+        #       we could also think about splitting the arrays where there are gaps in the capturing
 
         t = np.arange(len(Vmonitor))/sample_rate
 
-        # TODO somehow add gain value that was used
 
-        return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t)
+        # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output trig2?
+        return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t,
+                    wfm=prog_wfm, trig1=trig1)
 
 
     def align_data(self, wfm, trig1, trig2, ch1, ch2):
         # Align measured waveforms with programmed waveform array
         # for the case where the triggers are not all True
         pass
+
+
+    @staticmethod
+    def _compress_trigger(trigarray):
+        '''
+        The trigger arrays are equal in length to the main waveform
+        but probably have far fewer transitions (maybe just one or two!)
+        convert the data into the transitions?
+
+        this won't always compress
+        "compressed" takes at least 32 bits per index
+        but only 1 bit per raw waveform sample
+        so a notable case of non-compression would be if the trigger is used to
+        downsample with a factor less than 32
+        in this case you would could use a different compression..
+
+        we would also we need to store the first value (0 or 1)
+        to know the sign of the transitions
+        so this can't return a simple uint32 array
+        could use a int32 and store the positive transitions (0 -> 1)
+        as positive ints and negative transitions (1 -> 0) as negative ints.
+
+        maybe we don't need the negative transitions
+        since sampling should always start on the positive transitions,
+        and we know the duration by the number of samples that come back
+        '''
+        # all transitions
+        diff = np.diff(trigarray, prepend=False)
+        # positive transitions
+        p = diff & trigarray
+        # negative transitions
+        # n = diff & ~trigarray
+        return np.where(p)[0]
+        #return np.int32(np.where(p)[0])
+        # -np.int32(np.where(n)[0])
 
 
     def get_wfm_names(self):
