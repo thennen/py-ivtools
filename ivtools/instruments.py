@@ -1926,7 +1926,7 @@ class TeoSystem():
         top_level_classes = ['DeviceID', 'DeviceControl', 'LF_Measurement', 'HF_Measurement']
 
         for tlc in top_level_classes:
-            print(c)
+            print(tlc)
             c = getattr(self, tlc)
             for node in dir(c):
                 if not node.startswith('_'):
@@ -1955,6 +1955,7 @@ class TeoSystem():
         '''
         if HFgain is None:
             # No idea if this works
+            # Seems that it doesn't!
             return self.HF_Gain.GetValue()
         if HFgain > self.max_HFgain:
             raise Exception('Input error: Requested TEO gain is too high')
@@ -2004,6 +2005,9 @@ class TeoSystem():
         if external mode is on, both triggers are just synchronous digital signals
         that can be used however you want
 
+        Waveforms remain in memory even if round board is turned off, but they are lost if
+        controller board loses power
+
         TODO: what datatype are the triggers supposed to be?  bool? does it work if we upload ints?
 
         TODO: what does CreateWaveform return if you use a name that already exists?
@@ -2015,6 +2019,8 @@ class TeoSystem():
         '''
         if name is None:
             name = self.hash_array(varray)
+            # TODO: could ask if this hash is already in memory, then don't bother to upload again
+            #       but make sure the triggers are also hashed in that case
 
         wf = self.AWG_WaveformManager.CreateWaveform(name)
 
@@ -2036,7 +2042,7 @@ class TeoSystem():
 
     def download_wfm(self, name):
         ''' If you want to read the waveform back from teo memory '''
-        wfm = teo.AWG_WaveformManager.GetWaveform(name)
+        wfm = self.AWG_WaveformManager.GetWaveform(name)
         # I don't know of a way to read back the trigger arrays
         #wfm.All_ADC_Gates() # tested and this is not trigger1
         #wfm.All_BER_Gates() # and this is not trigger2
@@ -2103,7 +2109,13 @@ class TeoSystem():
 
         # TODO somehow add the programmed waveform name/values and gain value that was used
         #      if the board has no provision for this, we will use values stored in the class instance
-        prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
+
+        # should always be there, but maybe you reset the instance state but wfm was still in teo memory..
+        if self.last_waveform in self.waveforms:
+            prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
+        else:
+            prog_wfm = trig1 = trig2 = None
+
         gain = self.last_gain
 
         # TODO: time? sample rate is fixed, but not all samples are necessarily captured
@@ -2116,11 +2128,17 @@ class TeoSystem():
 
         t = np.arange(len(Vmonitor))/sample_rate
 
+        # TODO: for some reason we can get one or two 0s at the end of the measured waveforms
+        #       this makes them longer than the programmed waveform, or longer than the number
+        #       of Trues in trigger1
 
         # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output the triggers?
 
+        # Very approximate conversion to current
+        I = vreturn * 1.988e-5
+
         return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t,
-                    wfm=prog_wfm, gain=gain)
+                    wfm=prog_wfm, gain=gain, I=I)
 
 
     def align_data(self, wfm, trig1, trig2, ch1, ch2):
