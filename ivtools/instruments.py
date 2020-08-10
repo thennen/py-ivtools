@@ -1961,6 +1961,24 @@ class TeoSystem():
         self.HF_Gain.SetValue(HFgain)
 
 
+    def pad_wfms(self, varray, trig1, trig2):
+        '''
+        Make sure the number of samples in the waveform is compatible with the system
+        pad with the standby offset value (usually zero volts)
+        TODO: find out what the real limitation on sample size is
+        '''
+        lenv = len(varray)
+        if lenv < 1024:
+            npad = 1024 - lenv
+            Vstandby = self.LF_Measurement.LF_Voltage.GetValue()
+            varray = np.concatenate((varray, np.repeat(Vstandby, npad)))
+            # Maybe the trigs should be padded with False istead?
+            trig1 = np.concatenate((trig1, np.repeat(trig1[-1], npad)))
+            trig2 = np.concatenate((trig2, np.repeat(trig2[-2], npad)))
+
+        return varray, trig1, trig2
+
+
     def upload_wfm(self, varray, name=None, trig1=None, trig2=None):
         '''
         Add waveform and associated trigger arrays to TEO memory
@@ -1990,6 +2008,8 @@ class TeoSystem():
 
         if trig2 is None:
             trig2 = np.ones(len(varray), dtype=bool)
+
+        varray, trig1, trig2 = self.pad_wfms(varray, trig1, trig2)
 
         wf.AddSamples(varray, trig1, trig2)
 
@@ -2056,6 +2076,7 @@ class TeoSystem():
         wf01 = self.AWG_WaveformManager.GetLastResult(1)
 
         if wf00.IsSaturated():
+            # I don't think this will ever happen
             print('TEO channel 0 is saturated!')
         if wf01.IsSaturated():
             print('TEO channel 1 is saturated!')
