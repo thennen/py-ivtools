@@ -1835,6 +1835,8 @@ class TeoSystem():
         self.waveforms = {}
         # Store the name of the last waveform output
         self.last_waveform = None
+        # and gain used
+        self.last_gain = None
 
 
         # Teo says this powers up round board, but the LEDS are already on by the time we call it.
@@ -2029,6 +2031,7 @@ class TeoSystem():
 
         if success:
             self.last_waveform = name
+            self.last_gain = self.gain()
 
         return success
 
@@ -2065,6 +2068,7 @@ class TeoSystem():
         # TODO somehow add the programmed waveform name/values and gain value that was used
         #      if the board has no provision for this, we will use values stored in the class instance
         prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
+        gain = self.last_gain
 
         # TODO: time? sample rate is fixed, but not all samples are necessarily captured
         #       requires knowledge of the trigger waveforms, which we don't want to read from TEO memory
@@ -2077,9 +2081,10 @@ class TeoSystem():
         t = np.arange(len(Vmonitor))/sample_rate
 
 
-        # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output trig2?
+        # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output the triggers?
+
         return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t,
-                    wfm=prog_wfm, trig1=trig1)
+                    wfm=prog_wfm, gain=gain)
 
 
     def align_data(self, wfm, trig1, trig2, ch1, ch2):
