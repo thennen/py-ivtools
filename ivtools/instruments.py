@@ -1755,6 +1755,10 @@ class TeoSystem():
             seems to be whenever TSX_DM.exe connects to the system
             1. on first initialization (Dispatch('TSX_HMan'))
             2. if you disconnect USB and plug it back in
+
+    # TODO: should we store a calibration to remove the offsets? monitor has a big offset and for
+            the other channel it depends on gain.
+
     '''
 
     def __init__(self):
@@ -1876,12 +1880,14 @@ class TeoSystem():
         If you don't want to explicitly name the arrays, you can hash them and use that as the name
         then everything is content-addressable
         sha1 is ~fast and there's no security concern obviously
+        time for a random float64 array of length 2^28 = 256M is about 2 seconds
+        you should just name the arrays if you have really long ones.
         '''
         import hashlib
-        return hashlib.sha1(arr).hexdigest()
-        #return hashlib.md5(arr).hexdigest()
+        return hashlib.sha1(array).hexdigest()
+        #return hashlib.md5(array).hexdigest()
         # There is also this?
-        # hash(arr.tostring())
+        # hash(array.tostring())
 
 
     @staticmethod
@@ -1981,7 +1987,7 @@ class TeoSystem():
         wf.AddSamples(varray, trig1, trig2)
 
 
-    def download_wfm(name):
+    def download_wfm(self, name):
         ''' If you want to read the waveform back from teo memory '''
         wfm = teo.AWG_WaveformManager.GetWaveform(name)
         #wfm.All_ADC_Gates() # tested and this is not trigger1
@@ -1989,21 +1995,28 @@ class TeoSystem():
         return np.array(wfm.AllSamples())
 
 
-    def output_wfm(self, wfm=None, name=None):
+    def output_wfm(self, wfm, n=1, trig1=None, trig2=None):
         '''
         Output waveform by name or by values
         in internal mode, this automatically captures on both channels (where trigger = True)
-        TODO: accept wfm XOR name, not both
+
+        careful if using automatic names, right now we only hash the wfm not the triggers
+        so if you try to change the triggers but not the wfm, they will not update
         '''
-        if name is None:
+        if type(wfm) is str:
+            name = wfm
+        else:
             name = self.hash_array(wfm)
 
-        # TODO: See if that waveform is defined, if not, define it
-        # if waveform_defined:
-        # else:
-        # self.upload_wfm(wfm)
+        # Returns False if there is no waveform with that name
+        success = self.AWG_WaveformManager.Run(name, n)
+        if not success:
+            if type(wfm) in (np.ndarray, list, tuple):
+                # Upload the waveform and try again
+                self.upload_wfm(wfm, name=name, trig1=trig1, trig2=trig2)
+                return self.AWG_WaveformManager.Run(name, n)
 
-        return self.AWG_WaveformManager.Run(name, 1)
+        return success
 
 
     def get_data(self):
@@ -2037,10 +2050,13 @@ class TeoSystem():
 
         # TODO: time? sample rate is fixed, but not all samples are necessarily captured
         #       requires knowledge of the trigger waveforms, which we don't want to read from TEO memory
+        #       because that would take a lot of time (and there might not be a way to do it)
+
+        t = np.arange(len(Vmonitor))/sample_rate
 
         # TODO somehow add gain value that was used
 
-        return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate)
+        return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t)
 
 
     def align_data(self, wfm, trig1, trig2, ch1, ch2):
@@ -2095,46 +2111,8 @@ class TeoSystem():
 
     ##################################### Tests #############################################
 
-    def Test(self):
-        A = np.sin(np.linspace(0, 100*3.1415, 100000))
-        trig1 = np.sin(np.linspace(0, 3.1415, 100000)) > .3
-
-        name = 'test'
-
-        self.HF_mode()
-        self.gain(20)
-
-        self.add_wfm(wf, name)
-
-        HF_Measurement.SetHF_Mode(0, False)
-        HF_Gain.SetValue(20)
-
-        self.output_wfm(name=name)
-
-        wf_read_length = wf.Length()
-        AWG_WaveformManager.Run("test", 1)
-        # We only get waveform samples where trigger1 is True, so these could be shorter than A
-        # Vmonitor waveform
-        wf00 = AWG_WaveformManager.GetLastResult(0)
-        # Iout waveform
-        wf01 = AWG_WaveformManager.GetLastResult(1)
-        print('Getting data...')
-        # Have to get the data one point at a time ....  takes forever obviously.
-        # Allocate
-        wflen = wf00.GetWaveformLength()
-        t = np.where(trig1)[0]
-        Vmonitor = np.array([wf00.GetWaveformData(i) for i in range(wflen)])
-        Iout =     np.array([wf01.GetWaveformData(i) for i in range(wflen)])
-        print('Plotting Data...')
-        plt.figure()
-        plt.plot(A, label='Input Waveform')
-        plt.plot(trig1, label='Sampling Trigger')
-        plt.plot(t, Vmonitor, label='V monitor [?]')
-        plt.plot(t, Iout, label='Current [?]')
-        plt.legend()
-
-        fig, ax = plt.subplots()
-        ax.plot(Vmonitor, Iout)
+    def pulse_and_capture(self, wfm, ):
+        self.output_wfm(wfm)
 
 
 #########################################################
