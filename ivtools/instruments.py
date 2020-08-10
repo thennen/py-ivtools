@@ -1831,6 +1831,9 @@ class TeoSystem():
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
 
+        # set the power line frequency for averaging over integer cycles
+        self.PLF = 50
+
         # Store the same waveform/trigger data that gets uploaded to the board
         self.waveforms = {}
         # Store the name of the last waveform output
@@ -1960,6 +1963,16 @@ class TeoSystem():
 
         self.HF_Gain.SetValue(HFgain)
 
+    def LFgain(self, LFgain=None):
+        '''
+        Apparently there is a gain setting for LF as well
+        Need to hear from TEO how this is supposed to be used
+
+        GetMinValue and GetMaxValue both return 0
+        so I have a feeling this is not used
+        '''
+        return teo.LF_Measurement.LF_Gain.GetValue()
+
 
     def _pad_wfms(self, varray, trig1, trig2):
         '''
@@ -1971,6 +1984,8 @@ class TeoSystem():
         if lenv < 1024:
             npad = 1024 - lenv
             Vstandby = self.LF_Measurement.LF_Voltage.GetValue()
+            # resolution is not below 1 mV, and LF_Voltage returns some strange numbers
+            Vstandby = np.round(Vstandby, 3)
             varray = np.concatenate((varray, np.repeat(Vstandby, npad)))
             # Maybe the trigs should be padded with False istead?
             trig1 = np.concatenate((trig1, np.repeat(trig1[-1], npad)))
@@ -2164,6 +2179,10 @@ class TeoSystem():
 
     # Source meter mode
     # I believe you just set voltages and read currents in a software defined sequence
+    # TODO: is there a sequence mode and is there any advantage to using it?
+    # TODO: what is the output impedance in LF mode?  hope it's still 50 so we don't risk blowing up 50 ohm inputs
+    # TODO: will we blow up the input if we have more than 4 uA? how careful should we be?
+    # TODO: is the current range bipolar?
 
     def LF_mode(self, external=False):
         '''
@@ -2175,29 +2194,78 @@ class TeoSystem():
     def LF_voltage(self, value=None):
         '''
         Gets or sets the LF source voltage value
-        Also seems to be the idle level for HF mode..
-        TODO: check that we are in the possible output voltage range
 
+        Also seems to be the idle level for HF mode..
+        also seems to NOT change the voltage level in LF mode.. ?
+
+        TODO: check that we are in the possible output voltage range
+        TODO: rename?  LF_Voltage is the name of a class within LF_Measurement
         '''
         if value is None:
             return self.LF_Measurement.LF_Voltage.GetValue()
         else:
             self.LF_Measurement.LF_Voltage.SetValue(value)
 
-    def LF_current(self, duration=2):
+    def LF_current(self, NPLC=10):
         '''
         Reads the LF current
-        Not sure if this is how it is done!
+
+        specs say ADC is 24 bits, 4 uA range, 1pA resolution
+        but in practice the noise is much higher than 1pA
+
+        Not sure if this is the right way to do it!
+
+        # TODO Verify below
+        I THINK:
+        the ADC has a sample rate of something like 31,248 Hz, but the buffer size is 8,000
+        LF_MeasureCurrent(duration) returns all the samples it could store for that duration
+        you can then average them.
+        but it means we can't average longer than 256 ms in a single shot
+        which is 12.8 PLCS for 50 Hz line freq
 
         '''
-        return self.LF_Measurement.LF_MeasureCurrent(duration)
+        if NPLC > .256 * self.PLF:
+            print(f'I THINK the LFOutput buffer is too small for NPLC={NPLC}')
+
+        duration = NPLC / self.PLF
+        Iwfm = self.LF_Measurement.LF_MeasureCurrent(duration)
+        if Iwfm.IsSaturated():
+            print('TEO LFOutput is saturated!')
+        I = Iwfm.GetWaveformDataArray()
+        return np.mean(I)
+
 
 
     ##################################### Tests #############################################
 
     def pulse_and_capture(self, wfm):
+        self.HF_mode(external=False)
         self.output_wfm(wfm)
         return self.get_data()
+
+    def measure_leakage(self, Vvalues, avgtime):
+        '''
+        doesn't work, because LF_voltage doesn't set the voltage in LF mode..
+        '''
+        self.LF_mode(external=False)
+
+        Vidle = self.LF_voltage()
+
+        I = []
+        for V in Vvalues:
+            self.LF_voltage(V)
+            time.sleep(.1)
+            i = self.LF_current(avgtime)
+            I.append(i)
+
+        I = np.array(I)
+
+        # Go back to the idle level
+        self.LF_voltage(Vidle)
+
+        return dict(I=I, V=Vvalues)
+
+
 
 
 #########################################################
