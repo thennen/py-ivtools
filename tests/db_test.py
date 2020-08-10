@@ -148,20 +148,6 @@ def test1():
         c.execute(f"DROP TABLE {table}")
     io.db_create_table(db_conn, table, data)
     io.db_commit(db_conn)
-<<<<<<< HEAD
-
-def test2():
-    data = io.db_load(db, 'none_test')
-    data = data.replace({'None': None})
-    data = data.replace({np.nan: None})
-    data = data.iloc[:,0:15]
-
-    db_conn = io.db_connect(db)
-    table = 'test'
-    if io.db_exist_table(db_conn, table):
-        c = db_conn.cursor()
-        c.execute(f"DROP TABLE {table}")
-=======
 
 def test2():
     data = io.db_load(db, 'none_test')
@@ -190,25 +176,8 @@ def test2():
         row = data.iloc[n]
         io.db_insert_row(db_conn, "none_nones", row)
     io.db_commit(db_conn)
->>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
 
-    row0 = data.iloc[0]
-    io.db_create_table(db_conn, table, row0)
-    N = len(data)
-    for n in range(N-1):
-        row = data.iloc[n+1]
-        io.db_insert_row(db_conn, table, row)
-    io.db_commit(db_conn)
 
-<<<<<<< HEAD
-=======
-    data = io.db_load(db, 'none_nones')
-    print(data)
-    print('+' * 100)
-    # print(f"{data.iloc[8]['X']} -> {type(data.iloc[8]['X'])}")
-    # print('+' * 100)
-
->>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
 def change_None():
     data = io.db_load('D:\metadata.db', 'meta')
     data = data.replace({'None': None})
@@ -239,10 +208,7 @@ def change_None():
 
 if __name__ == '__main__':
 
-<<<<<<< HEAD
     test2()
-=======
-    change_None()
->>>>>>> f0ff6d633b730154bd6a718593721e9510a852bc
+
 
 
