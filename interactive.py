@@ -67,7 +67,7 @@ from ivtools.io import *
 from ivtools.instruments import *
 import logging
 
-log = logging.getLogger('my_logger')
+log = logging.getLogger('interactive')
 
 
 magic = get_ipython().magic
@@ -88,10 +88,9 @@ if firstrun:
     magic('matplotlib')
 
     # Preview of the logging colors
-    print('')
-    print('Logging color code:')
-    for k in ivtools.logging_levels.keys():
-        getattr(log, k.lower())(k)
+    print('\nLogging color code:')
+    for logger in ivtools.loggers.keys():
+        print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
 
 hostname = settings.hostname
 username = settings.username
@@ -100,11 +99,11 @@ datestr = time.strftime('%Y-%m-%d')
 #datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
-    log.interactive('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
-    log.interactive('Automatically committing changes!')
+    log.warning('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
+    log.warning('Automatically committing changes!')
     gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
-    log.interactive('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
+    log.warning('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch
 # problem is I don't want to pollute my commit history with a million autocommits
 # and git is not really designed to commit to branches that are not checked out
@@ -201,8 +200,8 @@ subfolder = datestr
 if len(sys.argv) > 1:
     # Can give a folder name with command line argument
     subfolder += '_' + sys.argv[1]
-log.interactive('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
-log.interactive('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
+log.info('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+log.info('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 io.makefolder(datafolder, subfolder)
 
 
@@ -217,10 +216,10 @@ def cd_data():
 if not iplots.plotters:
     if ps is not None:
         iplots.plotters = pico_plotters
-        log.interactive('Setting up default plots for picoscope')
+        log.info('Setting up default plots for picoscope')
     elif k is not None:
         iplots.plotters = keithley_plotters
-        log.interactive('Setting up default plots for keithley')
+        log.info('Setting up default plots for keithley')
 
 ### Runs only the first time ###
 if firstrun:
@@ -291,7 +290,7 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
     if data is None:
         global d
         if type(d) in (dict, list, pd.Series, pd.DataFrame):
-            log.interactive('No data passed to savedata(). Using global variable d.')
+            log.warning('No data passed to savedata(). Using global variable d.')
             data = d
     if folder_path is None:
         folder_path = datadir()

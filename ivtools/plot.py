@@ -16,7 +16,7 @@ from functools import wraps
 from collections import deque
 import logging
 
-log = logging.getLogger('my_logger')
+log = logging.getLogger('plots')
 
 
 def arrowpath(x, y, ax=None, **kwargs):
@@ -109,7 +109,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     # We know how to deal with these ones
     overlap_args -= set(('x', 'y', 'c', 'ax'))
     if any(overlap_args):
-        log.plots(f'the following args are used by both plotiv and plotfunc, and will not pass through: {overlap_args}')
+        log.warning(f'the following args are used by both plotiv and plotfunc, and will not pass through: {overlap_args}')
 
     # might be one curve, might be many
     dtype = type(data)
@@ -283,7 +283,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         ivtype = type(iv)
         if ivtype not in (dict, pd.Series):
             # what the F, you passed a list with something weird in it
-            log.plots('plotiv did not understand the input datatype {}'.format(ivtype))
+            log.error('plotiv did not understand the input datatype {}'.format(ivtype))
             continue
 
         ## construct the x and y arrays that you actually want to plot
@@ -326,7 +326,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
 
         # X and Y should be the same length, if they are not, truncate one
         if lenX != lenY:
-            log.plots('_plot_single_iv: X and Y arrays are not the same length! Truncating the longer one.')
+            log.warning('_plot_single_iv: X and Y arrays are not the same length! Truncating the longer one.')
             if lenX > lenY:
                 X = X[:lenY]
                 lenX = lenY
@@ -336,7 +336,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
 
         if maxsamples is not None and maxsamples < lenX:
             # Down sample data
-            log.plots('Downsampling data for plot!!')
+            log.warning('Downsampling data for plot!!')
             step = int(lenX/maxsamples)
             X = X[np.arange(0, lenX, step)]
             Y = Y[np.arange(0, lenY, step)]
@@ -657,7 +657,7 @@ def grouped_hist(df, col, groupby=None, range=None, bins=30, logx=True, ax=None)
             logrange = [np.log10(v) for v in range]
             hist, edges = np.histogram(x[~np.isnan(x)], bins=bins, range=logrange)
             if any(hist < 0):
-                log.plots('wtf')
+                log.error('wtf')
             edges = 10**edges
             ax.set_xscale('log')
         else:
@@ -950,7 +950,7 @@ class InteractiveFigs(object):
                         try:
                             data = pp(data)
                         except:
-                            log.plots('Pre-processing failed!')
+                            log.error('Pre-processing failed!')
                         # In case you want to access it without running the processing again
                     self.processed_data = data
             for axnum, plotter in self.plotters:
@@ -965,7 +965,7 @@ class InteractiveFigs(object):
                         ax.set_ylabel(ax.get_ylabel(), color=color)
                     except Exception as e:
                         ax.plot([])
-                        log.plots('Plotter number {} failed!: {}'.format(axnum, e))
+                        log.error('Plotter number {} failed!: {}'.format(axnum, e))
                     ax.get_figure().canvas.draw()
             mypause(0.05)
 
@@ -1003,7 +1003,7 @@ class InteractiveFigs(object):
                     try:
                         plotter(data, ax, color=color)
                     except Exception as e:
-                        log.plots('Plotter number {} failed!: {}'.format(axnum, e))
+                        log.error('Plotter number {} failed!: {}'.format(axnum, e))
                 else:
                     # Simply set the line color after plotting
                     # could mess up the color cycle.
@@ -1011,7 +1011,7 @@ class InteractiveFigs(object):
                         plotter(data, ax)
                         ax.lines[-1].set_color(color)
                     except:
-                        log.plots('Plotter number {} failed!'.format(axnum))
+                        log.error('Plotter number {} failed!'.format(axnum))
                 ax.get_figure().canvas.draw()
             mypause(0.05)
 
@@ -1115,7 +1115,7 @@ def plotter(plotfunc, cmap='jet', maxloops=100, maxsamples=5000, clear=False):
                     kwargs['color'] = colors[i]
                 plotfunc(d, ax, *args, **kwargs)
         else:
-            log.plots('Cannot plot that kind of data')
+            log.error('Cannot plot that kind of data')
     return wrap
 
 def plottertemplate(data, ax, **kwargs):
@@ -1141,7 +1141,7 @@ def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
     else:
         nloops = 1
     if nloops > maxloops:
-        log.plots('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        log.info('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
         loopstep = int(nloops / 99)
         data = data[::loopstep]
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -1183,7 +1183,7 @@ def chplotter(data, ax=None, **kwargs):
     if len(channels) > 0:
         lendata = len(data[channels[0]])
         if lendata > 100000:
-            log.plots('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
+            log.warning('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
             step = lendata // 50000
             #plotdata = ivtools.analyze.decimate(data, step, columns=channels)
             plotdata = ivtools.analyze.sliceiv(data, step=step, columns=channels)
@@ -1406,11 +1406,11 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     if data is None:
         # Check for global variables ...
         # Sorry if this offends you ..  it offends me
-        log.plots('No data passed. Looking for global variable d')
+        log.warning('No data passed. Looking for global variable d')
         try:
             data = d
         except:
-            log.plots('No global variable d. Looking for global variable df')
+            log.warning('No global variable d. Looking for global variable df')
             try:
                 data = df
             except:
@@ -1424,7 +1424,7 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
         xmax = int(xmax)
         n = xmax - xmin
         step = max(1, int(n / 1000))
-        log.plots('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
+        log.info('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
         plotfunc(data[xmin:xmax+1:step], **kwargs)
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
@@ -1446,11 +1446,11 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
     if data is None:
         # Check for global variables ...
         # Sorry if this offends you ..  it offends me
-        log.plots('No data passed. Looking for global variable d')
+        log.warning('No data passed. Looking for global variable d')
         try:
             data = d
         except:
-            log.plots('No global variable d. Looking for global variable df')
+            log.warning('No global variable d. Looking for global variable df')
             try:
                 data = df
             except:
@@ -1469,19 +1469,19 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
         ymin = min(y1, y2)
         ymax = max(y1, y2)
 
-        #log.plots("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
-        #log.plots("The button you used were: %s %s" % (eclick.button, erelease.button))
+        log.debug("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        log.debug("The button you used were: %s %s" % (eclick.button, erelease.button))
         # Find the data that has values in the selected range
-        log.plots(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+        log.info(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
         def inside(d):
             X = d[x]
             Y = d[y]
             return np.any((X > xmin) & (X < xmax) & (Y > ymin) & (Y < ymax))
         if type(data) is pd.DataFrame:
-            log.plots(data.index[data.apply(inside, 1)])
+            log.info(data.index[data.apply(inside, 1)])
         else:
             # Should be a list of dicts/Series
-            log.plots([i for i,d in enumerate(data) if inside(d)])
+            log.info([i for i,d in enumerate(data) if inside(d)])
     rectprops = dict(facecolor='blue', alpha=0.3)
     RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
     return RS

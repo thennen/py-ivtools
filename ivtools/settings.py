@@ -56,17 +56,16 @@ username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
 
+'''
+logging_print allows you to chose how verbose the logging module is. You can custom every level 
+by setting 'all' to 'None', or you can set it to 'True' or 'False' to change all levels.
+'''
 logging_prints = {
-    'DEBUG': True,
-    'INFO': True,
-    'WARNING': True,
-    'ERROR': True,
-    'CRITICAL': True,
-    'instruments': True,
-    'io': True,
-    'plots': True,
-    'analysis': True,
-    'interactive': True
+    'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+    'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+    'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+    'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+    'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
 }
 
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
@@ -90,16 +89,11 @@ if hostname == 'pciwe46':
     elif username == 'munoz':
         datafolder = r'D:\{}\ivdata'.format(username)
         logging_prints = {
-            'DEBUG': True,
-            'INFO': True,
-            'WARNING': True,
-            'ERROR': True,
-            'CRITICAL': True,
-            'instruments': True,
-            'io': True,
-            'plots': True,
-            'analysis': True,
-            'interactive': True
+            'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
         }
     else:
         datafolder = r'D:\{}\ivdata'.format(username)

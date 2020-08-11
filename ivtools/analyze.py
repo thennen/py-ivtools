@@ -32,7 +32,7 @@ import sys
 from scipy.signal import savgol_filter as savgol
 import logging
 
-log = logging.getLogger('my_logger')
+log = logging.getLogger('analyze')
 
 #### Some infrastructure
 
@@ -158,7 +158,7 @@ def ivfunc(func):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
-            log.analysis('ivfunc did not understand the input datatype {}'.format(dtype))
+            log.warning('ivfunc did not understand the input datatype {}'.format(dtype))
     return func_wrapper
 
 
@@ -886,7 +886,7 @@ def meaniv(data, truncate=False, columns=None):
         # If the arrays are different sizes, truncate them all to the smallest size so that they can be averaged
         if not np.all(np.diff(lens) == 0):
             trunc = np.min(lens)
-            log.analysis(f'Truncating data to length {trunc}')
+            log.warning(f'Truncating data to length {trunc}')
             data = sliceiv(data, stop=trunc)
 
     dataout = {}
@@ -1194,7 +1194,7 @@ def longest_monotonic(data, column='I'):
     segment_lengths = [len(gp[1]) for gp in monolists]
     longest = np.argmax(segment_lengths)
     if segment_lengths[longest] < lenI * 0.4:
-        log.analysis('No monotonic segments longer than 40% of the {} array were found!'.format(column))
+        log.error('No monotonic segments longer than 40% of the {} array were found!'.format(column))
     direction = int(monolists[longest][0])
     startind = monolists[longest][1][0][0]
     endind = monolists[longest][1][-1][0] + 2
@@ -1238,7 +1238,7 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     I = data[y]
     mask = (V <= vmax) & (V >= vmin) & ~np.isnan(V) & ~np.isnan(I)
     if not any(mask):
-        log.analysis('Nothing to fit!')
+        log.error('Nothing to fit!')
         return np.nan
     poly = np.polyfit(I[mask], V[mask], 1)
     if 'units' in data:
@@ -1251,7 +1251,7 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
             elif Iunit == 'mA':
                 return poly[0] * 1e3
             else:
-                log.analysis('Did not understand current unit!')
+                log.error('Did not understand current unit!')
     return poly[0]
 
 
@@ -1862,7 +1862,7 @@ def osc_analyze(data, x='V', y='I', ithresh=200e-6, hys=25, debug=False):
         dfcycle['i'] = i[:-1]
         return dfcycle
     else:
-        log.analysis('No cycles detected!')
+        log.error('No cycles detected!')
         return {}
 
 
@@ -1960,15 +1960,15 @@ def filter_byhand(df, groupby=None, **kwargs):
     Can also truncate each loop with the up/down arrows
     Can select one or zero per group
     '''
-    log.analysis('\n\n')
-    log.analysis('left arrow: previous loop')
-    log.analysis('right arrow: next loop')
-    log.analysis('down arrow: truncate n data points')
-    log.analysis('left arrow: untruncate n data points')
-    log.analysis('[1-9]: Set n')
-    log.analysis('Enter: select loop and move to the next')
-    log.analysis('q: discard')
-    log.analysis('\n\n')
+    log.info('\n\n')
+    log.info('left arrow: previous loop')
+    log.info('right arrow: next loop')
+    log.info('down arrow: truncate n data points')
+    log.info('left arrow: untruncate n data points')
+    log.info('[1-9]: Set n')
+    log.info('Enter: select loop and move to the next')
+    log.info('q: discard')
+    log.info('\n\n')
 
     # Shitty manual loop selection written as fast as I could
     def selectloop(data):
@@ -1982,7 +1982,7 @@ def filter_byhand(df, groupby=None, **kwargs):
                 self.step = 1
                 self.select = False
             def press(self, event):
-                log.analysis('press', event.key)
+                log.info('press', event.key)
                 if event.key == 'right':
                     # plot next loop
                     self.l = None
@@ -2013,11 +2013,11 @@ def filter_byhand(df, groupby=None, **kwargs):
 
                 if len(data) >= self.n + 1:
                     del ax.lines[-1]
-                    log.analysis(self.n, self.l)
-                    #log.analysis(data.iloc[self.n].Irange[0])
+                    log.info(self.n, self.l)
+                    log.debug(data.iloc[self.n].Irange[0])
                     ivtools.plot.plotiv(sliceiv(data.iloc[self.n], stop=self.l), x='Vcalc', color='red', ax=ax)
                 else:
-                    log.analysis('no more data')
+                    log.info('no more data')
                     self.n -= 1
 
                 sys.stdout.flush()
