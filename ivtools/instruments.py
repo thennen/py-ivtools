@@ -46,6 +46,7 @@ from serial.tools.list_ports import grep as comgrep
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 from collections import deque
+from numbers import Number
 import ivtools
 import logging
 import win32com.client
@@ -1706,19 +1707,18 @@ class TeoSystem():
     # TODO: does the class need to store any internal state?  should we make it BORG?
 
     # TODO: write high level methods (e.g. pulse_and_capture..)
-    # TODO: only voltage amplitude is used for the hash, maybe we should hash the triggers as well
 
-    # TODO: there's a jumper on the board (J29) that sets return impedance to 100 ohm for some reason
-    #       I don't know if the software can detect the state of that jumper.  so we need some attribute here
+    # TODO: only voltage amplitude is used for the hash, maybe we should hash the triggers as well
 
     # TODO: how can we be aware of the TEO memory state?  do we care?
 
     # TODO: TEO remembers waveforms that you upload by name
             this is to minimize unecessary data transfer, which takes time
-            we should also have this class remember the waveforms in a similar way
+            we should also have this class remember the waveforms in a similar way (done)
             would be useful then to also have a method that synchronizes the memories
 
-    # TODO: methods to read the waveforms back that are already on TEO memory?
+    # TODO: methods to read the waveforms back that are already on TEO memory? (done)
+            but is there a way to read the triggers back?
 
     # TODO: figure out what the gain really does and document it
             at what voltage does the ADC saturate vs gain?
@@ -1726,16 +1726,18 @@ class TeoSystem():
     # TODO: do all the commands work regardless of which mode we are in? e.g. waveform upload, gain setting
 
     # TODO: what happens when we send commands while the board is busy?
-            is there a way to send consecutive shots of a wfm without a python for-loop?
 
     # TODO: my understanding is that there is an idle voltage level set by
             LF_Measurement.LF_Voltage.SetValue(DClevel)
-            is this always applied when a waveform is not playing?
-            does that mean the instrument switches into LF mode when a waveform is not playing?
+            is this always applied when a waveform is not playing? (yes)
+            does that mean the instrument switches into LF mode when a waveform is not playing? (no)
 
     # TODO: there are apparently restrictions on what size samples you should send to the AWG
             there's a chunk size or something. e.g. 1024 plays fine but anything below that seems broken
             we need code that pads arrays that don't conform to the right chunk size
+            Teo said that they need to be padded to a multiple of 2048
+            but that his software/firmware is supposed to do it for you
+            but there are bugs (try very short waveforms)
 
     # TODO: could wrap some of the functions only for the purpose of giving them signatures, docstrings,
             default arguments.
@@ -1757,29 +1759,30 @@ class TeoSystem():
             2. if you disconnect USB and plug it back in
 
     # TODO: should we store a calibration to remove the offsets? monitor has a big offset and for
-            the other channel it depends on gain.
+            the other channel it depends a bit on the gain setting.
 
     '''
 
     def __init__(self):
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
-        requires TEO software package and drivers to be installed on the pc
+        requires TEO software package and drivers to be installed on the PC
 
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         Make sure there is no DUT connected when you initialize!
         HFV output goes to the negative rail!
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         '''
-        # Launches programs for software interface to TEO board
-        # TSX_DM.exe is the process we communicate with to send commands to the board
-        # TSX_HardwareManager.exe is a gui that sits in the tray area that displays whether
-        # a board is connected.  it communicates with TSX_DM.exe and does not seem to be needed
-        # for the python code to function.
         try:
-            # Takes a few seconds the first time it runs
-            # round board gets power and HFV output goes to the negative rail!!!
-            # subsequent runs seem to be fine.
+            # Launches programs for software interface to TEO board
+            # TSX_DM.exe is the process we communicate with to send commands to the board
+            # TSX_HardwareManager.exe is a gui that sits in the tray area that displays whether
+            # a board is connected.  it communicates with TSX_DM.exe and does not seem to be needed
+            # for the python code to function.
+            # First time it runs:
+            #   Takes a few seconds to start
+            #   round board gets power and HFV output goes to the negative rail!!!
+            # subsequent runs also work and seem not to produce anything bad on the output
             HMan = Dispatch('TSX_HMan')
         except com_error as e:
             # TODO make sure this is necessarily the meaning of this error
@@ -1792,7 +1795,7 @@ class TeoSystem():
             raise Exception('Teo software cannot locate a connected memory tester. Check USB connection.')
 
         # Access a bunch of classes used to control the TEO board.
-        # The contained functions appear in tab completion, but the contained classes do not
+        # The contained methods/attributes appear in tab completion, but the contained classes do not
         DriverID =            TeoSystem.CastTo('ITS_DriverIdentity'     , MemTester)
         DeviceID =            TeoSystem.CastTo('ITS_DeviceIdentity'     , DriverID)
         DeviceControl =       TeoSystem.CastTo('ITS_DeviceControl'      , DriverID)
@@ -1800,6 +1803,7 @@ class TeoSystem():
         #LF_Voltage =          LF_Measurement.LF_Voltage # ?
         HF_Measurement =      TeoSystem.CastTo('ITS_HF_Measurement'     , DriverID)
         # Is this different from HF_Gain = HF_Measurement.HF_Gain?
+        # TODO: why can't we see e.g. HF_Measurement.HF_Gain in tab completion?
         HF_Gain =             TeoSystem.CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
         AWG_WaveformManager = TeoSystem.CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
 
@@ -1835,6 +1839,8 @@ class TeoSystem():
         self.PLF = 50
 
         # Store the same waveform/trigger data that gets uploaded to the board
+        # TODO: somehow prevent this from taking too much memory
+        #       should always reflect the state of the teo board
         self.waveforms = {}
         # Store the name of the last waveform output
         self.last_waveform = None
@@ -1848,7 +1854,7 @@ class TeoSystem():
 
         # TODO: what state do we exactly start up in the first time this is called?
         # it seems to start up in HF mode, but I don't see the internal pulses on HFV,
-        # so maybe it starts up in external mode
+        # so maybe it starts up in external mode (probably not!)
         # subsequent calls seem to stay in whatever mode it was in before,
         # even if we lost the python-TSX_DM connection for some reason
         DeviceControl.StartDevice()
@@ -1868,6 +1874,7 @@ class TeoSystem():
 
     # TODO add more
 
+
     ################################################################################
 
     @staticmethod
@@ -1884,34 +1891,6 @@ class TeoSystem():
         return result
 
 
-    @staticmethod
-    def hash_array(array):
-        '''
-        If you don't want to explicitly name the arrays, you can hash them and use that as the name
-        then everything is content-addressable
-        sha1 is ~fast and there's no security concern obviously
-        time for a random float64 array of length 2^28 = 256M is about 2 seconds
-        you should just name the arrays if you have really long ones.
-        '''
-        import hashlib
-        return hashlib.sha1(array).hexdigest()
-        #return hashlib.md5(array).hexdigest()
-        # There is also this?
-        # hash(array.tostring())
-
-
-    @staticmethod
-    def interp_wfm(t, wfm):
-        '''
-        interpolate arbitrarily (but monotonically) sampled waveform for the fixed 500 MHz sample rate
-        '''
-        max_t = np.max(t)
-        if max_t > 0.5:
-            raise Exception('Waveform duration is too long for TEO memory.')
-        new_t = np.arange(0, max_t, 1/500e6)
-        return np.interp(new_t, t, wfm)
-
-
     def get_idn(self):
         # Get and print some information from the board
         DevName = self.DeviceID.GetDeviceName()
@@ -1922,7 +1901,10 @@ class TeoSystem():
 
 
     def print_function_names(self):
-        ''' Because there's no manual yet '''
+        '''
+        Because there's no manual yet
+        TODO: find out if we can discover the class names
+        '''
         top_level_classes = ['DeviceID', 'DeviceControl', 'LF_Measurement', 'HF_Measurement']
 
         for tlc in top_level_classes:
@@ -1933,25 +1915,86 @@ class TeoSystem():
                     print(f'\t{node}')
 
 
-    #DeviceControl.IsStarted()
-    #DeviceControl.ResetDevice()
-
-
     ##################################### HF mode #############################################
 
     def HF_mode(self, external=False):
-        # Call to turn on HF mode
-        # True for external mode (use SMA ports to external equipment)
-        # False to use the internal ADC
+        '''
+        Call to turn on HF mode
+        Teo said that currently nothing changes between internal and external mode!
+        external:
+        True for external mode (use SMA ports to external equipment)
+        False to use the internal ADC
+        '''
         # First argument (0) does nothing?
         self.HF_Measurement.SetHF_Mode(0, external)
+
+    @staticmethod
+    def hash_array(array):
+        '''
+        If you don't want to explicitly name the arrays, you can hash them and use that as the name
+        then everything is content-addressable
+        sha1 is ~fast and there's no security concern obviously
+        time for a random float64 array of length 2^28 = 256M is about 2 seconds
+        you should just name the arrays if you have really long ones.
+        '''
+        if len(array) > 2**26:
+            log.warning('Consider manually defining names for long waveforms, '
+                        'as hashing them can take a long time.')
+        import hashlib
+        return hashlib.sha1(array).hexdigest()
+        #return hashlib.md5(array).hexdigest()
+        # There is also this?
+        # hash(array.tostring())
+
+
+    @staticmethod
+    def interp_wfm(wfm, t):
+        '''
+        Interpolate  waveform for the fixed 500 MHz sample rate
+        return wfm compatible with Teo AWG
+
+        wfm can be an array or a function of time
+        e.g. lambda t: np.sin(ωt)
+
+        if t is a number, assume it is the desired duration and assume equally spaced samples
+        t may also be an increasing, arbitrarily spaced time array
+        '''
+        if hasattr(wfm, '__call__'):
+
+        if isinstance(t, Number):
+            t = np.linspace(0, t, len(wfm))
+
+        max_t = np.max(t)
+        if max_t > 0.5: # <-- might not be precisely the limit!
+            raise Exception('Waveform duration is too long for TEO memory.')
+        new_t = np.arange(0, max_t, 1/500e6)
+        return np.interp(new_t, t, wfm)
+
+
+    # TODO: define some standard waveforms that use 500 Msample/second
+    # e.g. pulse trains
+    @staticmethod
+    def sine(freq=1e5, amp=1):
+        ''' One cycle of a sine wave '''
+        nsamples = int(round(500e6/freq))
+        t = np.arange(0,dur,1/500e6) # floating point errors are likely
+        x = np.linspace(0, 2*np.pi, nsamples)
+        return amp * np.sin(x)
+
+    @staticmethod()
+    def tri():
+        pass
+
+    @staticmethod()
+    def pulse_train(amps, pulsedur, timebetween):
+        pass
 
 
     def gain(self, HFgain=None):
         '''
         Unit is "steps" and each step corresponds to 1dB
         I think it can be 0 - 20?
-        TODO: clarify exactly what gain this is and roughly what the units are
+        TODO: clarify exactly what gain this is and what the units are
         '''
         if HFgain is None:
             # No idea if this works
@@ -1964,7 +2007,7 @@ class TeoSystem():
 
         self.HF_Gain.SetValue(HFgain)
 
-    def LFgain(self, LFgain=None):
+    def _LFgain(self, LFgain=None):
         '''
         Apparently there is a gain setting for LF as well
         Need to hear from TEO how this is supposed to be used
@@ -1980,10 +2023,14 @@ class TeoSystem():
         Make sure the number of samples in the waveform is compatible with the system
         pad with the standby offset value (usually zero volts)
         TODO: find out what the real limitation on sample size is
+              TEO said it has to be a multiple of 2048
+              and that his software should take care of it correctly
+              but as of 2020-08-13, this is false
         '''
         lenv = len(varray)
-        if lenv < 1024:
-            npad = 1024 - lenv
+        chunksize = 2**11
+        npad = chunksize - len(varray) % chunksize
+        if npad != 0:
             Vstandby = self.LF_Measurement.LF_Voltage.GetValue()
             # resolution is not below 1 mV, and LF_Voltage returns some strange numbers
             Vstandby = np.round(Vstandby, 3)
@@ -1999,36 +2046,41 @@ class TeoSystem():
         '''
         Add waveform and associated trigger arrays to TEO memory
 
-        if internal ADC mode is on
-        trig1 defines where we will get readings on both channels (Vmonitor, current)
+        Fixed 500 MHz sample rate
+        Min # of samples is 2¹¹ = 2048, max is supposed to be 2²⁸ = 268,435,456
+        so durations between 4.096 μs and 536.8 ms
+        # TODO test maximum size
 
-        if external mode is on, both triggers are just synchronous digital signals
-        that can be used however you want
+        trig1 defines where we will get internal ADC readings on both channels (Vmonitor, current)
+
+        Both triggers are synchronous digital signals accessible on controller board
+        scope points TRIG1 and TRIG2.  Use for synchronizing external instruments.
 
         Waveforms remain in memory even if round board is turned off, but they are lost if
         controller board loses power
 
-        TODO: what datatype are the triggers supposed to be?  bool? does it work if we upload ints?
+        if you reuse a waveform name, the previous waveform with that name gets overwritten
 
-        TODO: what does CreateWaveform return if you use a name that already exists?
-              will it overwrite the last one or will it append to it?
-              I think it just overwrites it
+        TODO: what datatype are the triggers supposed to be?  bool?
+              does it work if we try to upload ints?
+              or do we need to be sure to cast to bool
 
         TODO: is there a limit to the NUMBER of waveforms that can be stored?
         TODO: is there a limit on the length of a waveforms name?
         '''
-        if name is None:
-            name = self.hash_array(varray)
-            # TODO: could ask if this hash is already in memory, then don't bother to upload again
-            #       but make sure the triggers are also hashed in that case
-
-        wf = self.AWG_WaveformManager.CreateWaveform(name)
-
         if trig1 is None:
             trig1 = np.ones(len(varray), dtype=bool)
 
         if trig2 is None:
             trig2 = np.ones(len(varray), dtype=bool)
+
+        if name is None:
+            name = self.hash_array(varray)
+            # TODO: could ask if this hash is already in memory, then don't bother to upload again
+            #       but make sure the triggers are also hashed in that case
+            #name = self.hash_array(np.concatenate((varray, trig1, trig2))
+
+        wf = self.AWG_WaveformManager.CreateWaveform(name)
 
         varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
 
@@ -2041,7 +2093,10 @@ class TeoSystem():
 
 
     def download_wfm(self, name):
-        ''' If you want to read the waveform back from teo memory '''
+        '''
+        Read the waveform back from TEO memory
+        TODO: determine if trigger arrays can also be read back
+        '''
         wfm = self.AWG_WaveformManager.GetWaveform(name)
         # I don't know of a way to read back the trigger arrays
         #wfm.All_ADC_Gates() # tested and this is not trigger1

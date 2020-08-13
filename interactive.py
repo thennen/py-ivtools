@@ -12,9 +12,7 @@ Therefore you can modify any part of the code/library while making measurements
 and without ever leaving the running program or closing instrument connections.
 
 TODO: fix the %matplotlib thing
-TODO: Maintain a proper database of all the metadata for all the data files created
 TODO: GUI for displaying and changing channel settings, other status information
-TODO: Replace all print() with a logging system and display them with colors
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad
 '''
