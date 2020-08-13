@@ -1950,7 +1950,7 @@ class TeoSystem():
     @staticmethod
     def interp_wfm(wfm, t):
         '''
-        Interpolate  waveform for the fixed 500 MHz sample rate
+        Interpolate waveform for the fixed 500 MHz sample rate
         return wfm compatible with Teo AWG
 
         wfm can be an array or a function of time
@@ -1959,15 +1959,22 @@ class TeoSystem():
         if t is a number, assume it is the desired duration and assume equally spaced samples
         t may also be an increasing, arbitrarily spaced time array
         '''
-        if hasattr(wfm, '__call__'):
-
-        if isinstance(t, Number):
-            t = np.linspace(0, t, len(wfm))
 
         max_t = np.max(t)
         if max_t > 0.5: # <-- might not be precisely the limit!
             raise Exception('Waveform duration is too long for TEO memory.')
-        new_t = np.arange(0, max_t, 1/500e6)
+
+        # Teo compatible time array
+        nsamples = int(round(500e6 * max_t))
+        new_t = np.linspace(0, nsamples/500e6, nsamples)
+
+        if isinstance(t, Number):
+            if hasattr(wfm, '__call__'):
+                # assume wfm is a function of t
+                return wfm(new_t)
+            else:
+                t = np.linspace(0, t, len(wfm))
+
         return np.interp(new_t, t, wfm)
 
 
@@ -1977,15 +1984,14 @@ class TeoSystem():
     def sine(freq=1e5, amp=1):
         ''' One cycle of a sine wave '''
         nsamples = int(round(500e6/freq))
-        t = np.arange(0,dur,1/500e6) # floating point errors are likely
         x = np.linspace(0, 2*np.pi, nsamples)
         return amp * np.sin(x)
 
-    @staticmethod()
+    @staticmethod
     def tri():
         pass
 
-    @staticmethod()
+    @staticmethod
     def pulse_train(amps, pulsedur, timebetween):
         pass
 
