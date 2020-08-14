@@ -1865,7 +1865,7 @@ class TeoSystem():
 
     ###### Direct wrappers for adding python function signatures and docstrings ####
 
-    def StopDevice():
+    def StopDevice(self):
         '''
         Lights should turn off on the round board and HFV output probably floats.
         Controller board remains on.
@@ -2021,7 +2021,7 @@ class TeoSystem():
         GetMinValue and GetMaxValue both return 0
         so I have a feeling this is not used
         '''
-        return teo.LF_Measurement.LF_Gain.GetValue()
+        return self.LF_Measurement.LF_Gain.GetValue()
 
 
     def _pad_wfms(self, varray, trig1, trig2):
@@ -2196,7 +2196,7 @@ class TeoSystem():
         # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output the triggers?
 
         # Very approximate conversion to current
-        I = vreturn * 1.988e-5
+        I = Vreturn * 1.988e-5
 
         return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t,
                     wfm=prog_wfm, gain=gain, I=I)
