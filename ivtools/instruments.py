@@ -2113,9 +2113,12 @@ class TeoSystem():
     def output_wfm(self, wfm, n=1, trig1=None, trig2=None):
         '''
         Output waveform by name or by values
-        in internal mode, this automatically captures on both channels (where trigger = True)
+        in internal mode, this automatically captures on both channels (where trig1 = True)
 
-        careful if using automatic names, right now we only hash the wfm not the triggers
+        wfm -- name of wfm or np.array of waveform voltages
+        n   -- number of consecutive shots of the waveform to output
+
+        careful if using automatic names, right now we only hash the wfm, not the triggers
         so if you try to change the triggers but not the wfm, they will not update
         '''
         if type(wfm) is str:
