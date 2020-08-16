@@ -1461,11 +1461,15 @@ def set_readonly(filepath):
 
 
 def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, groupby=None,
-                   plotfunc=ivtools.plot.plotiv, **kwargs):
+                   plotfunc=None, **kwargs):
     # Make a plot of all the .s and .df files in a directory
     # Save as pngs with the same name
     # kwargs go to plotfunc
     # TODO: move to plot.py
+
+    if plotfunc is None:
+        plotfunc = ivtools.plot.plotiv
+
     files = glob('*.[s,df]', datadir)
 
     fig, ax = plt.subplots()
