@@ -90,7 +90,7 @@ class EugenTempStage(object):
         voltage = adc_value * vstep
         return voltage
 
-    def _V_to_T(Vread):
+    def _V_to_T(self, Vread):
         '''
         The Pt1000 is in an amplified Wheatstone bridge, so we need to do a
         little calculation to convert to temperature
@@ -108,7 +108,7 @@ class EugenTempStage(object):
         temp_read = np.log(pt_res / 1000) / tempco
         return temp_read
 
-    def _T_to_V(temp):
+    def _T_to_V(self, temp):
         '''
         The Pt1000 is in an amplified Wheatstone bridge, so we need to do a
         little calculation to convert to temperature
@@ -151,7 +151,7 @@ class EugenTempStage(object):
 
     def read_temperature(self):
         '''Function which reads temperature from Pt1000 '''
-        Vread = Vself.analogIn(1)
+        Vread = self.analogIn(1)
         temp_read = self._V_to_T(Vread)
 
         if self.analogIn(2) < 4:
