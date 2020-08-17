@@ -169,8 +169,7 @@ class TeoSystem(object):
         class dotdict(dict):
             __getattr__ = dict.__getitem__
             __setattr__ = dict.__setitem__
-        self.constats = dotdict()
-        self.constants = type('constants', (), {})
+        self.constants = dotdict()
         self.constants.idn = self.idn()
         self.constants.max_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
         self.constants.min_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
