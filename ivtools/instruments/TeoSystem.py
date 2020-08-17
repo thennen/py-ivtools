@@ -256,15 +256,20 @@ class TeoSystem(object):
 
     ##################################### HF mode #############################################
 
-    def HF_mode(self, external=False):
+    def HF_mode(self):
         '''
         Call to turn on HF mode
-        Teo said that currently nothing changes between internal and external mode!
-        external:
-        True for external mode (use SMA ports to external equipment)
-        False to use the internal ADC
+
+        Previous revision had internal/external mode for switching between internal and external AWG
+        this revision has HF AWG input J8, but it is controlled manually by switch SW1!
+        following revisions remove AWG input entirely!
+
+        TODO: I guess this means the external scope outputs are always working
+              verify this and make a note
         '''
         # First argument (0) does nothing?
+        # So does second argument apparently
+        external = False
         self.HF_Measurement.SetHF_Mode(0, external)
 
     @staticmethod
@@ -512,13 +517,16 @@ class TeoSystem(object):
 
         # TODO somehow add the programmed waveform name/values and gain value that was used
         #      if the board has no provision for this, we will use values stored in the class instance
+        #      kind of implemented already below
 
-        # should always be there, but maybe you reset the instance state but wfm was still in teo memory..
+        # last_waveform should always be there, but maybe you reset the instance state but wfm was still in teo memory..
+        # if we go BORG this will be less likely to happen
         if self.last_waveform in self.waveforms:
             prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
         else:
             prog_wfm = trig1 = trig2 = None
 
+        # TODO: maybe change name to gain_step or something since the unit is not in db or anything
         gain = self.last_gain
 
         # TODO: time? sample rate is fixed, but not all samples are necessarily captured
@@ -533,13 +541,17 @@ class TeoSystem(object):
 
         # TODO: for some reason we can get one or two 0s at the end of the measured waveforms
         #       this makes them longer than the programmed waveform, or longer than the number
-        #       of Trues in trigger1
+        #       of Trues in trigger1.  troubleshoot this problem.
 
         # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output the triggers?
 
         # Very approximate conversion to current
+        # TODO: calibrate this better and use self.J29 to divide by either 50 or 100
         I = Vreturn * 1.988e-5
 
+        # TODO: This can return a really huge data structure.
+        #       we might need an option to return something more minimal if we want to use long waveforms
+        #       could also convert to float32, or somehow read in the ADC values themselves to save space
         return dict(V0=np.array(Vmonitor), V1=np.array(Vreturn), idn=self.idn, sample_rate=sample_rate, t=t,
                     wfm=prog_wfm, gain=gain, I=I)
 
