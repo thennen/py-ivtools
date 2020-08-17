@@ -416,6 +416,7 @@ class TeoSystem(object):
         Min # of samples is 2¹¹ = 2048, max is supposed to be 2²⁸ = 268,435,456
         so durations between 4.096 μs and 536.8 ms
         # TODO test maximum size
+               seem to get System.OutOfMemoryException if we use more than 2^23
 
         trig1 defines where we will get internal ADC readings on both channels (Vmonitor, current)
 
@@ -623,6 +624,10 @@ class TeoSystem(object):
             else:
                 wfm_names.append(name)
         return wfm_names
+
+    def delete_all_wfms(self):
+        for name in self.get_wfm_names():
+            self.AWG_WaveformManager.DeleteWaveform(name)
 
 
     ##################################### LF mode #############################################
