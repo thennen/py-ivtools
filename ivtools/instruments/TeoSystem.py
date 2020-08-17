@@ -164,12 +164,21 @@ class TeoSystem(object):
 
         # TODO: assign properties that do not change, like max/min values
         #       so that we don't keep polling the instrument for fixed values
-        #       could put it in a dataclass if we want to be tidy
-        self.idn = self.get_idn()
-        self.max_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
-        self.min_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
-        self.max_HFgain = self.HF_Gain.GetMaxValue()
-        self.min_HFgain = self.HF_Gain.GetMinValue()
+
+        # Store them in this dumb container so they don't clutter everything
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+        self.constats = dotdict()
+        self.constants = type('constants', (), {})
+        self.constants.idn = self.idn()
+        self.constants.max_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
+        self.constants.min_LF_Voltage = self.LF_Measurement.LF_Voltage.GetMaxValue()
+        self.constants.max_HFgain = self.HF_Gain.GetMaxValue() # 10
+        self.constants.min_HFgain = self.HF_Gain.GetMinValue() # -8
+        self.constants.max_LFgain = self.LF_Measurement.LF_Gain.GetMaxValue() # 0?
+        self.constants.min_LFgain = self.LF_Measurement.LF_Gain.GetMinValue() # also 0?
+        self.constants.AWG_memory = self.AWG_WaveformManager.GetTotalMemory()
 
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
@@ -230,7 +239,7 @@ class TeoSystem(object):
         return result
 
 
-    def get_idn(self):
+    def idn(self):
         # Get and print some information from the board
         DevName = self.DeviceID.GetDeviceName()
         DevRevMajor = self.DeviceID.GetDeviceMajorRevision()
@@ -339,22 +348,30 @@ class TeoSystem(object):
         pass
 
 
-    def gain(self, HFgain=None):
+    def gain(self, step=None):
         '''
-        Unit is "steps" and each step corresponds to 1dB
-        I think it can be 0 - 20?
-        TODO: clarify exactly what gain this is and what the units are
+        Unit is "steps" and each step corresponds to 6dB (2x)
+        step: int 0-3
+        if step is None, return the current step setting
+        TODO: find out which current saturates the input for each gain step
+              and document it here!
         '''
-        if HFgain is None:
-            # No idea if this works
-            # Seems that it doesn't!
-            return self.HF_Gain.GetValue()
-        if HFgain > self.max_HFgain:
-            raise Exception('Input error: Requested TEO gain is too high')
-        if HFgain < self.min_HFgain:
-            raise Exception('Input error: Requested TEO gain is too low')
+        # Note: Do not use HF_gain.Get/SetValue
+        #       somehow this is a register that is split into two "step"
+        #       values for HF and LF gain.
+        #       these seem like details that should have been hidden from the API
 
-        self.HF_Gain.SetValue(HFgain)
+        if step is None:
+            return self.HF_Gain.GetStep()
+
+        if step > 3:
+            log.warning('Requested TEO gain is too high')
+            step = 3
+        if step < 0:
+            log.warning('Requested TEO gain is too low')
+            step = 0
+
+        self.HF_Gain.SetStep(step)
 
     def _LFgain(self, LFgain=None):
         '''
