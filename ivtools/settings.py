@@ -86,6 +86,13 @@ if hostname == 'pciwe46':
     db_path = 'D:\metadata.db'
     if username == 'hennen':
         datafolder = r'D:\t\ivdata'
+        logging_prints = {
+            'instruments': {'all': True, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'io':          {'all': True, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'plots':       {'all': True, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'analyze':     {'all': True, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'interactive': {'all': True, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+        }
     elif username == 'munoz':
         datafolder = r'D:\{}\ivdata'.format(username)
         logging_prints = {

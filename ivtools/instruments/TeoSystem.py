@@ -179,15 +179,6 @@ class TeoSystem(object):
         # set the power line frequency for averaging over integer cycles
         self.PLF = 50
 
-        # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
-        # TODO: somehow prevent this from taking too much memory
-        #       should always reflect the state of the teo board
-        self.waveforms = {}
-        # Store the name of the last waveform output
-        self.last_waveform = None
-        # and gain used
-        self.last_gain = None
-
         # Teo says this powers up round board, but the LEDS are already on by the time we call it.
         # it appears to be fine to call it multiple times:
         # everything still works, and I didn't see any disturbances on the HFV output
@@ -202,6 +193,15 @@ class TeoSystem(object):
         LF_Measurement.LF_Voltage.SetValue(0)
         #self.HF_mode()
 
+        # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
+        # TODO: somehow prevent this from taking too much memory
+        #       should always reflect the state of the teo board
+        #self.waveforms = {}
+        self.waveforms = self.download_all_wfms()
+        # Store the name of the last waveform output
+        self.last_waveform = None
+        self.last_gain = None
+        self.last_nshots = None
 
     ###### Direct wrappers for adding python function signatures and docstrings ####
 
@@ -394,7 +394,7 @@ class TeoSystem(object):
         Make sure the number of samples in the waveform is compatible with the system
         pad with the standby offset value (usually zero volts)
 
-        TEO said it has to be a multiple of 2048
+        Teo said it has to be a multiple of 2048
         and that his software should take care of it correctly
         but as of 2020-08, this appears to be false
 
@@ -403,15 +403,16 @@ class TeoSystem(object):
         '''
         lenv = len(varray)
         chunksize = 2**11
-        npad = chunksize - len(varray) % chunksize
-        if npad != 0:
+        remainder = lenv % chunksize
+        if remainder != 0:
+            npad = chunksize - remainder
             Vstandby = self.LF_Measurement.LF_Voltage.GetValue()
             # resolution is not below 1 mV, and LF_Voltage returns some strange numbers
             Vstandby = np.round(Vstandby, 3)
             varray = np.concatenate((varray, np.repeat(Vstandby, npad)))
-            # Maybe the trigs should be padded with False istead?
+            # Maybe the trigs should be padded with False instead?
             trig1 = np.concatenate((trig1, np.repeat(trig1[-1], npad)))
-            trig2 = np.concatenate((trig2, np.repeat(trig2[-2], npad)))
+            trig2 = np.concatenate((trig2, np.repeat(trig2[-1], npad)))
 
         return varray, trig1, trig2
 
@@ -458,17 +459,19 @@ class TeoSystem(object):
 
         TODO: is there a limit on the length of a waveforms name?
         '''
+        n = len(varray)
+
         if trig1 is None:
-            trig1 = np.ones_like(varray, dtype=bool)
+            trig1 = np.ones(n, dtype=bool)
         else:
             # Convert for the 250 MHz FPGA
-            trig1 = np.repeat(trig1[::2], 2)
+            trig1 = np.repeat(trig1[::2], 2)[:n]
 
         if trig2 is None:
-            trig2 = np.ones_like(varray, dtype=bool)
+            trig2 = np.ones(n, dtype=bool)
         else:
             # Convert for the 250 MHz FPGA
-            trig2 = np.repeat(trig2[::2], 2)
+            trig2 = np.repeat(trig2[::2], 2)[:n]
 
         loaded_names = self.get_wfm_names()
 
@@ -487,8 +490,8 @@ class TeoSystem(object):
         varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
         wf.AddSamples(varray, trig1, trig2)
 
-        # this is where you would also write all the information to the class instance
-        # and hope that you don't ever get a memory overflow...
+        # also write all the waveform data to the class instance
+        # hope that you don't ever get a memory overflow...
         # TODO: prevent memory overflow, or transfer from TSX_DM every time if it's not too slow
         self.waveforms[name] = (varray, trig1, trig2)
 
@@ -506,6 +509,10 @@ class TeoSystem(object):
         trig1 = np.array(wfm.All_ADC_Gates())
         trig2 = np.array(wfm.All_BER_Gates())
         return (v, trig1, trig2)
+
+
+    def download_all_wfms(self):
+        return {name:self.download_wfm(name) for name in self.get_wfm_names()}
 
 
     def output_wfm(self, wfm, n=1, trig1=None, trig2=None):
@@ -531,6 +538,7 @@ class TeoSystem(object):
         if success:
             self.last_waveform = name
             self.last_gain = self.gain()
+            self.last_nshots = n
         else:
             log.error('TEO waveform output failed')
 
@@ -548,6 +556,10 @@ class TeoSystem(object):
 
         if raw is True, then keys 'HFV' and 'HFI' will be in the returned dict
         which are the ADC values before calibration/conversion/trimming
+
+        TODO: we are going to have a problem with this function if the number of shots was > 1!
+              should we np.repeat the programmed waveform and return that??
+              if memory is no issue, then yes
 
         TODO: Calibrate voltages and currents
               Store the calibrations here in the class definition
@@ -586,13 +598,6 @@ class TeoSystem(object):
         # TODO: also calibrate this, this is just a guess
         V = (HFV + 320e-3) / 2.47
 
-        # According to testing, the waveforms always come back with two zeros appended
-        # (as long as we pad the waveforms so the length is a multiple of 2048, which we do)
-        if not all(HFV[-2:] == 0) or HFV[-3] == 0:
-            log.warning('The TEO ADC values did not have exactly two zeros appended! Fix the code!')
-        I = I[:-2]
-        V = V[:-2]
-
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
 
         # last_waveform should always be in self.waveforms, but maybe not if you reset the
@@ -606,20 +611,46 @@ class TeoSystem(object):
             # Try to read it from TSX_DM.exe
             prog_wfm, trig1, trig2 = self.download_wfm(self.last_waveform)
 
-        gain_step = self.last_gain
+        nshots = self.last_nshots
+
+        if all(trig1):
+            # According to testing, these waveforms always come back with two zeros appended
+            # (as long as we pad the waveforms so the length is a multiple of 2048, which we do)
+            if not all(HFV[-2:] == 0) or HFV[-3] == 0:
+                log.warning('The TEO ADC values did not have exactly two zeros appended! Fix the code!')
+            I = I[:-2]
+            V = V[:-2]
+        else:
+            # Here the situation is more complicated and buggy
+            # waveforms are read back with a random number in [0,3] zeros at the end
+            # and the length differs from number of True values in trig1 by a random number in [-1, 2]
+            # these two random numbers are uncorrelated..
+            # We just have to make the waveform fit and hope these few samples never matter..
+            extra_samples = len(V) - sum(trig1) * nshots
+            log.debug(f'{extra_samples} extra samples')
+            if extra_samples > 0:
+                V = V[:-extra_samples]
+                I = I[:-extra_samples]
+            elif extra_samples < 0:
+                # Just put in extra zeros since that seems to be this instruments style
+                V = np.append(V, [0]*-extra_samples)
+                I = np.append(I, [0]*-extra_samples)
 
         # TODO: return time array? sample rate is fixed, but not all samples are necessarily captured
         #       it would technically be enough to just store the inital value of trigger and the
         #       locations of the transitions, which would be a compression in many cases
-        t = np.arange(len(prog_wfm))/sample_rate
+        t = np.arange(len(prog_wfm) * nshots)/sample_rate
 
-        if sum(trig1) != len(V):
-            log.warning('TEO sent a different number of samples back than requested by the capture gate')
-        else:
-            I, V, t = self._align_with_trigger(trig1, I, V, t)
-            # Alternatively we could cut the programmed wfm to match trig1
-            # prog_wfm = prog_wfm[trig1]
-            # t = t[trig1]
+        # This may become a problem if we use a large number of shots with large waveforms
+        wfm = np.tile(prog_wfm, nshots)
+        trig1 = np.tile(trig1, nshots)
+        # trig2 = np.tile(trig2, nshots) # we do nothing with trig2 at the moment
+
+        # align measurement waveforms with the programmed waveform
+        I, V = self._align_with_trigger(trig1, I, V)
+        # Alternatively we could cut the programmed wfm to match trig1
+        # prog_wfm = prog_wfm[trig1]
+        # t = t[trig1]
 
         # TODO: should we compress the trigger signals and return them?
         #       otherwise they could be up to 64 MB each.
@@ -628,8 +659,11 @@ class TeoSystem(object):
         # TODO: This could return a really large data structure.
         #       we might need options to return something more minimal if we want to use long waveforms
         #       could also convert to float32, then I would use a dtype argument to get_data()
-        out = dict(V=V, I=I, t=t, wfm=prog_wfm,
-                   idn=self.idn, sample_rate=sample_rate, gain_step=gain)
+        out = dict(V=V, I=I, t=t, wfm=wfm,
+                   idn=self.constants.idn,
+                   sample_rate=sample_rate,
+                   gain_step=self.last_gain,
+                   nshots=self.last_nshots)
         if raw:
             out['HFV'] = HFV
             out['HFI'] = HFI
@@ -647,7 +681,7 @@ class TeoSystem(object):
         '''
         arrays_out = []
         for arr in arrays:
-            arr_out = np.empty_like(trig1)
+            arr_out = np.empty(len(trig1), dtype=type(arr[0]))
             arr_out[trig1] = arr
             arr_out[~trig1] = np.nan
             arrays_out.append(arr_out)

@@ -10,16 +10,41 @@ teo = instruments.TeoSystem()
 self = teo
 
 if 0:
-    # Don't use Value, use Steps
+    # Check strange things that gain settings do
+
     minHFgain = int(teo.HF_Measurement.HF_Gain.GetMinValue()) # -8
+    print('HF_Gain.GetMinValue() = ', minHFgain)
     maxHFgain = int(teo.HF_Measurement.HF_Gain.GetMaxValue()) # 10
-    gainvals = range(minHFgain, maxHFgain)
+    print('HF_Gain.GetMaxValue() = ', maxHFgain)
+
+    # Try using SetValue and see what comes back
+    gainvals = range(minHFgain - 2, 32)
+    SetValues = gainvals
+    GetValues = []
+    GetSteps = []
     for val in gainvals:
         teo.HF_Measurement.HF_Gain.SetValue(val)
         hfgain = teo.HF_Measurement.HF_Gain.GetValue()
+        GetValues.append(hfgain)
         step = teo.HF_Measurement.HF_Gain.GetStep()
-        print(f'{val}\t{hfgain}\t{step}')
+        GetSteps.append(step)
+    result = pd.DataFrame(dict(SetValue=SetValues, GetValue=GetValues, GetStep=GetSteps))
+    print(result)
 
+
+    # Try using SetStep and see what comes back
+    gainvals = range(0, 31)
+    SetSteps = gainvals
+    GetValues = []
+    GetSteps = []
+    for val in gainvals:
+        teo.HF_Measurement.HF_Gain.SetStep(val)
+        hfgain = teo.HF_Measurement.HF_Gain.GetValue()
+        GetValues.append(hfgain)
+        step = teo.HF_Measurement.HF_Gain.GetStep()
+        GetSteps.append(step)
+    result = pd.DataFrame(dict(SetStep=SetSteps, GetValue=GetValues, GetStep=GetSteps))
+    print(result)
 
 # test a variety of short waveforms
 # using only teo supplied functions, so that we can send the results for support if needed
@@ -113,5 +138,62 @@ plt.scatter(df2.extra_samples, df2.V0_zeros_appended)
 plt.xlabel('# extra samples returned')
 plt.ylabel('zeros appended to end of waveform')
 
+if 0:
+    # Can we read back the waveforms and triggers that we upload?
+    n = 2048
+    wfm = np.sin(np.linspace(0, 2*np.pi, n))
+    trig1 = np.ones_like(wfm, bool)
+    trig1[0::3] = 0
+    trig1 = np.repeat(trig1[::2], 2) # convert to 250 MHz!
+    trig2 = np.ones_like(wfm, bool)
+    trig2[1::3] = 0
+    trig2 = np.repeat(trig1[::2], 2) # convert to 250 MHz!
+    name = 'test'
+    wf = teo.AWG_WaveformManager.CreateWaveform(name)
+    wf.AddSamples(wfm, trig1, trig2)
+
+    data_back = teo.AWG_WaveformManager.GetWaveform(name)
+    wfm_back = data_back.AllSamples()
+    trig1_back = data_back.All_ADC_Gates()
+    trig2_back = data_back.All_BER_Gates()
+
+    print('wfm read back correctly?: ', all(wfm == wfm_back))
+    print('')
+
+    print('trig1 read back correctly? ', all(trig1 == trig1_back))
+    print('trig1:')
+    print(tuple(trig1[:10]), '...')
+    print('Number of True values: ', sum(trig1))
+    print('trig1_back:')
+    print(trig1_back[:10], '...')
+    print('Number of True values: ', sum(trig1_back))
+    print('')
+
+    print('trig2 read back correctly? ', all(trig2 == trig2_back))
+    print('trig2:')
+    print(tuple(trig2[:10]), '...')
+    print('Number of True values: ', sum(trig2))
+    print('trig2_back:')
+    print(trig2_back[:10], '...')
+    print('Number of True values: ', sum(trig2_back))
+    '''
+    wfm read back correctly?:  True
+
+    trig1 read back correctly?  False
+    trig1:
+    (False, True, True, False, True, True, False, True, True, False) ...
+    Number of True values:  1365
+    trig1_back:
+    (False, False, True, True, True, True, False, False, True, True) ...
+    Number of True values:  1364
+
+    trig2 read back correctly?  False
+    trig2:
+    (True, False, True, True, False, True, True, False, True, True) ...
+    Number of True values:  1365
+    trig2_back:
+    (True, True, True, True, False, False, True, True, True, True) ...
+    Number of True values:  1366
+    '''
 
 # Maximum samples we can upload?
