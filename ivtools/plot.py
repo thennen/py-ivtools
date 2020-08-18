@@ -393,6 +393,15 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     # Can always get them with plt.gca()...
     # return ax, line
 
+@wraps(plotiv)
+def hplotiv(*args, **kwargs):
+    '''
+    Cute and fast way to plot on the current axis
+    inspired by Julias plot!()
+    prepended an h because it's easy in the console to go to the beginning of a linewith ctrl-a
+    '''
+    plotiv(*args, **kwargs, hold=True)
+
 ## Linearized plots for conduction mechanisms
 def schottky_plot(data, V='V', I='I', T=None):
     # Linearizes schottky mechanism
