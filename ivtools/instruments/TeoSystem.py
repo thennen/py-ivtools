@@ -1,5 +1,6 @@
 import numpy as np
 import itertools
+import sys
 import time
 import win32com.client
 from win32com.client import CastTo, WithEvents, Dispatch
@@ -58,13 +59,8 @@ class TeoSystem(object):
             we should also have this class remember the waveforms in a similar way (done)
             would be useful then to also have a method that synchronizes the memories
 
-    # TODO: methods to read the waveforms back that are already on TEO memory? (done)
-            but is there a way to read the triggers back?
-
-    # TODO: figure out what the gain really does and document it
-            at what voltage does the ADC saturate vs gain?
-
     # TODO: do all the commands work regardless of which mode we are in? e.g. waveform upload, gain setting
+            how do we avoid issuing commands and expecting it to do something but we are in the wrong mode?
 
     # TODO: what happens when we send commands while the board is busy?
 
@@ -73,13 +69,6 @@ class TeoSystem(object):
             is this always applied when a waveform is not playing? (yes)
             does that mean the instrument switches into LF mode when a waveform is not playing? (no)
 
-    # TODO: there are apparently restrictions on what size samples you should send to the AWG
-            there's a chunk size or something. e.g. 1024 plays fine but anything below that seems broken
-            we need code that pads arrays that don't conform to the right chunk size
-            Teo said that they need to be padded to a multiple of 2048
-            but that his software/firmware is supposed to do it for you
-            but there are bugs (try very short waveforms)
-
     # TODO: could wrap some of the functions only for the purpose of giving them signatures, docstrings,
             default arguments.
 
@@ -87,20 +76,21 @@ class TeoSystem(object):
             self.com.DeviceControl, self.com.LF_Measurement etc
             then on the top level we have mostly stuff that we have defined that has docstrings and
             so on, but we can still access the com interface if needed.
-
             downside is that when we ask for support our code will be unrecognizable to Teo.
             therefore:
     # TODO: should we have some kind of a debug mode that prints out all the COM calls?
 
-
-    # TODO: since there seem to be a lot of situations that cause the output to go to the negative rail
-            and blow up your device, document them here
+    # TODO: since there seem to be a several of situations that cause the output to go to the negative rail
+            and blow up your device, make sure to document them here
             seems to be whenever TSX_DM.exe connects to the system
             1. on first initialization (Dispatch('TSX_HMan'))
             2. if you disconnect USB and plug it back in
 
     # TODO: should we store a calibration to remove the offsets? monitor has a big offset and for
             the other channel it depends a bit on the gain setting.
+
+    # TODO: maybe we should change the word trigger to gate and trig1 to gate1 etc
+            my language might have been a little wrong there
 
     '''
 
@@ -126,7 +116,7 @@ class TeoSystem(object):
             # subsequent runs also work and seem not to produce anything bad on the output
             HMan = Dispatch('TSX_HMan')
         except com_error as e:
-            # TODO make sure this is necessarily the meaning of this error
+            # TODO is this necessarily the meaning of this error?
             raise type(e)(str(e) +
                           ' TEO software not installed?').with_traceback(sys.exc_info()[2])
 
@@ -137,16 +127,16 @@ class TeoSystem(object):
 
         # Access a bunch of classes used to control the TEO board.
         # The contained methods/attributes appear in tab completion, but the contained classes do not
-        DriverID =            TeoSystem.CastTo('ITS_DriverIdentity'     , MemTester)
-        DeviceID =            TeoSystem.CastTo('ITS_DeviceIdentity'     , DriverID)
-        DeviceControl =       TeoSystem.CastTo('ITS_DeviceControl'      , DriverID)
-        LF_Measurement =      TeoSystem.CastTo('ITS_LF_Measurement'     , DriverID)
+        DriverID =            TeoSystem._CastTo('ITS_DriverIdentity'     , MemTester)
+        DeviceID =            TeoSystem._CastTo('ITS_DeviceIdentity'     , DriverID)
+        DeviceControl =       TeoSystem._CastTo('ITS_DeviceControl'      , DriverID)
+        LF_Measurement =      TeoSystem._CastTo('ITS_LF_Measurement'     , DriverID)
         #LF_Voltage =          LF_Measurement.LF_Voltage # ?
-        HF_Measurement =      TeoSystem.CastTo('ITS_HF_Measurement'     , DriverID)
+        HF_Measurement =      TeoSystem._CastTo('ITS_HF_Measurement'     , DriverID)
         # Is this different from HF_Gain = HF_Measurement.HF_Gain?
         # TODO: why can't we see e.g. HF_Measurement.HF_Gain in tab completion?
-        HF_Gain =             TeoSystem.CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
-        AWG_WaveformManager = TeoSystem.CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
+        HF_Gain =             TeoSystem._CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
+        AWG_WaveformManager = TeoSystem._CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
 
         # Assign com methods/attributes to the instance
         self.HMan = HMan
@@ -160,9 +150,9 @@ class TeoSystem(object):
         self.AWG_WaveformManager = AWG_WaveformManager
 
         # TODO: Break the hierarchy for some functions?
+        #       We aren't used to these really long nested function calls in python
         self.GetFreeMemory = AWG_WaveformManager.GetFreeMemory
         self.StopDevice = DeviceControl.StopDevice
-
 
         # TODO: assign properties that do not change, like max/min values
         #       so that we don't keep polling the instrument for fixed values
@@ -184,12 +174,12 @@ class TeoSystem(object):
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
 
-        # TODO: setting for the LF internal/external jumpers?
+        # TODO: is a setting for the LF internal/external jumpers? Probably not.
 
         # set the power line frequency for averaging over integer cycles
         self.PLF = 50
 
-        # Store the same waveform/trigger data that gets uploaded to the board
+        # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
         # TODO: somehow prevent this from taking too much memory
         #       should always reflect the state of the teo board
         self.waveforms = {}
@@ -198,20 +188,19 @@ class TeoSystem(object):
         # and gain used
         self.last_gain = None
 
-
         # Teo says this powers up round board, but the LEDS are already on by the time we call it.
         # it appears to be fine to call it multiple times:
         # everything still works, and I didn't see any disturbances on the HFV output
 
         # TODO: what state do we exactly start up in the first time this is called?
-        # it seems to start up in HF mode, but I don't see the internal pulses on HFV,
-        # so maybe it starts up in external mode (probably not!)
+        # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
+        # So I think it starts in some undefined mode
         # subsequent calls seem to stay in whatever mode it was in before,
         # even if we lost the python-TSX_DM connection for some reason
         DeviceControl.StartDevice()
-        # This is output even on HF mode, when the waveform isn't playing!
+        # This command sets the idle level for HF mode
         LF_Measurement.LF_Voltage.SetValue(0)
-        #self.HF_mode(external=False)
+        #self.HF_mode()
 
 
     ###### Direct wrappers for adding python function signatures and docstrings ####
@@ -225,11 +214,14 @@ class TeoSystem(object):
 
     # TODO add more
 
+    # TODO I understand that win32com actually generates the python wrapper code.
+    #      might be interesting to look at it, maybe just modify that
+
 
     ################################################################################
 
     @staticmethod
-    def CastTo(name, to):
+    def _CastTo(name, to):
         # CastTo that clearly lets you know something isn't working right with the software setup
         try:
             result = win32com.client.CastTo(to, name)
@@ -271,10 +263,10 @@ class TeoSystem(object):
         Call to turn on HF mode
 
         Previous revision had internal/external mode for switching between internal and external AWG
-        this revision has HF AWG input J8, but it is controlled manually by switch SW1!
+        this revision has HF AWG input SMA (J8), but it is controlled manually by switch SW1!
         following revisions remove AWG input entirely!
 
-        External scope outputs are always working (no external mode needed)
+        External scope outputs are always active (no external mode needed)
         '''
         # First argument (0) does nothing?
         # So does second argument apparently
@@ -354,12 +346,11 @@ class TeoSystem(object):
     def gain(self, step=None):
         '''
         This simultaneously sets the gain for two current amplifiers
-        Amp1: BW limited output, also what you read on second ADC channel
+        Amp1: Low BW output, also what you read on second ADC channel
         Amp2: High BW output
 
-        My understanding:
         The system shares a 5 bit register to set both gains
-        the two amplifiers both interpret this register in different ways.
+        the two amplifiers both read and interpret this register in different ways.
 
         Amp1 uses the two LSB, for possible step settings 0,1,2,3
         each step corresponds to 6dB (2×)
@@ -372,6 +363,7 @@ class TeoSystem(object):
         This would mean that if you want to set the gain of Amp2, the gain
         of Amp1 changes with it and in a not monotonic way (whatever the 2 LSBs say)
         important to consider this if you want to use both outputs at the same time
+        then you would have to set MSB and LSB independently
 
         if step is None, return the current step setting
 
@@ -396,16 +388,6 @@ class TeoSystem(object):
 
         self.HF_Gain.SetStep(step)
 
-    def _LFgain(self, LFgain=None):
-        '''
-        Apparently there is a gain setting for LF as well
-        Need to hear from TEO how this is supposed to be used
-
-        GetMinValue and GetMaxValue both return 0
-        I have a feeling this is not used
-        '''
-        return self.LF_Measurement.LF_Gain.GetValue()
-
 
     def _pad_wfms(self, varray, trig1, trig2):
         '''
@@ -414,7 +396,10 @@ class TeoSystem(object):
 
         TEO said it has to be a multiple of 2048
         and that his software should take care of it correctly
-        but as of 2020-08, this is false
+        but as of 2020-08, this appears to be false
+
+        if you don't play a correct chunk size, expect very wrong readback if n < 1024
+        and a random number of extra/missing samples for other lengths
         '''
         lenv = len(varray)
         chunksize = 2**11
@@ -439,15 +424,9 @@ class TeoSystem(object):
         and the hardware only gets it when we try to play the waveform.
         it still takes some time to transfer large arrays to TSX_DM
 
-        # TODO: for long waveforms, are there big delays when we use
-                AWG_WaveformManager.Run() on a newly define waveform?
-
         Fixed 500 MHz sample rate
         Min # of samples is 2¹¹ = 2048, max is supposed to be 2²⁸ = 268,435,456
-        so durations between 4.096 μs and 536.8 ms
-
-        # TODO test maximum size
-               seem to get System.OutOfMemoryException if we use more than 2^23
+        so sample durations are possible between 4.096 μs and 536.8 ms
 
         trig1 defines where we will get internal ADC readings on both channels (Vmonitor, current)
 
@@ -459,20 +438,37 @@ class TeoSystem(object):
 
         if you reuse a waveform name, the previous waveform with that name gets overwritten
 
-        TODO: what datatype are the triggers supposed to be?  bool?
-              anything seems to work
+        Because the triggers are generated by FPGA which operates at only 250 MHz, there is a
+        trigger jitter of one sample, and the triggers get converted to 250 MHz.  We will handle
+        the conversion here as well so everyhing stays consistent.
+
+        Note that lots of transitions in the trigger was not really designed for, so be careful
+        if you want to use it for something like downsampling for some reason
+
+        TODO: for long waveforms, are there big delays when we use
+              AWG_WaveformManager.Run() on a newly define waveform?
+
+        TODO test maximum size
+             seem to get System.OutOfMemoryException if we use more than 2^23
+
+        TODO Benchmark how long it takes to transfer these to and from TSX_DM
+               is it slow enough to warrant keeping a copy here in python?  (self.waveforms)
 
         TODO: is there a limit to the NUMBER of waveforms that can be stored?
-        TODO: is there a limit on the length of a waveforms name?
 
-        TODO: there is currently a bug either writing the triggers or reading them back
-              most likely writing them
+        TODO: is there a limit on the length of a waveforms name?
         '''
         if trig1 is None:
             trig1 = np.ones_like(varray, dtype=bool)
+        else:
+            # Convert for the 250 MHz FPGA
+            trig1 = np.repeat(trig1[::2], 2)
 
         if trig2 is None:
             trig2 = np.ones_like(varray, dtype=bool)
+        else:
+            # Convert for the 250 MHz FPGA
+            trig2 = np.repeat(trig2[::2], 2)
 
         loaded_names = self.get_wfm_names()
 
@@ -493,7 +489,7 @@ class TeoSystem(object):
 
         # this is where you would also write all the information to the class instance
         # and hope that you don't ever get a memory overflow...
-        # TODO: prevent memory overflow.
+        # TODO: prevent memory overflow, or transfer from TSX_DM every time if it's not too slow
         self.waveforms[name] = (varray, trig1, trig2)
 
         return name
@@ -504,9 +500,6 @@ class TeoSystem(object):
         Read the waveform back from TEO memory
         return (varray, trig1, trig2)
         seems not to come from hardware memory, just the TSX_DM process working set
-
-        TODO: there is currently a bug either writing the triggers or reading them back
-              most likely writing them
         '''
         wfm = self.AWG_WaveformManager.GetWaveform(name)
         v = np.array(wfm.AllSamples())
@@ -519,13 +512,10 @@ class TeoSystem(object):
         '''
         Output waveform by name or by values
         This automatically captures on both ADC channels (where trig1 = True)
-        need to call get_data() afterward for the result
+        you need to call get_data() afterward for the result
 
         wfm -- name of wfm or np.array of waveform voltages
         n   -- number of consecutive shots of the waveform to output
-
-        careful if using automatic names, right now we only hash the wfm, not the triggers
-        so if you try to change the triggers but not the wfm, they will not update
         '''
         if type(wfm) is str:
             name = wfm
@@ -542,26 +532,31 @@ class TeoSystem(object):
             self.last_waveform = name
             self.last_gain = self.gain()
         else:
-            log.error('waveform output failed')
+            log.error('TEO waveform output failed')
 
         return success
 
 
-    def get_data(self):
+    def get_data(self, raw=False):
         '''
         Get the data for both ADC channels for the last capture
         returns a dict of information
 
-        Gain setting is factored in already -- gain gets divided out
+        if wfm_data is True, return the programmed waveform and trigger data
+        we return the programmed waveform data as well,
+        which is useful because the monitor signal can have a lot of noise
 
-        There is currently a bug where slightly different number of samples come back from GetLastResult
-        so we trim to the shortest length, should not be a major issue
+        if raw is True, then keys 'HFV' and 'HFI' will be in the returned dict
+        which are the ADC values before calibration/conversion/trimming
 
-        # TODO: align data?  we want arrays of the same length, even if the triggers are not always on
-        # TODO: return the programmed array?  but don't want to read it from TEO memory every time
-        # TODO: what units does Vreturn come back with? something strange.
-        # TODO: should we convert to current or not? needs the input impedance, which can change for some reason (self.J29)
-                requires a calibration, which can just be stored here in the class definition
+        TODO: Calibrate voltages and currents
+              Store the calibrations here in the class definition
+        TODO: Align data with trigger?  we want to return arrays of the same length, even if the
+              triggers are not always on. We have two options:
+              1. delete programmed voltage waveform and time waveform where trig1 is False
+              2. pad measured waveform with np.nan where trig1 is False
+              we could also think about slicing the arrays where there are gaps in the capturing
+              then this would return a list of dicts
         '''
 
         # We only get waveform samples where trigger is True, so these could be shorter than wfm
@@ -571,87 +566,92 @@ class TeoSystem(object):
         wf01 = self.AWG_WaveformManager.GetLastResult(1)
 
         if wf00.IsSaturated():
-            # I don't think this will ever happen
-            log.warning('TEO channel 0 is saturated!')
+            # I don't think this will ever happen.
+            # but there is some manual way to increase the gain on this channel such that it could happen
+            log.warning('TEO ADC channel 0 (HFV monitor) is saturated!')
         if wf01.IsSaturated():
-            log.warning('TEO channel 1 is saturated!')
+            log.warning('TEO ADC channel 1 (HFI) is saturated!')
 
-        # Voltages on the ports
+        # signals on the ports
+        # Gain is divided out already before it is read here
+        # they are not in volts and they need calibration
         HFV = np.array(wf00.GetWaveformDataArray())
         HFI = np.array(wf01.GetWaveformDataArray())
 
-        sample_rate = wf00.GetWaveformSamplingRate()
-
-        # TODO somehow add the programmed waveform name/values and gain value that was used
-        #      if the board has no provision for this, we will use values stored in the class instance
-        #      kind of implemented already below
-
-        # last_waveform should always be in self.waveforms, but maybe you reset the instance state but wfm was still in teo memory..
-        # if we go BORG this will be less likely to happen
-        if self.last_waveform in self.waveforms:
-            prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
-        else:
-            # TODO: careful of trigger readback bug
-            log.debug('')
-            prog_wfm, trig1, trig2 = self.download_wfm(self.last_waveform)
-
-        # Trim to the shortest length
-        # TODO: work with Teo to solve this bug so we don't have to do this anymore
-        # wf00 and wf01 should have same length
-        use_len = min(len(prog_wfm), len(HFV))
-        HFV = HFV[:use_len]
-        HFI = HFI[:use_len]
-        prog_wfm = prog_wfm[:use_len]
-        trig1 = trig1[:use_len]
-        trig2 = trig2[:use_len]
-
-        # TODO: maybe change name to gain_step or something since the unit is not in db or anything
-        gain = self.last_gain
-
-        # TODO: time? sample rate is fixed, but not all samples are necessarily captured
-        #       requires knowledge of the trigger waveforms, which we don't want to read from TEO memory
-        #       because that would take a lot of time (and there might not be a way to do it)
-        #       it would technically be enough to just store the inital value of trigger and the
-        #       locations of the transitions, which would be a compression in many cases
-        #
-        #       we could also think about splitting the arrays where there are gaps in the capturing
-
-        t = np.arange(len(HFV))/sample_rate
-
-        # TODO: for some reason we can get one or two 0s at the end of the measured waveforms
-        #       this makes them longer than the programmed waveform, or longer than the number
-        #       of Trues in trigger1.  troubleshoot this problem.
-
-        # TODO: should we compress the trigger signals? they could be up to 64 MB each. do we need to output the triggers?
+        R_HFI = 50 if self.J29 else 100
 
         # Very approximate conversion to current
-        # TODO: calibrate this better and use self.J29 to divide by either 50 or 100
-        I = HFI * 1.988e-5
+        # TODO: calibrate this better
+        I = HFI * 99.4e-5 / R_HFI
         # TODO: also calibrate this, this is just a guess
         V = (HFV + 320e-3) / 2.47
 
-        # TODO: This can return a really huge data structure.
-        #       we might need an option to return something more minimal if we want to use long waveforms
-        #       could also convert to float32, or somehow read in the ADC values themselves to save space
-        return dict(V=V, I=I, idn=self.idn, sample_rate=sample_rate, t=t,
-                    wfm=prog_wfm, gain=gain)
+        # According to testing, the waveforms always come back with two zeros appended
+        # (as long as we pad the waveforms so the length is a multiple of 2048, which we do)
+        if not all(HFV[-2:] == 0) or HFV[-3] == 0:
+            log.warning('The TEO ADC values did not have exactly two zeros appended! Fix the code!')
+        I = I[:-2]
+        V = V[:-2]
+
+        sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
+
+        # last_waveform should always be in self.waveforms, but maybe not if you reset the
+        # instance state but wfm was still loaded in teo memory..
+        # if we go BORG this will be less likely to happen
+        if self.last_waveform in self.waveforms:
+            # Refer to the waveform dict stored in the instance
+            prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
+        else:
+            log.debug('Waveform data was missing from TeoSystem instance')
+            # Try to read it from TSX_DM.exe
+            prog_wfm, trig1, trig2 = self.download_wfm(self.last_waveform)
+
+        gain_step = self.last_gain
+
+        # TODO: return time array? sample rate is fixed, but not all samples are necessarily captured
+        #       it would technically be enough to just store the inital value of trigger and the
+        #       locations of the transitions, which would be a compression in many cases
+        t = np.arange(len(prog_wfm))/sample_rate
+
+        if sum(trig1) != len(V):
+            log.warning('TEO sent a different number of samples back than requested by the capture gate')
+        else:
+            I, V, t = self._align_with_trigger(trig1, I, V, t)
+            # Alternatively we could cut the programmed wfm to match trig1
+            # prog_wfm = prog_wfm[trig1]
+            # t = t[trig1]
+
+        # TODO: should we compress the trigger signals and return them?
+        #       otherwise they could be up to 64 MB each.
+        #       if we use _align_with_trigger, the information for trig1 is already there
+
+        # TODO: This could return a really large data structure.
+        #       we might need options to return something more minimal if we want to use long waveforms
+        #       could also convert to float32, then I would use a dtype argument to get_data()
+        out = dict(V=V, I=I, t=t, wfm=prog_wfm,
+                   idn=self.idn, sample_rate=sample_rate, gain_step=gain)
+        if raw:
+            out['HFV'] = HFV
+            out['HFI'] = HFI
+        return out
 
 
     @staticmethod
-    def _align_data(wfm, trig1, trig2, ch1, ch2):
+    def _align_with_trigger(trig1, *arrays):
         '''
-        Align measured waveforms with programmed waveform array
+        Align measured waveforms with the programmed waveform array
         for the case where the triggers are not all True
-        sum(trig1) must be equal to len(ch1) and len(ch2)
+        sum(trig1) must be equal to len(array) for array in arrays
+
+        all output arrays will have the same length as trigger.
         '''
-        aligned_ch1 = np.empty_like(wfm)
-        aligned_ch1[trig1] = ch1
-        aligned_ch1[~trig1] = np.nan
-        aligned_ch2 = np.empty_like(wfm)
-        aligned_ch2[trig2] = ch2
-        aligned_ch2[~trig2] = np.nan
-        return aligned_ch1, aligned_ch2
-        pass
+        arrays_out = []
+        for arr in arrays:
+            arr_out = np.empty_like(trig1)
+            arr_out[trig1] = arr
+            arr_out[~trig1] = np.nan
+            arrays_out.append(arr_out)
+        return arrays_out
 
 
     @staticmethod
