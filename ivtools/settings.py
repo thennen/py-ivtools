@@ -107,6 +107,7 @@ if hostname == 'pciwe46':
 
     inst_connections = [('ps', instruments.Picoscope),
                         ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                        ('teo', instruments.TeoSystem),
                         ('daq', instruments.USB2708HS),
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),

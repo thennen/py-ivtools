@@ -203,6 +203,8 @@ class TeoSystem(object):
         self.last_gain = None
         self.last_nshots = None
 
+        log.info('TEO connection successful: ' + self.constants.idn)
+
     ###### Direct wrappers for adding python function signatures and docstrings ####
 
     def StopDevice(self):
@@ -805,12 +807,11 @@ class TeoSystem(object):
         return np.mean(I)
 
 
-
     ##################################### Tests #############################################
 
-    def pulse_and_capture(self, wfm):
+    def measure(self, wfm):
         '''
-        pulse wfm and return measurement
+        Pulse wfm and return I,V,... data
         '''
         self.HF_mode()
         self.output_wfm(wfm)
@@ -819,6 +820,7 @@ class TeoSystem(object):
 
     def measure_leakage(self, Vvalues, NPLC=10):
         '''
+        Use internal LF mode to make a low-current measurement
         not tested
         TODO: test
         '''

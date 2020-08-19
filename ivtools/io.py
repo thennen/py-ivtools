@@ -578,7 +578,7 @@ def db_create_table(db_conn, table_name, data):
         dtype = type(val)
         if val_ch is None:
 
-            log.warning(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
+            log.debug(f"Data type {dtype} is not allowed in database, '{col_name}' will be dropped.")
 
             return None
         else:
@@ -647,15 +647,15 @@ def db_insert_row(db_conn, table_name, row):
             if val_ch is not None:
                 db_add_col(db_conn, table_name, name_encoded)
 
-                log.info(f"New column added: {name}")
+                log.debug(f"New column added: {name}")
                 params.append(val_ch)
             else:
                 dtype = type(val)
                 NoneType = type(None)
-                if dtype is NoneType:
-                    log.warning(f"'{name}' is empty so won't be saved")
-                else:
-                    log.warning(f"Data type '{dtype}' not supported. '{name}' won't be saved")
+                #if dtype is NoneType:
+                #    log.debug(f"'{name}' is empty so won't be saved")
+                #else:
+                #    log.debug(f"Data type '{dtype}' not supported. '{name}' won't be saved")
 
 
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
@@ -723,7 +723,7 @@ def db_change_type(var):
     elif var is None:
         pass
     else:
-        log.warning(f"Data type {dtype} is not registered, it will be save as str")
+        log.debug(f"Data type {dtype} is not registered, it will be save as str")
         var = repr(var)
     return var
 
@@ -777,8 +777,8 @@ def db_encode(col_names):
             col_names_encoded_low[i] += '&' * rep
             col_names_encoded[i + removed] += '&' * rep
 
-            log.info(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
-                   f' {col_names_encoded[i + removed]} in the database file.')
+            log.debug(f'Name of column {i + removed} was changed from {col_names[i + removed]} to'
+                      f' {col_names_encoded[i + removed]} in the database file.')
 
     return col_names_encoded
 
@@ -833,9 +833,6 @@ def db_commit(db_conn):
     """
     db_conn.commit()
     db_conn.close()
-
-
-
 
 
 def validvarname(varStr):

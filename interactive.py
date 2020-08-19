@@ -151,6 +151,11 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
                      [1, partial(ivplot.itplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
+# For Teo
+teo_plotters = [[0, partial(ivplot.ivplotter, x='wfm')], # programmed waveform is less noisy
+                [1, ivplot.itplotter],
+                [2, ivplot.VoverIplotter],
+                [3, ivplot.vtplotter]]
 
 #########
 
@@ -161,13 +166,13 @@ globalvars = globals()
 instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.RigolDG5000:'rigol',
                        instruments.Keithley2600:'k',
+                       instruments.TeoSystem:'teo',
                        instruments.PG5:'pg5',
                        instruments.Eurotherm2408:'et',
                        instruments.TektronixDPO73304D:'ttx',
                        instruments.USB2708HS:'daq',
                        instruments.WichmannDigipot: 'dp',
                        instruments.EugenTempStage: 'ts'}
-
 # Make varnames None until connected
 for kk, v in instrument_varnames.items():
     globalvars[v] = None
@@ -363,7 +368,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = meta.attach(data)
                 iplots.newline(data)
         if autosave:
-            print(data)
+            # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
@@ -398,5 +403,9 @@ if ts:
         ts.set_temperature(T)
         ivplot.mybreakablepause(delay)
         meta.static['R_series'] = Rs
+
+if teo:
+    # HF mode
+    teoiv = interactive_wrapper(teo.measure)
 
 # TODO def reload_settings, def reset_state

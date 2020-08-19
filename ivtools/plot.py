@@ -804,7 +804,6 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
     return cb
 
 
-
 def mypause(interval):
     ''' plt.pause calls plt.show, which steals focus on some systems.  Use this instead '''
     backend = plt.rcParams['backend']
@@ -974,7 +973,8 @@ class InteractiveFigs(object):
                         ax.set_ylabel(ax.get_ylabel(), color=color)
                     except Exception as e:
                         ax.plot([])
-                        log.error('Plotter number {} failed!: {}'.format(axnum, e))
+                        plottername = self.get_func_name(plotter)
+                        log.error('Plotter {},{} failed!: {}'.format(axnum, plottername, e))
                     ax.get_figure().canvas.draw()
             mypause(0.05)
 
@@ -984,6 +984,16 @@ class InteractiveFigs(object):
                 ax.lines = list(ax.lines)
             else:
                 ax.lines = deque(ax.lines, maxlen=maxlines)
+
+    @staticmethod
+    def get_func_name(func):
+        ''' gets function name even if it's a functools.partial '''
+        if hasattr(func, '__name__'):
+            return func.__name__
+        elif hasattr(func, 'func'):
+            return func.func.__name__
+        else:
+            return '?'
 
     def updateline(self, data):
         '''
@@ -1012,7 +1022,8 @@ class InteractiveFigs(object):
                     try:
                         plotter(data, ax, color=color)
                     except Exception as e:
-                        log.error('Plotter number {} failed!: {}'.format(axnum, e))
+                        plottername = self.get_func_name(plotter)
+                        log.error('Plotter {},{} failed!: {}'.format(axnum, plottername, e))
                 else:
                     # Simply set the line color after plotting
                     # could mess up the color cycle.
@@ -1080,7 +1091,10 @@ class InteractiveFigs(object):
 # TODO: Can I make a wrapper that makes that easier?
 # TODO: don't have each plot function downsample themselves, just do it once and share the result
 def parametrized(dec):
-    ''' This is a meta-decorator to create a parametrized decorator.  You got a better idea? '''
+    '''
+    NOT USED, JUST AN IDEA
+    This is a meta-decorator to create a parametrized decorator.  You got a better idea?
+    '''
     def layer(*args, **kwargs):
         def repl(f):
             return dec(f, *args, **kwargs)
@@ -1090,6 +1104,7 @@ def parametrized(dec):
 @parametrized
 def plotter(plotfunc, cmap='jet', maxloops=100, maxsamples=5000, clear=False):
     '''
+    NOT USED, JUST AN IDEA
     Plotting functions decorated with this can be written as though they are plotting a single loop,
     but will automatically plot multiple loops if passed.
     Will also try to avoid plotting too much data by decimating (not implemented) it and plotting a maximum number of loops at a time
@@ -1221,7 +1236,7 @@ def dVdIplotter(data, ax=None, **kwargs):
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
 
-# Keithley ones
+# Keithley plotters
 def Rfitplotter(data, ax=None, **kwargs):
     ''' Plot a line of resistance fit'''
     if ax is None:
@@ -1290,17 +1305,23 @@ def VoverIplotter(data, ax=None, **kwargs):
     #    mask = []
 
     def calc_VoverI(data):
-        mask = np.abs(data['V']) > .01
+        # Where V/I is not likely to explode
+        mask = np.abs(data['V']) > .005
+        mask &= data['I'] != 0
+        mask &= np.sign(data['I']) == np.sign(data['V'])
 
         if 'Vmeasured' in data:
-            VoverI = data['Vmeasured'] / data['I']
-        elif 'Imeasured' in data:
-            VoverI = data['V'] / data['Imeasured']
+            V = data['Vmeasured']
         else:
-            VoverI = data['V'] / data['I']
+            V = data['V']
+        if 'Imeasured' in data:
+            I = data['Imeasured']
+        else:
+            I = data['I']
 
+        VoverI = np.empty_like(V)
+        VoverI[mask] = V[mask]/I[mask]
         VoverI[~mask] = np.nan
-        VoverI[VoverI <= 0] = np.nan
 
         return VoverI
 
