@@ -369,16 +369,18 @@ class Keithley2600(object):
         data_array = self.replace_nanvals(data_array)
         return data_array
 
-    def get_data(self, start=1, end=None, history=True):
-        '''
+    def get_data(self, start=1, end=None, history=True, ch='a'):
+        """
         Ask Keithley to print out the data arrays of interest (I, V, t, ...)
         Parse the strings into python arrays
         Return dict of arrays
         dict can also contain scalar values or other meta data
 
         Can pass start and end values if you want just a specific part of the arrays
-        '''
-        numpts = int(float(self.query('print(smua.nvbuffer1.n)')))
+        """
+
+        ch = ch.lower()
+        numpts = int(float(self.query(f'print(smu{ch}.nvbuffer1.n)')))
         if end is None:
             end = numpts
         if numpts > 0:
@@ -386,39 +388,40 @@ class Keithley2600(object):
             out = {}
             out['units'] = {}
             out['longnames'] = {}
+            out['channel'] = ch
 
             ### Collect measurement conditions
             # TODO: What other information is available from Keithley registers?
 
             # Need to do something different if sourcing voltage vs sourcing current
-            source = self.query('print(smua.source.func)')
+            source = self.source_func(ch=ch)
             source = float(source)
             if source:
                 # Returns 1.0 for voltage source (smua.OUTPUT_DCVOLTS)
                 out['source'] = 'V'
-                out['V'] = self.read_buffer('smua.nvbuffer2', 'sourcevalues', start, end)
-                Vmeasured = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
+                out['V'] = self.read_buffer(f'smu{ch}.nvbuffer2', 'sourcevalues', start, end)
+                Vmeasured = self.read_buffer(f'smu{ch}.nvbuffer2', 'readings', start, end)
                 out['Vmeasured'] = Vmeasured
                 out['units']['Vmeasured'] = 'V'
-                I = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
+                I = self.read_buffer(f'smu{ch}.nvbuffer1', 'readings', start, end)
                 out['I'] = I
-                out['Icomp'] = float(self.query('print(smua.source.limiti)'))
+                out['Icomp'] = float(self.query(f'print(smu{ch}.source.limiti)'))
             else:
                 # Current source
                 out['source'] = 'I'
-                out['Vrange'] = float(self.query('print(smua.nvbuffer2.measureranges[1])'))
-                out['Vcomp'] = float(self.query('print(smua.source.limitv)'))
+                out['Vrange'] = float(self.query(f'print(smu{ch}.nvbuffer2.measureranges[1])'))
+                out['Vcomp'] = float(self.query(f'print(smu{ch}.source.limitv)'))
 
-                out['I'] = self.read_buffer('smua.nvbuffer1', 'sourcevalues', start, end)
-                Imeasured = self.read_buffer('smua.nvbuffer1', 'readings', start, end)
+                out['I'] = self.read_buffer(f'smu{ch}.nvbuffer1', 'sourcevalues', start, end)
+                Imeasured = self.read_buffer(f'smu{ch}.nvbuffer1', 'readings', start, end)
                 out['Imeasured'] = Imeasured
                 out['units']['Imeasured'] = 'A'
-                V = self.read_buffer('smua.nvbuffer2', 'readings', start, end)
+                V = self.read_buffer(f'smu{ch}.nvbuffer2', 'readings', start, end)
                 out['V'] = V
 
-            out['t'] = self.read_buffer('smua.nvbuffer2', 'timestamps', start, end)
-            out['Irange'] = self.read_buffer('smua.nvbuffer1', 'measureranges', start, end)
-            out['Vrange'] = self.read_buffer('smua.nvbuffer2', 'measureranges', start, end)
+            out['t'] = self.read_buffer(f'smu{ch}.nvbuffer2', 'timestamps', start, end)
+            out['Irange'] = self.read_buffer(f'smu{ch}.nvbuffer1', 'measureranges', start, end)
+            out['Vrange'] = self.read_buffer(f'smu{ch}.nvbuffer2', 'measureranges', start, end)
 
             out['units']['I'] = 'A'
             out['units']['V'] = 'V'
@@ -873,6 +876,8 @@ class Keithley2600(object):
             enable = 'true'
         elif or_mode is False:
             enable = 'false'
+        else:
+            raise Exception("Error at trigger_blender_stimulus: 'or_mode' can only be set as True or False")
         self.write(f'trigger.blender[{N}].orenable = {enable}')
 
         NumStimulus = len(stimulus)
