@@ -1,5 +1,4 @@
 import numpy as np
-import pandas as pd
 from ..instruments import ping
 import os
 import re
@@ -70,8 +69,7 @@ class Keithley2600(object):
         if not self.connected():
             self.conn = visa_rm.get_instrument(addr, open_timeout=0)
             # Expose a few methods directly to self
-            self.write = self.conn.write
-            self.query = self.conn.query
+            self.debug = False
             self.ask = self.query
             self.read = self.conn.read
             self.read_raw = self.conn.read_raw
@@ -90,6 +88,19 @@ class Keithley2600(object):
             except:
                 pass
         return False
+
+    def write(self, msg):
+        if self.debug:
+            print(msg)
+        self.conn.write(msg)
+
+    def query(self, msg):
+        if self.debug:
+            print(msg)
+        reply = self.conn.query(msg)
+        if self.debug:
+            print(reply)
+        return reply
 
     def idn(self):
         return self.query('*IDN?').replace('\n', '')
@@ -187,7 +198,7 @@ class Keithley2600(object):
         """
 
         source_func = source_func.lower()
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         self.reset()
         # Configure the SMU
         self.reset_ch(ch)
@@ -210,7 +221,7 @@ class Keithley2600(object):
         elif source_func == 'i':
             if v_limit is not None:
                 self.source_limit('v', v_limit, ch)
-                # self.trigger_source_limit('v', v_limit, ch)
+                self.trigger_source_limit('v', v_limit, ch)
             if i_limit is not None:
                 source_list = np.clip(source_list, -i_limit, i_limit)
             if p_limit is not None:
@@ -269,9 +280,9 @@ class Keithley2600(object):
                a_delay=None, b_delay=None,
                a_point4=False, b_point4=False):
 
-        if not isinstance(a_source_list, (list, np.ndarray, pd.Series)):
+        if not isinstance(a_source_list, (list, np.ndarray)):
             a_source_list = a_source_list * np.ones(len(b_source_list))
-        if not isinstance(b_source_list, (list, np.ndarray, pd.Series)):
+        if not isinstance(b_source_list, (list, np.ndarray)):
             b_source_list = b_source_list * np.ones(len(a_source_list))
 
         if len(a_source_list) != len(b_source_list):
@@ -282,7 +293,7 @@ class Keithley2600(object):
         def configure_channel(ch, source_list, source_func, source_range, measure_range,
                               v_limit, i_limit, p_limit, nplc, delay, point4):
             source_func = source_func.lower()
-            ch = ch.lower()
+            ch = self._convert_to_ch(ch)
             # Configure the SMU
             self.reset_ch(ch)
             if point4 is True:
@@ -391,7 +402,7 @@ class Keithley2600(object):
         Can pass start and end values if you want just a specific part of the arrays
         """
 
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         numpts = int(float(self.query(f'print(smu{ch}.nvbuffer1.n)')))
         if end is None:
             end = numpts
@@ -465,6 +476,23 @@ class Keithley2600(object):
             array[array == nv] = np.nan
         return array
 
+    @staticmethod
+    def _convert_to_ch(ch):
+        """
+        :param ch: Name of the channel: 1, 2, 'a', 'b', 'A', 'B' or 'both'
+        :return: Name of the channel as a lower case: 'a', 'b' or 'both'
+        """
+        if ch in (1, 'a', 'A'):
+            ch = 'a'
+        elif ch in (2, 'b', 'B'):
+            ch = 'b'
+        elif ch.lower() == 'both':
+            ch = 'both'
+        else:
+            raise Exception(f"Channel '{ch}' doesn't exist")
+        return ch
+
+
     ### Wrap some of the lua commands directly
     ### There are a million commands so this is not a complete wrapper..
     ### See the 900 page pdf reference manual..
@@ -501,7 +529,7 @@ class Keithley2600(object):
         self.write('reset()')
 
     def reset_ch(self, ch='A'):
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         self.write(f'smu{ch}.reset()')
 
     def waitcomplete(self):
@@ -519,7 +547,7 @@ class Keithley2600(object):
 
         if buffers is None:
             buffers = ['nvbuffer1', 'nvbuffer2']
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         source_func = source_func.lower()
         if source_func == 'v':
             csv1 = False
@@ -565,7 +593,7 @@ class Keithley2600(object):
         :param ch: Channel where measure.
         :return: Measurement value.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if measurement in ['i', 'v', 'r', 'p']:
             reply = self.query(f'print(smu{ch}.measure.{measurement}())')
             reply = float(reply)
@@ -587,7 +615,7 @@ class Keithley2600(object):
         :return: If m_range is None, configured ranged is returned.
         """
         meas_func = meas_func.lower()
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if meas_func == 'v':
             range_func = 'i'
         elif meas_func == 'i':
@@ -611,7 +639,7 @@ class Keithley2600(object):
         :param ch: Channel to which set the source level.
         :return: Source level.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if source_func in ['i', 'v']:
             reply = self._set_or_query(f'smu{ch}.source.level{source_func}', source_val)
         else:
@@ -627,7 +655,7 @@ class Keithley2600(object):
         :return: If func is None it returns the previous value.
         """
 
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if func is not None:
             if func.lower() == 'i':
                 func = f'smu{ch}.OUTPUT_DCAMPS'
@@ -658,7 +686,7 @@ class Keithley2600(object):
         :param ch: Channel to be configured
         :return: If limit is None, configured limit is returned.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         source_param = source_param.lower()
         source_func = self.source_func(ch=ch)
         if source_param == 'v' and source_func == 'v':
@@ -681,7 +709,7 @@ class Keithley2600(object):
         :return: If s_range is None, configured ranged is returned.
         """
         source_func = source_func.lower()
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if type(s_range) == str:
             if s_range.lower() == 'auto':
                 return self._set_or_query(f'smu{ch}.source.autorange{source_func}', True, bool=True)
@@ -692,7 +720,7 @@ class Keithley2600(object):
 
     def source_output(self, state=None, ch='A'):
         # Set output state
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if ch == 'both':
             self._set_or_query(f'smua.source.output', state, bool=True)
             self._set_or_query(f'smub.source.output', state, bool=True)
@@ -713,7 +741,7 @@ class Keithley2600(object):
         :return: None
         """
 
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         source_param = source_param.lower()
         return self._set_or_query(f'smu{ch}.trigger.source.limit{source_param}', limit)
 
@@ -727,7 +755,7 @@ class Keithley2600(object):
         :return: None
         """
 
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         source_func = source_func.lower()
         self.send_list(source_list, 'listvarname')
         return self.write(f'smu{ch}.trigger.source.list{source_func}(listvarname)')
@@ -742,7 +770,7 @@ class Keithley2600(object):
         :return: None
         """
 
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         measurement = measurement.lower()
         if buffer is None:
             if measurement == 'iv':
@@ -765,7 +793,7 @@ class Keithley2600(object):
             False: Do not make measurements during the sweep
             ASYNC: Make measurements during the sweep, but asynchronously with the source area of the trigger model
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if action is True or False:
             return self._set_or_query(f'smu{ch}.trigger.measure.action', action, bool=True)
         else: action = action.lower()
@@ -783,7 +811,7 @@ class Keithley2600(object):
             HOLD: Disables pulse mode sweeps, holding the source level for the remainder of the step.
             (where X is the chanel selcted, such as "a" )
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if action.lower() == 'idle':
             action = 0
         elif action.lower() == 'hold':
@@ -803,7 +831,7 @@ class Keithley2600(object):
             HOLD: Sets the source level to stay at the level of the last step.
             (where X is the chanel selcted, such as "a" )
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if action.lower() == 'idle':
             action = 0
         elif action.lower() == 'hold':
@@ -822,7 +850,7 @@ class Keithley2600(object):
 
         If this count is set to zero (0), the SMU stays in the trigger model indefinitely until aborted.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.trigger.count', count)
 
     def trigger_source_action(self, action=None, ch='A'):
@@ -833,7 +861,7 @@ class Keithley2600(object):
             False: Do not sweep the source
             True: Sweep the source
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.trigger.source.action', action, bool=True)
 
     def trigger_initiate(self, ch='A'):
@@ -842,7 +870,7 @@ class Keithley2600(object):
 
         This function causes the SMU to clear the four trigger model event detectors and enter its trigger model (moves the SMU from the idle state into the arm layer).
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         if ch == 'both':
             self.write(f'smua.trigger.initiate()')
             self.write(f'smub.trigger.initiate()')
@@ -967,7 +995,7 @@ class Keithley2600(object):
 
         More stimulus are possible in LUA.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         stimulus = stimulus.lower()
         stimulus = stimulus.split("_")
         if stimulus[0] == 'a' or stimulus[0] == 'b':
@@ -1023,7 +1051,7 @@ class Keithley2600(object):
 
         More stimulus are possible in LUA.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         stimulus = stimulus.lower()
         stimulus = stimulus.split("_")
         if stimulus[0] == 'a' or stimulus[0] == 'b':
@@ -1058,7 +1086,7 @@ class Keithley2600(object):
             REMOTE: Selects local sense (4-wire)
             CALA: Selects calibration sense mode
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         state = state.upper()
 
         return self.write(f'smu{ch}.sense = smu{ch}.SENSE_{state}')
@@ -1069,7 +1097,7 @@ class Keithley2600(object):
         This attribute controls the integration aperture for the analog-to-digital converter (ADC).
         The integration aperture is based on the number of power line cycles (NPLC), where 1 PLC for 60 Hzis 16.67 ms (1/60) and 1 PLC for 50 Hz is 20 ms (1/50)
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.measure.nplc', nplc)
 
     def measure_delay(self, delay=None, ch='A'):
@@ -1078,7 +1106,7 @@ class Keithley2600(object):
         Specify delay in second.
         To use autodelay set delay='AUTO'
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         try: delay=delay.lower()
         except AttributeError: pass
         if delay == 'auto': delay = f'smu{ch}.DELAY_AUTO'
@@ -1091,7 +1119,7 @@ class Keithley2600(object):
         This function clears all readings and related recall attributes from the buffer (for example,
         bufferVar.timestamps and bufferVar.statuses) from the specified buffer.
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self.write(f'smu{ch}.{buffer}.clear()')
 
     def collect_timestamps(self, state=None, buffer='nvbuffer1', ch='A'):
@@ -1102,7 +1130,7 @@ class Keithley2600(object):
              False: Timestamp value collection disabled (off)
              True: Timestamp value collection enabled (on)
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.{buffer}.collecttimestamps', state, bool=True)
 
     def collect_timevalues(self, state=None, buffer='nvbuffer1', ch='A'):
@@ -1113,12 +1141,12 @@ class Keithley2600(object):
             False: Source value collection disabled (off)
             True: Source value collection enabled (on)
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.{buffer}.collecttimevalues', state, bool=True)
 
     def collect_sourcevalues(self, state=None, buffer='nvbuffer1', ch='A'):
         """
         This attribute sets whether or not source values will be stored with the readings in the buffer
         """
-        ch = ch.lower()
+        ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.{buffer}.collectsourcevalues', state, bool=True)

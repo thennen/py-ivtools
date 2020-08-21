@@ -17,6 +17,7 @@ v_blue = np.linspace(2.5, 3, 100)
 def iv():
     plt.figure()
 
+    log.info("Testing IV sourcing V")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -24,6 +25,7 @@ def iv():
     data = k.get_data(start=1, end=None, history=True, ch='a')
     plt.plot(data['Vmeasured'], data['I'], label='iv')
 
+    log.info("Testing IV sourcing I")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -31,6 +33,7 @@ def iv():
     data = k.get_data(start=1, end=None, history=True, ch='a')
     plt.plot(data['V'], data['Imeasured'], label="source = I")
 
+    log.info("Testing IV sourcing V in channel B")
     k.iv(source_list=v_blue, source_func='v', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='b')
@@ -43,11 +46,12 @@ def iv():
 
 
 def iv_limits():
+    log.info("Testing limiting in IV")
     v_limit = 1.85
     i_limit = 0.004
     p_limit = v_limit*i_limit
 
-    log.info("Sourcing I, limiting I")
+    log.info("\tSourcing I, limiting I")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=None, i_limit=i_limit, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -59,7 +63,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-    log.info("Sourcing I, limiting V")
+    log.info("\tSourcing I, limiting V")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=v_limit, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -71,7 +75,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-    log.info("Sourcing V, limiting V")
+    log.info("\tSourcing V, limiting V")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=v_limit, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -83,7 +87,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-    log.info("Sourcing V, limiting I")
+    log.info("\tSourcing V, limiting I")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=None, i_limit=i_limit, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -95,7 +99,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-    log.info("Sourcing V, limiting P")
+    log.info("\tSourcing V, limiting P")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=p_limit,
          nplc=1, delay=None, point4=False, ch='a')
@@ -106,7 +110,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-    log.info("Sourcing I, limiting P")
+    log.info("\tSourcing I, limiting P")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=p_limit,
          nplc=1, delay=None, point4=False, ch='a')
@@ -119,6 +123,7 @@ def iv_limits():
 
 
 def vi():
+    log.info("Testing VI")
     k.vi(source_list=i_red, source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -132,7 +137,46 @@ def vi():
 
 
 def iv_2ch():
+    log.info("Testing IV 2 channels")
     k.iv_2ch(a_source_list=v_red, b_source_list=v_blue,
+             a_source_func='v', b_source_func='v',
+             a_source_range=None, b_source_range=None,
+             a_measure_range=None, b_measure_range=None,
+             a_v_limit=None, b_v_limit=None,
+             a_i_limit=None, b_i_limit=None,
+             a_p_limit=None, b_p_limit=None,
+             a_nplc=1, b_nplc=1,
+             a_delay=None, b_delay=None,
+             a_point4=False, b_point4=False)
+    k.waitready()
+    data = k.get_data_2ch(start=1, end=None, history=True)
+    plt.figure()
+    plt.plot(data['V_A'], data['I_A'], label='2ch A')
+    plt.plot(data['V_B'], data['I_B'], label='2ch A')
+    plt.legend()
+    plt.show()
+
+    log.info("Testing IV 2 channels with voltage in B static")
+    k.iv_2ch(a_source_list=v_red, b_source_list=np.max(v_blue),
+             a_source_func='v', b_source_func='v',
+             a_source_range=None, b_source_range=None,
+             a_measure_range=None, b_measure_range=None,
+             a_v_limit=None, b_v_limit=None,
+             a_i_limit=None, b_i_limit=None,
+             a_p_limit=None, b_p_limit=None,
+             a_nplc=1, b_nplc=1,
+             a_delay=None, b_delay=None,
+             a_point4=False, b_point4=False)
+    k.waitready()
+    data = k.get_data_2ch(start=1, end=None, history=True)
+    plt.figure()
+    plt.plot(data['V_A'], data['I_A'], label='2ch A')
+    plt.plot(data['V_B'], data['I_B'], label='2ch A')
+    plt.legend()
+    plt.show()
+
+    log.info("Testing IV 2 channels with voltage in A static")
+    k.iv_2ch(a_source_list=np.max(v_red), b_source_list=v_blue,
              a_source_func='v', b_source_func='v',
              a_source_range=None, b_source_range=None,
              a_measure_range=None, b_measure_range=None,
