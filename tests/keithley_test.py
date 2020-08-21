@@ -47,6 +47,7 @@ def iv_limits():
     i_limit = 0.004
     p_limit = v_limit*i_limit
 
+    log.info("Sourcing I, limiting I")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=None, i_limit=i_limit, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -58,6 +59,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
+    log.info("Sourcing I, limiting V")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=v_limit, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -69,7 +71,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-
+    log.info("Sourcing V, limiting V")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=v_limit, i_limit=None, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -81,7 +83,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
-
+    log.info("Sourcing V, limiting I")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=None, i_limit=i_limit, p_limit=None,
          nplc=1, delay=None, point4=False, ch='a')
@@ -93,6 +95,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
+    log.info("Sourcing V, limiting P")
     k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=p_limit,
          nplc=1, delay=None, point4=False, ch='a')
@@ -103,6 +106,7 @@ def iv_limits():
     plt.legend()
     plt.show()
 
+    log.info("Sourcing I, limiting P")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
          v_limit=None, i_limit=None, p_limit=p_limit,
          nplc=1, delay=None, point4=False, ch='a')
@@ -147,7 +151,7 @@ def iv_2ch():
     plt.show()
 
 if __name__ == '__main__':
-    # iv()
+    iv()
     iv_limits()
-    # vi()
-    # iv_2ch()
+    vi()
+    iv_2ch()
