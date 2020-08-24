@@ -708,7 +708,7 @@ def set_compliance(cc_value):
     rigol.DC(Vc, ch=2)
 
 
-def compliance_voltage(I):
+def compliance_voltage_lookup(I):
     '''
     Interpolates a calibration table to convert between Icompliance and Vcontrol
     if you ask for a current outside of the calibration range, the output will be clipped
@@ -720,11 +720,11 @@ def compliance_voltage(I):
         # interpolate for best value for vc
         Vc = np.interp(I, cal['Ic'], cal['Vc'])
     else:
-        print('No calibration file! Guessing.')
-        # TODO use diode equation
-        Remitter = 2050
-        Vneg = 9.6
-        Vc = Ic*Remitter - Vneg + 0.344
+        print('No calibration file! Using diode equation.')
+        #Remitter = 2050
+        #Vneg = 9.6
+        #Vc = Ic*Remitter - Vneg + 0.344
+        Vc = compliance_voltage(I)
     return Vc
 
 def compliance_voltage(I, Is=2.5825e-10, Ioff=-2.063e-6, Re=1997.3, Vneg=-9.6):
