@@ -743,8 +743,8 @@ def compliance_voltage(I, Is=2.5825e-10, Ioff=-2.063e-6, Re=1997.3, Vneg=-9.6):
     # System that needs to be solved for I(V):
     # I = Is(exp(Vd/VT) - 1) + Ioff
     # Vd = V - IRe
+    # where V is the voltage level above the negative rail
 
-    where V is the voltage level above the negative rail
     # Thermal Voltage
     V_T = 25.69e-3
     V = V_T * np.log((I - Ioff + Is) / Is) + I*Re + Vneg
