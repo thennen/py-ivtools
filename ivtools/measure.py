@@ -439,13 +439,15 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 
-########### Compliance circuit ###################
+########### Old compliance circuit ###################
+# this version had no auto-offset-compensation
+# used a look up table and usb DAQ
 
 # Voltage dividers
 # (Compliance control voltage)      DAC0 - 12kohm - 12kohm
 # (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
 
-def set_compliance(cc_value):
+def set_compliance_old(cc_value):
     '''
     Use two analog outputs to set the compliance current and compensate input offset.
     Right now we use static lookup tables for compliance and compensation values.
@@ -469,7 +471,7 @@ def set_compliance(cc_value):
     ivtools.settings.COMPLIANCE_CURRENT = cc_value
     ivtools.settings.INPUT_OFFSET = 0
 
-def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
+def calibrate_compliance_old(iterations=3, startfromfile=True, ndacvals=40):
     '''
     Set and measure some compliance values throughout the range, and save a calibration look up table
     Need picoscope channel B connected to circuit output
@@ -538,7 +540,7 @@ def calibrate_compliance(iterations=3, startfromfile=True, ndacvals=40):
 
     return compensations
 
-def plot_compliance_calibration():
+def plot_compliance_calibration_old():
     fn = 'compliance_calibration.pkl'
     print('Reading calibration from file {}'.format(os.path.abspath(fn)))
     with open(fn, 'rb') as f:
@@ -557,7 +559,7 @@ def plot_compliance_calibration():
     plt.tight_layout()
     return cc
 
-def measure_compliance():
+def measure_compliance_old():
     '''
     Our circuit does not yet compensate the output for different current compliance levels
     Right now current compliance is set by a physical knob, not by the computer.  This will change.
@@ -606,9 +608,8 @@ def measure_compliance():
     return (ccurrent, Amean)
 
 
-## self-biasing version that uses AWG for current
-
-########### Digipot ####################
+########### New compliance circuit ###################
+# self-biasing compliance circuit version that uses AWG for current control
 
 def calibrate_compliance_new():
     # Here will go a version that does not need keithley to calibrate.  will be faster but less accurate.
@@ -617,27 +618,32 @@ def calibrate_compliance_new():
 def calibrate_compliance_with_keithley(Rload=1000):
     '''
     Use keithley to calibrate current compliance levels
-    takes a long time, but will be accurate
+    Attach keithley channel A to input of compliance circuit through a resistor (Rload)
+    Use rigol channel 2 for the compliance control voltage
+    this sets different compliance levels and measures the whole I-V curve for that setting
+    takes a while, but will be accurate
     '''
     k = instruments.Keithley2600()
     rigol = instruments.RigolDG5000()
 
     Remitter = 2050
-    Vneg = 9.6
+    Vneg = 9.6 # negative power rail
     def approxVc(Ic):
         # first approximation for calibration of current source
         return Ic*Remitter - Vneg + 0.344
+
     def approxIc(Vc):
         return (Vc + Vneg - 0.344) / Remitter
 
+    # Measure IV sweeps with different voltages applied to the current control
     approxImax = 2e-3
     n = 30
     approxVcmax = approxVc(approxImax)
     vlist = np.linspace(-9.6, approxVcmax, n)
     # what V is necessary to reach the highest I? apply 1.25 times that
     Vmax = approxIc(max(vlist)) * Rload * 1.25
+    Vmax = min(Vmax, 5)
     Vmin = Rload * 500e-6
-    # Sweeps?
     data = []
     for v in vlist:
         rigol.DC(v, 2)
@@ -647,19 +653,56 @@ def calibrate_compliance_with_keithley(Rload=1000):
         data.append(d)
     data = pd.DataFrame(data)
 
-    mask = data.Ic > 100e-6
-    p = np.polyfit(data.Vc[mask], data.Ic[mask], 1)
+    # calculate the current saturation level and slope for every control voltage
+    # early effect slope (hundreds of kohm)
     data['R'] = ivtools.analyze.resistance(data, Vmax/1.25, Vmax)
-    data['Ic'] = slicebyvalue(data, 'V', Vmax/1.25, Vmax).I.apply(np.mean)
+    data['Ic'] = ivtools.analyze.slicebyvalue(data, 'V', Vmax/1.25, Vmax).I.apply(np.mean)
     data['Vc'] = vlist
     #plt.figure()
     #plt.plot(vc, np.polyval(p, vc))
+
+    # fit diode equation
+    from scipy.optimize import curve_fit
+    # params Is=1e-10, Ioff=-2.075e-6, Re=2050, Vneg=-9.6
+    guess = (1e-10, -2e-6, 2050)
+    p = curve_fit(compliance_voltage, data.Ic, data.Vc, guess)[0]
+    Is, Ioff, Re = p
+
+    # There's not a great way to store these scalars in the dataframe
+    data._metadata = ['Is', 'Ioff', 'Re']
+    data.Is = Is
+    data.Ioff = Ioff
+    data.Re = Re
+
     data.to_pickle(ivtools.settings.COMPLIANCE_CALIBRATION_FILE)
 
     return data
 
 
-def set_compliance_new(cc_value):
+def plot_compliance_calibration():
+    calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
+    if os.path.isfile(calfile):
+        cal = pd.read_pickle(calfile)
+
+    plt.figure()
+    plt.plot(cal.Vc, cal.Ic, marker='.')
+    I = np.linspace(-4e-6, np.max(cal.Ic), 1000)
+    V = compliance_voltage(I, cal.Is, cal.Ioff, cal.Re)
+    plt.plot(V, I)
+    plt.xlabel('V_base [V]')
+    plt.ylabel('I_limit [A]')
+
+    plt.figure()
+    for i,r in cal.iterrows():
+        plt.plot(r.V, r.I, label=r.Vc)
+    plt.xlabel('V_input')
+    plt.ylabel('I_input')
+
+
+def set_compliance(cc_value):
+    '''
+    Setting a DC value for the current limit
+    '''
     rigol = instruments.RigolDG5000()
     Vc = compliance_voltage(cc_value)
     rigol.DC(Vc, ch=2)
@@ -668,6 +711,7 @@ def set_compliance_new(cc_value):
 def compliance_voltage(I):
     '''
     Interpolates a calibration table to convert between Icompliance and Vcontrol
+    if you ask for a current outside of the calibration range, the output will be clipped
     # TODO Use a spline
     '''
     calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
@@ -677,11 +721,38 @@ def compliance_voltage(I):
         Vc = np.interp(I, cal['Ic'], cal['Vc'])
     else:
         print('No calibration file! Guessing.')
+        # TODO use diode equation
         Remitter = 2050
         Vneg = 9.6
         Vc = Ic*Remitter - Vneg + 0.344
     return Vc
 
+def compliance_voltage(I, Is=2.5825e-10, Ioff=-2.063e-6, Re=1997.3, Vneg=-9.6):
+    '''
+    Use continuous diode equation to calculate the control voltage needed for a target compliance current (Icc)
+    default values are from calibration
+
+    it's quite linear above 100 uA or so.  This is more important for lesser values
+
+    Inputs are calibration constants
+    Is -- diode reverse saturation current
+    Re -- emitter resistance
+    Ioff -- input offset current
+    Vneg -- negative rail of power supply
+    '''
+    # System that needs to be solved for I(V):
+    # I = Is(exp(Vd/VT) - 1) + Ioff
+    # Vd = V - IRe
+
+    where V is the voltage level above the negative rail
+    # Thermal Voltage
+    V_T = 25.69e-3
+    V = V_T * np.log((I - Ioff + Is) / Is) + I*Re + Vneg
+    V[np.isnan(V)] = Vneg
+    return V
+
+
+########### Digipot ####################
 
 def digipot_test(plot=True):
     '''
@@ -779,6 +850,7 @@ def digipot_calibrate(plot=True):
 
     print([d['R'][0].round(2) for d in data])
     return data
+
 
 ########### Conversion from picoscope channel data to IV data ###################
 
