@@ -611,10 +611,6 @@ def measure_compliance_old():
 ########### New compliance circuit ###################
 # self-biasing compliance circuit version that uses AWG for current control
 
-def calibrate_compliance_new():
-    # Here will go a version that does not need keithley to calibrate.  will be faster but less accurate.
-    pass
-
 def calibrate_compliance_with_keithley(Rload=1000):
     '''
     Use keithley to calibrate current compliance levels
@@ -664,9 +660,20 @@ def calibrate_compliance_with_keithley(Rload=1000):
     # fit diode equation
     from scipy.optimize import curve_fit
     # params Is=1e-10, Ioff=-2.075e-6, Re=2050, Vneg=-9.6
-    guess = (1e-10, -2e-6, 2050)
-    p = curve_fit(compliance_voltage, data.Ic, data.Vc, guess)[0]
-    Is, Ioff, Re = p
+    guess = (1e-10, -2e-6, 2000)
+    try:
+        p = curve_fit(compliance_voltage, data.Ic, data.Vc, guess)[0]
+        Is, Ioff, Re = p
+    except RuntimeError as e:
+        log.error('compliance current calibration fit failed!')
+        Is = 2.5825e-10
+        Ioff = -2.063e-6
+        Re = 1997.3
+
+    #guess = (1e-10, -2e-6)
+    #p = curve_fit(compliance_voltage, data.Ic, data.Vc, guess)[0]
+    #Is, Ioff = p
+    #Re = 2000
 
     # There's not a great way to store these scalars in the dataframe
     data._metadata = ['Is', 'Ioff', 'Re']
@@ -678,9 +685,9 @@ def calibrate_compliance_with_keithley(Rload=1000):
 
     return data
 
-
-def plot_compliance_calibration():
-    calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
+def plot_compliance_calibration(calfile=None):
+    if calfile is None:
+        calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
     if os.path.isfile(calfile):
         cal = pd.read_pickle(calfile)
 
@@ -697,16 +704,16 @@ def plot_compliance_calibration():
         plt.plot(r.V, r.I, label=r.Vc)
     plt.xlabel('V_input')
     plt.ylabel('I_input')
-
+    return cal
 
 def set_compliance(cc_value):
     '''
     Setting a DC value for the current limit
     '''
     rigol = instruments.RigolDG5000()
-    Vc = compliance_voltage(cc_value)
+    Vc = compliance_voltage_lookup(cc_value)
     rigol.DC(Vc, ch=2)
-
+    rigol.output(True, ch=2)
 
 def compliance_voltage_lookup(I):
     '''
@@ -731,6 +738,7 @@ def compliance_voltage(I, Is=2.5825e-10, Ioff=-2.063e-6, Re=1997.3, Vneg=-9.6):
     '''
     Use continuous diode equation to calculate the control voltage needed for a target compliance current (Icc)
     default values are from calibration
+    depends on a good fit! plot_compliance_calibration() to check it!
 
     it's quite linear above 100 uA or so.  This is more important for lesser values
 
@@ -748,9 +756,101 @@ def compliance_voltage(I, Is=2.5825e-10, Ioff=-2.063e-6, Re=1997.3, Vneg=-9.6):
     # Thermal Voltage
     V_T = 25.69e-3
     V = V_T * np.log((I - Ioff + Is) / Is) + I*Re + Vneg
-    V[np.isnan(V)] = Vneg
+    if type(V) is np.ndarray:
+        V[np.isnan(V)] = Vneg
     return V
 
+def hybrid_IV(Imax=500e-6, Vmin=-3, dur=1e-3):
+    '''
+    this does a current sweep in the positive direction, followed by a voltage sweep in the
+    negative direction using compliance circuit.  All I,V points are measured
+
+    will work better with compliance circuit that sits on the sourcing side
+
+    tested a bit but it's a work in progress
+    TODO: make a pulse2ch_and_capture for these synchronized signals, and use that
+    '''
+
+    # To synchronize rigol channels, you need an external trigger split into the two sync ports on the back.
+    # This is provided by a second rigol here
+    rigol = instruments.RigolDG5000('USB0::0x1AB1::0x0640::DG5T155000186::INSTR')
+    rigol2 = instruments.RigolDG5000('USB0::0x1AB1::0x0640::DG5T182500117::INSTR')
+    ps = instruments.Picoscope()
+
+    I_to_Vc = compliance_voltage_lookup
+
+    # TODO we should transition more smoothly at the crossover
+    #      might need to carefully decide how to do it
+    wfm_len = 2**12
+    mid = wfm_len // 2
+    t = np.linspace(0, 2*np.pi, wfm_len)
+    # current source during voltage sweep (should be high enough to bring the collector
+    # current up and therefore emitter resistance down)
+    Iidle = I_to_Vc(Imax*1.3)
+    # voltage source during current sweep (needs to be enough to supply all the currents)
+    # but Vneedle can only go up to 4v or so!
+    # meaning that we can't get an accurate Vdevice unless Vneedle < 4
+    Vidle = 4
+    iwfm = I_to_Vc(Imax*np.sin(t)**2)
+    iwfm[mid:] = Iidle
+    vwfm = -np.abs(Vmin)*np.sin(t)**2
+    vwfm[:mid] = Vidle
+    vwfm[0] = vwfm[-1] = 0
+    iwfm[0] = iwfm[-1] = Iidle
+    # just add some smoother linear transitions
+    # sorry this is ugly af
+    # when converting to current source, drop the current before increasing the voltage limit
+    # when converting to voltage source, drop the voltage before increasing the current limit
+    trans_len = 2**6
+    iwfm = np.concatenate(([iwfm[0]], np.linspace(iwfm[0], iwfm[1], trans_len), np.repeat(iwfm[1], trans_len),
+                           iwfm[1:mid], np.repeat(iwfm[mid-1], trans_len),
+                           np.linspace(iwfm[mid-1], [iwfm[mid]], trans_len), iwfm[mid:]))
+    vwfm = np.concatenate(([vwfm[0]], np.repeat(vwfm[0], trans_len), np.linspace(vwfm[0], vwfm[1], trans_len), vwfm[1:mid],
+                           np.linspace(vwfm[mid-1], [vwfm[mid]], trans_len), np.repeat(vwfm[mid], trans_len), vwfm[mid:]))
+    '''
+    plt.figure()
+    plt.plot(iwfm)
+    plt.plot(vwfm)
+    '''
+
+    rigol.load_volatile_wfm(vwfm, dur, ch=1)
+    time.sleep(.1)
+    # Use rigol offset, or else the zero idle level will destroy everything
+    iwfm -= Iidle
+    rigol.load_volatile_wfm(iwfm, dur, ch=2, offset=Iidle)
+    rigol.setup_burstmode(n=1, trigsource='EXT', ch=1)
+    rigol.setup_burstmode(n=1, trigsource='EXT', ch=2)
+    # This delay seems to be necessary the first time you set up burst mode?
+    time.sleep(1)
+
+    ps.capture(['A', 'B', 'C'], 1e8, dur, timeout_ms=3000, pretrig=0)
+    # trigger everything
+    rigol2.pulse_builtin('SQU', duration=1e-6, amp=5, offset=5)
+    d = ps.get_data(['A', 'B', 'C'])
+    d = ccircuit_to_iv(d)
+    #plot_channels(d)
+    #savedata(d)
+
+    d['t'] = ivtools.analyze.maketimearray(d)
+    '''
+    sd = smoothimate(d, 300, 10)
+    # TODO cut out the crossover distortion
+    #plotiv(sd, 'Vd', 'I')
+
+    # if no linear transitions
+    #plotiv(slicebyvalue(sd, 't', dur*.0015, dur*(0.5-0.001)), 'Vd', 'I')
+    #plotiv(slicebyvalue(sd, 't', dur*(0.5 + 0.001)), 'Vd', 'I', ax=plt.gca())
+
+    dplus = slicebyvalue(sd, 't', dur*.017, dur*(0.5-0.001))
+    dminus = slicebyvalue(sd, 't', dur*(0.5 + 0.017))
+    plotiv(dplus, 'Vd', 'I')
+    hplotiv(dminus, 'Vd', 'I')
+
+    plotiv(dplus, 'Vd', 'I', plotfunc=arrowpath, maxsamples=100)
+    hplotiv(dminus, 'Vd', 'I', plotfunc=arrowpath, maxsamples=100, color='C1')
+    '''
+
+    return d
 
 ########### Digipot ####################
 
@@ -854,7 +954,7 @@ def digipot_calibrate(plot=True):
 
 ########### Conversion from picoscope channel data to IV data ###################
 
-def ccircuit_to_iv(datain, dtype=np.float32):
+def ccircuit_to_iv_old(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     For the early version of compliance circuit, which needs manual compensation
@@ -889,7 +989,7 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
-def new_ccircuit_to_iv(datain, dtype=np.float32):
+def ccircuit_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     For the newer version of compliance circuit, which compensates itself and amplifies the needle voltage

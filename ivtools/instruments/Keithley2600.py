@@ -67,15 +67,15 @@ class Keithley2600(object):
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():
+            self.debug = False
+            # Store up to 100 loops in memory in case you forget to save them to disk
+            self.data = deque(maxlen=100)
             self.conn = visa_rm.get_instrument(addr, open_timeout=0)
             # Expose a few methods directly to self
-            self.debug = False
             self.ask = self.query
             self.read = self.conn.read
             self.read_raw = self.conn.read_raw
             self.close = self.conn.close
-            # Store up to 100 loops in memory in case you forget to save them to disk
-            self.data = deque(maxlen=100)
         # Always re-run lua file
         moduledir = os.path.split(__file__)[0]
         self.run_lua_file(os.path.join(moduledir, 'Keithley_2600.lua'))
@@ -103,7 +103,7 @@ class Keithley2600(object):
         return reply
 
     def idn(self):
-        return self.query('*IDN?').replace('\n', '')
+        return self.conn.query('*IDN?').replace('\n', '')
 
     def run_lua_lines(self, lines):
         ''' Send some lines (list of strings) to Keithley lua interpreter '''

@@ -38,7 +38,12 @@ class RigolDG5000(object):
     @staticmethod
     def get_visa_addr():
         # Look for the address of the DG5000 using visa resource manager
-        for resource in visa_rm.list_resources():
+        # Prefer DG5102
+        resources = visa_rm.list_resources()
+        for resource in resources:
+            if 'DG5T155000186' in resource:
+                return resource
+        for resource in resources:
             if 'DG5' in resource:
                 return resource
         return 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'
@@ -524,7 +529,7 @@ class RigolDG5000(object):
 
     def setup_burstmode(self, n=1, burstmode='TRIG', trigsource='MAN', ch=1):
         '''
-        Several commands grouped togother to set up bursting
+        Several commands grouped together to set up bursting
         MIGHT temporarily mess with your idle level until you send the first pulse
         this is because of the burstmode command
         '''
