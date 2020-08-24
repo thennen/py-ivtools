@@ -1518,7 +1518,8 @@ time_shift = 0,
 reflection_offset = 0,
 transmission_offset = 0,
 return_figs = False, 
-conjugate = False):
+conjugate = False,
+cut_off_frequency = None):
     '''uses scattering parameters of a device and a applied signal to calculate the transmission through and the reflection from the device'''
     ntwk_kHz = rf.Network(file)
     frequencies_kHz = ntwk_kHz.f
@@ -1598,30 +1599,30 @@ conjugate = False):
         s21_combined = np.concatenate([s21_kHz[idx_kHz], overlap_s21_MHz_interp, s21_MHz[idx_MHz]]) 
 
         if do_plots or return_figs:
-                fig_tf0, ax_tf0 = plt.subplots()
-                fig_tf1, ax_tf1 = plt.subplots()
-                ax_tf0.loglog(frequencies_combined, np.abs(s21_combined))
-                ax_tf1.semilogx(frequencies_combined, np.angle(s21_combined))
+            fig_tf0, ax_tf0 = plt.subplots()
+            fig_tf1, ax_tf1 = plt.subplots()
+            ax_tf0.loglog(frequencies_combined, np.abs(s21_combined))
+            ax_tf1.semilogx(frequencies_combined, np.angle(s21_combined))
 
-                fig_rf0, ax_rf0 = plt.subplots()
-                fig_rf1, ax_rf1 = plt.subplots()
-                ax_rf0.loglog(frequencies_combined, np.abs(s11_combined))
-                ax_rf1.semilogx(frequencies_combined, np.angle(s11_combined))
+            fig_rf0, ax_rf0 = plt.subplots()
+            fig_rf1, ax_rf1 = plt.subplots()
+            ax_rf0.loglog(frequencies_combined, np.abs(s11_combined))
+            ax_rf1.semilogx(frequencies_combined, np.angle(s11_combined))
 
         transferFunction = s21_combined
         reflectionFunction = s11_combined
     else:
         frequencies_combined = frequencies_kHz
         if do_plots or return_figs:
-                fig_tf0, ax_tf0 = plt.subplots()
-                fig_tf1, ax_tf1 = plt.subplots()
-                ax_tf0.loglog(frequencies_combined, np.abs(s21_kHz))
-                ax_tf1.semilogx(frequencies_combined, np.angle(s21_kHz))
+            fig_tf0, ax_tf0 = plt.subplots()
+            fig_tf1, ax_tf1 = plt.subplots()
+            ax_tf0.loglog(frequencies_combined, np.abs(s21_kHz))
+            ax_tf1.semilogx(frequencies_combined, np.angle(s21_kHz))
 
-                fig_rf0, ax_rf0 = plt.subplots()
-                fig_rf1, ax_rf1 = plt.subplots()
-                ax_rf0.loglog(frequencies_combined, np.abs(s11_kHz))
-                ax_rf1.semilogx(frequencies_combined, np.angle(s11_kHz))
+            fig_rf0, ax_rf0 = plt.subplots()
+            fig_rf1, ax_rf1 = plt.subplots()
+            ax_rf0.loglog(frequencies_combined, np.abs(s11_kHz))
+            ax_rf1.semilogx(frequencies_combined, np.angle(s11_kHz))
 
         transferFunction = s21_kHz
         reflectionFunction = s11_kHz
@@ -1712,6 +1713,9 @@ conjugate = False):
 
     Signal_f_conv = Signal_f*transferFunction_interp
     Signal_f_conv_r = Signal_f*reflectionFunction_interp
+    if cut_off_frequency != None:
+        idx_f = np.where(f > cut_off_frequency)[0]
+        Signal_f_conv[idx_f] = 0
     Signal_t_conv  = np.fft.irfft(Signal_f_conv) - transmission_offset
     Signal_t_conv_r  = np.fft.irfft(Signal_f_conv_r) - reflection_offset
     if len(v_signal) > len(Signal_t_conv_r):
