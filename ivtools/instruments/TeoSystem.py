@@ -89,9 +89,6 @@ class TeoSystem(object):
     # TODO: should we store a calibration to remove the offsets? monitor has a big offset and for
             the other channel it depends a bit on the gain setting.
 
-    # TODO: maybe we should change the word trigger to gate and trig1 to gate1 etc
-            my language might have been a little wrong there
-
     '''
 
     def __init__(self):
@@ -348,18 +345,18 @@ class TeoSystem(object):
     def gain(self, step=None):
         '''
         This simultaneously sets the gain for two current amplifiers
-        Amp1: Low BW output, also what you read on second ADC channel
-        Amp2: High BW output
+        Amp1: High BW output
+        Amp2: Low BW output, also what you read on second ADC channel
 
         The system shares a 5 bit register to set both gains
         the two amplifiers both read and interpret this register in different ways.
 
-        Amp1 uses the two LSB, for possible step settings 0,1,2,3
-        each step corresponds to 6dB (2×)
+        Amp1 uses all of the bits, for possible step settings 0-31
+        each step corresponds to 1dB (1.122×)
         step = 0 is the highest gain setting
 
-        Amp2 uses all of the bits, for possible step settings 0-31
-        each step corresponds to 1dB (1.122×)
+        Amp2 uses the two LSB, for possible step settings 0,1,2,3
+        each step corresponds to 6dB (2×)
         step = 0 is the highest gain setting
 
         This would mean that if you want to set the gain of Amp2, the gain
@@ -571,6 +568,7 @@ class TeoSystem(object):
               2. pad measured waveform with np.nan where trig1 is False
               we could also think about slicing the arrays where there are gaps in the capturing
               then this would return a list of dicts
+              currently we do 2. but there are some potential problems with extra samples
         '''
 
         # We only get waveform samples where trigger is True, so these could be shorter than wfm
@@ -598,7 +596,7 @@ class TeoSystem(object):
         # TODO: calibrate this better
         I = HFI * 99.4e-5 / R_HFI
         # TODO: also calibrate this, this is just a guess
-        V = (HFV + 320e-3) / 2.47
+        V = (HFV + 320e-3) / 2.047
 
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
 
