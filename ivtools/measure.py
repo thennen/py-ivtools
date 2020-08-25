@@ -15,6 +15,10 @@ import os
 from functools import partial
 import pickle
 import signal
+import logging
+
+log = logging.getLogger('measure')
+
 
 ########### Picoscope - Rigol AWG testing #############
 

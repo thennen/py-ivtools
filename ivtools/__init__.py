@@ -51,7 +51,8 @@ loggers = {
     'io':          Fore.CYAN + stream_format + Style.RESET_ALL,
     'plots':       Fore.YELLOW + stream_format + Style.RESET_ALL,
     'analyze':     Fore.BLUE + stream_format + Style.RESET_ALL,
-    'interactive': Fore.MAGENTA + stream_format + Style.RESET_ALL
+    'interactive': Fore.MAGENTA + stream_format + Style.RESET_ALL,
+    'measure':     Fore.BLACK + stream_format + Style.RESET_ALL
 }
 
 logging_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -64,6 +65,8 @@ class LevelFilter(logging.Filter):
 
     def filter(self, record):
         if record.levelname == self.level_name:
+            if self.logger_name not in logging_prints:
+                return True
             if logging_prints[self.logger_name]['all'] is True:
                 allow = True
             elif logging_prints[self.logger_name]['all'] is False:

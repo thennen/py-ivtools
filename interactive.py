@@ -174,13 +174,15 @@ instrument_varnames = {instruments.Picoscope:'ps',
                        instruments.WichmannDigipot: 'dp',
                        instruments.EugenTempStage: 'ts'}
 # Make varnames None until connected
+# but don't overwrite them if they exist already
 for kk, v in instrument_varnames.items():
-    globalvars[v] = None
+    if v not in globalvars:
+        globalvars[v] = None
 
 if visa.visa_rm is not None:
     visa_resources = visa.visa_rm.list_resources()
 else:
-    # you don't have visa installed
+    # you don't have visa installed, things probably won't end well.
     visa_resources = []
 
 # Connect to all the instruments
@@ -284,9 +286,9 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
 
-    :param data: Row of data to be add to the database.
-    :param folder_path: Folder where all data will be saved. If None, data will be saved in username/ivdata.
-    :param database_path: Path of the database where data will be saved. If None, data will be saved in username/ivdata.
+    :param data: Data to write to disk, non-array data is added to the database.
+    :param folder_path: Folder where all data will be saved. If None, settings.datafolder/subfolder is used.
+    :param database_path: Path of the database where data will be saved. If None, settings.dbpath is used.
     :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
     :param drop: drop columns to save disk space.
     """
@@ -304,7 +306,6 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
 def load_metadb(database_path=None, table_name='meta'):
     """
     Load the database into a data frame.
-    Not sure if this is necessary.
     :param database_path: Path of the database to load.
     :param table_name: Name of the database to load.
     :return: Table of the database as a pandas.DataFrame.
