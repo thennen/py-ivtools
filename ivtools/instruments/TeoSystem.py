@@ -114,8 +114,10 @@ class TeoSystem(object):
             HMan = Dispatch('TSX_HMan')
         except com_error as e:
             # TODO is this necessarily the meaning of this error?
-            raise type(e)(str(e) +
-                          ' TEO software not installed?').with_traceback(sys.exc_info()[2])
+            #raise type(e)(str(e) +
+            #              ' TEO software not installed?').with_traceback(sys.exc_info()[2])
+            log.error('Teo software not installed?')
+            return
 
         # Asks the program for a device called MEMORY_TESTER
         MemTester = HMan.GetSystem('MEMORY_TESTER')
