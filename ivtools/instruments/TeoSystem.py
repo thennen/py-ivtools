@@ -120,7 +120,8 @@ class TeoSystem(object):
         # Asks the program for a device called MEMORY_TESTER
         MemTester = HMan.GetSystem('MEMORY_TESTER')
         if MemTester is None:
-            raise Exception('Teo software cannot locate a connected memory tester. Check USB connection.')
+            log.error('Teo software cannot locate a connected memory tester. Check USB connection.')
+            return
 
         # Access a bunch of classes used to control the TEO board.
         # The contained methods/attributes appear in tab completion, but the contained classes do not
