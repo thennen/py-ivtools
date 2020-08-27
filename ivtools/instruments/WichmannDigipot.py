@@ -12,6 +12,8 @@ class WichmannDigipot(object):
     There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
     There are 31 ~log spaced resistance values per digipot
 
+    The firmware to use on the arduino is ReadASCIIString.ino
+
     TODO: Change arduino command system to not need entire state in one chunk
     should be three commands, for setting wiper1, wiper2, and relay
 
@@ -159,8 +161,12 @@ class WichmannDigipot(object):
         pass
 
 
-class WichmannDigipot_new(object):
+class WichmannDigipot_newfirmware(object):
     '''
+    Class for the new digipot firmware (DigiPotSerialInterpreter.ino)
+    But this had some problems and was not completed!!
+    Not a big deal -- it was mainly just to improve the command syntax
+
     Probing circuit developed by Erik Wichmann to provide remote series resistance switching
     There are two digipots on board.  You can use a single digipot or connect the two in series or in parallel
     There are 31 ~log spaced resistance values per digipot
@@ -248,8 +254,8 @@ class WichmannDigipot_new(object):
             return False
 
     def writeCMD(self,textstr):
-        ''' 
-        Debugging tool. 
+        '''
+        Debugging tool.
         Send serial Command and print returned answer like a Serial monitor
         '''
         self.write((textstr+' \n').encode())
@@ -270,8 +276,8 @@ class WichmannDigipot_new(object):
 
     def set_wiper(self, state, n=1):
         '''
-        Change the digipot wiper setting 
-        n=1 is main potentiometer on chip 
+        Change the digipot wiper setting
+        n=1 is main potentiometer on chip
         0 ist only used in parallel/series Mode
         '''
         self.write(f'wiper {n} {state}'.encode())
