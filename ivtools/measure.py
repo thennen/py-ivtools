@@ -689,13 +689,12 @@ def calibrate_compliance_with_keithley(Rload=1000):
     os.makedirs(os.path.split(calfp)[0], exist_ok=True)
     data.to_pickle(calfp)
 
+    plot_compliance_calibration()
+
     return data
 
 def plot_compliance_calibration(calfile=None):
-    if calfile is None:
-        calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
-    if os.path.isfile(calfile):
-        cal = pd.read_pickle(calfile)
+    cal = read_compliance_calibration_file(calfile)
 
     plt.figure()
     plt.plot(cal.Vc, cal.Ic, marker='.')
@@ -710,7 +709,14 @@ def plot_compliance_calibration(calfile=None):
         plt.plot(r.V, r.I, label=r.Vc)
     plt.xlabel('V_input')
     plt.ylabel('I_input')
-    return cal
+
+def read_compliance_calibration_file(calfile=None):
+    if calfile is None:
+        calfile = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
+    if os.path.isfile(calfile):
+        return pd.read_pickle(calfile)
+    else:
+        log.error('Calibration file not found!')
 
 def set_compliance(cc_value):
     '''
