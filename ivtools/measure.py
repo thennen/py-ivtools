@@ -685,7 +685,9 @@ def calibrate_compliance_with_keithley(Rload=1000):
     data.Ioff = Ioff
     data.Re = Re
 
-    data.to_pickle(ivtools.settings.COMPLIANCE_CALIBRATION_FILE)
+    calfp = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
+    os.makedirs(os.path.split(calfp)[0], exist_ok=True)
+    data.to_pickle(calfp)
 
     return data
 
