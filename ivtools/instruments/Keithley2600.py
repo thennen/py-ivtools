@@ -278,7 +278,8 @@ class Keithley2600(object):
                a_p_limit=None, b_p_limit=None,
                a_nplc=1, b_nplc=1,
                a_delay=None, b_delay=None,
-               a_point4=False, b_point4=False):
+               a_point4=False, b_point4=False,
+               sync=True):
 
         if not isinstance(a_source_list, (list, np.ndarray)):
             a_source_list = a_source_list * np.ones(len(b_source_list))
@@ -322,6 +323,17 @@ class Keithley2600(object):
                           a_v_limit, a_i_limit, a_p_limit, a_nplc, a_delay, a_point4)
         configure_channel('b', b_source_list, b_source_func, b_source_range, b_measure_range,
                           b_v_limit, b_i_limit, b_p_limit, b_nplc, b_delay, b_point4)
+
+        if sync:
+            self.trigger_blender_clear(1)
+            self.trigger_blender_reset(1)
+            self.trigger_blender_stimulus(1, ['a_sourcecomplete', 'b_sourcecomplete'])
+            self.trigger_blender_clear(2)
+            self.trigger_blender_reset(2)
+            self.trigger_blender_stimulus(2, ['a_measurecomplete', 'b_measurecomplete'])
+            for ch in ['a', 'b']:
+                self.trigger_measure_stimulus('blender_1', ch=ch)
+                self.trigger_endpulse_stimulus('blender_2', ch=ch)
 
         self.trigger_initiate('both')
         self.waitcomplete()
