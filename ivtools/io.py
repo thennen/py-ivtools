@@ -497,7 +497,7 @@ class MetaHandler(object):
 
     def savedata(self, data, folder_path=None, database_path=None, table_name='meta', drop=None):
         """
-        Save a row of data into a table in a database.
+        Save data to disk and write a row of metadata to an sqlite3 database
 
         :param data: Row of data to be add to the database.
         :param folder_path: Folder where all data will be saved. If None, data will be saved in Desktop.

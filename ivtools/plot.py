@@ -536,7 +536,6 @@ def violinhist(data, x, histrange=None, bins=50, alpha=.8, color=None, logbin=Tr
     kwargs go to plt.bar
     This was pretty difficult to write -- mostly because I want the log ticks..
     TODO: could extend to make a real violin plot by increasing # of bins, adding some gaussian noise to the data, and doing line plots
-    TODO: make a very simplistic box plot instead of a full vertical line, plt.violinplot just uses plt.hlines/vlines
     '''
     if ax is None:
         ax = plt.gca()
@@ -572,7 +571,7 @@ def violinhist(data, x, histrange=None, bins=50, alpha=.8, color=None, logbin=Tr
     # Calculate the histograms
     hists = []
     for d,xi in zip(data, x):
-        edges = np.linspace(*histrange, nbins+1)
+        edges = np.linspace(*histrange, bins+1)
         hist, edges = np.histogram(d, bins=edges)
         if logbin:
             # normalize to account for different bin widths
