@@ -20,9 +20,11 @@ log = logging.getLogger('plots')
 
 
 def arrowpath(x, y, ax=None, **kwargs):
-    # make a quiver style plot along a path
-    # Draws one arrow per pair of data points
-    # Should use interpolation or downsampling beforehand so the arrows are not too small
+    '''
+    Make a quiver style plot along a path
+    Draws one arrow per pair of data points
+    Should use interpolation or downsampling beforehand so the arrows are not too small
+    '''
     if ax is None:
         ax = plt.gca()
     qkwargs = dict(scale_units='xy', angles='xy', scale=1, width=.005)
@@ -39,7 +41,11 @@ def arrowpath(x, y, ax=None, **kwargs):
 
 def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     '''
-    line plot whose color changes along its length
+    Line plot whose color changes along its length
+
+    TODO: can we make multicolor work as expected when used as plotfunc for plotiv?
+          plotiv(data, plotfunc=plot_multicolor, c='time') should multicolor all the lines according to time.
+          but plotiv doesn't know whether to interpret the keyword c normally or to evaluate data[c] and pass that..
     '''
     from matplotlib.collections import LineCollection
     if ax is None:
@@ -67,10 +73,32 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None,
     #lc.set_array(c)
     lc.set_color(c)
     lc.set_linewidth(2)
-    lc.set(**kwargs)
+    valid_properties = lc.properties().keys()
+    valid_kwargs = {k:w for k,w in kwargs.items() if k in valid_properties}
+    lc.set(**valid_kwargs)
 
     ax.add_collection(lc)
     ax.autoscale()
+
+def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
+    '''
+    Multicolor line that is colored by how far consecutive datapoints are from each other
+
+    I wrote this for representing time on an I-V plot.
+    If the samples are equally spaced in time, then the color indicates how fast I,V is changing
+
+    Does not look that great when there aren't a lot of samples.
+    TODO: we could do some kind of color interpolation in that case.  Interpolate x,y,c and smooth c only
+    '''
+    # absolute distance may not work if x and y have different units
+    # to account for scale, we divide by the range of the input data
+    xrange = np.max(x) - np.min(x)
+    yrange = np.max(y) - np.max(y)
+    speed = np.sqrt(np.gradient(x/xrange)**2 + np.gradient(y/yrange)**2)
+    if 'c' in kwargs:
+        del kwargs['c']
+    plot_multicolor(x, y, c=speed, cmap=cmap, vmin=vmin, vmax=vmax, ax=ax, **kwargs)
+    return speed
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=plt.plot, autotitle=False, labels=None, labelfmt=None, colorbyval=True,
@@ -392,6 +420,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     # should I really return this?  usually I don't assign the values and then they get cached by ipython forever
     # Can always get them with plt.gca()...
     # return ax, line
+    return
 
 @wraps(plotiv)
 def hplotiv(*args, **kwargs):
