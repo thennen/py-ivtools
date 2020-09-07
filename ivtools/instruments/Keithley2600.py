@@ -67,7 +67,7 @@ class Keithley2600(object):
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():
-            self.debug = False
+            self.debug = True
             # Store up to 100 loops in memory in case you forget to save them to disk
             self.data = deque(maxlen=100)
             self.conn = visa_rm.get_instrument(addr, open_timeout=0)
@@ -238,8 +238,6 @@ class Keithley2600(object):
         self.trigger_source_list(source_func, source_list, ch=ch)
         self.prepare_trigger('iv', source_list, ch=ch)
         self.trigger_initiate(ch=ch)
-        self.waitcomplete()
-        self.source_output(False, ch=ch)
 
     def vi(self, source_list, source_range=None, measure_range=None,
            v_limit=None, i_limit=None, p_limit=None,
@@ -334,8 +332,6 @@ class Keithley2600(object):
                 self.trigger_endpulse_stimulus('blender_2', ch=ch)
 
         self.trigger_initiate('both')
-        self.waitcomplete()
-        self.source_output(False, 'both')
 
 
     def it(self, sourceVA=0, sourceVB=0, points=10, interval=.1, rangeI=0, limitI=0, nplc=1):
@@ -689,11 +685,12 @@ class Keithley2600(object):
 
         Voltage can only be limited when sourcing current.
         Current can only be limited when sourcing voltage.
-        Power can only be limited when sourcing voltage.
+        Power limits look to behave like trigger_source_limit, so the limit must be higher than
+        10% of the measurement range.
 
         :param source_param: Source parameter to limit: current (i), voltage(v) or power(p).
         :param limit: Limit to be set. In amperes, volts or watts.
-        :param ch: Channel to be configured
+        :param ch: Channel to be configured.
         :return: If limit is None, configured limit is returned.
         """
         ch = self._convert_to_ch(ch)

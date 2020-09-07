@@ -294,10 +294,10 @@ def iv_2ch():
 
 
 if __name__ == '__main__':
-    iv()
+    # iv()
     iv_limits()
     # low_limits()
-    vi()
-    iv_2ch()
+    # vi()
+    # iv_2ch()
 
     log.info("Test completed!")
