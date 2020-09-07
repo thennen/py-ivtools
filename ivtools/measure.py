@@ -724,6 +724,7 @@ def set_compliance(cc_value):
     '''
     rigol = instruments.RigolDG5000()
     Vc = compliance_voltage_lookup(cc_value)
+    log.debug(f'Setting compliance control voltage to {Vc}')
     rigol.DC(Vc, ch=2)
     rigol.output(True, ch=2)
 
@@ -1028,7 +1029,48 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
     dataout['I'] = dtype(C / gain)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    dataout['units'] = {'V':'V', 'Vnode':'V', 'I':'A'}
+    dataout['units'] = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A'}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
+    # parameters for conversion
+    #dataout['Rout_conv'] = R
+    dataout['gain'] = gain
+    return dataout
+
+
+def ccircuit_yellow_to_iv(datain, dtype=np.float32):
+    '''
+    For the redesigned circuit that sources voltage
+    needle voltage is the device voltage
+    no need to sample AWG waveform -- don't have a cow if there's no CHA
+
+    Convert picoscope channel data to IV dict
+    For the newer version of compliance circuit, which compensates itself and amplifies the needle voltage
+
+    chA should monitor the applied voltage
+    chB should be the needle voltage
+    chC should be the amplified current
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    B = datain['B']
+    C = datain['C']
+    if 'A' in datain:
+        A = datain['A']
+        dataout['V'] = dtype(A)
+    else:
+        dataout['V'] = dtype(B)
+    gain = ivtools.settings.CCIRCUIT_GAIN
+    #dataout['V_formula'] = 'CHA - IO'
+    #dataout['I'] = 1e3 * (B - C) / R
+    dataout['I'] = dtype(C / gain)
+    dataout['Vd'] = dtype(B) # actually should subtract 50*I
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    dataout['units'] = {'V':'V', 'Vd':'V', 'I':'A'}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
     #dataout['Rout_conv'] = R
@@ -1200,7 +1242,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
 
 
 ############# Waveforms ###########################
-def tri(v1, v2, n=None, step=None, repeat=1):
+def tri(v1, v2=0, n=None, step=None, repeat=1):
     '''
     Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
 

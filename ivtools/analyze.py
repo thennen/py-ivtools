@@ -534,6 +534,17 @@ def smoothimate(data, window=10, factor=2, passes=1, columns=None):
 
 
 @ivfunc
+def autosmoothimate(data, percent=.3, npts=1000):
+    '''
+    Smooth with automatic parameters that are, for example, good for plotting
+    '''
+    columns = find_data_arrays(data)
+    nsamples = len(data[columns[0]])
+    window = max(int(nsamples * percent / 100), 1)
+    factor = max(int(nsamples / npts), 1)
+    return smoothimate(data, window, factor)
+
+@ivfunc
 def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False, fill_value='extrapolate'):#, left=None, right=None):
     '''
     Interpolate all the arrays in ivloop to new values of one of the columns

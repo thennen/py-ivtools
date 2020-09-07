@@ -1227,7 +1227,7 @@ def write_pandas_pickle(data, filepath=None, drop=None):
     dtype = type(data)
     if dtype in (dict, pd.Series):
         if dtype == dict:
-            log.info('Converting data to pd.Series for storage.')
+            #log.info('Converting data to pd.Series for storage.')
             data = pd.Series(data)
         if drop is not None:
             todrop = [c for c in drop if c in data]
@@ -1236,7 +1236,7 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 data = data.drop(todrop)
     elif dtype in (list, pd.DataFrame):
         if dtype == list:
-            log.info('Converting data to pd.DataFrame for storage.')
+            #log.info('Converting data to pd.DataFrame for storage.')
             data = pd.DataFrame(data)
         if drop is not None:
             todrop = [c for c in drop if c in data]

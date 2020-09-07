@@ -1542,6 +1542,7 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
             log.info([i for i,d in enumerate(data) if inside(d)])
     rectprops = dict(facecolor='blue', alpha=0.3)
     RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
+
     return RS
 
 

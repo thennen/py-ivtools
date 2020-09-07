@@ -59,6 +59,9 @@ class Keithley2600(object):
                 say_if_successful = False
             self.__dict__ = ivtools.instrument_states[statename]
             self.connect(addr)
+            self.display('ALL YOUR BASE', 'ARE BELONG TO US')
+            self.write('delay(2)')
+            self.display_SMU()
             if say_if_successful:
                 log.info('Keithley connection successful at {}'.format(addr))
         except Exception as E:
@@ -427,6 +430,7 @@ class Keithley2600(object):
 
             ### Collect measurement conditions
             # TODO: What other information is available from Keithley registers?
+            #       nplc would be good to save..
 
             # Need to do something different if sourcing voltage vs sourcing current
             source = self.source_func(ch=ch)
@@ -1162,3 +1166,41 @@ class Keithley2600(object):
         """
         ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.{buffer}.collectsourcevalues', state, bool=True)
+
+    def display(self, line1='', line2=''):
+        """
+        Very important function for writing silly things on the screen
+        there can be 20 characters per line
+
+        $N Starts text on the next line (newline)
+        $R Sets text to Normal.
+        $B Sets text to Blink.
+        $D Sets text to Dim intensity.
+        $F Set text to background blink.
+        $$ Escape sequence to display a single “$”.
+        """
+        self.write('display.clear()')
+        self.write('display.setcursor(1, 1)')
+        lines = '$R$N'.join((line1, line2))
+        self.write(f'display.settext("{lines}")')
+
+    def display_SMU(self, a=True, b=True):
+        """
+        Displays source-measure for SMU A and/or SMU B
+        """
+        if a & b:
+            self.write('display.screen = display.SMUA_SMUB')
+        elif a:
+            self.write('display.screen = display.SMUA')
+        elif b:
+            self.write('display.screen = display.SMUB')
+        else:
+            self.write('display.screen = display.USER')
+
+    def __del__(self):
+        """
+        This runs when the object gets deleted
+        """
+        #self.display('Don\'t panic.')
+        pass
+
