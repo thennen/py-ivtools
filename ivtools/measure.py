@@ -1055,7 +1055,7 @@ def ccircuit_yellow_to_iv(datain, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain['B'].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
     B = datain['B']
     C = datain['C']

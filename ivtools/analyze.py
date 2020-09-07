@@ -581,6 +581,53 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
 
 
 @ivfunc
+def smoothimate_adaptive(data, x='V', y='I', maxpercent=.3, vmin=None, vmax=None):
+    '''
+    NOT FINISHED!
+
+    We sometimes have data where there is a tiny subset where something fast happens but the
+    rest is just very slowly varying. This tries to smooth out and downsample the boring stuff
+    while retaining the fast part
+
+    should be like convolution with a window function that changes size depending on the
+    gradient of the data..
+
+    assume the data is equally spaced in time?
+    otherwise we need to use a time array that might not exist
+
+    Probably there's some proper signal processing way to do this
+    but google fails of course
+    these seem to be heavily finance-oriented terms:
+    Adaptive Moving Average
+    Weighted Moving Average, ...
+    pandas.ewma Exponentially Weighted? just finance jargon for a convolution..?
+    '''
+    raise NotImplementedError
+    columns = find_data_arrays(data)
+    nsamples = len(data[columns[0]])
+    X = data[x]
+    Y = data[y]
+    s = normalized_euclidean_distance(X, Y)
+    # interpolate this to get the speed percentiles?
+    #ps = np.arange(0, 101)
+    #cdf = np.percentile(s, ps)
+    #speed_percentiles = np.interp(s, cdf, ps)
+    min_s = np.min(s)
+    max_s = np.max(s)
+    norm_s = (s - min_s) / (max_s - min_s)
+    # everything that moved faster than fast doesn't get downsampled/smoothed at all
+    # slower than slow gets downsampled/smoothed the most
+    #fast = 0.9
+    #slow = .1
+    maxwindow = nsamples * maxpercent / 100
+    minwindow = 1
+    # linearly adapting window
+    window = maxwindow - (maxwindow + 1) * speed
+    window = np.int64(window)
+    # horribly slow python implementation until I find a better way
+    #...
+
+@ivfunc
 def downsample_dumb(data, nsamples, columns=None):
     ''' Downsample arrays with equal spacing. Probably won't be exactly nsamples'''
     if columns is None:
@@ -1539,6 +1586,24 @@ def smooth_conv(x, N, mode='valid'):
     dtypein = type(x[0])
     return np.convolve(x, np.ones(N, dtype=dtypein)/dtypein(N), mode)
 
+
+def normalized_euclidean_distance(*arrays):
+    '''
+    Distance metric for multivariate data with different units (such as I, V data)
+    think of it like how far the datapoints would be on a scatter plot after all the
+    axes are scaled.
+
+    This is the Euclidean distance after dividing each dimension by a scale term.
+    the scale is determined by the range of the data in the arrays
+
+    if you pass outliers, this will not work well.
+    could then scale by percentiles p99 - p1
+    '''
+    narrays = len(arrays)
+    #nsamples = len(arrays[0]) # Assume they are the same length!
+    #scales = [np.max(x) - np.min(x) for x in arrays]
+    distance = np.sum([(np.diff(x)/(np.max(x) - np.min(x)))**2 for x in arrays], 0)**(1/2)
+    return distance
 
 #@ivfunc
 def convert_to_uA(data):

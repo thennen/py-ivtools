@@ -39,9 +39,12 @@ def arrowpath(x, y, ax=None, **kwargs):
             qkwargs[k] = v
     ax.quiver(x[:-1], y[:-1], x[1:]-x[:-1], y[1:]-y[:-1], **qkwargs)
 
-def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
+def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidth=2, ax=None, **kwargs):
     '''
     Line plot whose color changes along its length
+
+    for n datapoints there are n-1 segments, so c should have length n-1
+    but if c longer, all points after n-1 are ignored
 
     TODO: can we make multicolor work as expected when used as plotfunc for plotiv?
           plotiv(data, plotfunc=plot_multicolor, c='time') should multicolor all the lines according to time.
@@ -53,7 +56,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None,
     cm = plt.get_cmap(cmap)
     if c is None:
         #c = np.arange(len(x))
-        c = cm(np.linspace(0, 1, len(x)))
+        colors = cm(np.linspace(0, 1, len(x)))
     else:
         # be able to scale/clip the range of colors using vmin and vmax (like imshow)
         cmin = np.min(c)
@@ -64,15 +67,15 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, ax=None,
             vmax = cmax
 
         scaledc = (c - vmin) / (vmax - vmin)
-        c = cm(np.clip(scaledc, 0, 1))
+        colors = cm(np.clip(scaledc, 0, 1))
 
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
     lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
     #lc.set_array(c)
-    lc.set_color(c)
-    lc.set_linewidth(2)
+    lc.set_color(colors)
+    lc.set_linewidth(linewidth)
     valid_properties = lc.properties().keys()
     valid_kwargs = {k:w for k,w in kwargs.items() if k in valid_properties}
     lc.set(**valid_kwargs)
