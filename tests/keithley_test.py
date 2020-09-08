@@ -11,9 +11,9 @@ This test is meant to have a red led in channel A and a blue one in channel B
 """
 k = Keithley2600()
 
-v_red = np.linspace(1.5, 3, 100)
+v_red = np.linspace(1.5, 2.5, 100)
 i_red = np.linspace(0.0001, 0.03, 100)
-v_blue = np.linspace(2.5, 3, 100)
+v_blue = np.linspace(2.5, 3.5, 100)
 
 
 def iv():
@@ -52,8 +52,8 @@ def iv():
 def iv_limits():
     log.info("Testing limiting in IV")
     v_limit = 1.85
-    i_limit = 0.005
-    p_limit = 0.04
+    i_limit = 0.003
+    p_limit = 0.03
 
     log.info("\tSourcing I, limiting I")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
@@ -138,8 +138,8 @@ def iv_limits():
 
 def low_limits():
     log.info("Testing limiting in IV")
-    v_limit = 1.65
-    i_limit = 0.002
+    v_limit = 1.85
+    i_limit = 0.0005
     p_limit = 0.01
 
     log.info("\tSourcing I, limiting I")
@@ -196,7 +196,7 @@ def low_limits():
 
 
     log.info("\tSourcing I, limiting P")
-    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
+    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=1,
          v_limit=None, i_limit=None, p_limit=p_limit,
          nplc=1, delay=None, point4=False, ch='a')
     k.waitready()
@@ -210,7 +210,7 @@ def low_limits():
     plt.show()
 
     log.info("\tSourcing V, limiting P")
-    k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=0.00001,
+    k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=0.001,
          v_limit=None, i_limit=None, p_limit=p_limit,
          nplc=1, delay=None, point4=False, ch='a')
     k.waitready()
@@ -294,10 +294,10 @@ def iv_2ch():
 
 
 if __name__ == '__main__':
-    # iv()
+    iv()
     iv_limits()
     # low_limits()
-    # vi()
-    # iv_2ch()
+    vi()
+    iv_2ch()
 
     log.info("Test completed!")
