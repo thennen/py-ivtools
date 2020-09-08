@@ -11,8 +11,8 @@ This test is meant to have a red led in channel A and a blue one in channel B
 """
 k = Keithley2600()
 
-v_red = np.linspace(1.5, 2, 100)
-i_red = np.linspace(0.0001, 0.015, 100)
+v_red = np.linspace(1.5, 3, 100)
+i_red = np.linspace(0.0001, 0.03, 100)
 v_blue = np.linspace(2.5, 3, 100)
 
 
@@ -52,8 +52,8 @@ def iv():
 def iv_limits():
     log.info("Testing limiting in IV")
     v_limit = 1.85
-    i_limit = 0.004
-    p_limit = 0.0001
+    i_limit = 0.005
+    p_limit = 0.04
 
     log.info("\tSourcing I, limiting I")
     k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
@@ -63,22 +63,9 @@ def iv_limits():
     data = k.get_data(start=1, end=None, history=True, ch='a')
     plt.figure()
     plt.hlines(i_limit, xmin=np.min(data['V']), xmax=np.max(data['V']))
-    plt.plot(data['V'], data['I'], label='I sourced, I limited')
+    plt.plot(data['V'], data['Imeasured'], label=f'I sourced\nI limited to {i_limit}A')
     plt.legend()
-    plt.title("You should see one line lower than y=0.004")
-    plt.show()
-
-    log.info("\tSourcing I, limiting V")
-    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
-         v_limit=v_limit, i_limit=None, p_limit=None,
-         nplc=1, delay=None, point4=False, ch='a')
-    k.waitready()
-    data = k.get_data(start=1, end=None, history=True, ch='a')
-    plt.figure()
-    plt.vlines(v_limit, ymin=np.min(data['I']), ymax=np.max(data['I']))
-    plt.plot(data['V'], data['I'], label='I sourced, V limited')
-    plt.legend()
-    plt.title("You should see one line lower than x=1.85")
+    plt.title(f"You should see one line lower than y={i_limit}A")
     plt.show()
 
     log.info("\tSourcing V, limiting V")
@@ -89,9 +76,22 @@ def iv_limits():
     data = k.get_data(start=1, end=None, history=True, ch='a')
     plt.figure()
     plt.vlines(v_limit, ymin=np.min(data['I']), ymax=np.max(data['I']))
-    plt.plot(data['V'], data['I'], label='V sourced, V limited')
+    plt.plot(data['Vmeasured'], data['I'], label=f'V sourced\nV limited to {v_limit}V')
     plt.legend()
-    plt.title("You should see one line lower than x=1.85")
+    plt.title(f"You should see one line lower than x={v_limit}V")
+    plt.show()
+
+    log.info("\tSourcing I, limiting V")
+    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
+         v_limit=v_limit, i_limit=None, p_limit=None,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    plt.figure()
+    plt.vlines(v_limit, ymin=np.min(data['I']), ymax=np.max(data['I']))
+    plt.plot(data['V'], data['Imeasured'], label=f'I sourced\nV limited to {v_limit}V')
+    plt.legend()
+    plt.title(f"You should see one line lower than x={v_limit}V")
     plt.show()
 
     log.info("\tSourcing V, limiting I")
@@ -102,9 +102,9 @@ def iv_limits():
     data = k.get_data(start=1, end=None, history=True, ch='a')
     plt.figure()
     plt.hlines(i_limit, xmin=np.min(data['V']), xmax=np.max(data['V']))
-    plt.plot(data['V'], data['I'], label='V sourced, I limited')
+    plt.plot(data['Vmeasured'], data['I'], label=f'V sourced\nI limited to {i_limit}A')
     plt.legend()
-    plt.title("You should see one line lower than y=0.004")
+    plt.title(f"You should see one line lower than y={i_limit}A")
     plt.show()
 
 
@@ -114,14 +114,114 @@ def iv_limits():
          nplc=1, delay=None, point4=False, ch='a')
     k.waitready()
     data = k.get_data(start=1, end=None, history=True, ch='a')
+    Imax = p_limit / data['V']
     plt.figure()
-    plt.plot(data['V'], data['I'], label='I sourced, P limited')
-    plt.hlines(i_limit, xmin=np.min(data['V']), xmax=np.max(data['V']))
-    plt.vlines(v_limit, ymin=np.min(data['I']), ymax=np.max(data['I']))
+    plt.plot(data['V'], data['Imeasured'], label=f'I sourced\nP limited to {p_limit}W')
+    plt.plot(data['V'], Imax, label='Imax')
     plt.legend()
-    plt.title(f"Limit = {p_limit}")
+    plt.title(f"Diode line should be under 'Imax'")
     plt.show()
 
+    log.info("\tSourcing V, limiting P")
+    k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
+         v_limit=None, i_limit=None, p_limit=p_limit,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    Imax = p_limit / data['Vmeasured']
+    plt.figure()
+    plt.plot(data['Vmeasured'], data['I'], label=f'V sourced\nP limited to {p_limit}W')
+    plt.plot(data['Vmeasured'], Imax, label='Imax')
+    plt.legend()
+    plt.title(f"Diode line should be under 'Imax'")
+    plt.show()
+
+def low_limits():
+    log.info("Testing limiting in IV")
+    v_limit = 1.65
+    i_limit = 0.002
+    p_limit = 0.01
+
+    log.info("\tSourcing I, limiting I")
+    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
+         v_limit=None, i_limit=i_limit, p_limit=None,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    plt.figure()
+    plt.hlines(i_limit, xmin=np.min(data['V']), xmax=np.max(data['V']))
+    plt.plot(data['V'], data['Imeasured'], label=f'I sourced\nI limited to {i_limit}A')
+    plt.legend()
+    plt.title(f"You should see one line lower than y={i_limit}A")
+    plt.show()
+
+    log.info("\tSourcing V, limiting V")
+    k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
+         v_limit=v_limit, i_limit=None, p_limit=None,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    plt.figure()
+    plt.vlines(v_limit, ymin=np.min(data['I']), ymax=np.max(data['I']))
+    plt.plot(data['Vmeasured'], data['I'], label=f'V sourced\nV limited to {v_limit}V')
+    plt.legend()
+    plt.title(f"You should see one line lower than x={v_limit}V")
+    plt.show()
+
+    log.info("\tSourcing I, limiting V")
+    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
+         v_limit=v_limit, i_limit=None, p_limit=None,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    plt.figure()
+    plt.vlines(v_limit, ymin=np.min(data['I']), ymax=np.max(data['I']))
+    plt.plot(data['V'], data['Imeasured'], label=f'I sourced\nV limited to {v_limit}V')
+    plt.legend()
+    plt.title(f"You should see one line lower than x={v_limit}V")
+    plt.show()
+
+    log.info("\tSourcing V, limiting I")
+    k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=None,
+         v_limit=None, i_limit=i_limit, p_limit=None,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    plt.figure()
+    plt.hlines(i_limit, xmin=np.min(data['V']), xmax=np.max(data['V']))
+    plt.plot(data['Vmeasured'], data['I'], label=f'V sourced\nI limited to {i_limit}A')
+    plt.legend()
+    plt.title(f"You should see one line lower than y={i_limit}A")
+    plt.show()
+
+
+    log.info("\tSourcing I, limiting P")
+    k.iv(source_list=i_red, source_func='i', source_range=None, measure_range=None,
+         v_limit=None, i_limit=None, p_limit=p_limit,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    Imax = p_limit / data['V']
+    plt.figure()
+    plt.plot(data['V'], data['I'], label=f'I sourced\nP limited to {p_limit}W')
+    plt.plot(data['V'], Imax, label='Imax')
+    plt.legend()
+    plt.title(f"Diode line should be under 'Imax'")
+    plt.show()
+
+    log.info("\tSourcing V, limiting P")
+    k.iv(source_list=v_red, source_func='v', source_range=None, measure_range=0.00001,
+         v_limit=None, i_limit=None, p_limit=p_limit,
+         nplc=1, delay=None, point4=False, ch='a')
+    k.waitready()
+    data = k.get_data(start=1, end=None, history=True, ch='a')
+    Imax = p_limit / data['Vmeasured']
+    plt.figure()
+    plt.plot(data['Vmeasured'], data['I'], label=f'V sourced\nP limited to {p_limit}W')
+    plt.plot(data['Vmeasured'], Imax, label='Imax')
+    plt.legend()
+    plt.title(f"Diode line should be under 'Imax'")
+    plt.show()
 
 def vi():
     log.info("Testing VI")
@@ -196,6 +296,7 @@ def iv_2ch():
 if __name__ == '__main__':
     # iv()
     iv_limits()
+    # low_limits()
     # vi()
     # iv_2ch()
 

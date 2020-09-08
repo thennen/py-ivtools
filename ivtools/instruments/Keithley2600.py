@@ -70,7 +70,7 @@ class Keithley2600(object):
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():
-            self.debug = False
+            self.debug = True
             # Store up to 100 loops in memory in case you forget to save them to disk
             self.data = deque(maxlen=100)
             self.conn = visa_rm.get_instrument(addr, open_timeout=0)
@@ -219,16 +219,14 @@ class Keithley2600(object):
             if i_limit is not None:
                 self.source_limit('i', i_limit, ch)
                 self.trigger_source_limit('i', i_limit, ch)
-            if p_limit is not None:
-                log.warning("Power limits only work when sourcing current, so the limit won't be applied")
         elif source_func == 'i':
             if v_limit is not None:
                 self.source_limit('v', v_limit, ch)
                 self.trigger_source_limit('v', v_limit, ch)
             if i_limit is not None:
                 source_list = np.clip(source_list, -i_limit, i_limit)
-            if p_limit is not None:
-                self.source_limit('p', p_limit, ch)
+        if p_limit is not None:
+            self.source_limit('p', p_limit, ch)
         # Set the source range
         if source_range is None:
             source_range = np.max(np.abs(source_list))
@@ -243,8 +241,6 @@ class Keithley2600(object):
         self.trigger_source_list(source_func, source_list, ch=ch)
         self.prepare_trigger('iv', source_list, ch=ch)
         self.trigger_initiate(ch=ch)
-        self.waitcomplete()
-        self.source_output(False, ch=ch)
 
     def vi(self, source_list, source_range=None, measure_range=None,
            v_limit=None, i_limit=None, p_limit=None,
@@ -339,8 +335,6 @@ class Keithley2600(object):
                 self.trigger_endpulse_stimulus('blender_2', ch=ch)
 
         self.trigger_initiate('both')
-        self.waitcomplete()
-        self.source_output(False, 'both')
 
 
     def it(self, sourceVA=0, sourceVB=0, points=10, interval=.1, rangeI=0, limitI=0, nplc=1):
@@ -621,7 +615,7 @@ class Keithley2600(object):
             raise Exception("Parameter 'measurement' can only be 'i', 'v', 'r', 'p' or 'iv'.")
         return reply
 
-    def measure_range(self, meas_func, m_range='auto', ch='A'):
+    def measure_range(self, meas_func, m_range=None, ch='A'):
         """
         Set the SMU to a fixed range large enough to measure the assigned value.
 
@@ -695,11 +689,12 @@ class Keithley2600(object):
 
         Voltage can only be limited when sourcing current.
         Current can only be limited when sourcing voltage.
-        Power can only be limited when sourcing voltage.
+        Power limits look to behave like trigger_source_limit, so the limit must be higher than
+        10% of the measurement range.
 
         :param source_param: Source parameter to limit: current (i), voltage(v) or power(p).
         :param limit: Limit to be set. In amperes, volts or watts.
-        :param ch: Channel to be configured
+        :param ch: Channel to be configured.
         :return: If limit is None, configured limit is returned.
         """
         ch = self._convert_to_ch(ch)
@@ -709,12 +704,10 @@ class Keithley2600(object):
             log.warning("Voltage can not be limited when sourcing voltage")
         elif source_param == 'i' and source_func == 'i':
             log.warning("Current can not be limited when sourcing current")
-        elif source_param == 'p' and source_func == 'v':
-            log.warning("Power can not be limited when sourcing voltage")
 
         return self._set_or_query(f'smu{ch}.source.limit{source_param}', limit)
 
-    def source_range(self, source_func, s_range='auto', ch='A'):
+    def source_range(self, source_func, s_range=None, ch='A'):
         """
         Set the SMU to a fixed range large enough to source the assigned value.
         Autoranging could be very slow.
@@ -730,7 +723,7 @@ class Keithley2600(object):
             if s_range.lower() == 'auto':
                 return self._set_or_query(f'smu{ch}.source.autorange{source_func}', True, bool=True)
             else:
-                raise Exception("'range' can only be a string if it's value is 'auto'")
+                raise Exception("'s_range' can only be a string if it's value is 'auto'")
         else:
             return self._set_or_query(f'smu{ch}.source.range{source_func}', s_range)
 
@@ -754,11 +747,37 @@ class Keithley2600(object):
         :param source_param: Source parameter to be limited: current (i), or voltage (v).
         :param limit: Limit to be set. In amperes or volts.
         :param ch: Channel to be configured.
-        :return: None
+        :return: Previous limit, if 'limit'=None
         """
 
         ch = self._convert_to_ch(ch)
         source_param = source_param.lower()
+        sf = self.source_func(ch=ch)
+        if sf is 'v':
+            if source_param == 'i':
+                mr = self.measure_range('i')
+                log.debug(f"Measure range: {mr}A")
+                lim_min = 0.1 * mr
+                log.debug(f"Minimum limit: {lim_min}A\n"
+                          f"Your limit: {limit}A")
+                if limit < lim_min:
+                    log.warning(f"Your current limit is lower that 10% of the measure range.\n"
+                                f"Current limit will be set to {lim_min}A")
+            elif source_param == 'v':
+                log.warning("You can not limit the voltage when sourcing voltage.")
+        elif sf is 'i':
+            if source_param == 'v':
+                mr = self.measure_range('v')
+                log.debug(f"Measure range: {mr}V")
+                lim_min = 0.1 * mr
+                log.debug(f"Minimum limit: {lim_min}V\n"
+                          f"Your limit: {limit}V")
+                if limit < lim_min:
+                    log.warning(f"Your voltage limit is lower that 10% of the measure range.\n"
+                                f"Voltage limit will be set to {lim_min}V")
+            elif source_param == 'i':
+                log.warning("You can not limit the current when sourcing current.")
+
         return self._set_or_query(f'smu{ch}.trigger.source.limit{source_param}', limit)
 
     def trigger_source_list(self, source_func, source_list, ch='A'):
