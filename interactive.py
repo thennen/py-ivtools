@@ -389,7 +389,6 @@ if k and hasattr(k, 'query'):
     kiv_lua = interactive_wrapper(k._iv_lua, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
     kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
-    kit = interactive_wrapper(k.it, k.get_data, donefunc=k.done, live=live, autosave=True)
 
 # define this if digipot is connected
 if dp:
