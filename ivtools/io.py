@@ -971,10 +971,10 @@ def read_txt(filepath, **kwargs):
     # ...
 
     # Here is a dict which constructs a mapping between various column names I have seen and a standard column name
-    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]', 'I1'],
-                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]', 'V1'],
+    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]', 'I1', 'Current'],
+                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]', 'V1', 'Voltage'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
-                  't': ['time', 'Time [S]', 't[s]'],
+                  't': ['time', 'Time [S]', 't[s]', 'Time'],
                   'Vmeasured': ['Voltage Probe (V)']}
 
     # Default arguments for readcsv
@@ -1053,7 +1053,7 @@ def read_txt(filepath, **kwargs):
     # Note that the unit names are simply assumed here -- no attempt to read the units from the file
     units = {'I': 'A', 'V': 'V', 't': 's', 'T': 'K'}
 
-    dataout = {k: df[k].as_matrix() for k in df.columns}
+    dataout = {k: df[k].to_numpy() for k in df.columns}
     dataout['mtime'] = os.path.getmtime(filepath)
     dataout['units'] = {k: v for k, v in units.items() if k in dataout.keys()}
     dataout['longnames'] = {k: v for k, v in longnames.items() if k in dataout.keys()}
