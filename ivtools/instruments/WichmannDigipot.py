@@ -3,6 +3,7 @@ import numpy as np
 import time
 import logging
 import ivtools
+from itertools import combinations_with_replacement
 from serial.tools.list_ports import grep as comgrep
 log = logging.getLogger('instruments')
 
@@ -33,7 +34,7 @@ class WichmannDigipot(object):
         self.__dict__ = ivtools.instrument_states[statename]
         self.connect(addr)
         # map from setting to resistance -- needs to be measured by source meter
-        # TODO: does the second digipot have a different calibration?
+        # TODO: does the second digipot need a different calibration?
         #self.Rlist = [43080, 38366, 34242, 30547, 27261, 24315, 21719, 19385, 17313,
         #              15441, 13801, 12324, 11022, 8805, 7061, 5670, 4539, 3667, 2964,
         #              2416, 1965, 1596, 1313, 1089, 906, 716, 576, 478, 432, 384, 349,
@@ -45,12 +46,17 @@ class WichmannDigipot(object):
         #              1307.28, 1083.48, 902.42, 711.69, 570.92, 472.24, 426.55, 377.22, 342.16,
         #              316.79, 299.09, 299.06]
         # Keithley calibration at 1V applied 2020-01-17 (red pcb rev3)
-        self.Rlist = [43157.6, 38446.63, 34301.13, 30599.28, 27314.15, 24380.41, 21780.81,
+
+        # The wiper settings corresponding to these values are just range(34)
+        self.Rlist = np.array([43157.6, 38446.63, 34301.13, 30599.28, 27314.15, 24380.41, 21780.81,
                       19442.55, 17365.22, 15492.7, 13840.67, 12353.05, 11048.16, 8837.83,
                       7072.3, 5662.19, 4526.77, 3654.42, 2951.77, 2407.68, 1953.7, 1583.89,
                       1308.5, 1086.92, 906.51, 715.82, 574.08, 476.34, 431.47, 380.62, 345.39,
-                      320.04, 302.77, 302.83]
-        self.Rmap = {n:v for n,v in enumerate(self.Rlist)}
+                      320.04, 302.77, 302.83])
+
+        self.Rcombinations = list(combinations_with_replacement(self.Rlist, 2))
+        self.Rparlist = np.array([R1*R2/(R1+R2) for R1, R2 in self.Rcombinations])
+        self.Rserlist = np.array([R1+R2 for R1, R2 in self.Rcombinations])
 
 
     def connect(self, addr=None):
@@ -68,7 +74,7 @@ class WichmannDigipot(object):
             self.close = self.conn.close
             # We don't know what state we are in initially
             # For now we will just set them all to 1 when we connect
-            self.bypassstate = 1
+            self.bypass_state = 1
             self.wiper1state = 0
             self.wiper2state = 0
             self.write('0 0 1'.encode())
@@ -76,10 +82,29 @@ class WichmannDigipot(object):
                 log.info(f'Connected to digipot on {addr}')
 
     @property
-    def Rstate(self):
-        # Returns the current set resistance state
+    def Rstate(self, n=2):
+        '''
+        Return the current resistance state of the nth potentiometer
+        '''
         # TODO: depends on the configuration (single, series, parallel)
-        return self.Rmap[self.wiper2state]
+        wiperstate = getattr(self, f'wiper{n}state')
+        return self.Rlist[self.wiperstate]
+
+    def Rstate_parallel(self):
+        '''
+        Return total resistance assuming parallel connection of the two pots
+        '''
+        R1 = self.Rstate(n=1)
+        R2 = self.Rstate(n=2)
+        return R1*R2/(R1+R2)
+
+    def Rstate_series(self):
+        '''
+        Return total resistance assuming series connection of the two pots
+        '''
+        R1 = self.Rstate(n=1)
+        R2 = self.Rstate(n=2)
+        return R1+R2
 
     def connected(self):
         if hasattr(self,'conn'):
@@ -100,14 +125,14 @@ class WichmannDigipot(object):
     def set_bypass(self, state):
         '''
         State:
-        True = connected
-        False = not connected
+        True = potentiometer path is bypassed by a relay
+        False = potentiometer is not bypassed
         '''
         # Keep current wiper state, set the bypass relay state
         w1 = self.wiper1state
         w2 = self.wiper2state
         self.write(f'{w1} {w2} {state}'.encode())
-        self.bypassstate = state
+        self.bypass_state = state
         #Wait until the AVR has sent a message Back
         time.sleep(5e-3)
         return self.conn.read_all().decode()
@@ -117,7 +142,7 @@ class WichmannDigipot(object):
         Change the digipot wiper setting
         n=2 is main potentiometer on chip
         '''
-        bypass = self.bypassstate
+        bypass = self.bypass_state
 
         if n==1:
             w2 = self.wiper2state
@@ -127,11 +152,27 @@ class WichmannDigipot(object):
             w1 = self.wiper1state
             self.write(f'{w1} {state} {bypass}'.encode())
             self.wiper2state = state
-        #Wait until the AVR has sent a message Back
+        #Wait until the AVR has sent a message back
+        time.sleep(5e-3)
+        return self.conn.read_all().decode()
+
+    def set_wipers(self, state1, state2):
+        '''
+        Change both wiper settings at the same time
+        '''
+        bypass = self.bypass_state
+        self.write(f'{state1} {state2} {bypass}'.encode())
+        self.wiper1state = state1
+        self.wiper2state = state2
+        #Wait until the AVR has sent a message back
         time.sleep(5e-3)
         return self.conn.read_all().decode()
 
     def set_R(self, R, n=2):
+        '''
+        Sets individual resistance level of the nth digipot
+        n=2 is main potentiometer on chip
+        '''
         if R == 0:
             self.set_bypass(1)
             #Set wiper to highest value
@@ -140,26 +181,54 @@ class WichmannDigipot(object):
         else:
             # Find closest resistance value
             # I hope the dictionary returns values and keys in the same order
-            Rmap = list(self.Rmap.values())
-            wvals= list(self.Rmap.keys())
-            i_closest = np.argmin(np.abs(R - np.array(Rmap)))
-            R_closest = Rmap[i_closest]
-            w_closest = wvals[i_closest]
-            log.info(i_closest)
-            self.set_wiper(w_closest, n)
+            i_closest = np.argmin(np.abs(R - self.Rlist)))
+            R_closest = self.Rlist[i_closest]
+            #log.info(i_closest)
+            self.set_wiper(i_closest, n)
             # Could have sent one command, but I'm sending two
             self.set_bypass(0)
             time.sleep(1e-3)
             return R_closest
 
-    def set_series_R(self, R):
-        # TODO calculate nearest series value
-        pass
+    def set_R_series(self, R):
+        '''
+        Sets resistance level of a series combination
+        '''
+        if R == 0:
+            self.set_bypass(1)
+            return 0
+        # Find closest series resistance value
+        i_closest = np.argmin(np.abs(R - self.Rserlist)))
+        R_closest = self.Rserlist[i_closest]
+        R1, R2 = self.Rcombinations[i_closest]
+        # Better to set both wipers in one shot
+        # need to calculate the wiper values
+        i1 = np.where(R1 == self.Rlist)[0][0]
+        i2 = np.where(R2 == self.Rlist)[0][0]
+        self.set_wipers(i1, i2)
+        self.set_bypass(0)
+        time.sleep(1e-3)
+        return R_closest
 
-    def set_parallel_R(self, R):
-        # TODO calculate nearest parallel value
-        pass
-
+    def set_R_parallel(self, R):
+        '''
+        Sets resistance level of a series combination
+        '''
+        if R == 0:
+            self.set_bypass(1)
+            return 0
+        # Find closest series resistance value
+        i_closest = np.argmin(np.abs(R - self.Rparlist)))
+        R_closest = self.Rparlist[i_closest]
+        R1, R2 = self.Rcombinations[i_closest]
+        # Better to set both wipers in one shot
+        # need to calculate the wiper values
+        i1 = np.where(R1 == self.Rlist)[0][0]
+        i2 = np.where(R2 == self.Rlist)[0][0]
+        self.set_wipers(i1, i2)
+        self.set_bypass(0)
+        time.sleep(1e-3)
+        return R_closest
 
 class WichmannDigipot_newfirmware(object):
     '''

@@ -1298,7 +1298,8 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
     if not any(mask):
         log.error('Nothing to fit!')
         return np.nan
-    poly = np.polyfit(I[mask], V[mask], 1)
+    #poly = np.polyfit(I[mask], V[mask], 1) # DANGER don't do this! does least squares on the voltage!
+    poly = np.polyfit(V[mask], I[mask], 1)
     if 'units' in data:
         if y in data['units']:
             Iunit = data['units'][y]
@@ -1310,7 +1311,7 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
                 return poly[0] * 1e3
             else:
                 log.error('Did not understand current unit!')
-    return poly[0]
+    return 1/poly[0]
 
 
 @ivfunc
