@@ -205,7 +205,6 @@ class WichmannDigipot(object):
         i1 = np.where(R1 == self.Rlist)[0][0]
         i2 = np.where(R2 == self.Rlist)[0][0]
         self.set_state(i1, i2, bypass=0)
-        self.set_bypass(0)
         time.sleep(1e-3)
         return R_closest
 
