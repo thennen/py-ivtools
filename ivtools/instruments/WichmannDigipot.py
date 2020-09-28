@@ -206,7 +206,7 @@ class WichmannDigipot(object):
 
     def set_R_parallel(self, R):
         '''
-        Sets resistance level of a series combination
+        Sets resistance level of a parallel combination
         '''
         if R == 0:
             self.set_bypass(1)
