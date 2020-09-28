@@ -148,20 +148,20 @@ class WichmannDigipot(object):
         time.sleep(5e-3)
         return self.conn.read_all().decode()
 
-    def set_state(self, state1=None, state2=None, bypass=None):
+    def set_state(self, wiper1state=None, wiper2state=None, bypass=None):
         '''
         Change all state settings at the same time
         if anything is None, use the previous setting
         '''
         if bypass is None:
             bypass = self.bypass_state
-        if state1 is None:
-            state1 = self.wiper1state
-        if state2 is None:
-            state2 = self.wiper2state
-        self.write(f'{state1} {state2} {bypass}'.encode())
-        self.wiper1state = state1
-        self.wiper2state = state2
+        if wiper1state is None:
+            wiper1state = self.wiper1state
+        if wiper2state is None:
+            wiper2state = self.wiper2state
+        self.write(f'{wiper1state} {wiper2state} {bypass}'.encode())
+        self.wiper1state = wiper1state
+        self.wiper2state = wiper2state
         self.bypass_state = bypass
         #Wait until the AVR has sent a message back
         time.sleep(5e-3)
@@ -174,8 +174,6 @@ class WichmannDigipot(object):
         '''
         if R == 0:
             self.set_bypass(1)
-            #Set wiper to highest value
-            self.set_wiper(0)
             return 0
         else:
             # Find closest resistance value
@@ -183,9 +181,7 @@ class WichmannDigipot(object):
             i_closest = np.argmin(np.abs(R - self.Rlist))
             R_closest = self.Rlist[i_closest]
             #log.info(i_closest)
-            self.set_wiper(i_closest, n)
-            # Could have sent one command, but I'm sending two
-            self.set_bypass(0)
+            self.set_state(wiper2state=i_closest, bypass=0)
             time.sleep(1e-3)
             return R_closest
 
