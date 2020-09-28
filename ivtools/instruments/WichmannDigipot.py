@@ -15,16 +15,8 @@ class WichmannDigipot(object):
 
     The firmware to use on the arduino is ReadASCIIString.ino
 
-    TODO: Change arduino command system to not need entire state in one chunk
-    should be three commands, for setting wiper1, wiper2, and relay
-
     TODO: Is there a way to poll the current state from the microcontroller?
     The class instance might not be aware of it when we first connect.
-
-    TODO: Shouldn't relay = 1 mean that the input is connected to the output?
-
-    TODO: make a test routine that takes a few seconds to measure that everything is working properly.  belongs in measure.py
-    TODO: In addition to LCDs that display that the communication is working, we need a programmatic way to verify the connections as well
     '''
     def __init__(self, addr=None):
         # BORG
@@ -156,14 +148,21 @@ class WichmannDigipot(object):
         time.sleep(5e-3)
         return self.conn.read_all().decode()
 
-    def set_wipers(self, state1, state2):
+    def set_state(self, state1=None, state2=None, bypass=None):
         '''
-        Change both wiper settings at the same time
+        Change all state settings at the same time
+        if anything is None, use the previous setting
         '''
-        bypass = self.bypass_state
+        if bypass is None:
+            bypass = self.bypass_state
+        if state1 is None:
+            state1 = self.wiper1state
+        if state2 is None:
+            state2 = self.wiper2state
         self.write(f'{state1} {state2} {bypass}'.encode())
         self.wiper1state = state1
         self.wiper2state = state2
+        self.bypass_state = bypass
         #Wait until the AVR has sent a message back
         time.sleep(5e-3)
         return self.conn.read_all().decode()
@@ -181,7 +180,7 @@ class WichmannDigipot(object):
         else:
             # Find closest resistance value
             # I hope the dictionary returns values and keys in the same order
-            i_closest = np.argmin(np.abs(R - self.Rlist)))
+            i_closest = np.argmin(np.abs(R - self.Rlist))
             R_closest = self.Rlist[i_closest]
             #log.info(i_closest)
             self.set_wiper(i_closest, n)
@@ -198,14 +197,14 @@ class WichmannDigipot(object):
             self.set_bypass(1)
             return 0
         # Find closest series resistance value
-        i_closest = np.argmin(np.abs(R - self.Rserlist)))
+        i_closest = np.argmin(np.abs(R - self.Rserlist))
         R_closest = self.Rserlist[i_closest]
         R1, R2 = self.Rcombinations[i_closest]
         # Better to set both wipers in one shot
         # need to calculate the wiper values
         i1 = np.where(R1 == self.Rlist)[0][0]
         i2 = np.where(R2 == self.Rlist)[0][0]
-        self.set_wipers(i1, i2)
+        self.set_state(i1, i2, bypass=0)
         self.set_bypass(0)
         time.sleep(1e-3)
         return R_closest
@@ -218,15 +217,14 @@ class WichmannDigipot(object):
             self.set_bypass(1)
             return 0
         # Find closest series resistance value
-        i_closest = np.argmin(np.abs(R - self.Rparlist)))
+        i_closest = np.argmin(np.abs(R - self.Rparlist))
         R_closest = self.Rparlist[i_closest]
         R1, R2 = self.Rcombinations[i_closest]
         # Better to set both wipers in one shot
         # need to calculate the wiper values
         i1 = np.where(R1 == self.Rlist)[0][0]
         i2 = np.where(R2 == self.Rlist)[0][0]
-        self.set_wipers(i1, i2)
-        self.set_bypass(0)
+        self.set_state(i1, i2, bypass=0)
         time.sleep(1e-3)
         return R_closest
 
