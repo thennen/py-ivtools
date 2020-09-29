@@ -1304,11 +1304,11 @@ def resistance(data, v0=0.5, v1=None, x='V', y='I'):
         if y in data['units']:
             Iunit = data['units'][y]
             if Iunit == 'A':
-                return poly[0]
+                return 1/poly[0]
             elif Iunit == '$\mu$A':
-                return poly[0] * 1e6
+                return 1/(poly[0] * 1e6)
             elif Iunit == 'mA':
-                return poly[0] * 1e3
+                return 1/(poly[0] * 1e3)
             else:
                 log.error('Did not understand current unit!')
     return 1/poly[0]
