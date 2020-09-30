@@ -967,29 +967,6 @@ def digipot_calibrate(plot=True):
 
 ########### Conversion from picoscope channel data to IV data ###################
 
-def basic_to_iv(datain, Vchannel=None, Ichannel='C', dtype=np.float32):
-    '''
-    Convert picoscope channel data to IV dict
-    and probing the center junction
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
-    dataout = datain
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-
-    A = datain['A']
-    C = datain[Ichannel]
-
-    # V device
-    dataout['V'] = A - C
-    dataout['I'] = C / R
-    dataout['units'] = {'V':'V', 'I':'A'}
-    dataout['Rs_ext'] = R
-
-    return dataout
-
 def ccircuit_to_iv_old(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
