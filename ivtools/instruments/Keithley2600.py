@@ -242,6 +242,12 @@ class Keithley2600(object):
         '''
 
         source_func = source_func.lower()
+        if source_func == 'v':
+            meas_func = 'i'
+        elif source_func == 'i':
+            meas_func = 'v'
+        else:
+            raise Exception("'source_func can only be 'v' or 'i'.")
         ch = self._convert_to_ch(ch)
         self.reset()
         # Configure the SMU
@@ -253,6 +259,14 @@ class Keithley2600(object):
         if delay is None:
             delay = 'auto'
         self.measure_delay(delay, ch=ch)
+        # Set the source range
+        if source_range is None:
+            source_range = np.max(np.abs(source_list))
+        self.source_range(source_func, source_range, ch=ch)
+        # Set the measure range
+        if measure_range is None:
+            measure_range = 'auto'
+        self.measure_range(meas_func, measure_range, ch=ch)
         # Set the limits of voltage, current and power
         if source_func == 'v':
             if v_limit is not None:
@@ -268,14 +282,6 @@ class Keithley2600(object):
                 source_list = np.clip(source_list, -i_limit, i_limit)
         if p_limit is not None:
             self.source_limit('p', p_limit, ch)
-        # Set the source range
-        if source_range is None:
-            source_range = np.max(np.abs(source_list))
-        self.source_range(source_func, source_range, ch=ch)
-        # Set the measure range
-        if measure_range is None:
-            measure_range = 'auto'
-        self.measure_range(source_func, measure_range, ch=ch)
         # Prepare the Reading Buffers
         self.prepare_buffers(source_func, ch=ch)
         # Configure SMU Trigger Model for Sweep
@@ -623,19 +629,22 @@ class Keithley2600(object):
         '''
         meas_func = meas_func.lower()
         ch = self._convert_to_ch(ch)
-        if meas_func == 'v':
-            range_func = 'i'
-        elif meas_func == 'i':
-            range_func = 'v'
-        else:
-            raise Exception("meas_func can only be 'v' or 'i'.")
-        if type(m_range) == str:
+        if meas_func not in ('i', 'v'):
+            raise Exception("'meas_fun' only can be 'i' or 'v'")
+
+        if type(m_range) is str:
             if m_range.lower() == 'auto':
-                return self._set_or_query(f'smu{ch}.measure.autorange{range_func}', True)
+                return self._set_or_query(f'smu{ch}.measure.autorange{meas_func}', True)
             else:
                 raise Exception("'m_range' can only be 'auto' if it's a string")
+        elif m_range is None:
+            is_auto = self._set_or_query(f'smu{ch}.measure.autorange{meas_func}', None)
+            if is_auto:
+                return 'auto'
+            else:
+                return self._set_or_query(f'smu{ch}.measure.range{meas_func}', m_range)
         else:
-            return self._set_or_query(f'smu{ch}.measure.range{range_func}', m_range)
+            return self._set_or_query(f'smu{ch}.measure.range{meas_func}', m_range)
 
     def source_level(self, source_func='v', source_val=None, ch='A'):
         '''
@@ -749,30 +758,33 @@ class Keithley2600(object):
         ch = self._convert_to_ch(ch)
         source_param = source_param.lower()
         sf = self.source_func(ch=ch)
-        if sf is 'v':
-            if source_param == 'i':
-                mr = self.measure_range('i')
-                log.debug(f"Measure range: {mr}A")
-                lim_min = 0.1 * mr
-                log.debug(f"Minimum limit: {lim_min}A\n"
-                          f"Your limit: {limit}A")
-                if limit < lim_min:
-                    log.warning(f"Your current limit is lower than 10% of the measure range.\n"
-                                f"Current limit will be set to {lim_min}A")
-            elif source_param == 'v':
-                log.warning("You can not limit the voltage when sourcing voltage.")
-        elif sf is 'i':
-            if source_param == 'v':
-                mr = self.measure_range('v')
-                log.debug(f"Measure range: {mr}V")
-                lim_min = 0.1 * mr
-                log.debug(f"Minimum limit: {lim_min}V\n"
-                          f"Your limit: {limit}V")
-                if limit < lim_min:
-                    log.warning(f"Your voltage limit is lower than 10% of the measure range.\n"
-                                f"Voltage limit will be set to {lim_min}V")
-            elif source_param == 'i':
-                log.warning("You can not limit the current when sourcing current.")
+        if limit is not None:
+            if sf == 'v':
+                if source_param == 'i':
+                    mr = self.measure_range('i')
+                    if mr != 'auto':
+                        log.debug(f"Measure range: {mr}A")
+                        lim_min = 0.1 * mr
+                        log.debug(f"Minimum limit: {lim_min}A\n"
+                                  f"Your limit: {limit}A")
+                        if limit < lim_min:
+                            raise Exception(f"Your current limit is lower than 10% of the measure range.\n"
+                                            f"Set a current limit higher than {lim_min}A or change the measurement range")
+                elif source_param == 'v':
+                    log.warning("You can not limit the voltage when sourcing voltage.")
+            elif sf is 'i':
+                if source_param == 'v':
+                    mr = self.measure_range('v')
+                    if mr != 'auto':
+                        log.debug(f"Measure range: {mr}V")
+                        lim_min = 0.1 * mr
+                        log.debug(f"Minimum limit: {lim_min}V\n"
+                                  f"Your limit: {limit}V")
+                        if limit < lim_min:
+                            raise Exception(f"Your voltage limit is lower than 10% of the measure range.\n"
+                                            f" Set a voltage limit higher than {lim_min}V or change the measurement range")
+                elif source_param == 'i':
+                    log.warning("You can not limit the current when sourcing current.")
 
         return self._set_or_query(f'smu{ch}.trigger.source.limit{source_param}', limit)
 
@@ -1135,9 +1147,11 @@ class Keithley2600(object):
         To use autodelay set delay='AUTO'
         '''
         ch = self._convert_to_ch(ch)
-        try: delay=delay.lower()
-        except AttributeError: pass
-        if delay == 'auto': delay = f'smu{ch}.DELAY_AUTO'
+        if type(delay) is str:
+            if delay.lower() == 'auto':
+                delay = f'smu{ch}.DELAY_AUTO'
+            else:
+                raise Exception("'delay' can only be a string if it's value is 'auto'")
         return self._set_or_query(f'smu{ch}.measure.delay', delay)
 
     def clear_buffer(self, buffer='nvbuffer1', ch='A'):
