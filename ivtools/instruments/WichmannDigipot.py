@@ -41,7 +41,7 @@ class WichmannDigipot(object):
         # No calibration yet for pot1, just use the same one
         self.R1list = self.R2list
 
-        self.wiper_combinations = [(m,n) for m in range(34) for n in range(34)]
+        self._wiper_combinations = [(m,n) for m in range(34) for n in range(34)]
         # parallel and series resistances that result from each of those settings
         self.Rparlist = np.round([R1*R2/(R1+R2) for R1 in self.R1list for R2 in self.R2list], 2)
         self.Rserlist = np.round([R1+R2 for R1 in self.R1list for R2 in self.R2list], 2)
@@ -157,23 +157,28 @@ class WichmannDigipot(object):
 
         Does not change wiper settings
         '''
-        return self.set_state(bypass=1)
+        self.set_state(bypass=state)
+        return state
 
-    def set_R1(self, R1):
+    def set_R1(self, R):
         '''
-        Set resistance level of pot1 to a value as close as possible to R1
+        Set resistance level of pot1 to a value as close as possible to R
         Does not change R2 state or bypass state
         '''
-        i_closest = np.argmin(np.abs(R - self.R1list))
-        return self.set_state(wiper1=i_closest)
+        w1 = np.argmin(np.abs(R - self.R1list))
+        R_closest = self.R1list[w1]
+        self.set_state(wiper1=w1)
+        return R_closest
 
-    def set_R2(self, R2):
+    def set_R2(self, R):
         '''
-        Set resistance level of pot2 to a value as close as possible to R2
+        Set resistance level of pot2 to a value as close as possible to R
         Does not change R1 state or bypass state
         '''
-        i_closest = np.argmin(np.abs(R - self.R2list))
-        return self.set_state(wiper2=i_closest)
+        w2 = np.argmin(np.abs(R - self.R2list))
+        R_closest = self.R2list[w2]
+        self.set_state(wiper2=w2)
+        return R_closest
 
     def set_R(self, R):
         '''
@@ -185,26 +190,23 @@ class WichmannDigipot(object):
         if R == 0:
             self.set_bypass(1)
             return 0
-        elif self.mode == 'single':
-            # Find closest resistance value
-            i_closest = np.argmin(np.abs(R - self.R2list))
-            R_closest = self.R2list[i_closest]
-            self.set_state(wiper2=i_closest, bypass=0)
-            return R_closest
+
+        # Find wiper settings for closest resistance value
+        if self.mode == 'single':
+            w1 = None # Don't change w1
+            w2 = np.argmin(np.abs(R - self.R2list))
+            R_closest = self.R2list[w2]
         elif self.mode == 'parallel':
-            # Find closest parallel resistance value
             i_closest = np.argmin(np.abs(R - self.Rparlist))
+            w1, w2 = self._wiper_combinations[i_closest]
             R_closest = self.Rparlist[i_closest]
-            i1, i2 = self.wiper_combinations[i_closest]
-            self.set_state(i1, i2, bypass=0)
-            return R_closest
         elif self.mode == 'series':
-            # Find closest series resistance value
             i_closest = np.argmin(np.abs(R - self.Rserlist))
+            w1, w2 = self._wiper_combinations[i_closest]
             R_closest = self.Rserlist[i_closest]
-            i1, i2 = self.wiper_combinations[i_closest]
-            self.set_state(i1, i2, bypass=0)
-            return R_closest
+
+        self.set_state(w1, w2, bypass=0)
+        return R_closest
 
 
 class WichmannDigipot_newfirmware(object):
