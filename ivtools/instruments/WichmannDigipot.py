@@ -80,8 +80,9 @@ class WichmannDigipot(object):
         '''
         # TODO: depends on the configuration (single, series, parallel)
         wiperstate = getattr(self, f'wiper{n}state')
-        return self.Rlist[self.wiperstate]
+        return self.Rlist[wiperstate]
 
+    @property
     def Rstate_parallel(self):
         '''
         Return total resistance assuming parallel connection of the two pots
@@ -90,6 +91,7 @@ class WichmannDigipot(object):
         R2 = self.Rstate(n=2)
         return R1*R2/(R1+R2)
 
+    @property
     def Rstate_series(self):
         '''
         Return total resistance assuming series connection of the two pots
@@ -206,7 +208,7 @@ class WichmannDigipot(object):
 
     def set_R_parallel(self, R):
         '''
-        Sets resistance level of a series combination
+        Sets resistance level of a parallel combination
         '''
         if R == 0:
             self.set_bypass(1)
