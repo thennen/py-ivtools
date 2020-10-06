@@ -3,3 +3,4 @@ data
 *.pyc
 /Pipe_inOutFifo
 /Pipe_inOut
+logging.log
