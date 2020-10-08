@@ -181,6 +181,8 @@ class TeoSystem(object):
         #self.constants.min_LFgain = self.LF_Measurement.LF_Gain.GetMinValue() # also 0?
         self.constants.AWG_memory = self.AWG_WaveformManager.GetTotalMemory()
 
+        self.calibration = dotdict()
+
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
 
@@ -487,6 +489,8 @@ class TeoSystem(object):
             # Convert for the 250 MHz FPGA
             trig2 = np.repeat(np.array(trig2[::2], bool), 2)[:n]
 
+        varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
+
         loaded_names = self.get_wfm_names()
 
         if name is None:
@@ -501,7 +505,6 @@ class TeoSystem(object):
             log.debug(f'Overwriting waveform named {name}')
 
         wf = self.AWG_WaveformManager.CreateWaveform(name)
-        varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
         wf.AddSamples(varray, trig1, trig2)
 
         # also write all the waveform data to the class instance
@@ -784,7 +787,7 @@ class TeoSystem(object):
         external = False
         self.LF_Measurement.SetLF_Mode(0, external)
 
-    def LF_voltage(self, value=None):
+    def LF_voltage(self, value=None, calibration=True):
         '''
         Gets or sets the LF source voltage value
 
@@ -792,13 +795,29 @@ class TeoSystem(object):
 
         This also sets the idle level for HF mode..  but doesn't switch to LF_mode or anything
 
+        If calibration is False, calibration is ignored
+
         TODO: check that we are in the possible output voltage range
         TODO: rename?  LF_Voltage is the name of a class within LF_Measurement
         '''
+        if calibration:
+            m = self.calibration.HFV[0]
+            b = self.calibration.HFV[1]
         if value is None:
-            return self.LF_Measurement.LF_Voltage.GetValue()
+            raw_value = self.LF_Measurement.LF_Voltage.GetValue()
+            if calibration:
+                value = m * raw_value + b
+                return value
+            else:
+                return raw_value
         else:
-            self.LF_Measurement.LF_Voltage.SetValue(value)
+            if calibration:
+                corrected_value = (value - b) / m
+                self.LF_Measurement.LF_Voltage.SetValue(corrected_value)
+            else:
+                self.LF_Measurement.LF_Voltage.SetValue(value)
+
+
 
     def LF_current(self, NPLC=10):
         '''

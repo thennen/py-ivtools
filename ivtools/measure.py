@@ -1436,3 +1436,124 @@ class controlled_interrupt():
     def breakpoint(self):
         if self.interruptable:
             raise KeyboardInterrupt
+
+
+########### Teo calibration #####################
+
+
+def calHFV(plot=False, check=False):
+    teo = instruments.TeoSystem()
+    k = instruments.Keithley2600()
+
+    v_desired = list(np.linspace(-5, 5, 100))
+
+
+    teo.LF_voltage(0, calibration=False)
+    k.source_func('i', ch=1)
+    k.source_func('i', ch=2)
+    k.source_level('i', 0, ch=1)
+    k.source_level('i', 0, ch=2)
+    k.nplc(1)
+    input("Connect Keithley channel A to HFV and channel B to HFI")
+    # Why are we connecting channel be to HFI???
+
+    plt.figure()
+    x = np.linspace(-5, 5, 1000)
+    plt.plot(x, x, label='Perfection')
+    plt.ylabel('Measured voltage (V)')
+    plt.xlabel('Desired voltage (V)')
+
+    def cal(c):
+        '''
+        Start calibration.
+
+        c must be False to perform an actual calibration, and True to check the result of it.
+        '''
+
+        v_measured = []
+
+        for v in v_desired:
+            teo.LF_voltage(v, calibration=c)
+            m = k.measure('v')
+            v_measured.append(m)
+
+        k.source_level('i', 0, ch=1)
+        k.source_level('i', 0, ch=2)
+
+        fit = np.polyfit(v_desired, v_measured, 1)
+
+        if not c: # actual calibration
+            teo.calibration.HFV = tuple(fit)
+
+        if plot:
+            if not c: # actual calibration
+                plt.plot(v_desired, v_measured, label='data', marker='.', color='grey')
+                x = np.linspace(-5, 5, 1000)
+                y = fit[0]*x + fit[1]
+                plt.plot(x, y, label='fit before')
+                if not check: # There is no intention to check later
+                    plt.legend()
+                    plt.show()
+
+            else: # This is a check
+                plt.plot(v_desired, v_measured, label='data', marker='.', color='black')
+
+        return fit
+
+    fit = cal(False)
+    log.info(f"Calibration result: Slope: {fit[0]}, Interception: {fit[1]}V")
+
+    if check:
+        log.info("Checking calibration")
+        slope = []
+        interception = []
+        iterations = 5
+        for i in range(iterations):
+            log.info(f"{i+1}/5")
+            fit = cal(True)
+            slope.append(fit[0])
+            interception.append(fit[1])
+        mean_slope = np.mean(slope)
+        dev_slope = np.std(slope)
+        mean_interception = np.mean(interception)
+        dev_interception = np.std(interception)
+
+        log.info(f"Calibration result: Slope: ({mean_slope} ± {dev_slope}), "
+                 f"Interception: ({mean_interception} ± {dev_interception})V")
+
+        if plot:
+            x = np.linspace(-5, 5, 1000)
+            y = mean_slope * x + mean_interception
+            plt.plot(x, y, label='fit after')
+            plt.legend()
+            plt.show()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
