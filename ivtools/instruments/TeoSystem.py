@@ -787,7 +787,7 @@ class TeoSystem(object):
         external = False
         self.LF_Measurement.SetLF_Mode(0, external)
 
-    def LF_voltage(self, value=None, calibration=True):
+    def LF_voltage(self, value=None):
         '''
         Gets or sets the LF source voltage value
 
@@ -800,22 +800,11 @@ class TeoSystem(object):
         TODO: check that we are in the possible output voltage range
         TODO: rename?  LF_Voltage is the name of a class within LF_Measurement
         '''
-        if calibration:
-            m = self.calibration.HFV[0]
-            b = self.calibration.HFV[1]
         if value is None:
-            raw_value = self.LF_Measurement.LF_Voltage.GetValue()
-            if calibration:
-                value = m * raw_value + b
-                return value
-            else:
-                return raw_value
+            value = self.LF_Measurement.LF_Voltage.GetValue()
+            return value
         else:
-            if calibration:
-                corrected_value = (value - b) / m
-                self.LF_Measurement.LF_Voltage.SetValue(corrected_value)
-            else:
-                self.LF_Measurement.LF_Voltage.SetValue(value)
+            self.LF_Measurement.LF_Voltage.SetValue(value)
 
 
 

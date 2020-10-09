@@ -1440,120 +1440,210 @@ class controlled_interrupt():
 
 ########### Teo calibration #####################
 
+def TeoCalibrationV(V=5, pts=100, plot=True, check=True, nplc=1):
+    '''
+    Calibration of the output voltage and the physical voltage monitor (SMA)
+    '''
 
-def calHFV(plot=False, check=False):
     teo = instruments.TeoSystem()
     k = instruments.Keithley2600()
 
-    v_desired = list(np.linspace(-5, 5, 100))
-
-
-    teo.LF_voltage(0, calibration=False)
+    teo.LF_voltage(0)
     k.source_func('i', ch=1)
     k.source_func('i', ch=2)
     k.source_level('i', 0, ch=1)
     k.source_level('i', 0, ch=2)
-    k.nplc(1)
-    input("Connect Keithley channel A to HFV and channel B to HFI")
-    # Why are we connecting channel be to HFI???
 
-    plt.figure()
-    x = np.linspace(-5, 5, 1000)
-    plt.plot(x, x, label='Perfection')
-    plt.ylabel('Measured voltage (V)')
-    plt.xlabel('Desired voltage (V)')
+    input("Connect Keithley channel A to HFV and channel B to Vmonitor")
+
+    k.source_output(True, ch=1)
+    k.source_output(True, ch=2)
+    k.nplc(nplc)
+    k.measure_range('v', 'auto', ch=1)
+    k.measure_range('v', 'auto', ch=2)
 
     def cal(c):
         '''
-        Start calibration.
+        Start calibration of HFV and Vmonitor_SMA.
 
-        c must be False to perform an actual calibration, and True to check the result of it.
+        c stands for check, so if should be False to perform an actual calibration, and True to check
         '''
 
-        v_measured = []
+        data = {}
+        data['desired'] = list(np.linspace(-V, V, pts))
+        data['HFV'] = []
+        data['monitor'] = []
 
-        for v in v_desired:
-            teo.LF_voltage(v, calibration=c)
-            m = k.measure('v')
-            v_measured.append(m)
+        for v in data['desired']:
+            teo.LF_voltage(v)
+            m1 = k.measure('v', ch=1)
+            m2 = k.measure('v', ch=2)
+            # We will use picoscope to measure Vmonitor, and this will measure half of the voltage at Vmonitor,
+            # so we fake that bellow.
+            m2 = m2/2
+            if c:# Application of calibration
+                m1 = (m1 - calibration_data['fit_HFV'][1]) / calibration_data['fit_HFV'][0]
+                m2 = (m2 - calibration_data['fit_monitor'][1]) / calibration_data['fit_monitor'][0]
+            data['HFV'].append(m1)
+            data['monitor'].append(m2)
 
         k.source_level('i', 0, ch=1)
         k.source_level('i', 0, ch=2)
+        teo.LF_voltage(0)
 
-        fit = np.polyfit(v_desired, v_measured, 1)
+        fit = np.polyfit(data['desired'], data['HFV'], 1)
+        data['fit_HFV'] = fit
+        fit = np.polyfit(data['HFV'], data['monitor'], 1)
+        data['fit_monitor'] = fit
 
-        if not c: # actual calibration
-            teo.calibration.HFV = tuple(fit)
+        return data
 
-        if plot:
-            if not c: # actual calibration
-                plt.plot(v_desired, v_measured, label='data', marker='.', color='grey')
-                x = np.linspace(-5, 5, 1000)
-                y = fit[0]*x + fit[1]
-                plt.plot(x, y, label='fit before')
-                if not check: # There is no intention to check later
-                    plt.legend()
-                    plt.show()
+    calibration_data = cal(False)
 
-            else: # This is a check
-                plt.plot(v_desired, v_measured, label='data', marker='.', color='black')
+    log.info(f"""
+Calibration results of HFV:
+    Slope: {calibration_data['fit_HFV'][0]}
+    Interception: {calibration_data['fit_HFV'][1]}V
 
-        return fit
-
-    fit = cal(False)
-    log.info(f"Calibration result: Slope: {fit[0]}, Interception: {fit[1]}V")
+Calibration results of Vmonitor:
+    Slope: {calibration_data['fit_monitor'][0]}
+    Interception: {calibration_data['fit_monitor'][1]}V
+        """)
 
     if check:
-        log.info("Checking calibration")
-        slope = []
-        interception = []
-        iterations = 5
-        for i in range(iterations):
-            log.info(f"{i+1}/5")
-            fit = cal(True)
-            slope.append(fit[0])
-            interception.append(fit[1])
-        mean_slope = np.mean(slope)
-        dev_slope = np.std(slope)
-        mean_interception = np.mean(interception)
-        dev_interception = np.std(interception)
+        check_data = cal(True)
 
-        log.info(f"Calibration result: Slope: ({mean_slope} ± {dev_slope}), "
-                 f"Interception: ({mean_interception} ± {dev_interception})V")
+        log.info(f"""
+Check results of HFV:
+    Slope: {check_data['fit_HFV'][0]}
+    Interception: {check_data['fit_HFV'][1]}V
 
-        if plot:
-            x = np.linspace(-5, 5, 1000)
-            y = mean_slope * x + mean_interception
-            plt.plot(x, y, label='fit after')
-            plt.legend()
-            plt.show()
+Check results of Vmonitor:
+    Slope: {check_data['fit_monitor'][0]}
+    Interception: {check_data['fit_monitor'][1]}V
+            """)
 
+        data = {'calibration': calibration_data, 'check': check_data}
 
+    else:
+        data = calibration_data
 
+    if plot:
+        x = np.array(data['calibration']['desired'])
 
+        plt.figure('HFV', clear=True)
+        plt.title(f'HFV Calibration\nV={V}, pts={pts}, nplc={nplc}')
+        plt.xlabel('Desired voltage (V)')
+        plt.ylabel('Measured voltage (V)')
+        plt.plot(x, x, label='Target', color='red')
 
+        plt.figure('Vmoitor', clear=True)
+        plt.title(f'Vmonitor Calibration\nV={V}, pts={pts}, nplc={nplc}')
+        plt.xlabel('Measured voltage at HFV (V)')
+        plt.ylabel('Measured voltage at Vmonitor (V)')
+        plt.plot(x, x, label='Target', color='red')
 
+        plt.figure('HFV')
 
+        y = data['calibration']['HFV']
+        plt.plot(x, y, label='Calibration data', color='lightgreen', alpha=0.8, marker='.')
 
+        y = data['calibration']['fit_HFV'][0] * x + data['calibration']['fit_HFV'][1]
+        plt.plot(x, y, label='Calibration fit', color='green', alpha=0.8)
 
+        plt.figure('Vmoitor')
 
+        y = data['calibration']['monitor']
+        plt.plot(x, y, label='Calibration data', color='lightgreen', alpha=0.8, marker='.')
 
+        y = data['calibration']['fit_monitor'][0] * x + data['calibration']['fit_monitor'][1]
+        plt.plot(x, y, label='Calibration fit', color='green', alpha=0.8)
 
+        if check:
 
+            plt.figure('HFV')
 
+            y = data['check']['HFV']
+            plt.plot(x, y, label='Check data', color='lightblue', alpha=0.8, marker='.')
 
+            y = data['check']['fit_HFV'][0] * x + data['check']['fit_HFV'][1]
+            plt.plot(x, y, label='Check fit', color='blue', alpha=0.8)
 
+            plt.figure('Vmoitor')
 
+            y = data['check']['monitor']
+            plt.plot(x, y, label='Check data', color='lightblue', alpha=0.8, marker='.')
 
+            y = data['check']['fit_monitor'][0] * x + data['check']['fit_monitor'][1]
+            plt.plot(x, y, label='Check fit', color='blue', alpha=0.8)
 
+        plt.figure('HFV')
+        plt.legend()
+        plt.show()
+        plt.figure('Vmoitor')
+        plt.legend()
+        plt.show()
 
+    k.source_output(False, ch=1)
+    k.source_output(False, ch=2)
 
+    return data
 
+def TeoCalibrationVplot(data):
 
+    check = True
 
+    x = np.array(data['calibration']['desired'])
 
+    plt.figure('HFV', clear=True)
+    plt.title('HFV Calibration')
+    plt.xlabel('Desired voltage (V)')
+    plt.ylabel('Measured voltage (V)')
+    plt.plot(x, x, label='Target', color='red')
 
+    plt.figure('Vmoitor', clear=True)
+    plt.title('Vmonitor Calibration')
+    plt.xlabel('Measured voltage at HFV (V)')
+    plt.ylabel('Measured voltage at Vmonitor (V)')
+    plt.plot(x, x, label='Target', color='red')
 
+    plt.figure('HFV')
 
+    y = data['calibration']['HFV']
+    plt.plot(x, y, label='Calibration data', color='lightgreen', alpha=0.8, marker='.')
 
+    y = data['calibration']['fit_HFV'][0] * x + data['calibration']['fit_HFV'][1]
+    plt.plot(x, y, label='Calibration fit', color='green', alpha=0.8)
 
+    plt.figure('Vmoitor')
+
+    y = data['calibration']['monitor']
+    plt.plot(x, y, label='Calibration data', color='lightgreen', alpha=0.8, marker='.')
+
+    y = data['calibration']['fit_monitor'][0] * x + data['calibration']['fit_monitor'][1]
+    plt.plot(x, y, label='Calibration fit', color='green', alpha=0.8)
+
+    if check:
+
+        plt.figure('HFV')
+
+        y = data['check']['HFV']
+        plt.plot(x, y, label='Check data', color='lightblue', alpha=0.8, marker='.')
+
+        y = data['check']['fit_HFV'][0] * x + data['check']['fit_HFV'][1]
+        plt.plot(x, y, label='Check fit', color='blue', alpha=0.8)
+
+        plt.figure('Vmoitor')
+
+        y = data['check']['monitor']
+        plt.plot(x, y, label='Check data', color='lightblue', alpha=0.8, marker='.')
+
+        y = data['check']['fit_monitor'][0] * x + data['check']['fit_monitor'][1]
+        plt.plot(x, y, label='Check fit', color='blue', alpha=0.8)
+
+    plt.figure('HFV')
+    plt.legend()
+    plt.show()
+    plt.figure('Vmoitor')
+    plt.legend()
+    plt.show()
