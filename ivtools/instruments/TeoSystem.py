@@ -1,3 +1,4 @@
+
 import numpy as np
 import itertools
 import sys
@@ -8,6 +9,8 @@ from pythoncom import com_error
 import hashlib
 import logging
 from numbers import Number
+import json
+import os
 log = logging.getLogger('instruments')
 
 class TeoSystem(object):
@@ -181,7 +184,26 @@ class TeoSystem(object):
         #self.constants.min_LFgain = self.LF_Measurement.LF_Gain.GetMinValue() # also 0?
         self.constants.AWG_memory = self.AWG_WaveformManager.GetTotalMemory()
 
-        self.calibration = dotdict()
+        if os.path.isfile('ivtools/instruments/teo_calibration.json'):
+            with open('ivtools/instruments/teo_calibration.json', 'r') as tc:
+                calibration_notdot = json.load(tc)
+            # Turning the nested dict into dotdict
+            self.calibration = dotdict()
+            for k in calibration_notdot.keys():
+                if type(calibration_notdot[k]) is tuple:
+                    setattr(self.calibration, k, dotdict())
+                    setattr(getattr(self.calibration, k), 'slope', calibration_notdot[k][0])
+                    setattr(getattr(self.calibration, k), 'inter', calibration_notdot[k][1])
+                elif type(calibration_notdot[k]) is dict:
+                    setattr(self.calibration, k, dotdict())
+                    for s in calibration_notdot[k].keys():
+                        setattr(getattr(self.calibration, k), s, dotdict())
+                        setattr(getattr(getattr(self.calibration, k), s), 'slope', calibration_notdot[k][s][0])
+                        setattr(getattr(getattr(self.calibration, k), s), 'inter', calibration_notdot[k][s][1])
+        else:
+            log.error('Calibration file not found!')
+            self.calibration = None
+
 
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
