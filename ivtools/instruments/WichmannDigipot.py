@@ -8,7 +8,7 @@ log = logging.getLogger('instruments')
 
 class WichmannDigipot(object):
     '''
-    Probing circuit developed by Erik Wichmann to provide remote series resistance switching
+    Probing circuit developed by Erik Wichmann to provide usb controlled series resistance switching
 
     There are two digipots on board.
     You can use a single digipot or connect the two in series or in parallel, by changing the solder jumpers
@@ -65,10 +65,7 @@ class WichmannDigipot(object):
             # We don't know what state we are in initially
             # For now we will just set them all when we connect
             # bypass on connect...
-            self.wiper1state = 0
-            self.wiper2state = 0
-            self.bypass_state = 1
-            self.write('0 0 1'.encode())
+            self.set_state(0,0,1)
             if self.connected():
                 log.info(f'Connected to digipot on {addr}')
 
