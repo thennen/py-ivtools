@@ -1461,8 +1461,8 @@ def teo_calibration(R_load=10000, plot=True, save=True):
 
     HFI_sw_Imax = np.array([3e-4, 6e-4, 1e-3, None])  # Maximum current at HFI internal, index of list = gain step
 
-    samples1 = 3
-    samples2 = 3
+    samples1 = 100
+    samples2 = 100
     range1 = np.linspace(0, HFI_sw_Imax[0]*R_load, samples1)
     range2 = np.linspace(HFI_sw_Imax[0]*R_load, 9, samples2)
     range12 = np.append(range1, range2[1:])
@@ -1472,41 +1472,39 @@ def teo_calibration(R_load=10000, plot=True, save=True):
         '''
         Start calibration of HFV and Vmonitor_SMA.
 
-        c stands for check, so if should be False to perform an actual calibration, and True to check
+        check should be False to perform an actual calibration, and True to check the result
         '''
 
         data = {}
         data['desired'] = v_desired
         data['HFV'] = {}
-        data['Vmonitor_SMA'] = {}
-        data['Vmonitor_int'] = {}
-        data['HF_FULL_BW'] = {}
-        data['HF_LIMITED_BW'] = {}
+        data['V_monitor'] = {}
+        data['HF_full_bw'] = {}
+        data['HF_limited_bw'] = {}
         data['HFV_int'] = {}
         data['HFI_int'] = {}
 
         data['fit_HFV'] = {}
-        data['fit_Vmonitor_SMA'] = {}
-        data['fit_Vmonitor_int'] = {}
-        data['fit_HF_FULL_BW'] = {}
-        data['fit_HF_LIMITED_BW'] = {}
+        data['fit_V_monitor'] = {}
+        data['fit_HF_full_bw'] = {}
+        data['fit_HF_limited_bw'] = {}
         data['fit_HFV_int'] = {}
         data['fit_HFI_int'] = {}
 
         times = []
+        last_print = None
 
         steps = list(range(32))
 
-        # To avoid logging 100 of "Actual picoscope sample freq..." I do on measure to plot it and I disable logging
+        # To avoid logging 100 of "Actual picoscope sample freq..."
         logging.getLogger('instruments').setLevel(31) # Only ERRORS or high
 
         for s in steps:
             t = time.time()
             data['HFV'][s] = np.array([])
-            data['Vmonitor_SMA'][s] = np.array([])
-            data['Vmonitor_int'][s] = np.array([])
-            data['HF_FULL_BW'][s] = np.array([])
-            data['HF_LIMITED_BW'][s] = np.array([])
+            data['V_monitor'][s] = np.array([])
+            data['HF_full_bw'][s] = np.array([])
+            data['HF_limited_bw'][s] = np.array([])
             data['HFV_int'][s] = np.array([])
             data['HFI_int'][s] = np.array([])
             teo.gain(s)
@@ -1543,34 +1541,30 @@ def teo_calibration(R_load=10000, plot=True, save=True):
                                 chrange=ranges, choffset={'A': 0, 'B': 0, 'C': 0, 'D': 0},
                                 chcoupling=None, chatten=None,
                                 raw=False, dtype=np.float32, plot=False, ax=None)
-                m2 = teo.LF_voltage()
                 teo.output_wfm(v * np.ones(10000))
-                m3 = teo.get_data(True)
+                m2 = teo.get_data(True)
 
 
                 if check:  # Application of calibration
                     m1['A'] = (m1['A'] - calibration_data['fit_HFV'][s][1]) /\
                               calibration_data['fit_HFV'][s][0]
-                    m1['B'] = (m1['B'] - calibration_data['fit_Vmonitor_SMA'][s][1]) /\
-                              calibration_data['fit_Vmonitor_SMA'][s][0]
-                    m2 = (m2 - calibration_data['fit_Vmonitor_int'][s][1]) /\
-                         calibration_data['fit_Vmonitor_int'][s][0]
-                    m1['C'] = (m1['C'] - calibration_data['fit_HF_LIMITED_BW'][s][1]) /\
-                              (R_load*calibration_data['fit_HF_LIMITED_BW'][s][0])
-                    m1['D'] = (m1['D'] - calibration_data['fit_HF_FULL_BW'][s][1]) /\
-                              (R_load*calibration_data['fit_HF_FULL_BW'][s][0])
-                    m3['HFV'] = (m3['HFV'] - calibration_data['fit_HFV_int'][s][1]) /\
+                    m1['B'] = (m1['B'] - calibration_data['fit_V_monitor'][s][1]) /\
+                              calibration_data['fit_V_monitor'][s][0]
+                    m1['C'] = (m1['C'] - calibration_data['fit_HF_limited_bw'][s][1]) /\
+                              (R_load*calibration_data['fit_HF_limited_bw'][s][0])
+                    m1['D'] = (m1['D'] - calibration_data['fit_HF_full_bw'][s][1]) /\
+                              (R_load*calibration_data['fit_HF_full_bw'][s][0])
+                    m2['HFV'] = (m2['HFV'] - calibration_data['fit_HFV_int'][s][1]) /\
                                 calibration_data['fit_HFV_int'][s][0]
-                    m3['HFI'] = (m3['HFI'] - calibration_data['fit_HFI_int'][s][1]) /\
+                    m2['HFI'] = (m2['HFI'] - calibration_data['fit_HFI_int'][s][1]) /\
                                 (R_load*calibration_data['fit_HFI_int'][s][0])
 
                 data['HFV'][s] = np.append(data['HFV'][s], np.mean(m1['A']))
-                data['Vmonitor_SMA'][s] = np.append(data['Vmonitor_SMA'][s], np.mean(m1['B']))
-                data['Vmonitor_int'][s] = np.append(data['Vmonitor_int'][s], m2)
-                data['HF_LIMITED_BW'][s] = np.append(data['HF_LIMITED_BW'][s], np.mean(m1['C']))
-                data['HF_FULL_BW'][s] = np.append(data['HF_FULL_BW'][s], np.mean(m1['D']))
-                data['HFV_int'][s] = np.append(data['HFV_int'][s], np.mean(m3['HFV'][:-5]))
-                data['HFI_int'][s] = np.append(data['HFI_int'][s], np.mean(m3['HFI'][:-5]))
+                data['V_monitor'][s] = np.append(data['V_monitor'][s], np.mean(m1['B']))
+                data['HF_limited_bw'][s] = np.append(data['HF_limited_bw'][s], np.mean(m1['C']))
+                data['HF_full_bw'][s] = np.append(data['HF_full_bw'][s], np.mean(m1['D']))
+                data['HFV_int'][s] = np.append(data['HFV_int'][s], np.mean(m2['HFV'][:-5]))
+                data['HFI_int'][s] = np.append(data['HFI_int'][s], np.mean(m2['HFI'][:-5]))
 
 
             # HFV calibration
@@ -1578,33 +1572,28 @@ def teo_calibration(R_load=10000, plot=True, save=True):
             y = data['HFV'][s]
             data['fit_HFV'][s] = np.polyfit(x, y, 1)
 
-            # Vmonitor_SMA calibration
+            # V_monitor calibration
             x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['Vmonitor_SMA'][s]
+            y = data['V_monitor'][s]
             fit = np.polyfit(x, y, 1)
-            data['fit_Vmonitor_SMA'][s] = fit
+            data['fit_V_monitor'][s] = fit
 
-            # Vmonitor_software calibration
+            # HF_limited_bw calibration
             x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['Vmonitor_int'][s]
-            data['fit_Vmonitor_int'][s] = np.polyfit(x, y, 1)
+            y = data['HF_limited_bw'][s]
+            data['fit_HF_limited_bw'][s] = np.polyfit(x, y, 1)
 
-            # HF_LIMITED_BW calibration
+            # HF_full_bw calibration
             x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['HF_LIMITED_BW'][s]
-            data['fit_HF_LIMITED_BW'][s] = np.polyfit(x, y, 1)
+            y = data['HF_full_bw'][s]
+            data['fit_HF_full_bw'][s] = np.polyfit(x, y, 1)
 
-            # HF_FULL_BW calibration
-            x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['HF_FULL_BW'][s]
-            data['fit_HF_FULL_BW'][s] = np.polyfit(x, y, 1)
-
-            # HFV_sw calibration
+            # HFV_int calibration
             x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
             y = data['HFV_int'][s]
             data['fit_HFV_int'][s] = np.polyfit(x, y, 1)
 
-            # HFI_sw calibration
+            # HFI_int calibration
             # I only do the fit at the non saturated region, called range1 before
             x = (data['HFV'][s][(samples2-1):(samples2-1+samples1*2)] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
             y = data['HFI_int'][s][(samples2-1):(samples2-1+samples1*2)]
@@ -1615,7 +1604,10 @@ def teo_calibration(R_load=10000, plot=True, save=True):
             remaining = np.mean(times) * ( (32 * 2) - s - 32*int(check) )
             remaining_mins = int(remaining / 60)
             remaining_secs = int(remaining - remaining_mins * 60)
-            log.info(f"Estimated time: {remaining_mins} minutes {remaining_secs} seconds.")
+            if last_print is None or last_print-remaining > 30:
+                last_print = remaining
+                log.info(f"Estimated time: {remaining_mins} minutes {remaining_secs} seconds.")
+
 
         logging.getLogger('instruments').setLevel(1)  # Back to normal
 
@@ -1630,18 +1622,41 @@ def teo_calibration(R_load=10000, plot=True, save=True):
     data = {'calibration': calibration_data, 'check': check_data, 'R_load': R_load}
 
     dict2save = {}
-    dict2save['HFV'] = tuple(data['calibration']['fit_HFV'][0])
-    dict2save['Vmonitor_SMA'] = tuple(data['calibration']['fit_Vmonitor_SMA'][0])
-    dict2save['Vmonitor_int'] = tuple(data['calibration']['fit_Vmonitor_int'][0])
-    dict2save['HFV_int'] = tuple(data['calibration']['fit_HFV_int'][0])
-    dict2save['HF_FULL_BW'] = {}
-    dict2save['HF_LIMITED_BW'] = {}
+    a = np.mean([data['calibration']['fit_HFV'][s][0] for s in range(32)])
+    b = np.mean([data['calibration']['fit_HFV'][s][1] for s in range(32)])
+    dict2save['HFV'] = {}
+    dict2save['HFV']['slope'] = 1/a
+    dict2save['HFV']['offset'] = -b/a
+    a = np.mean([data['calibration']['fit_V_monitor'][s][0] for s in range(32)])
+    b = np.mean([data['calibration']['fit_V_monitor'][s][1] for s in range(32)])
+    dict2save['V_minitor'] = {}
+    dict2save['V_minitor']['slope'] = 1/a
+    dict2save['V_minitor']['offset'] = -b/a
+    a = np.mean([data['calibration']['fit_HFV_int'][s][0] for s in range(32)])
+    b = np.mean([data['calibration']['fit_HFV_int'][s][1] for s in range(32)])
+    dict2save['HFV_int'] = {}
+    dict2save['HFV_int']['slope'] = 1/a
+    dict2save['HFV_int']['offset'] = -b/a
+    dict2save['HF_full_bw'] = {}
+    dict2save['HF_limited_bw'] = {}
     dict2save['HFI_int'] = {}
     for s in range(32):
-        dict2save['HF_FULL_BW'][f's{s}'] = tuple(data['calibration']['fit_HF_FULL_BW'][s])
-    for s in range(4):
-        dict2save['HF_LIMITED_BW'][f's{s}'] = tuple(data['calibration']['fit_HF_LIMITED_BW'][s])
-        dict2save['HFI_int'][f's{s}'] = tuple(data['calibration']['fit_HFI_int'][s])
+        a = data['calibration']['fit_HF_full_bw'][s][0]
+        b = data['calibration']['fit_HF_full_bw'][s][1]
+        dict2save['HF_full_bw'][f's{s}'] = {}
+        dict2save['HF_full_bw'][f's{s}']['slope'] = 1/R_load/a
+        dict2save['HF_full_bw'][f's{s}']['offset'] = -b/R_load/a
+    for ss in range(4):
+        a = np.mean([data['calibration']['fit_HF_limited_bw'][4*r+ss][0] for r in range(8)])
+        b = np.mean([data['calibration']['fit_HF_limited_bw'][4*r+ss][1] for r in range(8)])
+        dict2save['HF_limited_bw'][f's{ss}'] = {}
+        dict2save['HF_limited_bw'][f's{ss}']['slope'] = 1/R_load/a
+        dict2save['HF_limited_bw'][f's{ss}']['offset'] = -b/R_load/a
+        a = np.mean([data['calibration']['fit_HFI_int'][4*r+ss][0] for r in range(8)])
+        b = np.mean([data['calibration']['fit_HFI_int'][4*r+ss][1] for r in range(8)])
+        dict2save['HFI_int'][f's{ss}'] = {}
+        dict2save['HFI_int'][f's{ss}']['slope'] = 1/R_load/a
+        dict2save['HFI_int'][f's{ss}']['offset'] = -b/R_load/a
 
     with open('ivtools/instruments/teo_calibration.json', 'w') as outfile:
         json.dump(dict2save, outfile)
@@ -1669,65 +1684,49 @@ def teo_calibration_plot(data):
     plt.legend()
     plt.show()
 
-    # Vmonitor_SMA
+    # V_monitor
     plt.figure()
-    plt.title(f'Vmonitor_SMA Calibration')
+    plt.title(f'V_monitor Calibration')
     plt.xlabel('Voltage at HFV (V)')
-    plt.ylabel('Voltage at Vmonitor_SMA (V)')
+    plt.ylabel('Voltage at V_monitor (V)')
     x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
         data['calibration']['fit_HFV'][0][0]
-    y = data['calibration']['Vmonitor_SMA'][0]
+    y = data['calibration']['V_monitor'][0]
     plt.plot(x, x, label='Target', linewidth=2)
     plt.plot(x, y, label='Before calibration', marker='.')
     x = data['check']['HFV'][0]
-    y = data['check']['Vmonitor_SMA'][0]
+    y = data['check']['V_monitor'][0]
     plt.plot(x, y, label='After calibration', marker='.')
     plt.legend()
     plt.show()
 
-    # Vmonitor_software
-    plt.figure()
-    plt.title(f'Vmonitor_software Calibration')
-    plt.xlabel('Voltage at HFV (V)')
-    plt.ylabel('Voltage at Vmonitor_sw (V)')
-    x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
-        data['calibration']['fit_HFV'][0][0]
-    y = data['calibration']['Vmonitor_int'][0]
-    plt.plot(x, x, label='Target', linewidth=2)
-    plt.plot(x, y, label='Before calibration', marker='.')
-    x = data['check']['HFV'][0]
-    y = data['check']['Vmonitor_int'][0]
-    plt.plot(x, y, label='After calibration', marker='.')
-    plt.legend()
-    plt.show()
-
-    # HF_FULL_BW
+    # HF_full_bw
     for s in range(32):
         plt.figure()
-        plt.title(f'HF Full BW calibration at gain step = {s}')
+        plt.title(f'HF Full Band Width calibration at gain step = {s}')
         plt.xlabel('Voltage at HFV (V)')
-        plt.ylabel('Current at HF_FULL_BW (A)')
+        plt.ylabel('Current at HF_full_bw (A)')
         x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
             data['calibration']['fit_HFV'][0][0]
         y = x / R_load
         plt.plot(x, y, label='Target', linewidth=2)
         x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][s][1]) /\
             data['calibration']['fit_HFV'][s][0]
-        y = data['calibration']['HF_FULL_BW'][s]
+        y = data['calibration']['HF_full_bw'][s]
         plt.plot(x, y, label=f'Before calibration', marker='.')
         x = data['check']['HFV'][s]
-        y = data['check']['HF_FULL_BW'][s]
+        y = data['check']['HF_full_bw'][s]
         plt.plot(x, y, label=f'After calibration', marker='.')
         plt.legend()
         plt.show()
 
-    # HF_LIMITED_BW
+    # HF_limited_bw
     for s in range(4):
 
         plt.figure()
-        plt.title(f'HF Limited BW calibration {s}')
+        plt.title(f'HF Limited Band Width calibration {s}')
         plt.xlabel('Voltage at HFV (V)')
-        plt.ylabel('Current at HF_LIMITED_BW (A)')
+        plt.ylabel('Current at HF_limited_bw (A)')
 
         x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
             data['calibration']['fit_HFV'][0][
@@ -1735,20 +1734,20 @@ def teo_calibration_plot(data):
         y = x / R_load
         plt.plot(x, y, label='Target', linewidth=2)
 
-        for i in range(7):
+        for i in range(8):
             x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][s][1]) /\
                 data['calibration']['fit_HFV'][s][
                 0]
-            y = data['calibration']['HF_LIMITED_BW'][s+i*4]
+            y = data['calibration']['HF_limited_bw'][s+i*4]
             plt.plot(x, y, label=f'Before calibration at step {s+i*4}', marker='.')
             x = data['check']['HFV'][s+i*4]
-            y = data['check']['HF_LIMITED_BW'][s+i*4]
+            y = data['check']['HF_limited_bw'][s+i*4]
             plt.plot(x, y, label=f'After calibration at step {s+i*4}', marker='.')
 
         plt.legend()
         plt.show()
 
-    # HFV software
+    # HFV_int
     plt.figure()
     plt.title(f'Internal HFV Calibration')
     plt.xlabel('Voltage at HFV (V)')
@@ -1764,7 +1763,7 @@ def teo_calibration_plot(data):
     plt.legend()
     plt.show()
 
-    # HFI software
+    # HFI_int
     for i1 in range(4):
         plt.figure()
         plt.title(f'Internal HFI Calibration {i1}')
@@ -1774,7 +1773,7 @@ def teo_calibration_plot(data):
             data['calibration']['fit_HFV'][0][0]
         y = x / R_load
         plt.plot(x, y, label='Target', linewidth=2)
-        for i2 in range(7):
+        for i2 in range(8):
             s = i1 + 4*i2
             x = (data['calibration']['HFV'][s] - data['calibration']['fit_HFV'][s][1]) /\
                 data['calibration']['fit_HFV'][s][0]

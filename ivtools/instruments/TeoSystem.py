@@ -186,11 +186,11 @@ class TeoSystem(object):
 
         if os.path.isfile('ivtools/instruments/teo_calibration.json'):
             with open('ivtools/instruments/teo_calibration.json', 'r') as tc:
-                calibration_notdot = json.load(tc)
+                self.calibration = json.load(tc)
             # Turning the nested dict into dotdict
-            self.calibration = dotdict()
+            '''self.calibration = dotdict()
             for k in calibration_notdot.keys():
-                if type(calibration_notdot[k]) is tuple:
+                if type(calibration_notdot[k]) is list:
                     setattr(self.calibration, k, dotdict())
                     setattr(getattr(self.calibration, k), 'slope', calibration_notdot[k][0])
                     setattr(getattr(self.calibration, k), 'inter', calibration_notdot[k][1])
@@ -199,7 +199,7 @@ class TeoSystem(object):
                     for s in calibration_notdot[k].keys():
                         setattr(getattr(self.calibration, k), s, dotdict())
                         setattr(getattr(getattr(self.calibration, k), s), 'slope', calibration_notdot[k][s][0])
-                        setattr(getattr(getattr(self.calibration, k), s), 'inter', calibration_notdot[k][s][1])
+                        setattr(getattr(getattr(self.calibration, k), s), 'inter', calibration_notdot[k][s][1])'''
         else:
             log.error('Calibration file not found!')
             self.calibration = None
@@ -629,12 +629,14 @@ class TeoSystem(object):
         HFI = np.array(wf01.GetWaveformDataArray())
 
         R_HFI = 50 if self.J29 else 100
+        gain_step = self.gain()
 
         # Very approximate conversion to current
         # TODO: calibrate this better
-        I = HFI * 99.4e-5 / R_HFI
+        ss = np.mod(gain_step, 4) # Gain step fpr those amplifiers with only 4 gains
+        I = HFI * self.calibration['HFI_int'][f's{ss}']['slope'] + self.calibration['HFI_int'][f's{ss}']['offset']
         # TODO: also calibrate this, this is just a guess
-        V = (HFV + 320e-3) / 2.047
+        V = HFV * self.calibration['HFV_int']['slope'] + self.calibration['HFV_int']['offset']
 
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
 
