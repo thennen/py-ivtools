@@ -904,8 +904,8 @@ def digipot_test(plot=True):
 
     dp.set_bypass(0)
 
-    for w,Rnom in dp.Rmap.items():
-        dp.set_wiper(w) # Should have the necessary delay built in
+    for w,Rnom in enumerate(dp.R2list):
+        dp.set_state(wiper2=w) # Should have the necessary delay built in
         # Put 10 milliwatt through each resistor
         #A = np.sqrt(10e-3 * Rnom)
         #A = min(A, 5)
@@ -952,8 +952,8 @@ def digipot_calibrate(plot=True):
 
     dp.set_bypass(0)
     data = []
-    for w,Rnom in dp.Rmap.items():
-        dp.set_wiper(w) # Should have the necessary delay built in
+    for w,Rnom in enumerate(dp.R2list):
+        dp.set_state(wiper2=w) # Should have the necessary delay built in
         # Apply a volt, measure current
         k.iv([1], Irange=0, Ilimit=10e-3, nplc=1)
         while not k.done():

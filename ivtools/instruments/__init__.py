@@ -85,7 +85,7 @@ for module in modules:
                 #else:
                     globals()[thing_name] = thing
                     imported_names.append(thing_name)
-# This names get imported when you do "from instruments import *"
+# These names get imported when you do "from instruments import *"
 __all__ = imported_names
 
 # TODO make parent class or decorator to implement the borg stuff.
