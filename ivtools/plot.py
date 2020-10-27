@@ -545,7 +545,7 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
         cycle1 = resist1.index
         cycle2 = resist2.index
     else:
-        cycle1 = cycle2 = len(resist1)
+        cycle1 = cycle2 = range(len(resist1))
 
     fig, ax = plt.subplots()
     scatterargs = dict(s=10, alpha=.8, edgecolor='none')
@@ -718,7 +718,6 @@ def grouped_hist(df, col, groupby=None, range=None, bins=30, logx=True, ax=None)
     ax.set_ylabel('N')
 
 
-
 def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
               ax=None, **kwargs):
@@ -788,35 +787,50 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     channels = ['A', 'B', 'C', 'D']
     # Remove the previous range indicators
     ax.collections = []
-    for c in channels:
-        if c in chdata.keys():
-            # Do we need to convert to voltage?  There's not a good way to tell for sure!
-            # 8-bit channel data may have been smoothed, in which case it may have been converted to float
-            if chdata[c].dtype == np.int8:
-                # Should definitely be 8-bit values, not yet converted to V
-                # Convert to voltage for plot
-                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
-            elif 'smoothing' in chdata:
-                # I am going to assume this is smoothed 8-bit values, not converted to V yet
-                # Sorry future self for the inevitable case when this not true..
-                # e.g. if you get data with ps.get_data(..., raw=False), then smooth it, then send it here
-                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
-            else:
-                chplotdata = chdata[c]
-            if 'sample_rate' in chdata:
-                # If sample rate is available, plot vs time
-                x = ivtools.analyze.maketimearray(chdata, c)
-                ax.set_xlabel('Time [s]')
-                ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-            else:
-                x = range(len(chdata[c]))
-                ax.set_xlabel('Data Point')
-            chcoupling = chdata['COUPLINGS'][c]
-            ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
-            # lightly indicate the channel range
-            choffset = chdata['OFFSET'][c]
-            chrange = chdata['RANGE'][c]
-            ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+
+    def iterdata():
+        if type(chdata) in (dict, pd.Series):
+            return [(0,chdata),]
+        elif type(chdata) == pd.DataFrame:
+            return chdata.iterrows()
+        else:
+            # should be list
+            return enumerate(chdata)
+
+    for i,data in iterdata():
+        for c in channels:
+            if c in data.keys():
+                # Do we need to convert to voltage?  There's not a good way to tell for sure!
+                # 8-bit channel data may have been smoothed, in which case it may have been converted to float
+                if data[c].dtype == np.int8:
+                    # Should definitely be 8-bit values, not yet converted to V
+                    # Convert to voltage for plot
+                    chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
+                elif 'smoothing' in data:
+                    # I am going to assume this is smoothed 8-bit values, not converted to V yet
+                    # Sorry future self for the inevitable case when this not true..
+                    # e.g. if you get data with ps.get_data(..., raw=False), then smooth it, then send it here
+                    chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
+                else:
+                    chplotdata = data[c]
+                if 'sample_rate' in data:
+                    # If sample rate is available, plot vs time
+                    x = ivtools.analyze.maketimearray(data, c)
+                    ax.set_xlabel('Time [s]')
+                    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+                else:
+                    x = range(len(data[c]))
+                    ax.set_xlabel('Data Point')
+                chcoupling = data['COUPLINGS'][c]
+                if i == 0:
+                    ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
+                    # lightly indicate the channel range
+                    choffset = data['OFFSET'][c]
+                    chrange = data['RANGE'][c]
+                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+                else:
+                    ax.plot(x, chplotdata, color=colors[c], label=None, alpha=alpha, **kwargs)
+
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
@@ -935,7 +949,7 @@ class InteractiveFigs(object):
             # if False, disables updateline, newline
             self.enable = True
             # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
-            self.preprocessing = []
+            self.preprocessing = [sweep_decimator, ivtools.analyze.autosmoothimate]
             self.processed_data = None
 
     def createfig(self, n):
@@ -1122,57 +1136,23 @@ class InteractiveFigs(object):
 # Should handle single or multiple loops
 # TODO: Can I make a wrapper that makes that easier?
 # TODO: don't have each plot function downsample themselves, just do it once and share the result
-def parametrized(dec):
-    '''
-    NOT USED, JUST AN IDEA
-    This is a meta-decorator to create a parametrized decorator.  You got a better idea?
-    '''
-    def layer(*args, **kwargs):
-        def repl(f):
-            return dec(f, *args, **kwargs)
-        return repl
-    return layer
 
-@parametrized
-def plotter(plotfunc, cmap='jet', maxloops=100, maxsamples=5000, clear=False):
+def sweep_decimator(data, maxloops=100):
     '''
-    NOT USED, JUST AN IDEA
-    Plotting functions decorated with this can be written as though they are plotting a single loop,
-    but will automatically plot multiple loops if passed.
-    Will also try to avoid plotting too much data by decimating (not implemented) it and plotting a maximum number of loops at a time
-    if the plotter does not plot the arrays directly, then you might not need to decimate/limit the number
-    I wish python had pattern matching...
+    interactive plots slow down massively if you try to show too much at once
+    this attempts to keep it under control by not plotting all of the data
+    returns data downsampled in time and in cycle
+    can be used in the preprocessing list
     '''
-    # TODO: Usually the data is in list or dict form when this is used. extend to series and dataframes?
-    cmap = plt.get_cmap(cmap)
-    @wraps(plotfunc)
-    def wrap(data, ax=None, *args, **kwargs):
-        if clear:
-            ax.cla()
-        typein = type(data)
-        if typein is dict:
-            # if data is length 1, simply call plotfunc
-            plotfunc(data, ax, *args, **kwargs)
-        elif typein is list:
-            # if data is longer than length 1, call plotfunc several times, and try to apply a color map
-            # use inspect to check if plotfunc can take keywords
-            lendata = len(data)
-            if lendata > maxloops:
-                data = [data[int(n)] for n in np.round(np.linspace(0, lendata - 1, maxloops))]
-            passcolor = False
-            argspec = inspect.getfullargspec(plotfunc)
-            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
-                # plotter won't error if we pass the color keyword argument
-                # it might even work ..
-                colors = cmap(np.linspace(0, 1, len(data)))
-                passcolor = True
-            for i,d in enumerate(data):
-                if passcolor:
-                    kwargs['color'] = colors[i]
-                plotfunc(d, ax, *args, **kwargs)
-        else:
-            log.error('Cannot plot that kind of data')
-    return wrap
+    if type(data) in (list, pd.DataFrame):
+        nloops = len(data)
+        if nloops > maxloops:
+            loopstep = int(np.ceil(nloops / maxloops))
+            log.info('You captured {} loops.  Only plotting {} loops'.format(nloops, nloops//loopstep))
+            return data[::loopstep]
+    else:
+        return data
+
 
 def plottertemplate(data, ax, **kwargs):
     '''
@@ -1183,15 +1163,11 @@ def plottertemplate(data, ax, **kwargs):
     ax.set_xlabel('x')
     ax.set_ylabel('y')
 
-def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
-    # Maybe smooth data a bit and give it to plotiv
+def ivplotter(data, ax=None, maxloops=100, **kwargs):
     # Make sure not too much data gets plotted, or it slows down the program a lot.
-    # Would be better to smooth before splitting ...
     # kwargs gets passed through to plotiv, which passes them through to plt.plot
     if ax is None:
         fig, ax = plt.subplots()
-    if smooth:
-        data = ivtools.analyze.moving_avg(data, window=10)
     if type(data) is list:
         nloops = len(data)
     else:
@@ -1227,17 +1203,25 @@ def R_vs_cycle_plotter(data, ax=None, **kwargs):
     ax.set_ylabel('Resistance (from line fit) [$\Omega$]')
     engformatter('y')
 
-#@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
     # basically just plot_channels with downsampling
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
     for l in ax.lines[::-1]: l.remove()
+
+    if type(data) is list:
+        firstsweep = data[0]
+        nloops = len(data)
+    else:
+        firstsweep = data
+        nloops = 1
+
+    channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in firstsweep]
+    lendata = len(firstsweep[channels[0]])
+
     # Plot at most 100000 datapoints of the waveform
-    channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in data]
     if len(channels) > 0:
-        lendata = len(data[channels[0]])
         if lendata > 100000:
             log.warning('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
             step = lendata // 50000
@@ -1249,9 +1233,14 @@ def chplotter(data, ax=None, **kwargs):
                 plotdata['downsampling'] = step
         else:
             plotdata = data
+
+        maxloops = 50
+        if nloops > maxloops:
+            loopstep = int(np.ceil(nloops / maxloops))
+            plotdata = plotdata[::loopstep]
+
         plot_channels(plotdata, ax=ax)
 
-#@plotter
 def dVdIplotter(data, ax=None, **kwargs):
     ''' Plot dV/dI vs V'''
     if ax is None:
