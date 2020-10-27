@@ -33,6 +33,7 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 ######## Default settings that may get overwritten by hostname/user settings ########
 #####################################################################################
 
+# TODO: why did I put these in all caps? 
 ### Settings for compliance circuit
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
@@ -41,6 +42,10 @@ CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 
 # This is the channel where you are sampling the input waveform
 MONITOR_PICOCHANNEL = 'A'
+
+# Drop these data columns before writing to disk
+# usually if you need to save space and the columns can be recomputed
+drop_cols = [] # ['I', 'V', 't']
 
 ### Change this when you change probing circuits - defines how to get from pico channels to I, V
 # pico_to_iv = ivtools.measure.rehan_to_iv
