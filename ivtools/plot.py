@@ -1150,6 +1150,8 @@ def sweep_decimator(data, maxloops=100):
             loopstep = int(np.ceil(nloops / maxloops))
             log.info('You captured {} loops.  Only plotting {} loops'.format(nloops, nloops//loopstep))
             return data[::loopstep]
+        else:
+            return data
     else:
         return data
 
