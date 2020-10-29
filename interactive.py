@@ -281,7 +281,7 @@ del_plotters = iplots.del_plotters
 
 
 # noinspection SpellCheckingInspection
-def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
+def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=settings.drop_cols):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.

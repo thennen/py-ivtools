@@ -73,7 +73,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     return data
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
-           into50ohm=False, channels=['A', 'B'], autosmoothimate=True, splitbylevel=None,
+           into50ohm=False, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
            savewfm=False, pretrig=0, posttrig=0, interpwfm=True, **kwargs):
     '''
     Pulse a waveform, measure on picoscope channels, and return data
@@ -131,14 +131,14 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
 
     trainduration = n * duration
-    print('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     time.sleep(n * duration * 1.05)
     #ps.waitReady()
-    print('Getting data from picoscope.')
+    log.debug('Getting data from picoscope.')
     # Get the picoscope data
     # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
     chdata = ps.get_data(channels, raw=True)
-    print('Got data from picoscope.')
+    log.debug('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
     ivdata = ivtools.settings.pico_to_iv(chdata)
 
@@ -151,6 +151,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         ivdata['Vwfm'] = wfm
 
     if autosmoothimate:
+        # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
+        # if you do that, the data still gets written in its raw form, which is preferable usually
+        # Below, we irreversibly drop data.
         nsamples_shot = ivdata['nsamples_capture'] / n
         # Smooth by 0.3% of a shot
         window = max(int(nsamples_shot * 0.003), 1)
@@ -165,14 +168,14 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             # Can pass the number of data points you would like to end up with
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
-        print('Smoothimating data with window {}, factor {}'.format(window, factor))
+        log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
         # TODO: What if we want to retain a copy of the non-smoothed data?
         # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
         # Maybe only smoothimate I and V?
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit and (n > 1):
-        print('Splitting data into individual pulses')
+        log.debug('Splitting data into individual pulses')
         if splitbylevel is None:
             nsamples = duration * actual_fs
             if 'downsampling' in ivdata:
@@ -742,7 +745,7 @@ def compliance_voltage_lookup(I):
         # interpolate for best value for vc
         Vc = np.interp(I, cal['Ic'], cal['Vc'])
     else:
-        print('No calibration file! Using diode equation.')
+        log.warning('No calibration file! Using diode equation.')
         #Remitter = 2050
         #Vneg = 9.6
         #Vc = Ic*Remitter - Vneg + 0.344
@@ -867,6 +870,7 @@ def hybrid_IV(Imax=500e-6, Vmin=-3, dur=1e-3):
 
     return d
 
+
 ########### Digipot ####################
 
 def digipot_test(plot=True):
@@ -902,8 +906,8 @@ def digipot_test(plot=True):
 
     dp.set_bypass(0)
 
-    for w,Rnom in dp.Rmap.items():
-        dp.set_wiper(w) # Should have the necessary delay built in
+    for w,Rnom in enumerate(dp.R2list):
+        dp.set_state(wiper2=w) # Should have the necessary delay built in
         # Put 10 milliwatt through each resistor
         #A = np.sqrt(10e-3 * Rnom)
         #A = min(A, 5)
@@ -950,8 +954,8 @@ def digipot_calibrate(plot=True):
 
     dp.set_bypass(0)
     data = []
-    for w,Rnom in dp.Rmap.items():
-        dp.set_wiper(w) # Should have the necessary delay built in
+    for w,Rnom in enumerate(dp.R2list):
+        dp.set_state(wiper2=w) # Should have the necessary delay built in
         # Apply a volt, measure current
         k.iv([1], Irange=0, Ilimit=10e-3, nplc=1)
         while not k.done():
@@ -1009,7 +1013,7 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     Convert picoscope channel data to IV dict
     For the newer version of compliance circuit, which compensates itself and amplifies the needle voltage
     chA should monitor the applied voltage
-    chB should be the needle voltage
+    chB (optional) should be the needle voltage
     chC should be the amplified current
     '''
     # Keep all original data from picoscope
@@ -1020,18 +1024,20 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     if datain['A'].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
-    B = datain['B']
     C = datain['C']
     #C = datain['C']
     gain = ivtools.settings.CCIRCUIT_GAIN
     dataout['V'] = dtype(A)
     #dataout['V_formula'] = 'CHA - IO'
     #dataout['I'] = 1e3 * (B - C) / R
-    dataout['Vneedle'] = dtype(B)
-    dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
+    if 'B' in datain:
+        B = datain['B']
+        dataout['Vneedle'] = dtype(B)
+        dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
     dataout['I'] = dtype(C / gain)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    dataout['units'] = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A'}
+    units = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A'}
+    dataout['units'] = {k:v for k,v in units.items() if k in dataout}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
     #dataout['Rout_conv'] = R
@@ -1213,7 +1219,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
 
     chs_sampled = [ch for ch in ['A', 'B', 'C', 'D'] if ch in datain]
     if not chs_sampled:
-        print('No picoscope data detected')
+        log.error('No picoscope data detected')
         return datain
 
     dataout = datain

@@ -8,7 +8,7 @@ log = logging.getLogger('instruments')
 
 class WichmannDigipot(object):
     '''
-    Probing circuit developed by Erik Wichmann to provide remote series resistance switching
+    Probing circuit developed by Erik Wichmann to provide usb controlled series resistance switching
 
     There are two digipots on board.
     You can use a single digipot or connect the two in series or in parallel, by changing the solder jumpers
@@ -29,7 +29,6 @@ class WichmannDigipot(object):
         if statename not in ivtools.instrument_states:
             ivtools.instrument_states[statename] = {}
         self.__dict__ = ivtools.instrument_states[statename]
-        self.connect(addr, mode)
         # map from setting to resistance -- should be calibrated by source meter
         # Keithley calibration at 1V applied 2020-01-17 (red pcb rev3)
         # The wiper settings corresponding to these values are just range(34)
@@ -45,6 +44,7 @@ class WichmannDigipot(object):
         # parallel and series resistances that result from each of those settings
         self.Rparlist = np.round([R1*R2/(R1+R2) for R1 in self.R1list for R2 in self.R2list], 2)
         self.Rserlist = np.round([R1+R2 for R1 in self.R1list for R2 in self.R2list], 2)
+        self.connect(addr, mode)
 
     def connect(self, addr=None, mode='single'):
         if not self.connected():
@@ -65,10 +65,7 @@ class WichmannDigipot(object):
             # We don't know what state we are in initially
             # For now we will just set them all when we connect
             # bypass on connect...
-            self.wiper1state = 0
-            self.wiper2state = 0
-            self.bypass_state = 1
-            self.write('0 0 1'.encode())
+            self.set_state(0,0,1)
             if self.connected():
                 log.info(f'Connected to digipot on {addr}')
 
