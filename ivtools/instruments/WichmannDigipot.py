@@ -29,7 +29,6 @@ class WichmannDigipot(object):
         if statename not in ivtools.instrument_states:
             ivtools.instrument_states[statename] = {}
         self.__dict__ = ivtools.instrument_states[statename]
-        self.connect(addr, mode)
         # map from setting to resistance -- should be calibrated by source meter
         # Keithley calibration at 1V applied 2020-01-17 (red pcb rev3)
         # The wiper settings corresponding to these values are just range(34)
@@ -45,6 +44,7 @@ class WichmannDigipot(object):
         # parallel and series resistances that result from each of those settings
         self.Rparlist = np.round([R1*R2/(R1+R2) for R1 in self.R1list for R2 in self.R2list], 2)
         self.Rserlist = np.round([R1+R2 for R1 in self.R1list for R2 in self.R2list], 2)
+        self.connect(addr, mode)
 
     def connect(self, addr=None, mode='single'):
         if not self.connected():
