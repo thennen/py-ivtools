@@ -3,6 +3,7 @@ from colorama import Fore, Back, Style
 import os.path
 import ivtools
 import ivtools.settings
+import sys
 
 # Order matters, because of crazy circular imports..
 
@@ -92,7 +93,7 @@ for logger in list(loggers.keys()):
 
     # Stream Handlers
     for level in logging_levels:
-        handler = logging.StreamHandler()
+        handler = logging.StreamHandler(sys.__stdout__)
         handler.setLevel(1)
         formatter = logging.Formatter(loggers[logger])
         handler.setFormatter(formatter)
