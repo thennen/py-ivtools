@@ -485,7 +485,7 @@ def decimate(data, factor=5, columns=('I', 'V')):
 
 
 @ivfunc
-def smoothimate(data, window=10, factor=2, passes=1, columns=None):
+def smoothimate(data, window=10, factor=1, passes=1, columns=None):
     '''
     Smooth with moving avg and then decimate the data
     by decimate I mean a simple downsample

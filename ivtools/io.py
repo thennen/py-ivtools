@@ -1245,8 +1245,17 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
     set_readonly(filepath)
+    size = os.path.getsize(filepath)
+    if size > 2**30:
+        size = f'{size/2**30:.2f} GB'
+    elif size > 2**20:
+        size = f'{size/2**20:.2f} MB'
+    elif size > 2**10:
+        size = f'{size/2**10:.2f} KB'
+    else:
+        size = f'{size:.2f} B'
     abspath = os.path.abspath(filepath)
-    log.info('Wrote {}'.format(abspath))
+    log.info(f'Wrote {abspath},\n{size}')
     return abspath
 
 def pandas_pickle_extension(data):
