@@ -401,6 +401,10 @@ cycles = 1,
 pulse_width = 50e-12,
 attenuation = 0,
 automatic_measurement = True,
+pg5_measurement = True,
+recordlength = 250,
+trigger_position = 25,
+edge = 'r',
 sweep = True,
 two_sweeps = False,
 scale = 0.12,
@@ -460,22 +464,26 @@ cc_step = 25e-6):
             elif pulse_width < 150e-12:
                 ttx.trigger_position(30)
             else:
-                ttx.trigger_position(20)
+                ttx.trigger_position(trigger_position)
 
             plt.pause(0.1)
 
-            ttx.arm(source = 3, level = trigger_level, edge = 'r')
+            ttx.arm(source = 3, level = trigger_level, edge = edge)
 
 
             ### Applying pulse and reading scope data #############################################################
-            pg5.set_pulse_width(pulse_width)
+            if pg5_measurement:
+                pg5.set_pulse_width(pulse_width)
             if not automatic_measurement:
                 input('Connect the RF probes and press enter')
                 plt.pause(0.5)
             else:
                 plt.pause(0.1)
                 
-            pg5.trigger()
+            if pg5_measurement:
+                pg5.trigger()
+            else:
+                print('Apply pulse')
             plt.pause(0.1)
             plt.pause(0.2)
             status = ttx.triggerstate()
