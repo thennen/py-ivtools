@@ -186,12 +186,12 @@ void loop() {
     
     LCDprint("check",0,6);
     LCDprint("Power!",1,6);
-    delay(100);
+    delay(10);
   } 
   else { 
 
     LCDprintTemp(SmoothTemperature);
-    delay(100);
+    delay(10);
   }  
 
   // Process incoming serial data, and perform callbacks
