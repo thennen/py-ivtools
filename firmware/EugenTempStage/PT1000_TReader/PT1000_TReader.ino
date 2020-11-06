@@ -70,6 +70,7 @@ void AnalogOutput()
   
  // cmdMessenger.sendCmdArg(analogWriteValue);
     dac.setVoltage(analogWriteValue, false); //call dac-function "setVoltage"
+    delay(40);
     LCDprintSP(5*analogWriteValue/4096);  //print setpoint on lcd and convert 12-bit value to human-readable
     
  // cmdMessenger.sendCmdEnd();
@@ -145,7 +146,7 @@ void setup() {
   // initialize the LCD's number of columns and rows:
   TWBR = 100000; //sets I2C speed to 100kHz very important set this after dac.begin
   LCDclear();
-  delay(500);     // to show somesthing happend 
+  //delay(500);     // to show somesthing happend 
   LCDprint("Temp:",0,0);
   LCDprint("Set:",1,0);
   
@@ -185,12 +186,12 @@ void loop() {
     
     LCDprint("check",0,6);
     LCDprint("Power!",1,6);
-    delay(40);
+    delay(100);
   } 
   else { 
 
     LCDprintTemp(SmoothTemperature);
-    delay(40);
+    delay(100);
   }  
 
   // Process incoming serial data, and perform callbacks
