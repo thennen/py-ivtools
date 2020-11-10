@@ -1448,6 +1448,168 @@ class controlled_interrupt():
 
 ########### Teo calibration #####################
 
+def teo_calibration_tyler(Rload=10e3):
+    '''
+    Calibration of Teo voltages, using picoscope measurement
+    sets DC levels to the output (HFV), which goes through a known load resistor, into HFI
+    '''
+    teo = instruments.TeoSystem()
+    ps = instruments.Picoscope()
+
+    teo.HF_mode()
+    teo.LF_voltage(0)
+
+    input("Picoscope connections:\n"
+          " Channel A to HFV\n"
+          " Channel B to Vmonitor\n"
+          " Channel C to HF LIMITED BW\n"
+          " Channel D to HF FULL BW\n"
+          "Press Enter when connections are done.")
+
+    # Signal may saturate, we could apply voltages so that it doesn't happen,
+    # or we could prune the saturated datapoints out afterward
+    # HF_FULL_BW output saturates at about +800 mV, -700 mV
+    # HF_LIMITED_BW output saturates at about 1.8V
+    # At step 0 (highest gain), the HF FULL and HF LIMITED gains are roughly equal
+    # ~1V / 400uA, or 2.500 V/A (with J29)
+    #HF FULL BW possible step settings 0-31
+    #each step corresponds to 1dB (1.122×)
+    #HF LIMITED BW possible step settings 0,1,2,3
+    #each step corresponds to 6dB (2×)
+
+    # Voltage gain of the monitor is roughly 1/20
+
+    HF_FULL_BW_sat = .7
+    HF_LIMITED_BW_sat = 1.8
+
+    pscoupling = dict(A='DC', B='DC50', C='DC50', D='DC50')
+    # picoscope offset is not calibrated very well itself, so leave it at zero
+    psoffset = dict(A=0, B=0, C=0, D=0)
+    psatten = dict(A=1, B=1, C=1, D=1)
+
+    gains = range(32)
+
+    Vmax_course = 5
+    npts_course = 20
+    Vmax_fine = 1
+    npts_fine = 10
+
+    pico_nsamples = 1000
+    pico_dur = 5e-3
+
+    teo_nsamples = 2**14
+
+    #possible_ranges_DC = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
+    #possible_ranges_DC50 = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
+    #np.where(Vpredict < possible_ranges_DC)[0][0]
+
+    ############# Measure all the data needed for the calibration ####################
+    print('Starting calibration measurement, will take a minute or two')
+    cal_data = []
+    for step in gains:
+        teo.gain(step)
+        # determine the voltage range we will apply (fixed for now)
+        Vlist = np.concatenate((np.linspace(-Vmax_course, -Vmax_fine, npts_course//2),
+                                np.linspace(-Vmax_fine, Vmax_fine, npts_fine),
+                                np.linspace(Vmax_fine, Vmax_course, npts_course//2)))
+        # and the range of measurement (fixed range might be good enough)
+        psrange = dict(A=5, B=.5, C=2, D=1)
+        print(f'step={step}')
+        for V in Vlist:
+            print(f'\tV={V}')
+            teo.LF_voltage(V)
+            time.sleep(.1)
+            # measure picoscope channels
+            d1 = ps.measure(ch=['A', 'B', 'C', 'D'], duration=pico_dur,
+                            nsamples=pico_nsamples,
+                            trigsource='TriggerAux', triglevel=0.1, timeout_ms=1, # No trigger, just a timeout
+                            pretrig=0.0,
+                            chrange=psrange, choffset=psoffset,
+                            chcoupling=pscoupling, chatten=psatten,
+                            raw=False, dtype=np.float32, plot=False)
+            # do a pulse of the same amplitude as the bias, so that we can also measure the internal signals
+            teo.output_wfm(np.repeat(V, teo_nsamples))
+            d2 = teo.get_data(raw=True)
+
+            # smash data together
+            data = {**d1, **d2}
+            # put the metadata into the result
+            data['Vprog'] = V
+            data['step'] = step
+            cal_data.append(data)
+
+    # TODO: should we write the raw data to disk?
+
+    ############# Analyze the calibration data ####################
+
+    # Make new data from average values of measurement data
+    avg_data = []
+    for d in cal_data:
+        avg = {}
+        for k,v in d.items():
+            if type(v) == np.ndarray:
+                avg[k] = np.mean(v)
+            else:
+                avg[k] = v
+        avg_data.append(avg)
+
+    cal_df = pd.DataFrame(avg_data).drop(['I', 'V', 't'], 1)
+    # Rename columns
+    rename = dict(A='HFV', B='V_MONITOR', C='HF_LIMITED_BW', D='HF_FULL_BW', HFI='HFI_INT', HFV='HFV_INT')
+    cal_df = cal_df.rename(rename, axis=1)
+
+    # Set data that is in saturation to np.nan
+    HF_FULL_BW_sat_mask = cal_df.HF_FULL_BW.abs() > HF_FULL_BW_sat
+    cal_df['HF_FULL_BW'][HF_FULL_BW_sat_mask] = np.nan
+    HF_LIMITED_BW_sat_mask = cal_df.HF_LIMITED_BW.abs() > HF_LIMITED_BW_sat
+    cal_df['HF_LIMITED_BW'][HF_LIMITED_BW_sat_mask] = np.nan
+    # For some reason the HFI_INT signal saturates way before the HF_LIMITED_BW signal
+    # But we only get the data after the gain was divided out by Teo process, so it's harder to detect
+    HFI_INT_sat_mask = cal_df['HFI_INT'].abs() / 2**(cal_df.gain_step % 4) > 15.2
+    cal_df['HFI_INT'][HFI_INT_sat_mask] = np.nan
+
+    # What the actual current should have been
+    cal_df['I'] = cal_df['HFV'] / (Rload + 50)
+
+    # Fit lines to all the data
+    # We need the following functions
+    # Vprogrammed --> HFV (just for our information)
+    # V MONITOR --> HFV
+    # V MONITOR (internal wf00) --> HFV
+    # HF_LIMITED_BW(gain) --> current
+    # HFI(gain) (internal wf01) --> current
+    # HF_FULL_BW(gain) --> current
+    cal_output = dict(cal_Rload=Rload,
+                      cal_date=datetime.now().strftime('%Y-%m-%d_%H%M%S'),
+                      HFV={},
+                      HFI={})
+
+    def nanpolyfit(x, y, n):
+        mask = ~np.isnan(x) & ~np.isnan(y)
+        return list(np.polyfit(x[mask], y[mask], n))
+
+    cal_output['HFV']['Vprog'] = nanpolyfit(cal_df.Vprog, cal_df.HFV, 1)
+    cal_output['HFV']['HFV_INT'] = nanpolyfit(cal_df.HFV_INT, cal_df.HFV, 1)
+    cal_output['HFV']['V_MONITOR'] = nanpolyfit(cal_df.V_MONITOR, cal_df.HFV, 1)
+    def polyfitter(x, y):
+        return lambda g: nanpolyfit(g[x], g[y], 1)
+    cal_output['HFI']['HF_LIMITED_BW'] = cal_df.groupby(cal_df.step % 4).apply(polyfitter('HF_LIMITED_BW','I')).to_list()
+    cal_output['HFI']['HF_FULL_BW'] = cal_df.groupby(cal_df.step).apply(polyfitter('HF_FULL_BW','I')).to_list()
+    cal_output['HFI']['HFI_INT'] = cal_df.groupby(cal_df.step).apply(polyfitter('HFI_INT','I')).to_list()
+
+    # Write fit results to disk
+    calfile = ivtools.settings.teo_calibration_file
+    os.makedirs(os.path.split(calfile)[0], exist_ok=True)
+    with open(calfile, 'w') as outfile:
+        json.dump(cal_output, outfile)
+
+    # TODO: sanity check
+    # plot the results of calibration
+    # plot unaveraged signals
+    # line fits
+    # slope vs gain
+    # offset vs gain
+
 def teo_calibration(R_load=10000, plot=True, save=True):
     '''
     Calibration of the output voltage and the physical voltage monitor (SMA)
@@ -1456,6 +1618,7 @@ def teo_calibration(R_load=10000, plot=True, save=True):
     teo = instruments.TeoSystem()
     ps = instruments.Picoscope()
 
+    teo.HF_mode()
     teo.LF_voltage(0)
 
     input("Picoscope connections:\n"
@@ -1463,9 +1626,9 @@ def teo_calibration(R_load=10000, plot=True, save=True):
           " Channel B to Vmonitor\n"
           " Channel C to HF LIMITED BW\n"
           " Channel D to HF FULL BW\n"
-          "Press intro when connections are done")
+          "Press Enter when connections are done.")
 
-    HFI_sw_Imax = np.array([3e-4, 6e-4, 1e-3, None])  # Maximum current at HFI internal, index of list = gain step
+    HFI_sw_Imax = np.array([3e-4, 6e-4, 1e-3, np.nan])  # Maximum current at HFI internal, index of list = gain step
 
     samples1 = 100
     samples2 = 100
@@ -1505,6 +1668,8 @@ def teo_calibration(R_load=10000, plot=True, save=True):
         # To avoid logging 100 of "Actual picoscope sample freq..."
         logging.getLogger('instruments').setLevel(31) # Only ERRORS or high
 
+        coupling = dict(A='DC', B='DC50', C='DC50', D='DC50')
+
         for s in steps:
             t = time.time()
             data['HFV'][s] = np.array([])
@@ -1542,13 +1707,12 @@ def teo_calibration(R_load=10000, plot=True, save=True):
                 m1 = ps.measure(ch=['A', 'B', 'C', 'D'], freq=None, duration=0.005,
                                 nsamples=100,
                                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=1,
-                                direction='Rising',
                                 pretrig=0.0,
                                 chrange=ranges, choffset={'A': 0, 'B': 0, 'C': 0, 'D': 0},
-                                chcoupling=None, chatten=None,
+                                chcoupling=coupling, chatten=None,
                                 raw=False, dtype=np.float32, plot=False, ax=None)
                 teo.output_wfm(v * np.ones(10000))
-                m2 = teo.get_data(True)
+                m2 = teo.get_data(raw=True)
 
 
                 if check:  # Application of calibration
@@ -1664,7 +1828,7 @@ def teo_calibration(R_load=10000, plot=True, save=True):
         dict2save['HFI_int'][f's{ss}']['slope'] = 1/R_load/a
         dict2save['HFI_int'][f's{ss}']['offset'] = -b/R_load/a
 
-    with open('ivtools/instruments/teo_calibration.json', 'w') as outfile:
+    with open(ivtools.settings.teo_calibration_file, 'w') as outfile:
         json.dump(dict2save, outfile)
 
     if plot:

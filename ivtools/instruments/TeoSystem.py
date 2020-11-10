@@ -1,4 +1,3 @@
-
 import numpy as np
 import itertools
 import sys
@@ -11,6 +10,7 @@ import logging
 from numbers import Number
 import json
 import os
+import ivtools.settings # for calibration file path
 log = logging.getLogger('instruments')
 
 class TeoSystem(object):
@@ -184,24 +184,11 @@ class TeoSystem(object):
         #self.constants.min_LFgain = self.LF_Measurement.LF_Gain.GetMinValue() # also 0?
         self.constants.AWG_memory = self.AWG_WaveformManager.GetTotalMemory()
 
-        if os.path.isfile('ivtools/instruments/teo_calibration.json'):
-            with open('ivtools/instruments/teo_calibration.json', 'r') as tc:
+        if os.path.isfile(ivtools.settings.teo_calibration_file):
+            with open(ivtools.settings.teo_calibration_file, 'r') as tc:
                 self.calibration = json.load(tc)
-            # Turning the nested dict into dotdict
-            '''self.calibration = dotdict()
-            for k in calibration_notdot.keys():
-                if type(calibration_notdot[k]) is list:
-                    setattr(self.calibration, k, dotdict())
-                    setattr(getattr(self.calibration, k), 'slope', calibration_notdot[k][0])
-                    setattr(getattr(self.calibration, k), 'inter', calibration_notdot[k][1])
-                elif type(calibration_notdot[k]) is dict:
-                    setattr(self.calibration, k, dotdict())
-                    for s in calibration_notdot[k].keys():
-                        setattr(getattr(self.calibration, k), s, dotdict())
-                        setattr(getattr(getattr(self.calibration, k), s), 'slope', calibration_notdot[k][s][0])
-                        setattr(getattr(getattr(self.calibration, k), s), 'inter', calibration_notdot[k][s][1])'''
         else:
-            log.error('Calibration file not found!')
+            log.warning('Calibration file not found!')
             self.calibration = None
 
 
@@ -599,8 +586,6 @@ class TeoSystem(object):
         if raw is True, then keys 'HFV' and 'HFI' will be in the returned dict
         which are the ADC values before calibration/conversion/trimming
 
-        TODO: Calibrate voltages and currents
-              Store the calibrations here in the class definition
         TODO: How should we align data with trigger?  we want to return arrays of the same length, even if the
               triggers are not always on. We have two options:
               1. delete programmed voltage waveform and time waveform where trig1 is False
@@ -631,12 +616,21 @@ class TeoSystem(object):
         R_HFI = 50 if self.J29 else 100
         gain_step = self.gain()
 
-        # Very approximate conversion to current
-        # TODO: calibrate this better
-        ss = np.mod(gain_step, 4) # Gain step fpr those amplifiers with only 4 gains
-        I = HFI * self.calibration['HFI_int'][f's{ss}']['slope'] + self.calibration['HFI_int'][f's{ss}']['offset']
-        # TODO: also calibrate this, this is just a guess
-        V = HFV * self.calibration['HFV_int']['slope'] + self.calibration['HFV_int']['offset']
+        # Conversion to current if calibration is available
+        if self.calibration:
+            # Teo divides by gain internally before we get the HFI values,
+            # so this is just a fine-tuning of the calibration
+            gain_key = format(gain_step % 4)
+
+            I_cal_line = self.calibration['HFI']['HFI_INT'][gain_step % 4]
+            I = np.polyval(I_cal_line, HFI)
+            V_cal_line = self.calibration['HFV']['HFV_INT']
+            V = np.polyval(V_cal_line, HFV)
+        else:
+            # no calibration..
+            I = HFI
+            V = HFV
+
 
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
 
@@ -703,7 +697,7 @@ class TeoSystem(object):
         # TODO: This could return a really large data structure.
         #       we might need options to return something more minimal if we want to use long waveforms
         #       could also convert to float32, then I would use a dtype argument: get_data(..., dtype=float32)
-        out = dict(V=V, I=I, t=t, wfm=wfm,
+        out = dict(V=V, I=I, t=t, Vwfm=wfm,
                    idn=self.constants.idn,
                    sample_rate=sample_rate,
                    gain_step=self.last_gain,
@@ -818,8 +812,6 @@ class TeoSystem(object):
         In LF mode, the voltage appears on the HFI port, not HFV, which is the reverse of HF mode.
 
         This also sets the idle level for HF mode..  but doesn't switch to LF_mode or anything
-
-        If calibration is False, calibration is ignored
 
         TODO: check that we are in the possible output voltage range
         TODO: rename?  LF_Voltage is the name of a class within LF_Measurement

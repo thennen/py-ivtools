@@ -33,15 +33,17 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 ######## Default settings that may get overwritten by hostname/user settings ########
 #####################################################################################
 
-# TODO: why did I put these in all caps? 
+# TODO: why did I put these in all caps?
 ### Settings for compliance circuit
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
-COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'calibration', 'compliance_calibration.pkl')
+COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'instruments', 'calibration', 'compliance_calibration.pkl')
 CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 
 # This is the channel where you are sampling the input waveform
 MONITOR_PICOCHANNEL = 'A'
+
+teo_calibration_file = os.path.join(ivtools_dir, 'instruments', 'calibration', 'teo_calibration.json')
 
 # Drop these data columns before writing to disk
 # usually if you need to save space and the columns can be recomputed
