@@ -75,6 +75,7 @@ class EugenTempStage(object):
         cmd_str = '0,{};'.format(value).encode()
         self.write(cmd_str)
         actualvoltage = vstep * value
+        print(value)
         return actualvoltage
 
     def analogIn(self, channel):
