@@ -1,30 +1,28 @@
 //PT1000-Temperature READER with ARDUINO Micro
 #include <Wire.h>
-//#include <Adafruit_GFX.h>
 #include <math.h>
 #include <CmdMessenger.h>
 #include <Adafruit_MCP4725.h> // Digital-Analog-Converter
-//#include <LiquidCrystal.h> // LCD-Library
-//#include "Adafruit_LEDBackpack.h" // LED-Display
 #include <Filter.h> // Exponential-Filter
 
 //LCD-Konfiguration
 const byte LCDa = 0x28;         //LCD address on I2C bus
 const char unit[] = {223,67,' ',' ',' ',' ' };  //degree Celsius + some spaces to fill display buffer
-
+int count = 0;
 // Attach a new CmdMessenger object to the default Serial port
 CmdMessenger cmdMessenger = CmdMessenger(Serial);
 
 //Global-Variables
   int analogWriteValue = 655; //Start-Temperature (19*Celsius) / Voltage (0.8V)
   int analogReadValue;
-  bool SPflag = 0;            //True when setpoint has changed
 
   int analogWriteChannel;
   int analogReadChannel;
-
-  //LED-Matrix
-  //Adafruit_7segment matrix = Adafruit_7segment(); // Not in use right now
+  
+  //Display backlight RGB pins
+  int rPin = 6;
+  int gPin = 5;
+  int bPin = 4;
   
   //Digital-Analog-Converter
   Adafruit_MCP4725 dac;
@@ -32,6 +30,7 @@ CmdMessenger cmdMessenger = CmdMessenger(Serial);
   
   //Average Measurement for smooth Display-Output
   ExponentialFilter<float> FilteredTemperature(20, 0);
+  ExponentialFilter<float> FilteredSP(20, 0);
 
 
 // This is the list of recognized commands. These can be commands that can either be sent or received.
@@ -72,7 +71,6 @@ void AnalogOutput()
  // cmdMessenger.sendCmdArg(analogWriteValue);
     dac.setVoltage(analogWriteValue, false); //call dac-function "setVoltage"    
  // cmdMessenger.sendCmdEnd();
-    SPflag = 1;
 }
 
 
@@ -86,8 +84,7 @@ void attachCommandCallbacks()
 }
 
 //Function to calculate the RTD-Resistance
-float pt_resistor(float volt_now, float volt_bridge)
-{
+float pt_resistor(float volt_now, float volt_bridge){
   //Resistor-Values
   float r_1, r_3, r_4;
   r_1 = 9975;
@@ -100,11 +97,16 @@ float pt_resistor(float volt_now, float volt_bridge)
 
   //Getting RTD-Reistance
   float pt_res = (pt_zaehler / pt_nenner);
-  return pt_res;
-  
+  return pt_res; 
 }
+
+
+
+
+
 // LCD functions
 void LCDclear() {
+  Wire.setClock(50000);
   Wire.beginTransmission(LCDa);
   Wire.write (0xFE);
   Wire.write(0x51);
@@ -114,6 +116,7 @@ void LCDclear() {
 
 // Set Cursor to specified position line 0 or 1, pos 0 ... 15;
 void LCDprint(char msg[], int line, byte pos) {
+  Wire.setClock(50000);
   Wire.beginTransmission(LCDa);
   Wire.write (0xFE);
   Wire.write(0x45);
@@ -126,22 +129,26 @@ void LCDprint(char msg[], int line, byte pos) {
 
 void LCDprintTemp(float temp) {
   char buff[8];
-  dtostrf(temp,8,2,buff);    //convert float to ascii char array
-  
-  LCDprint(buff,0,6);
-  //LCDprint(strcat(buff,unit),0,6);
+  dtostrf(temp,6,2,buff);    //convert float to ascii char array
+  LCDprint(strcat(buff,unit),0,6);
   delay(100);
   
 }
 
-void LCDprintSP(float temp) {
+void LCDprintSP(float dacBitValue) {
+
+  float gain = 12.55; //Gain for Bridge-OPAmp
+  float volt_now = 10;
+  float SPvoltage = dacBitValue*5/4096;
+
+  float temp = (log(pt_resistor(volt_now, SPvoltage/gain) / 1000) / log(1.00385));
+  
   char buff[8];
- 
   dtostrf(temp,6,2,buff);    //convert float to ascii char array
-  LCDprint(buff,1,6);
-  //LCDprint(strcat(buff,unit),1,6);
-  SPflag = 0;
+  LCDprint(strcat(buff,unit),1,6);
 }
+
+
 
 
 void setup() {
@@ -150,11 +157,14 @@ void setup() {
   // initialize DAC
   dac.begin(0x62);
   // initialize the LCD's number of columns and rows:
-  TWBR = 100000; //sets I2C speed to 100kHz very important set this after dac.begin
   LCDclear();
-  //delay(500);     // to show somesthing happend 
+  delay(500);     // to show somesthing happend 
   LCDprint("Temp:",0,0);
   LCDprint("Set:",1,0);
+  
+  pinMode(rPin,OUTPUT);
+  pinMode(gPin,OUTPUT);
+  pinMode(bPin,OUTPUT);
   
   // Adds newline to every command
   cmdMessenger.printLfCr();
@@ -164,7 +174,6 @@ void setup() {
   
   //Start-Temperature (19*Celsius) / Voltage (0.8V)
   dac.setVoltage(analogWriteValue, false); 
-  SPflag = 1;
 }
 
 void loop() {
@@ -188,21 +197,55 @@ void loop() {
   FilteredTemperature.Filter(temp_log);
   float SmoothTemperature = FilteredTemperature.Current();
   
+ 
+   
   //Checking if Circuit has enough power
   if (volt_powerSupply < 2){
-    
-    LCDprint("check",0,6);
-    LCDprint("Power!",1,6);
-    delay(100);
+   
+    LCDprint("  Check   ",0,6);
+    LCDprint("  Power!  ",1,6);
+    delay(10);
+
+    //Violett in case of Power Failture
+    analogWrite(rPin,0xFF);
+    analogWrite(gPin,0x00);
+    analogWrite(bPin,0xFF);
   } 
   else { 
-
+    
     LCDprintTemp(SmoothTemperature);
-    delay(100);
-  }  
-  if(SPflag){
-    LCDprintSP(analogWriteValue);
+    LCDprintSP(analogWriteValue); 
+    delay(10);
+
+    // Convert Temperature to RGB color 
+    if(SmoothTemperature<8){
+      analogWrite(rPin,0x00);
+      analogWrite(gPin,0x00);
+      analogWrite(bPin,0xFF);
+    }else if(SmoothTemperature<15){
+      analogWrite(rPin,0x00);
+      analogWrite(gPin,0xFF);
+      analogWrite(bPin,0xFF);
+    }else if(SmoothTemperature<40){
+      analogWrite(rPin,0x00);
+      analogWrite(gPin,0xFF);
+      analogWrite(bPin,0x00);
+    }else if(SmoothTemperature<60){
+      analogWrite(rPin,0xFF);
+      analogWrite(gPin,0x8F);
+      analogWrite(bPin,0x00);
+    }else if(SmoothTemperature<80){
+      analogWrite(rPin,0xFF);
+      analogWrite(gPin,0x40);
+      analogWrite(bPin,0x00);
+    }else{
+      analogWrite(rPin,0xFF);
+      analogWrite(gPin,0x00);
+      analogWrite(bPin,0x00);
     }
+  }  
+
+  
   // Process incoming serial data, and perform callbacks
   cmdMessenger.feedinSerialData();
 }
