@@ -126,6 +126,9 @@ class EugenTempStage(object):
         volt_nenner = (r_4 + r_3) * r_1 + (r_3 + r_4) * pt_res
         volt_bruch = volt_zaehler / volt_nenner
         volt_set = volt_bruch * opamp_gain
+        # Prevent negative Voltages DAC can't handle signed Integer and goes to the highest range
+        if(volt_set<0):
+            volt_set = 0
         return volt_set
 
     def set_temperature(self, temp):
