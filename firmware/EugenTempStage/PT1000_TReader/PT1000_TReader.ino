@@ -16,8 +16,9 @@ const char unit[] = {223,67,' ',' ',' ',' ' };  //degree Celsius + some spaces t
 CmdMessenger cmdMessenger = CmdMessenger(Serial);
 
 //Global-Variables
-  int analogWriteValue;
+  int analogWriteValue = 655; //Start-Temperature (19*Celsius) / Voltage (0.8V)
   int analogReadValue;
+  bool SPflag = 0;            //True when setpoint has changed
 
   int analogWriteChannel;
   int analogReadChannel;
@@ -69,11 +70,9 @@ void AnalogOutput()
  // analogWrite(analogWriteChannel, analogWriteValue);
   
  // cmdMessenger.sendCmdArg(analogWriteValue);
-    dac.setVoltage(analogWriteValue, false); //call dac-function "setVoltage"
-    delay(40);
-    LCDprintSP(5*analogWriteValue/4096);  //print setpoint on lcd and convert 12-bit value to human-readable
-    
+    dac.setVoltage(analogWriteValue, false); //call dac-function "setVoltage"    
  // cmdMessenger.sendCmdEnd();
+    SPflag = 1;
 }
 
 
@@ -127,14 +126,21 @@ void LCDprint(char msg[], int line, byte pos) {
 
 void LCDprintTemp(float temp) {
   char buff[8];
-  dtostrf(temp,4,2,buff);    //convert float to ascii char array
-  LCDprint(strcat(buff,unit),0,6);
+  dtostrf(temp,8,2,buff);    //convert float to ascii char array
+  
+  LCDprint(buff,0,6);
+  //LCDprint(strcat(buff,unit),0,6);
+  delay(100);
+  
 }
 
 void LCDprintSP(float temp) {
   char buff[8];
-  dtostrf(temp,4,2,buff);    //convert float to ascii char array
-  LCDprint(strcat(buff,unit),1,6);
+ 
+  dtostrf(temp,6,2,buff);    //convert float to ascii char array
+  LCDprint(buff,1,6);
+  //LCDprint(strcat(buff,unit),1,6);
+  SPflag = 0;
 }
 
 
@@ -157,7 +163,8 @@ void setup() {
   attachCommandCallbacks();
   
   //Start-Temperature (19*Celsius) / Voltage (0.8V)
-  dac.setVoltage(655, false); 
+  dac.setVoltage(analogWriteValue, false); 
+  SPflag = 1;
 }
 
 void loop() {
@@ -182,18 +189,20 @@ void loop() {
   float SmoothTemperature = FilteredTemperature.Current();
   
   //Checking if Circuit has enough power
-  if (volt_powerSupply < 4){
+  if (volt_powerSupply < 2){
     
     LCDprint("check",0,6);
     LCDprint("Power!",1,6);
-    delay(10);
+    delay(100);
   } 
   else { 
 
     LCDprintTemp(SmoothTemperature);
-    delay(10);
+    delay(100);
   }  
-
+  if(SPflag){
+    LCDprintSP(analogWriteValue);
+    }
   // Process incoming serial data, and perform callbacks
   cmdMessenger.feedinSerialData();
 }
