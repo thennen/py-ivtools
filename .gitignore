@@ -1,5 +1,5 @@
 data
-
+logging.log
 *.pyc
 /Pipe_inOutFifo
 /Pipe_inOut
