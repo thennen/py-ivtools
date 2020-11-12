@@ -93,7 +93,8 @@ for logger in list(loggers.keys()):
 
     # Stream Handlers
     for level in logging_levels:
-        handler = logging.StreamHandler(sys.__stdout__)
+        #handler = logging.StreamHandler(sys.__stdout__)
+        handler = logging.StreamHandler()
         handler.setLevel(1)
         formatter = logging.Formatter(loggers[logger])
         handler.setFormatter(formatter)

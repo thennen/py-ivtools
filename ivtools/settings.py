@@ -63,6 +63,9 @@ username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
 
+# Should interactive script automatically commit changes?
+autocommit = False
+
 '''
 logging_print allows you to chose how verbose the logging module is. You can custom every level 
 by setting 'all' to 'None', or you can set it to 'True' or 'False' to change all levels.
@@ -93,6 +96,7 @@ logging_file = os.path.join(pyivtools_dir, 'logging.log')
 if hostname == 'pciwe46':
     db_path = 'D:\metadata.db'
     if username == 'hennen':
+        autocommit = True
         datafolder = r'D:\t\ivdata'
         for di in logging_prints.values():
             di['all'] = True

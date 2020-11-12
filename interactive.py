@@ -2,17 +2,17 @@
 IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
 
 This file should be run using the %run -i magic in ipython.
-Provides a command based user interface for IV measurements.
+Provides a command based user interface for interactive IV measurements.
 Binds convenient names to functions contained in other modules
 
 This script is designed to be rerun, and all of the code will be updated,
-with everything but your measurement settings not overwritten.
+with everything but your measurement settings overwritten.
 
 Therefore you can modify any part of the code/library while making measurements
 and without ever leaving the running program or closing instrument connections.
 
 TODO: fix the %matplotlib thing
-TODO: GUI for displaying and changing channel settings, other status information
+TODO: GUI for displaying and changing channel settings, other status information?
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad
 '''
@@ -88,7 +88,7 @@ if firstrun:
     for logger in ivtools.loggers.keys():
         log = logging.getLogger(logger)
         log.info('\t'+logger)
-    log = logging.getLogger('interactive')
+log = logging.getLogger('interactive')
 
 hostname = settings.hostname
 username = settings.username
@@ -98,14 +98,15 @@ datestr = time.strftime('%Y-%m-%d')
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     log.warning('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
-    # log.warning('Automatically committing changes!')
-    # gitCommit(message='AUTOCOMMIT')
+    if settings.autocommit:
+        # TODO: auto commit to some kind of separate auto commit branch
+        # problem is I don't want to pollute my commit history with a million autocommits
+        # and git is not really designed to commit to branches that are not checked out
+        # is this relevant?  https://github.com/bartman/git-wip
+        log.info('Automatically committing changes!')
+        gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
-    log.warning('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
-# TODO: auto commit to some kind of auto commit branch
-# problem is I don't want to pollute my commit history with a million autocommits
-# and git is not really designed to commit to branches that are not checked out
-# is this relevant?  https://github.com/bartman/git-wip
+    log.info('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 gitrev = io.getGitRevision()
 
 # Helps you step through the metadata of your samples/devices
