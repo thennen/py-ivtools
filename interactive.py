@@ -87,6 +87,8 @@ if firstrun:
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
         print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
+        print()
+    sys.stdout.flush()
 
 log = logging.getLogger('interactive')
 
