@@ -545,9 +545,6 @@ class Keithley2600(object):
         ch = self._convert_to_ch(ch)
         self.write(f'smu{ch}.reset()')
 
-    def waitcomplete(self):
-        self.write('waitcomplete()')
-
     def prepare_buffers(self, source_func, buffers=None, ch='A'):
         '''
         Configure the typical buffer settings used for triggering.

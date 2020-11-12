@@ -65,8 +65,6 @@ from ivtools.io import *
 from ivtools.instruments import *
 import logging
 
-log = logging.getLogger('interactive')
-
 
 magic = get_ipython().magic
 
@@ -88,7 +86,9 @@ if firstrun:
     # Preview of the logging colors
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
-        print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
+        log = logging.getLogger(logger)
+        log.info('\t'+logger)
+    log = logging.getLogger('interactive')
 
 hostname = settings.hostname
 username = settings.username
@@ -98,8 +98,8 @@ datestr = time.strftime('%Y-%m-%d')
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     log.warning('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
-    log.warning('Automatically committing changes!')
-    gitCommit(message='AUTOCOMMIT')
+    # log.warning('Automatically committing changes!')
+    # gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
     log.warning('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 # TODO: auto commit to some kind of auto commit branch

@@ -728,7 +728,7 @@ def db_change_type(var):
     return var
 
 
-def db_load(db_path, table_name):
+def db_load(db_path='D:/metadata.db', table_name='meta'):
     """
     Load a dataframe from a database table.
 
@@ -750,6 +750,29 @@ def db_load(db_path, table_name):
     df = df.rename(columns=changes)
     db_conn.close()
     return df
+
+
+def db_filter(db, filters):
+    """
+    Filter a pandas.dataframe by column name and delete all the empty columns
+
+    :param db: pandas.dataframe
+    :param filters: Dictionary like {'username': 'munoz', 'color': ['blue', 'red']}
+    :return: Processed dataframe
+    """
+    newdb = db.copy()
+
+    for k in filters.keys():
+        a = filters[k]
+        if type(a) is not list:
+            a = [a]
+        newdb = db[db[k].isin(a)]
+
+    for k in newdb.keys():
+        if all(i is None for i in newdb[k]):
+            del newdb[k]
+
+    return newdb
 
 
 def db_encode(col_names):
