@@ -86,8 +86,10 @@ if firstrun:
     # Preview of the logging colors
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
-        log = logging.getLogger(logger)
-        log.info('\t'+logger)
+        print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
+        print()
+    sys.stdout.flush()
+
 log = logging.getLogger('interactive')
 
 hostname = settings.hostname
