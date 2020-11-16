@@ -52,10 +52,11 @@ drop_cols = [] # ['I', 'V', 't']
 ### Change this when you change probing circuits - defines how to get from pico channels to I, V
 # pico_to_iv = ivtools.measure.rehan_to_iv
 # pico_to_iv = ivtools.measure.ccircuit_to_iv
-pico_to_iv = partial(ivtools.measure.Rext_to_iv, R=50)
+pico_to_iv = ivtools.measure.Rext_to_iv # 50 ohm channel C
 # pico_to_iv = ivtools.measure.TEO_HFext_to_iv
 
 # More settings?
+# Like picoscope defaults?
 # For interactive mode?
 
 hostname = socket.gethostname()

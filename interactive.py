@@ -239,9 +239,9 @@ if ps is not None:
 
 class autocaller():
     '''
-    Ugly hack to make a function call itself without the parenthesis.
+    Ugly hack to make a function call itself without typing the parentheses.
     There's an ipython magic for this, but I only want it to apply to certain functions
-    This is only for interactive convenience! Don't use it in a program or a script.
+    This is only for interactive convenience! Don't use it in a program or a script!
     '''
     def __init__(self, function, *args):
         self.function = function

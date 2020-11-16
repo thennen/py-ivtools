@@ -1183,8 +1183,10 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
 def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
-    This is for the configuration where you are using a series resistor
-    and probing the center junction
+    This is for the configuration where you are using a series resistance
+    for a shunt current measurement
+
+    e.g. using the scope inputs (R = 50Ω or 1MΩ)
     '''
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
@@ -1199,6 +1201,7 @@ def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
     C = datain[Ichannel]
 
     # V device
+    # No propagation delay considered!
     dataout['V'] = A - C
     dataout['I'] = C / R
     dataout['units'] = {'V':'V', 'I':'A'}
