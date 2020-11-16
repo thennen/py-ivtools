@@ -1496,16 +1496,19 @@ def teo_calibration_tyler(Rload=10e3):
           " Channel D to HF FULL BW\n"
           "Press Enter when connections are done.")
 
-    # Signal may saturate, we could apply voltages so that it doesn't happen,
-    # or we could prune the saturated datapoints out afterward
+    # Signal may saturate, we could
+    # A. apply voltages so that saturation doesn't happen,
+    # B. prune the saturated datapoints out afterward
+    # I choose method B
+
     # HF_FULL_BW output saturates at about +800 mV, -700 mV
     # HF_LIMITED_BW output saturates at about 1.8V
+    # HFI_INT is the HF_LIMITED_BW signal internally sampled, but it saturates some lower voltage
+
     # At step 0 (highest gain), the HF FULL and HF LIMITED gains are roughly equal
     # ~1V / 400uA, or 2.500 V/A (with J29)
-    #HF FULL BW possible step settings 0-31
-    #each step corresponds to 1dB (1.122×)
-    #HF LIMITED BW possible step settings 0,1,2,3
-    #each step corresponds to 6dB (2×)
+    # HF FULL BW possible step settings 0-31, each step corresponds to 1dB (1.122×)
+    # HF LIMITED BW possible step settings 0-3, each step corresponds to 6dB (2×)
 
     # Voltage gain of the monitor is roughly 1/20
 
@@ -1519,16 +1522,21 @@ def teo_calibration_tyler(Rload=10e3):
 
     gains = range(32)
 
+    # I will apply a single voltage list for every gain setting, finer steps near zero
     Vmax_course = 5
     npts_course = 20
     Vmax_fine = 1
     npts_fine = 10
+    Vlist = np.concatenate((np.linspace(-Vmax_course, -Vmax_fine, npts_course//2),
+                            np.linspace(-Vmax_fine, Vmax_fine, npts_fine),
+                            np.linspace(Vmax_fine, Vmax_course, npts_course//2)))
 
     pico_nsamples = 1000
     pico_dur = 5e-3
 
     teo_nsamples = 2**14
 
+    # In case we get fancy with the range settings later
     #possible_ranges_DC = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
     #possible_ranges_DC50 = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
     #np.where(Vpredict < possible_ranges_DC)[0][0]
@@ -1538,11 +1546,8 @@ def teo_calibration_tyler(Rload=10e3):
     cal_data = []
     for step in gains:
         teo.gain(step)
-        # determine the voltage range we will apply (fixed for now)
-        Vlist = np.concatenate((np.linspace(-Vmax_course, -Vmax_fine, npts_course//2),
-                                np.linspace(-Vmax_fine, Vmax_fine, npts_fine),
-                                np.linspace(Vmax_fine, Vmax_course, npts_course//2)))
-        # and the range of measurement (fixed range might be good enough)
+        # TODO MAYBE: determine a voltage range we will apply (fixed for now)
+        # TODO MAYBE: determine an optimal range of measurement for each channel (fixed range might be good enough)
         psrange = dict(A=5, B=.5, C=2, D=1)
         print(f'step={step}')
         for V in Vlist:
@@ -1588,13 +1593,14 @@ def teo_calibration_tyler(Rload=10e3):
     rename = dict(A='HFV', B='V_MONITOR', C='HF_LIMITED_BW', D='HF_FULL_BW', HFI='HFI_INT', HFV='HFV_INT')
     cal_df = cal_df.rename(rename, axis=1)
 
-    # Set data that is in saturation to np.nan
+    ## Set data that is in saturation to np.nan, so it won't be considered in the fits
     HF_FULL_BW_sat_mask = cal_df.HF_FULL_BW.abs() > HF_FULL_BW_sat
     cal_df['HF_FULL_BW'][HF_FULL_BW_sat_mask] = np.nan
     HF_LIMITED_BW_sat_mask = cal_df.HF_LIMITED_BW.abs() > HF_LIMITED_BW_sat
     cal_df['HF_LIMITED_BW'][HF_LIMITED_BW_sat_mask] = np.nan
     # For some reason the HFI_INT signal saturates way before the HF_LIMITED_BW signal
-    # But we only get the data after the gain was divided out by Teo process, so it's harder to detect
+    # But we only get the data after the gain was divided out by Teo process
+    # but we know the "relative" gain in dB..
     HFI_INT_sat_mask = cal_df['HFI_INT'].abs() / 2**(cal_df.gain_step % 4) > 15.2
     cal_df['HFI_INT'][HFI_INT_sat_mask] = np.nan
 
@@ -1618,10 +1624,12 @@ def teo_calibration_tyler(Rload=10e3):
         mask = ~np.isnan(x) & ~np.isnan(y)
         return list(np.polyfit(x[mask], y[mask], n))
 
+    # Don't waste any measurements -- this was repeated 32 times!
     cal_output['HFV']['Vprog'] = nanpolyfit(cal_df.Vprog, cal_df.HFV, 1)
     cal_output['HFV']['HFV_INT'] = nanpolyfit(cal_df.HFV_INT, cal_df.HFV, 1)
     cal_output['HFV']['V_MONITOR'] = nanpolyfit(cal_df.V_MONITOR, cal_df.HFV, 1)
     def polyfitter(x, y):
+        # returns a function we can pass to pandas groupy.apply to do the fit we want
         return lambda g: nanpolyfit(g[x], g[y], 1)
     cal_output['HFI']['HF_LIMITED_BW'] = cal_df.groupby(cal_df.step % 4).apply(polyfitter('HF_LIMITED_BW','I')).to_list()
     cal_output['HFI']['HF_FULL_BW'] = cal_df.groupby(cal_df.step).apply(polyfitter('HF_FULL_BW','I')).to_list()
