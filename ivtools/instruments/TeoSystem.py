@@ -97,7 +97,7 @@ class TeoSystem(object):
             1. on first initialization (Dispatch('TSX_HMan'))
             2. if you disconnect USB and plug it back in
 
-    # TODO: store a calibration to remove the offsets and scale voltages.
+    # DONE: store a calibration to remove the offsets and scale voltages.
             monitor has a big offset and for the other channel it depends a bit on the gain setting.
     '''
 

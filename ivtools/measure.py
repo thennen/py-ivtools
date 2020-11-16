@@ -1148,35 +1148,62 @@ def femto_log_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-def TEO_HFext_to_iv(datain, dtype=np.float32):
+def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for TEO HF output channels
+
     '''
+    # TODO: How can we know what gain setting was used??
+    #       For now we will just ask Teo what the current state is..
+    teo = instruments.TeoSystem()
+    gainstep = teo.gain()
+
+    if os.path.isfile(ivtools.settings.teo_calibration_file):
+        with open(ivtools.settings.teo_calibration_file, 'r') as tc:
+            calibration = json.load(tc)
+    else:
+        log.warning('Calibration file not found!')
+        calibration = None
+
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
-    # Volts per amp
-    gainA = 1
-    gainB = 1
-    gainC = 1
-    gainD = -2
-
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    chs = [ch for ch in ('A', 'B', 'C', 'D') if ch in datain]
+    if datain[chs[0]].dtype == np.int8:
         datain = raw_to_V(datain, dtype=dtype)
-    A = datain['A']
-    B = datain['B']
-    C = datain['C']
-    D = datain['D']
 
-    dataout['V'] = C / gainC
-    dataout['I'] = A / gainA
-    dataout['I2'] = B / gainB
-    dataout['I3'] = D / gainD
-    dataout['units'] = {'V':'V', 'I':'A', 'I2':'A', 'I3':'A'}
-    dataout['gain'] = {'A':gainA, 'B':gainB, 'C':gainC, 'D':gainD}
+    if 'units' not in dataout:
+        dataout['units'] = {}
+
+    #if HFV and (HFV in datain):
+    #    dataout['HFV'] = datain[HFV]
+
+    if V_MONITOR and (V_MONITOR in datain):
+        dataout['units']['V'] = 'V'
+        if calibration:
+            dataout['V'] = np.polyval(calibration['HFV']['V_MONITOR'], datain[V_MONITOR])
+        else:
+            dataout['V'] = datain[V_MONITOR]
+
+    if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
+        dataout['units']['I'] = 'I'
+        if calibration:
+            dataout['I'] = np.polyval(calibration['HFI']['HF_LIMITED_BW'][gainstep % 4], datain[HF_LIMITED_BW])
+        else:
+            dataout['I'] = datain[V_MONITOR]
+
+    if HF_FULL_BW and (HF_FULL_BW in datain):
+        dataout['units']['I2'] = 'I2'
+        if calibration:
+            dataout['I2'] = np.polyval(calibration['HFI']['HF_FULL_BW'][gainstep], datain[HF_FULL_BW])
+        else:
+            dataout['I2'] = datain[HF_FULL_BW]
+
+    # TODO if only one of HF_LIMITED or HF_FULL is used, call the signal I, and indicate somehow where it came from
+    # TODO Store calibration slope and intercept used
 
     return dataout
 
@@ -1612,6 +1639,7 @@ def teo_calibration_tyler(Rload=10e3):
     # line fits
     # slope vs gain
     # offset vs gain
+
 
 def teo_calibration(R_load=10000, plot=True, save=True):
     '''
