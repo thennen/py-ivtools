@@ -321,7 +321,16 @@ def load_metadb(database_path=None, table_name='meta'):
 s = autocaller(savedata)
 
 
-#############################################################
+###### Common configurations? ############
+
+def setup_ccircuit_measurements():
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.range.b = 2
+    ps.range.c = 2
+    settings.pico_to_iv = ccircuit_to_iv
+    iplots.plotters = pico_plotters
 
 ###### Interactive measurement functions #######
 
@@ -404,11 +413,16 @@ if dp:
 if ts:
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
+        meta.static['T'] = T
         ivplot.mybreakablepause(delay)
-        meta.static['R_series'] = Rs
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measure)
+
+def set_compliance(cc_value):
+    # Just calls normal set_compliance and also puts the value in metadata
+    meta.static['CC'] = cc_value
+    measure.set_compliance(cc_value)
 
 # TODO def reload_settings, def reset_state
