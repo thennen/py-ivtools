@@ -19,7 +19,7 @@ from functools import partial
 from importlib import reload
 # circular import?
 import ivtools.measure
-# import ivtools.instruments as instruments
+import ivtools.instruments as instruments
 
 # untested..
 def reload():
