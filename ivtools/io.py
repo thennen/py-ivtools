@@ -450,7 +450,6 @@ class MetaHandler(object):
             dataout = pd.DataFrame([{**d, **kwargs} for d in datadict])
         return dataout
 
-
     def timestamp(self):
         return datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
 
@@ -718,6 +717,9 @@ def db_load(db_path='D:/metadata.db', table_name='meta'):
             name = col_names[i]
             changes[name_encoded] = name
     df = df.rename(columns=changes)
+    # Empty cells in a column of numbers are load as numpy.nan; and in a column of strings, as None.
+    # In next line I left all empty cells as None.
+    df = df.replace({np.nan: None})
     db_conn.close()
     return df
 
