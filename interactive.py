@@ -87,7 +87,7 @@ if firstrun:
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
         print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
-        print()
+    print()
     sys.stdout.flush()
 
 log = logging.getLogger('interactive')
@@ -155,7 +155,7 @@ keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 # For Teo
-teo_plotters = [[0, partial(ivplot.ivplotter, x='wfm')], # programmed waveform is less noisy
+teo_plotters = [[0, partial(ivplot.ivplotter, x='Vwfm')], # programmed waveform is less noisy
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
@@ -321,7 +321,16 @@ def load_metadb(database_path=None, table_name='meta'):
 s = autocaller(savedata)
 
 
-#############################################################
+###### Common configurations? ############
+
+def setup_ccircuit_measurements():
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.range.b = 2
+    ps.range.c = 2
+    settings.pico_to_iv = ccircuit_to_iv
+    iplots.plotters = pico_plotters
 
 ###### Interactive measurement functions #######
 
@@ -384,7 +393,7 @@ picoiv = interactive_wrapper(measure.picoiv)
 
 # If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
-if k and hasattr(k, 'query'):
+if k and k.connected():
     live = True
     if '2636A' in k.idn():
         # This POS doesn't support live plotting
@@ -404,11 +413,16 @@ if dp:
 if ts:
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
+        meta.static['T'] = T
         ivplot.mybreakablepause(delay)
-        meta.static['R_series'] = Rs
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measure)
+
+def set_compliance(cc_value):
+    # Just calls normal set_compliance and also puts the value in metadata
+    meta.static['CC'] = cc_value
+    measure.set_compliance(cc_value)
 
 # TODO def reload_settings, def reset_state

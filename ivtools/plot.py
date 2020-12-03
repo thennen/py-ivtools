@@ -852,15 +852,16 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
 
 def mypause(interval):
     ''' plt.pause calls plt.show, which steals focus on some systems.  Use this instead '''
-    backend = plt.rcParams['backend']
-    if backend in mpl.rcsetup.interactive_bk:
-        figManager = mpl._pylab_helpers.Gcf.get_active()
-        if figManager is not None:
-            canvas = figManager.canvas
-            if canvas.figure.stale:
-                canvas.draw()
-            canvas.start_event_loop(interval)
-            return
+    if interval > 0:
+        backend = plt.rcParams['backend']
+        if backend in mpl.rcsetup.interactive_bk:
+            figManager = mpl._pylab_helpers.Gcf.get_active()
+            if figManager is not None:
+                canvas = figManager.canvas
+                if canvas.figure.stale:
+                    canvas.draw()
+                canvas.start_event_loop(interval)
+                return
 
 def mybreakablepause(interval):
     ''' pauses but allows you to press ctrl-c if the pause is long '''

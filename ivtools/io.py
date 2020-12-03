@@ -1248,7 +1248,7 @@ def write_pandas_pickle(data, filepath=None, drop=None):
     else:
         size = f'{size:.2f} B'
     abspath = os.path.abspath(filepath)
-    log.info(f'Wrote {abspath},\n{size}')
+    log.info(f'Wrote {abspath}\n{size}')
     return abspath
 
 def pandas_pickle_extension(data):
