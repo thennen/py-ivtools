@@ -73,7 +73,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     return data
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
-           into50ohm=False, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
+           termination=None, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
            savewfm=False, pretrig=0, posttrig=0, interpwfm=True, **kwargs):
     '''
     Pulse a waveform, measure on picoscope channels, and return data
@@ -84,7 +84,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     autosplit will split the waveforms into n chunks
 
-    into50ohm will double the waveform amplitude to cancel resistive losses when using terminator
+    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
 
     by default we sample for exactly the length of the waveform,
     use "pretrig" and "posttrig" to sample before and after the waveform
@@ -123,9 +123,10 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     # This makes me feel good, but I don't think it's really necessary
     time.sleep(.05)
-    if into50ohm:
-        # Multiply voltages by 2 to account for 50 ohm input
-        wfm = 2 * wfm
+    if termination:
+        # Account for terminating resistance
+        # e.g. multiply applied voltages by 2 for 50 ohm termination
+        wfm *= (50 + termination) / termination
 
     # Send a pulse
     rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
