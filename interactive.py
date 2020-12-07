@@ -306,6 +306,19 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
         database_path = db_path
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
+def savefig(name=None, fig=None, **kwargs):
+    '''
+    Save a png of the figure in the data directory
+    '''
+    if fig is None:
+        fig = plt.gcf()
+    fn = meta.filename()
+    if name:
+        fn += '_' + name
+    fp = os.path.join(datadir(), fn)
+    fig.savefig(fp, **kwargs)
+    log.info(f'Wrote {fp}')
+
 def load_metadb(database_path=None, table_name='meta'):
     """
     Load the database into a data frame.
