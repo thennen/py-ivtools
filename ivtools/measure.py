@@ -73,7 +73,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
     return data
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
-           into50ohm=False, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
+           termination=None, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
            savewfm=False, pretrig=0, posttrig=0, interpwfm=True, **kwargs):
     '''
     Pulse a waveform, measure on picoscope channels, and return data
@@ -84,7 +84,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     autosplit will split the waveforms into n chunks
 
-    into50ohm will double the waveform amplitude to cancel resistive losses when using terminator
+    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
 
     by default we sample for exactly the length of the waveform,
     use "pretrig" and "posttrig" to sample before and after the waveform
@@ -123,9 +123,10 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     # This makes me feel good, but I don't think it's really necessary
     time.sleep(.05)
-    if into50ohm:
-        # Multiply voltages by 2 to account for 50 ohm input
-        wfm = 2 * wfm
+    if termination:
+        # Account for terminating resistance
+        # e.g. multiply applied voltages by 2 for 50 ohm termination
+        wfm *= (50 + termination) / termination
 
     # Send a pulse
     rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
@@ -1329,7 +1330,6 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
                              np.arange(v1, v2, sign(v2 - v1) * step),
                              np.arange(v2, 0, -sign(v2) * step),
                              [0]))
-        return wfm
     else:
         # Find the shortest waveform that truly reaches v1 and v2 with constant spacing
         # I don't think we need better than 1 mV resolution
@@ -1364,13 +1364,10 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
 
         # Let AWG do the interpolation
 
-        if repeat > 1:
-            def lol():
-                for i in range(repeat-1):
-                    yield wfm[:-1]
-                yield wfm
-            wfm = np.concatenate([*lol()])
-        return wfm
+    if repeat > 1:
+        wfm = np.concatenate([wfm[:-1]]*(repeat-1) + [wfm])
+
+    return wfm
 
 def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
     '''
@@ -1514,6 +1511,7 @@ def teo_calibration_tyler(Rload=10e3):
 
     HF_FULL_BW_sat = .7
     HF_LIMITED_BW_sat = 1.8
+    HFI_INT_sat = 15.2 # unknown unit (not volts)
 
     pscoupling = dict(A='DC', B='DC50', C='DC50', D='DC50')
     # picoscope offset is not calibrated very well itself, so leave it at zero
@@ -1601,7 +1599,7 @@ def teo_calibration_tyler(Rload=10e3):
     # For some reason the HFI_INT signal saturates way before the HF_LIMITED_BW signal
     # But we only get the data after the gain was divided out by Teo process
     # but we know the "relative" gain in dB..
-    HFI_INT_sat_mask = cal_df['HFI_INT'].abs() / 2**(cal_df.gain_step % 4) > 15.2
+    HFI_INT_sat_mask = cal_df['HFI_INT'].abs() / 2**(cal_df.gain_step % 4) > HFI_INT_sat
     cal_df['HFI_INT'][HFI_INT_sat_mask] = np.nan
 
     # What the actual current should have been
