@@ -19,7 +19,7 @@ from functools import partial
 from importlib import reload
 # circular import?
 import ivtools.measure
-# import ivtools.instruments as instruments
+import ivtools.instruments as instruments
 
 # untested..
 def reload():
@@ -101,7 +101,7 @@ if hostname == 'pciwe46':
         datafolder = r'D:\t\ivdata'
         for di in logging_prints.values():
             di['all'] = True
-    elif username == 'munoz':
+    elif username == 'myScripts':
         datafolder = r'D:\{}\ivdata'.format(username)
         logging_prints = {
             'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
@@ -170,6 +170,5 @@ elif hostname == 'CHMP2':
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         # TEO
                         ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
-
 else:
     print(f'No Hostname specific settings found for {hostname}.  Using defaults.')
