@@ -4,7 +4,7 @@ Functions for measuring IV data
 import json
 
 import ivtools.analyze
-# import ivtools.instruments as instruments
+import ivtools.instruments as instruments
 import ivtools.settings
 
 from matplotlib import pyplot as plt
