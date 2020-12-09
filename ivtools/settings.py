@@ -19,7 +19,7 @@ from functools import partial
 from importlib import reload
 # circular import?
 import ivtools.measure
-import ivtools.instruments as instruments
+# import ivtools.instruments as instruments
 
 # untested..
 def reload():
@@ -170,5 +170,6 @@ elif hostname == 'CHMP2':
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         # TEO
                         ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
+
 else:
     print(f'No Hostname specific settings found for {hostname}.  Using defaults.')
