@@ -105,7 +105,7 @@ def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, *
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=plt.plot, autotitle=False, labels=None, labelfmt=None, colorbyval=True,
-           hold=False , **kwargs):
+           hold=False, **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     the point is mainly to do coloring and labeling in a nice way.
@@ -154,15 +154,17 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     lendata = len(data)
 
     ##### Line coloring #####
-    if lendata > 1:
+    if 'color' in kwargs:
+        # color keyword overrides everything
+        colors = [kwargs['color']] * len(data)
+        # Don't pass it through to the plot function, because passing c and color is an error now
+        del kwargs['color']
+    elif lendata > 1:
         # There are several loops
         # Pick colors for each line
         # you can either pass a list of colors, or a colormap
         if isinstance(cm, list):
             colors = cm
-        elif 'color' in kwargs:
-            # color overrides everything
-            colors = [kwargs['color']] * len(data)
         else:
             if isinstance(cm, str):
                 # Str refers to the name of a colormap
@@ -1810,6 +1812,10 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
 
 ### Other kinds of plotting utilities
 def metric_prefix(x):
+    '''
+    returns a string representation of x using metrix prefix (μ, m, k, M)
+    should be equivalent to mpl.ticker.EngFormatter()(x)
+    '''
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
@@ -1817,7 +1823,7 @@ def metric_prefix(x):
         return '{:n}'.format(x)
     for v, p in zip(values, prefix):
         if abs(x) >= v:
-            return '{:n}{}'.format(x/v, p)
+            return '{:n} {}'.format(x/v, p)
 
 def metric_prefix_longname(x, decimals=1):
     longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
@@ -1830,6 +1836,7 @@ def metric_prefix_longname(x, decimals=1):
             return f'{x/v:.{decimals}f} {p}'
 
 def engformatter(axis='y', ax=None):
+    ''' puts the metric prefix on the tick labels '''
     if ax is None:
         ax = plt.gca()
     if axis.lower() == 'x':
@@ -1837,6 +1844,26 @@ def engformatter(axis='y', ax=None):
     else:
         axis = ax.yaxis
     axis.set_major_formatter(mpl.ticker.EngFormatter())
+
+
+def scale_axis_labels(scale=6, axis='y', ax=None):
+    '''
+    Scale the axis labels by factors of 10 without having to scale the data itself
+    attempts to insert the metric prefix into the axis label
+    don't attempt to apply it twice, it will mess up your axis label
+    '''
+    if ax is None:
+        ax = plt.gca()
+
+    prefix = mpl.ticker.EngFormatter()(10**-scale)[-1]
+
+    axis = getattr(ax, axis+'axis')
+    fmter = mpl.ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x*10**scale))
+    axis.set_major_formatter(fmter)
+    label =  axis.get_label_text()
+    bracket = label.find('[')
+    if bracket and label[bracket+1] != prefix:
+        axis.set_label_text(prefix.join((label[:bracket+1], label[bracket+1:])))
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(

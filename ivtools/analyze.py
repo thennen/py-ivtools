@@ -953,6 +953,7 @@ def meaniv(data, truncate=False, columns=None):
             dataout[k] = data[k].mean()
         else:
             dataout[k] = np.mean([d[k] for d in data], axis=0)
+
     add_missing_keys(iloc(data, 0), dataout)
     if isdf:
         return pd.Series(dataout)
@@ -1563,6 +1564,7 @@ def smooth(x, N):
     Faster than numpy.convolve for most situations (window > 10)
     Floating point errors will accumulate if you use lower precision!
     Converts to and back from float64.  Still seems to be an issue using float16.
+    TODO: optimal algorithm seems to also depend on the length of x
     '''
     if N <= 10:
         # Use convolve
@@ -1575,7 +1577,7 @@ def smooth(x, N):
             converted = True
             x = np.float64(x)
     # Do the smoothing
-    cumsum = np.cumsum(np.insert(x, 0, 0)) 
+    cumsum = np.cumsum(np.insert(x, 0, 0))
     movingavg = (cumsum[N:] - cumsum[:-N]) / N
     if converted:
         return dtypein(movingavg)
