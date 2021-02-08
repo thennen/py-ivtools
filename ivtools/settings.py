@@ -101,10 +101,11 @@ if hostname == 'pciwe46':
         datafolder = r'D:\t\ivdata'
         for di in logging_prints.values():
             di['all'] = True
-    elif username == 'myScripts':
+    elif username == 'munoz':
         datafolder = r'D:\{}\ivdata'.format(username)
+        db_path = 'D:/munoz/Thesis/Metadata/munoz_database.db'
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},

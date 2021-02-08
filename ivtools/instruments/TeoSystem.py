@@ -622,9 +622,9 @@ class TeoSystem(object):
             # so this is just a fine-tuning of the calibration
             gain_key = format(gain_step % 4)
 
-            I_cal_line = self.calibration['HFI']['HFI_INT'][gain_step % 4]
+            I_cal_line = self.calibration['HFI_INT'][gain_step % 4]
             I = np.polyval(I_cal_line, HFI)
-            V_cal_line = self.calibration['HFV']['HFV_INT']
+            V_cal_line = self.calibration['HFV_INT']
             V = np.polyval(V_cal_line, HFV)
         else:
             # no calibration..
@@ -774,6 +774,7 @@ class TeoSystem(object):
                 wfm_names.append(name)
         return wfm_names
 
+
     def delete_all_wfms(self):
         for name in self.get_wfm_names():
             self.AWG_WaveformManager.DeleteWaveform(name)
@@ -805,6 +806,7 @@ class TeoSystem(object):
         external = False
         self.LF_Measurement.SetLF_Mode(0, external)
 
+
     def LF_voltage(self, value=None):
         '''
         Gets or sets the LF source voltage value
@@ -821,7 +823,6 @@ class TeoSystem(object):
             return value
         else:
             self.LF_Measurement.LF_Voltage.SetValue(value)
-
 
 
     def LF_current(self, NPLC=10):

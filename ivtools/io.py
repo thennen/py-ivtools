@@ -120,12 +120,12 @@ class MetaHandler(object):
         else:
             self.meta = self.df[self.i]
 
-    def load_sample_table(self, fpath='sampledata/CeRAM_Depositions.xlsx', **filters):
+    def load_sample_table(self, fpath, sheet=0, header=0, skiprows=None, **filters):
         ''' load data (pd.read_excel) from some tabular format'''
         if not os.path.isfile(fpath):
             # Maybe it's a relative path
             fpath = os.path.join(self.moduledir, fpath)
-        df = pd.read_excel(fpath, header=8, skiprows=[9])
+        df = pd.read_excel(fpath, sheet, header=header, skiprows=skiprows)
         # TODO: Apply filters
         for name, value in filters.items():
             if name in df:
@@ -138,8 +138,9 @@ class MetaHandler(object):
         if 'sample_name' in df:
             filenamekeys = ['sample_name'] + filenamekeys
         self.prettykeys = None
-        self.select(0)
         self.df = df
+        self.select(0)
+
 
     # TODO: Unified metadata loader that just loads every possible sample
 
@@ -394,15 +395,16 @@ class MetaHandler(object):
         mask = np.ones(len(self.df), bool)
         for k, v in kwargs.items():
             mask &= self.df[k] == v
-
         w = np.where(mask)
-        if any(w):
+        if any(mask):
             i = w[0][0]
             self.select(i)
             log.info('You have selected this device (index {}):'.format(self.i))
             self.print()
+            return self.i
         else:
             log.error('No matching devices found')
+            return None
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
