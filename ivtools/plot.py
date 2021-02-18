@@ -842,8 +842,8 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
         ax = plt.gca()
     if hasattr(vmin, '__iter__'):
         # I think you meant to send in the values directly instead of min and max
-        vmin = np.min(vmin)
         vmax = np.max(vmin)
+        vmin = np.min(vmin)
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
