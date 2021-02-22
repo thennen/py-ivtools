@@ -2,9 +2,6 @@ import numpy as np
 import itertools
 import sys
 import time
-import win32com.client
-from win32com.client import CastTo, WithEvents, Dispatch
-from pythoncom import com_error
 import hashlib
 import logging
 from numbers import Number
@@ -102,6 +99,9 @@ class TeoSystem(object):
     '''
 
     def __init__(self):
+        # This imports are here os a macOS user can import ivtools and use
+        from win32com.client import Dispatch
+        from pythoncom import com_error
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
         requires TEO software package and drivers to be installed on the PC
@@ -243,6 +243,7 @@ class TeoSystem(object):
 
     @staticmethod
     def _CastTo(name, to):
+        from win32com.client import CastTo
         # CastTo that clearly lets you know something isn't working right with the software setup
         try:
             result = win32com.client.CastTo(to, name)

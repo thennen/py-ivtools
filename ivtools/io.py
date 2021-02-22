@@ -4,6 +4,7 @@
 # this is to avoid circular import problems
 import ivtools.analyze
 import ivtools.plot
+from ivtools import settings
 
 import os
 import re
@@ -35,6 +36,8 @@ psplit = os.path.split
 
 # Directory above the one containing this file
 gitdir = psplit(psplit(__file__)[0])[0]
+
+db_path = settings.db_path
 
 
 class MetaHandler(object):
@@ -400,7 +403,6 @@ class MetaHandler(object):
             i = w[0][0]
             self.select(i)
             log.info('You have selected this device (index {}):'.format(self.i))
-            self.print()
             return self.i
         else:
             log.error('No matching devices found')
@@ -632,7 +634,7 @@ def db_insert_row(db_conn, table_name, row):
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    # log.info(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # log.debug(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
 
 
@@ -699,7 +701,7 @@ def db_change_type(var):
     return var
 
 
-def db_load(db_path='D:/metadata.db', table_name='meta'):
+def db_load(db_path=db_path, table_name='meta'):
     '''
     Load a dataframe from a database table.
 
@@ -726,21 +728,21 @@ def db_load(db_path='D:/metadata.db', table_name='meta'):
     return df
 
 
-def db_filter(db, filters):
+def db_filter(db, **kwargs):
     '''
     Filter a pandas.dataframe by column name and delete all the empty columns
 
     :param db: pandas.dataframe
-    :param filters: Dictionary like {'username': 'munoz', 'color': ['blue', 'red']}
+    :param kwargs: like (username='munoz', color= ['blue', 'red'])
     :return: Processed dataframe
     '''
     newdb = db.copy()
 
-    for k in filters.keys():
-        a = filters[k]
+    for k in kwargs.keys():
+        a = kwargs[k]
         if type(a) is not list:
             a = [a]
-        newdb = db[db[k].isin(a)]
+        newdb = newdb[newdb[k].isin(a)]
 
     for k in newdb.keys():
         if all(i is None for i in newdb[k]):

@@ -5,7 +5,7 @@ import json
 
 import ivtools.analyze
 import ivtools.instruments as instruments
-import ivtools.settings
+from ivtools import settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
@@ -192,6 +192,153 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
     return ivdata
+
+
+def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
+              duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
+              savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
+    '''
+    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with different series resistance during SET and RESET.
+
+    @param V_set: Voltage to applied during SET, it can be a list of values or None if you only want to do RESET.
+    If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
+    @param V_reset: Same as V_set.
+    @param R_set: Series Resistance during SET, it can be a list of values.
+    @param R_reset: Series Resistance during RESET, it can be a list of values.
+
+    picoiv params:
+
+    @param duration: Duration of a single sweep [seconds].
+    @param fs:
+    @param nsamples:
+    @param smartrange: 1 or 2:
+    1 autoranges the monitor channel.
+    2 tries some other fancy code :) to autorange the current measurement channel.
+    @param termination: Account for terminating resistance, e.g. multiply applied voltages by 2 for 50 ohm termination.
+    @param autosmoothimate: Creates a smooth and decimated version of the data. Raw form is saved anyway.
+    @param savewfm: Save the programmed waveform.
+    @param pretrig: By default we sample for exactly the length of the waveform,use "pretrig" to sample before
+    the waveform.
+    @param posttrig: By default we sample for exactly the length of the waveform,use "posttrig" to sample after
+    the waveform.
+    @param interpwfm: Rigol will interpolate the wfm so it doesn't need to have a lot of points.
+
+    @return: data measured in a list of dicts.
+    '''
+
+    ps = instruments.Picoscope()
+    dp = instruments.WichmannDigipot()
+
+    # I wanted to do the parameters very flexible, so now I have to handle every possible case.
+    # If there are more than one set or reset voltage, metadata is save as the string of the list, since lists are
+    # not allowed in the databe
+
+    num_types = [int, float, np.float16, np.float32, np.float64]
+    list_types = [list, np.ndarray, np.array]
+
+    if type(V_set) in num_types:
+        if type(V_reset) in num_types:
+            V_set = [V_set]
+            V_reset = [V_reset]
+        elif type(V_reset) in list_types:
+            V_set = list(np.repeat(V_set, len(V_reset)))
+            V_reset = list(V_reset)
+        elif V_reset is None:
+            V_set = [V_set]
+            V_reset = [V_reset]
+        else:
+            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
+
+    elif type(V_set) in list_types:
+        V_set = list(V_set)
+        if type(V_reset) in num_types:
+            V_reset = list(np.repeat(V_reset, len(V_set)))
+        elif type(V_reset) in list_types:
+            V_reset = list(V_reset)
+            if len(V_set) != len(V_reset):
+                raise Exception(f"V_set has length {len(V_set)} and V_reset {len(V_reset)}")
+        elif V_reset is None:
+            V_reset = list(np.repeat(V_reset, len(V_set)))
+        else:
+            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
+
+    elif V_set is None:
+        if type(V_reset) in num_types:
+            V_set = [V_set]
+            V_reset = [V_reset]
+        if type(V_reset) in list_types:
+            V_set = list(np.repeat(V_set, len(V_reset)))
+            V_reset = list(V_reset)
+        elif V_reset is None:
+            raise Exception(f'V_set and V_reset are both None')
+        else:
+            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
+    else:
+        raise Exception(f'No settings for V_set with type {type(V_set)}')
+
+    nloops = len(V_set)
+
+    if type(R_set) in num_types:
+        if nloops == 1:
+            R_set = [R_set]
+        elif nloops > 1:
+            R_set = list(np.repeat(R_set, nloops))
+    elif type(R_set) in list_types:
+        if len(R_set) != nloops:
+            raise Exception("R_set length doesn't match with voltages lengths")
+    else:
+        raise Exception(f'No settings for R_set with type {type(R_set)}')
+
+    if type(R_reset) in num_types:
+        if nloops == 1:
+            R_reset = [R_reset]
+        elif nloops > 1:
+            R_reset = list(np.repeat(R_reset, nloops))
+    elif type(R_reset) in list_types:
+        if len(R_reset) != nloops:
+            raise Exception("R_reset length doesn't match with voltages lengths")
+    else:
+        raise Exception(f'No settings for R_reset with type {type(R_reset)}')
+
+
+    # Setting instruments up
+    settings.pico_to_iv = digipot_to_iv
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.range = {'A': 5, 'B': 5, 'C': 0.05, 'D': 1}
+    ps.offset = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
+
+    # Measuring
+    sweeps = []
+    logging.getLogger('instruments').setLevel(31)  # Only ERRORS or high
+    logging.getLogger('measure').setLevel(31)  # Only ERRORS or high
+    for vs, vr, rs, rr in zip(V_set, V_reset, R_set, R_reset):
+
+        if vs is not None:
+            wfm_set = tri(0, vs, 100)
+            dp.set_R(rs)
+            d_set = picoiv(wfm=wfm_set, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
+                           termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
+                           savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
+            sweeps.append(d_set)
+        if vr is not None:
+            wfm_reset = tri(0, -vr, 100)
+            dp.set_R(rr)
+            d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
+                             termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
+                             savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
+            sweeps.append(d_reset)
+    logging.getLogger('instruments').setLevel(1)  # back to normal
+    logging.getLogger('measure').setLevel(1)  # back to normal
+
+    # Saving data
+    data = sweeps[0]
+    for s in sweeps[1:]:
+        for k, v in s.items():
+            if type(v) in [np.ndarray, list, pd.core.series.Series]:
+                data[k] = np.append(data[k], v)
+
+    return data
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -1268,7 +1415,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
         dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
         dataout['units']['V'] = 'V'
     if Vd_channel in datain:
-        Vd = datain[Vd_channel]
+        Vd = datain[Vd_channel]*2
         dataout['Vd'] = Vd
         dataout['units']['Vd'] = 'V'
     if I_channel in datain:
@@ -1478,7 +1625,8 @@ class controlled_interrupt():
 
 def teo_calibration(Rload, plot=False):
     '''
-    Calibrate Teo System
+    Calibration of Teo voltages, using picoscope measurement
+    sets DC levels to the output (HFV), which goes through a known load resistor, into HFI
     '''
     #TODO: many resistors calibration to calibrate all amplifiers in its whole range
 

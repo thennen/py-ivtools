@@ -21,7 +21,7 @@ But one could add some kind of reset_state argument to __init__ to handle this.
 '''
 import os
 import serial
-import visa
+import pyvisa as visa
 from importlib import reload, import_module
 import logging
 import glob
