@@ -935,7 +935,7 @@ class InteractiveFigs(object):
             figwidth = figheight * 1.3
             self.hdpi = hdpi
             self.vdpi = vdpi
-            self.figsize = (figwidth / hdpi, figheight / vdpi)
+            self.figsize = (figwidth / hdpi, (figheight/ vdpi)+0.35)
             self.figlocs = [(wpixels - figwidth - 2*borderleft, 0),
                     (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
                     (wpixels - 2*figwidth - 4*borderleft, 0),

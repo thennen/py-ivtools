@@ -643,7 +643,7 @@ class Keithley2600(object):
         else:
             return self._set_or_query(f'smu{ch}.measure.range{meas_func}', m_range)
 
-    def source_level(self, source_func='v', source_val=None, ch='A'):
+    def source_level(self, source_val=None, source_func='v', ch='A'):
         '''
         Set the source level, or ask for it.
 

@@ -64,7 +64,6 @@ from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
 import logging
-from IPython import get_ipython
 
 
 magic = get_ipython().magic

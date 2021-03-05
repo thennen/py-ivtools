@@ -105,6 +105,7 @@ if hostname == 'pciwe46':
         munoz = 'D:/munoz/'
         datafolder = os.path.join(munoz, 'ivdata')
         db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
+        logging_file = os.path.join(munoz, 'ivtools_logging.log')
         logging_prints = {
             'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
@@ -176,6 +177,7 @@ elif username == 'alexgar':
     munoz = '/Users/alexgar/sciebo/munoz/'
     datafolder = os.path.join(munoz, 'ivdata')
     db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
+    logging_file = os.path.join(munoz, 'ivtools_logging.log')
     logging_prints = {
         'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
         'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},

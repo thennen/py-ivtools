@@ -310,8 +310,6 @@ def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
 
     # Measuring
     sweeps = []
-    logging.getLogger('instruments').setLevel(31)  # Only ERRORS or high
-    logging.getLogger('measure').setLevel(31)  # Only ERRORS or high
     for vs, vr, rs, rr in zip(V_set, V_reset, R_set, R_reset):
 
         if vs is not None:
@@ -328,8 +326,6 @@ def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
                              termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
                              savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
             sweeps.append(d_reset)
-    logging.getLogger('instruments').setLevel(1)  # back to normal
-    logging.getLogger('measure').setLevel(1)  # back to normal
 
     # Saving data
     data = sweeps[0]
@@ -1333,21 +1329,21 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
     if V_MONITOR and (V_MONITOR in datain):
         dataout['units']['V'] = 'V'
         if calibration:
-            dataout['V'] = np.polyval(calibration['HFV']['V_MONITOR'], datain[V_MONITOR])
+            dataout['V'] = np.polyval(calibration['V_MONITOR'], datain[V_MONITOR])
         else:
             dataout['V'] = datain[V_MONITOR]
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
         dataout['units']['I'] = 'I'
         if calibration:
-            dataout['I'] = np.polyval(calibration['HFI']['HF_LIMITED_BW'][gainstep % 4], datain[HF_LIMITED_BW])
+            dataout['I'] = np.polyval(calibration['HF_LIMITED_BW'][gainstep % 4], datain[HF_LIMITED_BW])
         else:
             dataout['I'] = datain[V_MONITOR]
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
         dataout['units']['I2'] = 'I2'
         if calibration:
-            dataout['I2'] = np.polyval(calibration['HFI']['HF_FULL_BW'][gainstep], datain[HF_FULL_BW])
+            dataout['I2'] = np.polyval(calibration['HF_FULL_BW'][gainstep], datain[HF_FULL_BW])
         else:
             dataout['I2'] = datain[HF_FULL_BW]
 
@@ -1988,7 +1984,7 @@ def teo_calibration_plot(cal, data, save_path=None, focus='before'):
             json.dump(data, outfile)
 
 
-def teo_cal_check(R_real, teo_gain, mode='HF', save_path=None):
+def teo_cal_check(R_real, teo_gain, save_path=None):
     teo = instruments.TeoSystem()
     dp = instruments.WichmannDigipot()
     dp.set_R(0)
@@ -2037,21 +2033,11 @@ def teo_cal_check(R_real, teo_gain, mode='HF', save_path=None):
         ok = False
         while not ok:
             # Data collection
-
-            if mode == 'HF':
-                wfm = teo.sine(amp=v, freq=1e5)
-                teo.output_wfm(wfm)
-                d = teo.get_data(raw=True)
-            elif mode == 'LF':
-                nwfm = 100
-                wfm_p = np.geomspace(1, v + 1, nwfm // 2) - 1
-                wfm_n = [-w for w in wfm_p[::-1][0:-1]]
-                wfm = np.append(wfm_n, wfm_p)
-                nwfm = len(wfm)
-
+            wfm = teo.sine(amp=v, freq=1e5)
+            teo.output_wfm(wfm)
+            d = teo.get_data(raw=True)
 
             # Data treatment
-
             clean_plots()
 
             V = d['V']
