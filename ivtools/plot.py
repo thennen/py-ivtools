@@ -842,8 +842,8 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
         ax = plt.gca()
     if hasattr(vmin, '__iter__'):
         # I think you meant to send in the values directly instead of min and max
-        vmin = np.min(vmin)
         vmax = np.max(vmin)
+        vmin = np.min(vmin)
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
@@ -1366,7 +1366,7 @@ def VoverIplotter(data, ax=None, **kwargs):
 
 # TODO differential resistance plotter
 
-def vcalcplotter(data, ax=None, R=None, **kwargs):
+def vdeviceplotter(data, ax=None, R=None, **kwargs):
     '''
     Subtract internal series resistance voltage drop
     For Lassen R = 143, 2164, 8197, 12857
@@ -1382,9 +1382,12 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
 
-    if 'Vd' in data:
+    def haskey(key):
+        return (key in data) or (type(data) is list and key in data[0])
+
+    if haskey('Vd'):
         plotiv(data, ax=ax, x='Vd', **kwargs)
-    elif 'Vcalc' in data:
+    elif haskey('Vcalc'):
         plotiv(data, ax=ax, x='Vcalc', **kwargs)
     else:
         # Desperately try to figure out the series resistance and calculate Vd
@@ -1462,11 +1465,11 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     if data is None:
         # Check for global variables ...
         # Sorry if this offends you ..  it offends me
-        log.warning('No data passed. Looking for global variable d')
+        print('No data passed. Looking for global variable d')
         try:
             data = d
         except:
-            log.warning('No global variable d. Looking for global variable df')
+            print('No global variable d. Looking for global variable df')
             try:
                 data = df
             except:
@@ -1480,7 +1483,7 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
         xmax = int(xmax)
         n = xmax - xmin
         step = max(1, int(n / 1000))
-        log.info('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
+        print('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
         plotfunc(data[xmin:xmax+1:step], **kwargs)
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
@@ -1502,11 +1505,11 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
     if data is None:
         # Check for global variables ...
         # Sorry if this offends you ..  it offends me
-        log.warning('No data passed. Looking for global variable d')
+        print('No data passed. Looking for global variable d')
         try:
             data = d
         except:
-            log.warning('No global variable d. Looking for global variable df')
+            print('No global variable d. Looking for global variable df')
             try:
                 data = df
             except:
@@ -1525,24 +1528,51 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
         ymin = min(y1, y2)
         ymax = max(y1, y2)
 
-        log.debug("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
-        log.debug("The button you used were: %s %s" % (eclick.button, erelease.button))
+        print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        print("The button you used were: %s %s" % (eclick.button, erelease.button))
         # Find the data that has values in the selected range
-        log.info(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
         def inside(d):
             X = d[x]
             Y = d[y]
             return np.any((X > xmin) & (X < xmax) & (Y > ymin) & (Y < ymax))
         if type(data) is pd.DataFrame:
-            log.info(data.index[data.apply(inside, 1)])
+            print(data.index[data.apply(inside, 1)])
         else:
             # Should be a list of dicts/Series
-            log.info([i for i,d in enumerate(data) if inside(d)])
+            print([i for i,d in enumerate(data) if inside(d)])
     rectprops = dict(facecolor='blue', alpha=0.3)
     RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
 
     return RS
 
+
+def draw_line(ax=None):
+    '''
+    Just lets you draw a line and then gives you the equation for the line you drew
+
+    DOESN'T ACTUALLY WORK YET
+    '''
+    if ax is None:
+        ax = plt.gca()
+
+    def onselect(eclick, erelease):
+        x1, y1 = eclick.xdata, eclick.ydata
+        x2, y2 = erelease.xdata, erelease.ydata
+
+        xmin = min(x1, x2)
+        xmax = max(x1, x2)
+        ymin = min(y1, y2)
+        ymax = max(y1, y2)
+
+        print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        print("The button you used were: %s %s" % (eclick.button, erelease.button))
+        # Find the data that has values in the selected range
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    RS = RectangleSelector(ax, onselect, 'line', useblit=True, rectprops=rectprops)
+
+    return RS
 
 ### Animation
 # TODO: check out the library "celluloid"
@@ -1862,7 +1892,7 @@ def scale_axis_labels(scale=6, axis='y', ax=None):
     axis.set_major_formatter(fmter)
     label =  axis.get_label_text()
     bracket = label.find('[')
-    if bracket and label[bracket+1] != prefix:
+    if (bracket > -1) and label[bracket+1] != prefix:
         axis.set_label_text(prefix.join((label[:bracket+1], label[bracket+1:])))
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):

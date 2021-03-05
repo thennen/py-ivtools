@@ -5,7 +5,7 @@ import json
 
 import ivtools.analyze
 import ivtools.instruments as instruments
-from ivtools import settings
+import ivtools.settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
@@ -302,7 +302,7 @@ def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
 
 
     # Setting instruments up
-    settings.pico_to_iv = digipot_to_iv
+    ivtools.settings.pico_to_iv = digipot_to_iv
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
     ps.range = {'A': 5, 'B': 5, 'C': 0.05, 'D': 1}
@@ -1503,7 +1503,7 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
                             np.linspace(v1, v2, n2)[1:],
                             np.linspace(v2, 0 , n3)[1:]))
 
-        # Filling the AWG record length with probably take more time than it's worth.
+        # Filling the AWG record length will probably take more time than it's worth.
         # Interpolate to a "Large enough" waveform size
         #enough = 2**16
         #x = np.linspace(0, 1, enough)
