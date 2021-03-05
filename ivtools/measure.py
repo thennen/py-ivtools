@@ -5,7 +5,7 @@ import json
 
 import ivtools.analyze
 import ivtools.instruments as instruments
-from ivtools import settings
+import ivtools.settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
@@ -302,7 +302,7 @@ def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
 
 
     # Setting instruments up
-    settings.pico_to_iv = digipot_to_iv
+    ivtools.settings.pico_to_iv = digipot_to_iv
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
     ps.range = {'A': 5, 'B': 5, 'C': 0.05, 'D': 1}
