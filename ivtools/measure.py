@@ -1355,7 +1355,7 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
                             np.linspace(v1, v2, n2)[1:],
                             np.linspace(v2, 0 , n3)[1:]))
 
-        # Filling the AWG record length with probably take more time than it's worth.
+        # Filling the AWG record length will probably take more time than it's worth.
         # Interpolate to a "Large enough" waveform size
         #enough = 2**16
         #x = np.linspace(0, 1, enough)

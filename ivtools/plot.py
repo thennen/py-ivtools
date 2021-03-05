@@ -1366,7 +1366,7 @@ def VoverIplotter(data, ax=None, **kwargs):
 
 # TODO differential resistance plotter
 
-def vcalcplotter(data, ax=None, R=None, **kwargs):
+def vdeviceplotter(data, ax=None, R=None, **kwargs):
     '''
     Subtract internal series resistance voltage drop
     For Lassen R = 143, 2164, 8197, 12857
@@ -1382,9 +1382,12 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
 
-    if 'Vd' in data:
+    def haskey(key):
+        return (key in data) or (type(data) is list and key in data[0])
+
+    if haskey('Vd'):
         plotiv(data, ax=ax, x='Vd', **kwargs)
-    elif 'Vcalc' in data:
+    elif haskey('Vcalc'):
         plotiv(data, ax=ax, x='Vcalc', **kwargs)
     else:
         # Desperately try to figure out the series resistance and calculate Vd
@@ -1889,7 +1892,7 @@ def scale_axis_labels(scale=6, axis='y', ax=None):
     axis.set_major_formatter(fmter)
     label =  axis.get_label_text()
     bracket = label.find('[')
-    if bracket and label[bracket+1] != prefix:
+    if (bracket > -1) and label[bracket+1] != prefix:
         axis.set_label_text(prefix.join((label[:bracket+1], label[bracket+1:])))
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):

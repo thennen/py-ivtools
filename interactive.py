@@ -147,10 +147,10 @@ def R_series():
 pico_plotters = [[0, ivplot.ivplotter],
                  [1, ivplot.chplotter],
                  [2, ivplot.VoverIplotter],
-                 [3, partial(ivplot.vcalcplotter, R=R_series)]]
+                 [3, partial(ivplot.vdeviceplotter, R=R_series)]]
 # For keithley
 kargs = {'marker':'.'}
-keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
+keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
                      [1, partial(ivplot.itplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
