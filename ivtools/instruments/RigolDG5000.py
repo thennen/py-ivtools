@@ -4,7 +4,7 @@ import os
 import hashlib
 import logging
 log = logging.getLogger('instruments')
-import visa
+import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 
 class RigolDG5000(object):
@@ -57,7 +57,7 @@ class RigolDG5000(object):
             self.query = self.conn.query
             self.ask = self.query
             self.close = self.conn.close
-            idn = self.conn.ask('*IDN?').replace('\n', '')
+            idn = self.query('*IDN?').replace('\n', '')
             log.debug('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
             log.error('Connection to Rigol AWG failed.')

@@ -6,7 +6,7 @@ from collections import deque
 import ivtools
 import logging
 log = logging.getLogger('instruments')
-import visa
+import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 
 class Keithley2600(object):

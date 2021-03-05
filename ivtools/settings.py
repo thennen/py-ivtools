@@ -102,9 +102,11 @@ if hostname == 'pciwe46':
         for di in logging_prints.values():
             di['all'] = True
     elif username == 'munoz':
-        datafolder = r'D:\{}\ivdata'.format(username)
+        munoz = 'D:/munoz/'
+        datafolder = os.path.join(munoz, 'ivdata')
+        db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
@@ -170,5 +172,17 @@ elif hostname == 'CHMP2':
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         # TEO
                         ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
+elif username == 'alexgar':
+    munoz = '/Users/alexgar/sciebo/munoz/'
+    datafolder = os.path.join(munoz, 'ivdata')
+    db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
+    logging_prints = {
+        'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+    }
 else:
     print(f'No Hostname specific settings found for {hostname}.  Using defaults.')

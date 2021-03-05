@@ -253,7 +253,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         # Don't know if this is a good idea
         yname = '[{}, ..., {}]'.format(y[0], y[-1])
     else:
-        raise exception('I do not know wtf you are trying to plot')
+        raise Exception('I do not know wtf you are trying to plot')
     if x is None:
         xname = None
     elif type(x) == str:
@@ -264,7 +264,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         # Don't know if this is a good idea
         xname = '[{}, ..., {}]'.format(x[0], x[-1])
     else:
-        raise exception('I do not know wtf you are trying to plot')
+        raise Exception('I do not know wtf you are trying to plot')
 
     defaultunits = {'V':     ('Voltage', 'V'),
                     'Vcalc': ('Device Voltage', 'V'),

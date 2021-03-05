@@ -5,7 +5,7 @@ import json
 
 import ivtools.analyze
 import ivtools.instruments as instruments
-import ivtools.settings
+from ivtools import settings
 
 from matplotlib import pyplot as plt
 from fractions import Fraction
@@ -14,6 +14,7 @@ import numpy as np
 import time
 import pandas as pd
 import os
+import datetime
 from functools import partial
 import pickle
 import signal
@@ -191,6 +192,153 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
     return ivdata
+
+
+def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
+              duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
+              savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
+    '''
+    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with different series resistance during SET and RESET.
+
+    @param V_set: Voltage to applied during SET, it can be a list of values or None if you only want to do RESET.
+    If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
+    @param V_reset: Same as V_set.
+    @param R_set: Series Resistance during SET, it can be a list of values.
+    @param R_reset: Series Resistance during RESET, it can be a list of values.
+
+    picoiv params:
+
+    @param duration: Duration of a single sweep [seconds].
+    @param fs:
+    @param nsamples:
+    @param smartrange: 1 or 2:
+    1 autoranges the monitor channel.
+    2 tries some other fancy code :) to autorange the current measurement channel.
+    @param termination: Account for terminating resistance, e.g. multiply applied voltages by 2 for 50 ohm termination.
+    @param autosmoothimate: Creates a smooth and decimated version of the data. Raw form is saved anyway.
+    @param savewfm: Save the programmed waveform.
+    @param pretrig: By default we sample for exactly the length of the waveform,use "pretrig" to sample before
+    the waveform.
+    @param posttrig: By default we sample for exactly the length of the waveform,use "posttrig" to sample after
+    the waveform.
+    @param interpwfm: Rigol will interpolate the wfm so it doesn't need to have a lot of points.
+
+    @return: data measured in a list of dicts.
+    '''
+
+    ps = instruments.Picoscope()
+    dp = instruments.WichmannDigipot()
+
+    # I wanted to do the parameters very flexible, so now I have to handle every possible case.
+    # If there are more than one set or reset voltage, metadata is save as the string of the list, since lists are
+    # not allowed in the databe
+
+    num_types = [int, float, np.float16, np.float32, np.float64]
+    list_types = [list, np.ndarray, np.array]
+
+    if type(V_set) in num_types:
+        if type(V_reset) in num_types:
+            V_set = [V_set]
+            V_reset = [V_reset]
+        elif type(V_reset) in list_types:
+            V_set = list(np.repeat(V_set, len(V_reset)))
+            V_reset = list(V_reset)
+        elif V_reset is None:
+            V_set = [V_set]
+            V_reset = [V_reset]
+        else:
+            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
+
+    elif type(V_set) in list_types:
+        V_set = list(V_set)
+        if type(V_reset) in num_types:
+            V_reset = list(np.repeat(V_reset, len(V_set)))
+        elif type(V_reset) in list_types:
+            V_reset = list(V_reset)
+            if len(V_set) != len(V_reset):
+                raise Exception(f"V_set has length {len(V_set)} and V_reset {len(V_reset)}")
+        elif V_reset is None:
+            V_reset = list(np.repeat(V_reset, len(V_set)))
+        else:
+            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
+
+    elif V_set is None:
+        if type(V_reset) in num_types:
+            V_set = [V_set]
+            V_reset = [V_reset]
+        if type(V_reset) in list_types:
+            V_set = list(np.repeat(V_set, len(V_reset)))
+            V_reset = list(V_reset)
+        elif V_reset is None:
+            raise Exception(f'V_set and V_reset are both None')
+        else:
+            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
+    else:
+        raise Exception(f'No settings for V_set with type {type(V_set)}')
+
+    nloops = len(V_set)
+
+    if type(R_set) in num_types:
+        if nloops == 1:
+            R_set = [R_set]
+        elif nloops > 1:
+            R_set = list(np.repeat(R_set, nloops))
+    elif type(R_set) in list_types:
+        if len(R_set) != nloops:
+            raise Exception("R_set length doesn't match with voltages lengths")
+    else:
+        raise Exception(f'No settings for R_set with type {type(R_set)}')
+
+    if type(R_reset) in num_types:
+        if nloops == 1:
+            R_reset = [R_reset]
+        elif nloops > 1:
+            R_reset = list(np.repeat(R_reset, nloops))
+    elif type(R_reset) in list_types:
+        if len(R_reset) != nloops:
+            raise Exception("R_reset length doesn't match with voltages lengths")
+    else:
+        raise Exception(f'No settings for R_reset with type {type(R_reset)}')
+
+
+    # Setting instruments up
+    settings.pico_to_iv = digipot_to_iv
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.range = {'A': 5, 'B': 5, 'C': 0.05, 'D': 1}
+    ps.offset = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
+
+    # Measuring
+    sweeps = []
+    logging.getLogger('instruments').setLevel(31)  # Only ERRORS or high
+    logging.getLogger('measure').setLevel(31)  # Only ERRORS or high
+    for vs, vr, rs, rr in zip(V_set, V_reset, R_set, R_reset):
+
+        if vs is not None:
+            wfm_set = tri(0, vs, 100)
+            dp.set_R(rs)
+            d_set = picoiv(wfm=wfm_set, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
+                           termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
+                           savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
+            sweeps.append(d_set)
+        if vr is not None:
+            wfm_reset = tri(0, -vr, 100)
+            dp.set_R(rr)
+            d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
+                             termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
+                             savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
+            sweeps.append(d_reset)
+    logging.getLogger('instruments').setLevel(1)  # back to normal
+    logging.getLogger('measure').setLevel(1)  # back to normal
+
+    # Saving data
+    data = sweeps[0]
+    for s in sweeps[1:]:
+        for k, v in s.items():
+            if type(v) in [np.ndarray, list, pd.core.series.Series]:
+                data[k] = np.append(data[k], v)
+
+    return data
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -1267,7 +1415,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
         dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
         dataout['units']['V'] = 'V'
     if Vd_channel in datain:
-        Vd = datain[Vd_channel]
+        Vd = datain[Vd_channel]*2
         dataout['Vd'] = Vd
         dataout['units']['Vd'] = 'V'
     if I_channel in datain:
@@ -1475,14 +1623,19 @@ class controlled_interrupt():
 
 ########### Teo calibration #####################
 
-def teo_calibration_tyler(Rload=10e3):
+def teo_calibration(Rload, plot=False):
     '''
     Calibration of Teo voltages, using picoscope measurement
     sets DC levels to the output (HFV), which goes through a known load resistor, into HFI
     '''
+    #TODO: many resistors calibration to calibrate all amplifiers in its whole range
+
+    ############### Setup ###############
+
     teo = instruments.TeoSystem()
     ps = instruments.Picoscope()
 
+    teo.calibration = None
     teo.HF_mode()
     teo.LF_voltage(0)
 
@@ -1493,504 +1646,488 @@ def teo_calibration_tyler(Rload=10e3):
           " Channel D to HF FULL BW\n"
           "Press Enter when connections are done.")
 
-    # Signal may saturate, we could
-    # A. apply voltages so that saturation doesn't happen,
-    # B. prune the saturated datapoints out afterward
-    # I choose method B
 
-    # HF_FULL_BW output saturates at about +800 mV, -700 mV
-    # HF_LIMITED_BW output saturates at about 1.8V
-    # HFI_INT is the HF_LIMITED_BW signal internally sampled, but it saturates some lower voltage
+    ############### Measurements ###############
 
-    # At step 0 (highest gain), the HF FULL and HF LIMITED gains are roughly equal
-    # ~1V / 400uA, or 2.500 V/A (with J29)
-    # HF FULL BW possible step settings 0-31, each step corresponds to 1dB (1.122×)
-    # HF LIMITED BW possible step settings 0-3, each step corresponds to 6dB (2×)
+    nVprog = 100
+    V_max = 9
+    # Vprog contains the voltages to be outputed, the values closer to zero are more dense.
+    Vprog_p = np.geomspace(1, V_max + 1, nVprog // 2) - 1
+    Vprog_n = [-v for v in Vprog_p[::-1][0:-1]]
+    Vprog = np.append(Vprog_n, Vprog_p)
+    nVprog = len(Vprog)
 
-    # Voltage gain of the monitor is roughly 1/20
-
-    HF_FULL_BW_sat = .7
-    HF_LIMITED_BW_sat = 1.8
-    HFI_INT_sat = 15.2 # unknown unit (not volts)
 
     pscoupling = dict(A='DC', B='DC50', C='DC50', D='DC50')
-    # picoscope offset is not calibrated very well itself, so leave it at zero
+    psranges = dict(A=10, B=5, C=5, D=5)
     psoffset = dict(A=0, B=0, C=0, D=0)
     psatten = dict(A=1, B=1, C=1, D=1)
-
-    gains = range(32)
-
-    # I will apply a single voltage list for every gain setting, finer steps near zero
-    Vmax_course = 5
-    npts_course = 20
-    Vmax_fine = 1
-    npts_fine = 10
-    Vlist = np.concatenate((np.linspace(-Vmax_course, -Vmax_fine, npts_course//2),
-                            np.linspace(-Vmax_fine, Vmax_fine, npts_fine),
-                            np.linspace(Vmax_fine, Vmax_course, npts_course//2)))
-
     pico_nsamples = 1000
     pico_dur = 5e-3
 
-    teo_nsamples = 2**14
+    steps = list(range(32))
 
-    # In case we get fancy with the range settings later
-    #possible_ranges_DC = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0))
-    #possible_ranges_DC50 = np.array((0.05, 0.1, 0.2, 0.5, 1.0, 2.0, 5.0))
-    #np.where(Vpredict < possible_ranges_DC)[0][0]
+    raw_data = []
 
-    ############# Measure all the data needed for the calibration ####################
-    print('Starting calibration measurement, will take a minute or two')
-    cal_data = []
-    for step in gains:
-        teo.gain(step)
-        # TODO MAYBE: determine a voltage range we will apply (fixed for now)
-        # TODO MAYBE: determine an optimal range of measurement for each channel (fixed range might be good enough)
-        psrange = dict(A=5, B=.5, C=2, D=1)
-        print(f'step={step}')
-        for V in Vlist:
-            print(f'\tV={V}')
-            teo.LF_voltage(V)
-            time.sleep(.1)
-            # measure picoscope channels
-            d1 = ps.measure(ch=['A', 'B', 'C', 'D'], duration=pico_dur,
-                            nsamples=pico_nsamples,
-                            trigsource='TriggerAux', triglevel=0.1, timeout_ms=1, # No trigger, just a timeout
-                            pretrig=0.0,
-                            chrange=psrange, choffset=psoffset,
-                            chcoupling=pscoupling, chatten=psatten,
-                            raw=False, dtype=np.float32, plot=False)
-            # do a pulse of the same amplitude as the bias, so that we can also measure the internal signals
-            teo.output_wfm(np.repeat(V, teo_nsamples))
+    times = []
+    last_print = None
+
+    for s in steps:
+        t = time.time()
+        teo.gain(s)
+        raw_data.append([])
+        for v in Vprog:
+            teo.LF_voltage(v)
+            # To avoid logging 100 of "Actual picoscope sample freq..."
+            logging.getLogger('instruments').setLevel(31)  # Only ERRORS or high
+            d1 = ps.measure(ch=['A', 'B', 'C', 'D'], freq=None, duration=pico_dur,
+                                nsamples=pico_nsamples,
+                                trigsource='TriggerAux', triglevel=0.1, timeout_ms=1,
+                                pretrig=0.0,
+                                chrange=psranges, choffset={'A': 0, 'B': 0, 'C': 0, 'D': 0},
+                                chcoupling=pscoupling, chatten=None,
+                                raw=False, dtype=np.float32, plot=False, ax=None)
+            teo.output_wfm(v * np.ones(10000))
             d2 = teo.get_data(raw=True)
+            logging.getLogger('instruments').setLevel(1)  # Back to normal
 
             # smash data together
             data = {**d1, **d2}
             # put the metadata into the result
-            data['Vprog'] = V
-            data['step'] = step
-            cal_data.append(data)
+            data['Vprog'] = v
+            data['step'] = s
+            raw_data[s].append(data)
 
-    # TODO: should we write the raw data to disk?
+        t = time.time() - t
+        times.append(t)
+        remaining = np.mean(times) * (32 - s)
+        remaining_mins = int(remaining / 60)
+        remaining_secs = int(remaining - remaining_mins * 60)
+        if last_print is None or last_print-remaining > 30:
+            last_print = remaining
+            log.info(f"Estimated time: {remaining_mins} minutes {remaining_secs} seconds.")
 
-    ############# Analyze the calibration data ####################
-
-    # Make new data from average values of measurement data
-    avg_data = []
-    for d in cal_data:
-        avg = {}
-        for k,v in d.items():
-            if type(v) == np.ndarray:
-                avg[k] = np.mean(v)
-            else:
-                avg[k] = v
-        avg_data.append(avg)
-
-    cal_df = pd.DataFrame(avg_data).drop(['I', 'V', 't'], 1)
-    # Rename columns
-    rename = dict(A='HFV', B='V_MONITOR', C='HF_LIMITED_BW', D='HF_FULL_BW', HFI='HFI_INT', HFV='HFV_INT')
-    cal_df = cal_df.rename(rename, axis=1)
-
-    ## Set data that is in saturation to np.nan, so it won't be considered in the fits
-    HF_FULL_BW_sat_mask = cal_df.HF_FULL_BW.abs() > HF_FULL_BW_sat
-    cal_df['HF_FULL_BW'][HF_FULL_BW_sat_mask] = np.nan
-    HF_LIMITED_BW_sat_mask = cal_df.HF_LIMITED_BW.abs() > HF_LIMITED_BW_sat
-    cal_df['HF_LIMITED_BW'][HF_LIMITED_BW_sat_mask] = np.nan
-    # For some reason the HFI_INT signal saturates way before the HF_LIMITED_BW signal
-    # But we only get the data after the gain was divided out by Teo process
-    # but we know the "relative" gain in dB..
-    HFI_INT_sat_mask = cal_df['HFI_INT'].abs() / 2**(cal_df.gain_step % 4) > HFI_INT_sat
-    cal_df['HFI_INT'][HFI_INT_sat_mask] = np.nan
-
-    # What the actual current should have been
-    cal_df['I'] = cal_df['HFV'] / (Rload + 50)
-
-    # Fit lines to all the data
-    # We need the following functions
-    # Vprogrammed --> HFV (just for our information)
-    # V MONITOR --> HFV
-    # V MONITOR (internal wf00) --> HFV
-    # HF_LIMITED_BW(gain) --> current
-    # HFI(gain) (internal wf01) --> current
-    # HF_FULL_BW(gain) --> current
-    cal_output = dict(cal_Rload=Rload,
-                      cal_date=datetime.now().strftime('%Y-%m-%d_%H%M%S'),
-                      HFV={},
-                      HFI={})
-
-    def nanpolyfit(x, y, n):
-        mask = ~np.isnan(x) & ~np.isnan(y)
-        return list(np.polyfit(x[mask], y[mask], n))
-
-    # Don't waste any measurements -- this was repeated 32 times!
-    cal_output['HFV']['Vprog'] = nanpolyfit(cal_df.Vprog, cal_df.HFV, 1)
-    cal_output['HFV']['HFV_INT'] = nanpolyfit(cal_df.HFV_INT, cal_df.HFV, 1)
-    cal_output['HFV']['V_MONITOR'] = nanpolyfit(cal_df.V_MONITOR, cal_df.HFV, 1)
-    def polyfitter(x, y):
-        # returns a function we can pass to pandas groupy.apply to do the fit we want
-        return lambda g: nanpolyfit(g[x], g[y], 1)
-    cal_output['HFI']['HF_LIMITED_BW'] = cal_df.groupby(cal_df.step % 4).apply(polyfitter('HF_LIMITED_BW','I')).to_list()
-    cal_output['HFI']['HF_FULL_BW'] = cal_df.groupby(cal_df.step).apply(polyfitter('HF_FULL_BW','I')).to_list()
-    cal_output['HFI']['HFI_INT'] = cal_df.groupby(cal_df.step).apply(polyfitter('HFI_INT','I')).to_list()
-
-    # Write fit results to disk
-    calfile = ivtools.settings.teo_calibration_file
-    os.makedirs(os.path.split(calfile)[0], exist_ok=True)
-    with open(calfile, 'w') as outfile:
-        json.dump(cal_output, outfile)
-
-    # TODO: sanity check
-    # plot the results of calibration
-    # plot unaveraged signals
-    # line fits
-    # slope vs gain
-    # offset vs gain
-
-
-def teo_calibration(R_load=10000, plot=True, save=True):
-    '''
-    Calibration of the output voltage and the physical voltage monitor (SMA)
-    '''
-
-    teo = instruments.TeoSystem()
-    ps = instruments.Picoscope()
-
-    teo.HF_mode()
     teo.LF_voltage(0)
 
-    input("Picoscope connections:\n"
-          " Channel A to HFV\n"
-          " Channel B to Vmonitor\n"
-          " Channel C to HF LIMITED BW\n"
-          " Channel D to HF FULL BW\n"
-          "Press Enter when connections are done.")
+    ############### Preparing data ###############
 
-    HFI_sw_Imax = np.array([3e-4, 6e-4, 1e-3, np.nan])  # Maximum current at HFI internal, index of list = gain step
+    # Data comming from picoscope need to be averaged
+    avg_ch = []
+    for s in steps:
+        avg_ch.append([])
+        for v in range(nVprog):
+            data = {
+                'A': np.mean(raw_data[s][v]['A']),
+                'B': np.mean(raw_data[s][v]['B']),
+                'C': np.mean(raw_data[s][v]['C']),
+                'D': np.mean(raw_data[s][v]['D'])
+            }
+            avg_ch[s].append(data)
 
-    samples1 = 100
-    samples2 = 100
-    range1 = np.linspace(0, HFI_sw_Imax[0]*R_load, samples1)
-    range2 = np.linspace(HFI_sw_Imax[0]*R_load, 9, samples2)
-    range12 = np.append(range1, range2[1:])
-    v_desired = np.append(-1*np.flip(range12)[:-1], range12)
+    # Now I form a dictionary with all the measurements organize in a easy way.
+    # Data repeated over steps will be averaged
 
-    def cal(check):
+    # 'HFV':           1  sequence of voltages. Data on avg_ch[s][v]['A']
+    # 'V_MONITOR':     1  sequence of voltages. Data on avg_ch[s][v]['B']
+    # 'HF_LIMITED_BW': 4  sequence of voltages. Data on avg_ch[s][v]['C']
+    # 'HF_FULL_BW':    32 sequence of voltages. Data on avg_ch[s][v]['D']
+    # 'HFV_INT':       1  sequence of voltages. Data on raw_data[s][v]['HFV']
+    # 'HFI_INT'        4  sequence of voltages. Data on raw_data[s][v]['HFI']
+
+    data = dict(Vprog=list(Vprog))
+    # I'm turning types into float so they are json serializable in case I want to save all the data
+    # Data with 1 sequence of values average on all the 32 squences
+    data['HFV'] = [float(np.mean([avg_ch[s][v]['A'] for s in steps])) for v in range(nVprog)]
+    data['V_MONITOR'] = [float(np.mean([avg_ch[s][v]['B'] for s in steps])) for v in range(nVprog)]
+    data['HFV_INT'] = [float(np.mean([raw_data[s][v]['HFV'] for s in steps])) for v in range(nVprog)]
+
+    # Data with 4 sequences of values average on 8 squences separated by 4
+    data['HF_LIMITED_BW'] = [[float(np.mean([avg_ch[s][v]['C'] for s in np.array(steps[::4])+i]))for v in range(nVprog)]
+                             for i in range(4)]
+    data['HFI_INT'] = [[float(np.mean([raw_data[s][v]['HFI'] for s in np.array(steps[::4])+i])) for v in range(nVprog)]
+                             for i in range(4)]
+
+    # Data with 32 sequences of values don't avarage, just reorganize.
+    data['HF_FULL_BW'] = [[float(np.mean(raw_data[s][v]['D'])) for v in range(nVprog)] for s in steps]
+
+    ############### Fitting data ###############
+    ## Substituting saturated values with nan
+    HF_FULL_BW_sat = .7
+    HF_LIMITED_BW_sat = 1.8
+    HFI_INT_sat = 15.2 # unknown unit (not volts)
+
+    data2fit = data.copy()
+
+
+    data2fit['HF_FULL_BW'] = [[i if abs(i) < HF_FULL_BW_sat else np.nan for i in data['HF_FULL_BW'][s]]
+                          for s in steps]
+    data2fit['HF_LIMITED_BW'] = [[i if abs(i) < HF_LIMITED_BW_sat else np.nan for i in data['HF_LIMITED_BW'][s]]
+                          for s in range(4)]
+    data2fit['HFI_INT'] = [[i if abs(i) < HFI_INT_sat * 2**s else np.nan for i in data['HFI_INT'][s]]
+                          for s in range(4)]
+
+    def nanpolyfit(x, y, n):
         '''
-        Start calibration of HFV and Vmonitor_SMA.
-
-        check should be False to perform an actual calibration, and True to check the result
+        fits ignoring nan
+        @param x:
+        @param y:
+        @param n: polynomial order
+        @return: list of parameters, in decreasing order of exponent
         '''
+        x = np.array(x)
+        y = np.array(y)
+        mask = ~np.isnan(x) & ~np.isnan(y)
+        fit_params = list(np.polyfit(x[mask], y[mask], n))
+        return fit_params
 
-        data = {}
-        data['desired'] = v_desired
-        data['HFV'] = {}
-        data['V_monitor'] = {}
-        data['HF_full_bw'] = {}
-        data['HF_limited_bw'] = {}
-        data['HFV_int'] = {}
-        data['HFI_int'] = {}
+    I_expected = Vprog / Rload
 
-        data['fit_HFV'] = {}
-        data['fit_V_monitor'] = {}
-        data['fit_HF_full_bw'] = {}
-        data['fit_HF_limited_bw'] = {}
-        data['fit_HFV_int'] = {}
-        data['fit_HFI_int'] = {}
+    # We need to calibrate the following functions
+    # HFV --> Vprog (just for our information)
+    # V_MONITOR --> HFV (already calibrated)
+    # HFV_INT --> HFV (already calibrated)
+    # HF_LIMITED_BW --> HFV/Rload (already calibrated)
+    # HFI_INT --> HFV/Rload (already calibrated)
+    # HF_FULL_BW --> HFV/Rload (already calibrated)
 
-        times = []
-        last_print = None
+    fit_data = {}
+    # HFV --> Vprog
+    fit_data['HFV'] = nanpolyfit(Vprog, data2fit['HFV'], 1)
 
-        steps = list(range(32))
+    HFV_cal = data['HFV']/fit_data['HFV'][0] - fit_data['HFV'][1]/fit_data['HFV'][0]
+    I_expected = HFV_cal / Rload
 
-        # To avoid logging 100 of "Actual picoscope sample freq..."
-        logging.getLogger('instruments').setLevel(31) # Only ERRORS or high
+    # V_MONITOR --> HFV_cal
+    fit_data['V_MONITOR'] = nanpolyfit(HFV_cal, data2fit['V_MONITOR'], 1)
+    # HFV_INT --> HFV (already calibrated?)
+    fit_data['HFV_INT'] = nanpolyfit(HFV_cal, data2fit['HFV_INT'], 1)
 
-        coupling = dict(A='DC', B='DC50', C='DC50', D='DC50')
+    # HF_LIMITED_BW --> I_expected
+    # HFI_INT --> I_expected
+    fit_data['HF_LIMITED_BW'] = []
+    fit_data['HFI_INT'] = []
+    for s in range(4):
+        fit_data['HF_LIMITED_BW'].append(nanpolyfit(I_expected, data2fit['HF_LIMITED_BW'][s], 1))
+        fit_data['HFI_INT'].append(nanpolyfit(I_expected, data2fit['HFI_INT'][s], 1))
 
-        for s in steps:
-            t = time.time()
-            data['HFV'][s] = np.array([])
-            data['V_monitor'][s] = np.array([])
-            data['HF_full_bw'][s] = np.array([])
-            data['HF_limited_bw'][s] = np.array([])
-            data['HFV_int'][s] = np.array([])
-            data['HFI_int'][s] = np.array([])
-            teo.gain(s)
-            for v in data['desired']:
-                if abs(v) < 0.03:
-                    ranges = {'A': 0.05, 'B': 0.05, 'C': 0.05, 'D': 0.05}
-                elif abs(v) < 0.07:
-                    ranges = {'A': 0.1, 'B': 0.05, 'C': 0.05, 'D': 0.05}
-                elif abs(v) < 0.18:
-                    ranges = {'A': 0.2, 'B': 0.1, 'C': 0.05, 'D': 0.05}
-                elif abs(v) < 0.45:
-                    ranges = {'A': 0.5, 'B': 0.1, 'C': 0.1, 'D': 0.1}
-                elif abs(v) < 0.9:
-                    ranges = {'A': 1, 'B': 0.2, 'C': 0.2, 'D': 0.2}
-                elif abs(v) < 1.9:
-                    ranges = {'A': 2, 'B': 0.5, 'C': 0.5, 'D': 0.5}
-                elif abs(v) < 3:
-                    ranges = {'A': 5, 'B': 0.5, 'C': 0.5, 'D': 0.5}
-                elif abs(v) < 4.9:
-                    ranges = {'A': 5, 'B': 1, 'C': 1, 'D': 1}
-                elif abs(v) < 7:
-                    ranges = {'A': 10, 'B': 1, 'C': 1, 'D': 1}
-                elif abs(v) <= 10:
-                    ranges = {'A': 10, 'B': 2, 'C': 2, 'D': 2}
-                else:
-                    raise Exception('Voltage too high')
+    # HF_FULL_BW --> I_expected
+    fit_data['HF_FULL_BW'] = []
+    for s in steps:
+        fit_data['HF_FULL_BW'].append(nanpolyfit(I_expected, data2fit['HF_FULL_BW'][s], 1))
 
-                teo.LF_voltage(v)
-                m1 = ps.measure(ch=['A', 'B', 'C', 'D'], freq=None, duration=0.005,
-                                nsamples=100,
-                                trigsource='TriggerAux', triglevel=0.1, timeout_ms=1,
-                                pretrig=0.0,
-                                chrange=ranges, choffset={'A': 0, 'B': 0, 'C': 0, 'D': 0},
-                                chcoupling=coupling, chatten=None,
-                                raw=False, dtype=np.float32, plot=False, ax=None)
-                teo.output_wfm(v * np.ones(10000))
-                m2 = teo.get_data(raw=True)
+    # In order to make easy the application of the calibration, I'll do (a' = 1/a) and (b' = -b/a)
+    # So then one can only multiply the measuremnt to a' and add b' to calibrate
+    cal_output = dict(cal_date=datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S'), cal_Rload=Rload)
+    for k, v in fit_data.items():
+        if len(v) > 2:
+            cal_output[k] = []
+            for d in v:
+                cal_output[k].append([1/d[0], -d[1]/d[0]])
+        elif len(v) == 2:
+            cal_output[k] = [1/v[0], -v[1]/v[0]]
 
-
-                if check:  # Application of calibration
-                    m1['A'] = (m1['A'] - calibration_data['fit_HFV'][s][1]) /\
-                              calibration_data['fit_HFV'][s][0]
-                    m1['B'] = (m1['B'] - calibration_data['fit_V_monitor'][s][1]) /\
-                              calibration_data['fit_V_monitor'][s][0]
-                    m1['C'] = (m1['C'] - calibration_data['fit_HF_limited_bw'][s][1]) /\
-                              (R_load*calibration_data['fit_HF_limited_bw'][s][0])
-                    m1['D'] = (m1['D'] - calibration_data['fit_HF_full_bw'][s][1]) /\
-                              (R_load*calibration_data['fit_HF_full_bw'][s][0])
-                    m2['HFV'] = (m2['HFV'] - calibration_data['fit_HFV_int'][s][1]) /\
-                                calibration_data['fit_HFV_int'][s][0]
-                    m2['HFI'] = (m2['HFI'] - calibration_data['fit_HFI_int'][s][1]) /\
-                                (R_load*calibration_data['fit_HFI_int'][s][0])
-
-                data['HFV'][s] = np.append(data['HFV'][s], np.mean(m1['A']))
-                data['V_monitor'][s] = np.append(data['V_monitor'][s], np.mean(m1['B']))
-                data['HF_limited_bw'][s] = np.append(data['HF_limited_bw'][s], np.mean(m1['C']))
-                data['HF_full_bw'][s] = np.append(data['HF_full_bw'][s], np.mean(m1['D']))
-                data['HFV_int'][s] = np.append(data['HFV_int'][s], np.mean(m2['HFV'][:-5]))
-                data['HFI_int'][s] = np.append(data['HFI_int'][s], np.mean(m2['HFI'][:-5]))
-
-
-            # HFV calibration
-            x = data['desired']
-            y = data['HFV'][s]
-            data['fit_HFV'][s] = np.polyfit(x, y, 1)
-
-            # V_monitor calibration
-            x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['V_monitor'][s]
-            fit = np.polyfit(x, y, 1)
-            data['fit_V_monitor'][s] = fit
-
-            # HF_limited_bw calibration
-            x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['HF_limited_bw'][s]
-            data['fit_HF_limited_bw'][s] = np.polyfit(x, y, 1)
-
-            # HF_full_bw calibration
-            x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['HF_full_bw'][s]
-            data['fit_HF_full_bw'][s] = np.polyfit(x, y, 1)
-
-            # HFV_int calibration
-            x = (data['HFV'][s] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['HFV_int'][s]
-            data['fit_HFV_int'][s] = np.polyfit(x, y, 1)
-
-            # HFI_int calibration
-            # I only do the fit at the non saturated region, called range1 before
-            x = (data['HFV'][s][(samples2-1):(samples2-1+samples1*2)] - data['fit_HFV'][s][1]) / data['fit_HFV'][s][0]
-            y = data['HFI_int'][s][(samples2-1):(samples2-1+samples1*2)]
-            data['fit_HFI_int'][s] = np.polyfit(x, y, 1)
-
-            t = time.time() - t
-            times.append(t)
-            remaining = np.mean(times) * ( (32 * 2) - s - 32*int(check) )
-            remaining_mins = int(remaining / 60)
-            remaining_secs = int(remaining - remaining_mins * 60)
-            if last_print is None or last_print-remaining > 30:
-                last_print = remaining
-                log.info(f"Estimated time: {remaining_mins} minutes {remaining_secs} seconds.")
-
-
-        logging.getLogger('instruments').setLevel(1)  # Back to normal
-
-        teo.LF_voltage(0)
-
-        return data
-
-    calibration_data = cal(False)
-
-    check_data = cal(True)
-
-    data = {'calibration': calibration_data, 'check': check_data, 'R_load': R_load}
-
-    dict2save = {}
-    a = np.mean([data['calibration']['fit_HFV'][s][0] for s in range(32)])
-    b = np.mean([data['calibration']['fit_HFV'][s][1] for s in range(32)])
-    dict2save['HFV'] = {}
-    dict2save['HFV']['slope'] = 1/a
-    dict2save['HFV']['offset'] = -b/a
-    a = np.mean([data['calibration']['fit_V_monitor'][s][0] for s in range(32)])
-    b = np.mean([data['calibration']['fit_V_monitor'][s][1] for s in range(32)])
-    dict2save['V_minitor'] = {}
-    dict2save['V_minitor']['slope'] = 1/a
-    dict2save['V_minitor']['offset'] = -b/a
-    a = np.mean([data['calibration']['fit_HFV_int'][s][0] for s in range(32)])
-    b = np.mean([data['calibration']['fit_HFV_int'][s][1] for s in range(32)])
-    dict2save['HFV_int'] = {}
-    dict2save['HFV_int']['slope'] = 1/a
-    dict2save['HFV_int']['offset'] = -b/a
-    dict2save['HF_full_bw'] = {}
-    dict2save['HF_limited_bw'] = {}
-    dict2save['HFI_int'] = {}
-    for s in range(32):
-        a = data['calibration']['fit_HF_full_bw'][s][0]
-        b = data['calibration']['fit_HF_full_bw'][s][1]
-        dict2save['HF_full_bw'][f's{s}'] = {}
-        dict2save['HF_full_bw'][f's{s}']['slope'] = 1/R_load/a
-        dict2save['HF_full_bw'][f's{s}']['offset'] = -b/R_load/a
-    for ss in range(4):
-        a = np.mean([data['calibration']['fit_HF_limited_bw'][4*r+ss][0] for r in range(8)])
-        b = np.mean([data['calibration']['fit_HF_limited_bw'][4*r+ss][1] for r in range(8)])
-        dict2save['HF_limited_bw'][f's{ss}'] = {}
-        dict2save['HF_limited_bw'][f's{ss}']['slope'] = 1/R_load/a
-        dict2save['HF_limited_bw'][f's{ss}']['offset'] = -b/R_load/a
-        a = np.mean([data['calibration']['fit_HFI_int'][4*r+ss][0] for r in range(8)])
-        b = np.mean([data['calibration']['fit_HFI_int'][4*r+ss][1] for r in range(8)])
-        dict2save['HFI_int'][f's{ss}'] = {}
-        dict2save['HFI_int'][f's{ss}']['slope'] = 1/R_load/a
-        dict2save['HFI_int'][f's{ss}']['offset'] = -b/R_load/a
-
-    with open(ivtools.settings.teo_calibration_file, 'w') as outfile:
-        json.dump(dict2save, outfile)
+    # Write calibration to disk
+    cal_file = ivtools.settings.teo_calibration_file
+    os.makedirs(os.path.split(cal_file)[0], exist_ok=True)
+    with open(cal_file, 'w') as outfile:
+        json.dump(cal_output, outfile)
 
     if plot:
-        teo_calibration_plot(data)
+        teo_calibration_plot(cal_output, data)
 
-    return data
+    return cal_output, data
 
-def teo_calibration_plot(data):
 
-    R_load = data['R_load']
+    # Apply calibration to voltage applied
+    ## HFV = a*Vprog + b
+    ## HFV = Vdesired
+    ## Vprog = Vdesired/a - b/a <--- This is the voltage we have to program to have HFV=Vdesired
+
+    # Apply calibration to voltage monitors:
+    ## V_MONITOR = a*HFV + b
+    ## V_out = HFV
+    ## V_out = V_MONITOR/a - b/a
+
+    # Apply calibration to current measured
+    ## HFI = a*I_expected + b
+    ## I_out = I_expected
+    ## I_out = HFI/a - b/a
+
+
+def teo_calibration_plot(cal, data, save_path=None, focus='before'):
+    '''
+    plot results of teo_calibration
+    @param cal: calibration file
+    @param data: data file
+    @param save_path: path to save plots and files
+    @param focus: plots will adjust to before of after calibration line
+    @return: None
+    '''
+
+    Rload = cal['cal_Rload']
+    Vprog = data['Vprog']
+    I_expected = [v / Rload for v in Vprog]
+    if save_path is not None:
+        os.makedirs(save_path, exist_ok=True)
 
     # HFV
     plt.figure()
     plt.title(f'HFV Calibration')
     plt.xlabel('Desired voltage (V)')
     plt.ylabel('Measured voltage (V)')
-    x = np.array(data['calibration']['desired'])
-    y = data['calibration']['HFV'][0]
+    x = Vprog
+    y = data['HFV']
     plt.plot(x, x, label='Target', linewidth=2)
     plt.plot(x, y, label='Before calibration', marker='.')
-    y = data['check']['HFV'][0]
+    y = np.polyval(cal['HFV'], data['HFV'])
     plt.plot(x, y, label='After calibration', marker='.')
     plt.legend()
+    if focus == 'after':
+        plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, 'HFV.png'))
     plt.show()
 
-    # V_monitor
+    # V_MONITOR
     plt.figure()
-    plt.title(f'V_monitor Calibration')
+    plt.title(f'V_MONITOR Calibration')
     plt.xlabel('Voltage at HFV (V)')
     plt.ylabel('Voltage at V_monitor (V)')
-    x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
-        data['calibration']['fit_HFV'][0][0]
-    y = data['calibration']['V_monitor'][0]
+    x = data['HFV']
+    y = data['V_MONITOR']
     plt.plot(x, x, label='Target', linewidth=2)
     plt.plot(x, y, label='Before calibration', marker='.')
-    x = data['check']['HFV'][0]
-    y = data['check']['V_monitor'][0]
+    y = np.polyval(cal['V_MONITOR'], data['V_MONITOR'])
     plt.plot(x, y, label='After calibration', marker='.')
     plt.legend()
+    if focus == 'after':
+        plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, 'V_MONITOR.png'))
     plt.show()
 
-    # HF_full_bw
+    # HF_FULL_BW
     for s in range(32):
         plt.figure()
-        plt.title(f'HF Full Band Width calibration at gain step = {s}')
-        plt.xlabel('Voltage at HFV (V)')
-        plt.ylabel('Current at HF_full_bw (A)')
-        x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
-            data['calibration']['fit_HFV'][0][0]
-        y = x / R_load
-        plt.plot(x, y, label='Target', linewidth=2)
-        x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][s][1]) /\
-            data['calibration']['fit_HFV'][s][0]
-        y = data['calibration']['HF_full_bw'][s]
+        plt.title(f'HF_FULL_BW calibration at gain step = {s}')
+        plt.xlabel('Expected current (A)')
+        plt.ylabel('Current at HF_FULL_BW (A)')
+        x = I_expected
+        y = data['HF_FULL_BW'][s]
+        plt.plot(x, x, label='Target', linewidth=2)
         plt.plot(x, y, label=f'Before calibration', marker='.')
-        x = data['check']['HFV'][s]
-        y = data['check']['HF_full_bw'][s]
+        y = np.polyval(cal['HF_FULL_BW'][s], data['HF_FULL_BW'][s])
         plt.plot(x, y, label=f'After calibration', marker='.')
         plt.legend()
+        if focus == 'after':
+            plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
+        if save_path is not None:
+            plt.savefig(os.path.join(save_path, f'HF_FULL_BW_{s}.png'))
         plt.show()
 
-    # HF_limited_bw
+    # HF_LIMITED_BW
     for s in range(4):
-
         plt.figure()
-        plt.title(f'HF Limited Band Width calibration {s}')
-        plt.xlabel('Voltage at HFV (V)')
-        plt.ylabel('Current at HF_limited_bw (A)')
-
-        x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
-            data['calibration']['fit_HFV'][0][
-            0]
-        y = x / R_load
-        plt.plot(x, y, label='Target', linewidth=2)
-
-        for i in range(8):
-            x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][s][1]) /\
-                data['calibration']['fit_HFV'][s][
-                0]
-            y = data['calibration']['HF_limited_bw'][s+i*4]
-            plt.plot(x, y, label=f'Before calibration at step {s+i*4}', marker='.')
-            x = data['check']['HFV'][s+i*4]
-            y = data['check']['HF_limited_bw'][s+i*4]
-            plt.plot(x, y, label=f'After calibration at step {s+i*4}', marker='.')
-
+        plt.title(f'HF_LIMITED_BW calibration at gain step = {s}')
+        plt.xlabel('Expected current (A)')
+        plt.ylabel('Current at HF_LIMITED_BW (A)')
+        x = I_expected
+        y = data['HF_LIMITED_BW'][s]
+        plt.plot(x, x, label='Target', linewidth=2)
+        plt.plot(x, y, label=f'Before calibration', marker='.')
+        y = np.polyval(cal['HF_LIMITED_BW'][s], data['HF_LIMITED_BW'][s])
+        plt.plot(x, y, label=f'After calibration', marker='.')
         plt.legend()
+        if focus == 'after':
+            plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
+        if save_path is not None:
+            plt.savefig(os.path.join(save_path, f'HF_LIMITED_BW_{s}.png'))
         plt.show()
 
-    # HFV_int
+    # HFV_INT
     plt.figure()
-    plt.title(f'Internal HFV Calibration')
+    plt.title(f'HFV_INT Calibration')
     plt.xlabel('Voltage at HFV (V)')
-    plt.ylabel('Voltage at HFV Internal (V)')
-    x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
-        data['calibration']['fit_HFV'][0][0]
-    y = data['calibration']['HFV_int'][0]
+    plt.ylabel('Voltage at V_monitor (V)')
+    x = data['HFV']
+    y = data['HFV_INT']
     plt.plot(x, x, label='Target', linewidth=2)
     plt.plot(x, y, label='Before calibration', marker='.')
-    x = data['check']['HFV'][0]
-    y = data['check']['HFV_int'][0]
+    y = np.polyval(cal['HFV_INT'], data['HFV_INT'])
     plt.plot(x, y, label='After calibration', marker='.')
     plt.legend()
+    if focus == 'after':
+        plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, f'HFV_INT.png'))
     plt.show()
 
-    # HFI_int
-    for i1 in range(4):
+    # HFI_INT
+    for s in range(4):
         plt.figure()
-        plt.title(f'Internal HFI Calibration {i1}')
-        plt.xlabel('Voltage at HFV (V)')
-        plt.ylabel('Current at HFI Internal (A)')
-        x = (data['calibration']['HFV'][0] - data['calibration']['fit_HFV'][0][1]) /\
-            data['calibration']['fit_HFV'][0][0]
-        y = x / R_load
-        plt.plot(x, y, label='Target', linewidth=2)
-        for i2 in range(8):
-            s = i1 + 4*i2
-            x = (data['calibration']['HFV'][s] - data['calibration']['fit_HFV'][s][1]) /\
-                data['calibration']['fit_HFV'][s][0]
-            y = data['calibration']['HFI_int'][s]
-            plt.plot(x, y, label=f'Step {s} Before calibration', marker='.')
-            x = data['check']['HFV'][s]
-            y = data['check']['HFI_int'][s]
-            plt.plot(x, y, label=f'Step {s} After calibration', marker='.')
+        plt.title(f' HFI_INT calibration at gain step = {s}')
+        plt.xlabel('Expected current (A)')
+        plt.ylabel('Current at HF_LIMITED_BW (A)')
+        x = I_expected
+        y = data['HFI_INT'][s]
+        plt.plot(x, x, label='Target', linewidth=2)
+        plt.plot(x, y, label=f'Before calibration', marker='.')
+        y = np.polyval(cal['HFI_INT'][s], data['HFI_INT'][s])
+        plt.plot(x, y, label=f'After calibration', marker='.')
         plt.legend()
+        if focus == 'after':
+            plt.ylim(min([min(x), min(y)])*1.1, max([max(x), max(y)])*1.1)
+        if save_path is not None:
+            plt.savefig(os.path.join(save_path, f'HFI_INT_{s}.png'))
         plt.show()
+
+    if save_path is not None:
+        with open(os.path.join(save_path, 'cal.json'), 'w') as outfile:
+            json.dump(cal, outfile)
+        with open(os.path.join(save_path, 'data.json'), 'w') as outfile:
+            json.dump(data, outfile)
+
+
+def teo_cal_check(R_real, teo_gain, mode='HF', save_path=None):
+    teo = instruments.TeoSystem()
+    dp = instruments.WichmannDigipot()
+    dp.set_R(0)
+    teo.HF_mode()
+    teo.LF_voltage(0)
+    teo.gain(teo_gain)
+
+    if save_path is not None:
+        os.makedirs(save_path, exist_ok=True)
+
+    fig, ax = plt.subplots(2, 2, figsize=(11, 9))
+    ax[0][0].set_ylabel('Current (A)')
+    ax[0][0].set_xlabel('Voltage (V)')
+    ax[0][1].set_ylabel('Measured current - fitted (A)')
+    ax[0][1].set_xlabel('Voltage (V)')
+    ax[1][0].set_ylabel('Current (A)')
+    ax[1][0].set_xlabel('Time (seconds)')
+    ax[1][1].set_ylabel('Voltage (V)')
+    ax[1][1].set_xlabel('Time (seconds)')
+
+    print('You have 5 seconds to position the window as you like')
+    plt.pause(5)
+
+    def clean_plots():
+        ax[0][0].cla()
+        ax[0][1].cla()
+        ax[1][0].cla()
+        ax[1][1].cla()
+
+        ax[0][0].set_ylabel('Current (A)')
+        ax[0][0].set_xlabel('Voltage (V)')
+        ax[0][1].set_ylabel('Measured current - fitted (A)')
+        ax[0][1].set_xlabel('Voltage (V)')
+        ax[1][0].set_ylabel('Current (A)')
+        ax[1][0].set_xlabel('Time (seconds)')
+        ax[1][1].set_ylabel('Voltage (V)')
+        ax[1][1].set_xlabel('Time (seconds)')
+
+    R_meas = []
+    data = []
+
+    v = 1
+
+    for R in R_real:
+        input(f'Contact {R} ohms resistor press enter')
+        ok = False
+        while not ok:
+            # Data collection
+
+            if mode == 'HF':
+                wfm = teo.sine(amp=v, freq=1e5)
+                teo.output_wfm(wfm)
+                d = teo.get_data(raw=True)
+            elif mode == 'LF':
+                nwfm = 100
+                wfm_p = np.geomspace(1, v + 1, nwfm // 2) - 1
+                wfm_n = [-w for w in wfm_p[::-1][0:-1]]
+                wfm = np.append(wfm_n, wfm_p)
+                nwfm = len(wfm)
+
+
+            # Data treatment
+
+            clean_plots()
+
+            V = d['V']
+            I = d['I']
+            t = d['t']
+
+            ax[0][0].plot(V, I, color='lavender')
+            ax[1][0].plot(t, I, color='lavender')
+            ax[1][1].plot(t, V, color='lavender')
+
+            s = 100
+
+            Vs = ivtools.analyze.smooth(V, s)
+            Is = ivtools.analyze.smooth(I, s)
+            ts = ivtools.analyze.smooth(t, s)
+
+            ax[0][0].plot(Vs, Is, color='blue')
+            ax[1][0].plot(ts, Is, color='blue')
+            ax[1][1].plot(ts, Vs, color='blue')
+
+            fit = np.polyfit(V, I, 1)
+
+            ax[0][0].plot(V, np.polyval(fit, V), color='red')
+
+            I_diff = I - np.polyval(fit, V)
+            Is_diff = Is - np.polyval(fit, Vs)
+            ax[0][1].plot(V, I_diff, color='lavender')
+            ax[0][1].plot(Vs, Is_diff, color='blue')
+            ax[0][1].axhline(0, color='red')
+
+            R_m = 1 / fit[0]
+
+            ax[0][0].set_title(f"R_real = {int(R)} ohms")
+            ax[0][1].set_title(f"R_meas = {int(R_m)} ohms")
+
+            plt.show()
+            plt.pause(0.1)
+
+            ipt = input('Write a number to repeat the measurement with tat value,'
+                        'or press enter to continue with next:\n')
+
+            if ipt == '':
+                ok = True
+                R_meas.append(R_m)
+                data.append(d)
+                if save_path is not None:
+                    plt.savefig(os.path.join(save_path, f'{R}.png'))
+            else:
+                ok = False
+                v = float(ipt)
+
+    plt.clf()
+
+    diff = [(m - r) / r * 100 for m, r in zip(R_meas, R_real)]
+
+    plt.semilogx(R_real, diff, color='blue', marker='.')
+    plt.semilogx(R_real, np.ones(len(diff)) * 0, color='red', label='Target')
+    plt.xlabel('labeled resistance (ohm)')
+    plt.ylabel('error in measured (%)')
+    R_cal = teo.calibration['cal_Rload']
+    plt.vlines(R_cal, min(diff), max(diff), color='green', label='Resistance used for calibration')
+    plt.legend()
+
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, f'error.png'))
+        pd.DataFrame(data).to_pickle(os.path.join(save_path, 'data.s'))
+
+    return data
+
+
+
+
+
+
+
+
 
 
 

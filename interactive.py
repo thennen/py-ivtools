@@ -37,7 +37,7 @@ from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
-import visa
+import pyvisa as visa
 
 import ivtools
 import importlib
@@ -64,6 +64,7 @@ from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
 import logging
+from IPython import get_ipython
 
 
 magic = get_ipython().magic
@@ -403,6 +404,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
     return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
+digipotiv = interactive_wrapper(measure.digipotiv)
 
 # If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly

@@ -4,6 +4,7 @@
 # this is to avoid circular import problems
 import ivtools.analyze
 import ivtools.plot
+from ivtools import settings
 
 import os
 import re
@@ -35,6 +36,8 @@ psplit = os.path.split
 
 # Directory above the one containing this file
 gitdir = psplit(psplit(__file__)[0])[0]
+
+db_path = settings.db_path
 
 
 class MetaHandler(object):
@@ -120,12 +123,12 @@ class MetaHandler(object):
         else:
             self.meta = self.df[self.i]
 
-    def load_sample_table(self, fpath='sampledata/CeRAM_Depositions.xlsx', **filters):
+    def load_sample_table(self, fpath, sheet=0, header=0, skiprows=None, **filters):
         ''' load data (pd.read_excel) from some tabular format'''
         if not os.path.isfile(fpath):
             # Maybe it's a relative path
             fpath = os.path.join(self.moduledir, fpath)
-        df = pd.read_excel(fpath, header=8, skiprows=[9])
+        df = pd.read_excel(fpath, sheet, header=header, skiprows=skiprows)
         # TODO: Apply filters
         for name, value in filters.items():
             if name in df:
@@ -138,8 +141,9 @@ class MetaHandler(object):
         if 'sample_name' in df:
             filenamekeys = ['sample_name'] + filenamekeys
         self.prettykeys = None
-        self.select(0)
         self.df = df
+        self.select(0)
+
 
     # TODO: Unified metadata loader that just loads every possible sample
 
@@ -394,15 +398,15 @@ class MetaHandler(object):
         mask = np.ones(len(self.df), bool)
         for k, v in kwargs.items():
             mask &= self.df[k] == v
-
         w = np.where(mask)
-        if any(w):
+        if any(mask):
             i = w[0][0]
             self.select(i)
             log.info('You have selected this device (index {}):'.format(self.i))
-            self.print()
+            return self.i
         else:
             log.error('No matching devices found')
+            return None
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
@@ -449,7 +453,6 @@ class MetaHandler(object):
             datadict = data.to_dict(orient='records')
             dataout = pd.DataFrame([{**d, **kwargs} for d in datadict])
         return dataout
-
 
     def timestamp(self):
         return datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
@@ -631,7 +634,7 @@ def db_insert_row(db_conn, table_name, row):
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    # log.info(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # log.debug(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
 
 
@@ -698,7 +701,7 @@ def db_change_type(var):
     return var
 
 
-def db_load(db_path='D:/metadata.db', table_name='meta'):
+def db_load(db_path=db_path, table_name='meta'):
     '''
     Load a dataframe from a database table.
 
@@ -718,25 +721,28 @@ def db_load(db_path='D:/metadata.db', table_name='meta'):
             name = col_names[i]
             changes[name_encoded] = name
     df = df.rename(columns=changes)
+    # Empty cells in a column of numbers are load as numpy.nan; and in a column of strings, as None.
+    # In next line I left all empty cells as None.
+    df = df.replace({np.nan: None})
     db_conn.close()
     return df
 
 
-def db_filter(db, filters):
+def db_filter(db, **kwargs):
     '''
     Filter a pandas.dataframe by column name and delete all the empty columns
 
     :param db: pandas.dataframe
-    :param filters: Dictionary like {'username': 'munoz', 'color': ['blue', 'red']}
+    :param kwargs: like (username='munoz', color= ['blue', 'red'])
     :return: Processed dataframe
     '''
     newdb = db.copy()
 
-    for k in filters.keys():
-        a = filters[k]
+    for k in kwargs.keys():
+        a = kwargs[k]
         if type(a) is not list:
             a = [a]
-        newdb = db[db[k].isin(a)]
+        newdb = newdb[newdb[k].isin(a)]
 
     for k in newdb.keys():
         if all(i is None for i in newdb[k]):

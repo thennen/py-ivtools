@@ -2,9 +2,6 @@ import numpy as np
 import itertools
 import sys
 import time
-import win32com.client
-from win32com.client import CastTo, WithEvents, Dispatch
-from pythoncom import com_error
 import hashlib
 import logging
 from numbers import Number
@@ -102,6 +99,9 @@ class TeoSystem(object):
     '''
 
     def __init__(self):
+        # This imports are here os a macOS user can import ivtools and use
+        from win32com.client import Dispatch
+        from pythoncom import com_error
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
         requires TEO software package and drivers to be installed on the PC
@@ -243,9 +243,10 @@ class TeoSystem(object):
 
     @staticmethod
     def _CastTo(name, to):
+        from win32com.client import CastTo
         # CastTo that clearly lets you know something isn't working right with the software setup
         try:
-            result = win32com.client.CastTo(to, name)
+            result = CastTo(to, name)
         except Exception as E:
             log.error(f'Teo software connection failed! CastTo({name}, {to})')
         if result is None:
@@ -622,9 +623,9 @@ class TeoSystem(object):
             # so this is just a fine-tuning of the calibration
             gain_key = format(gain_step % 4)
 
-            I_cal_line = self.calibration['HFI']['HFI_INT'][gain_step % 4]
+            I_cal_line = self.calibration['HFI_INT'][gain_step % 4]
             I = np.polyval(I_cal_line, HFI)
-            V_cal_line = self.calibration['HFV']['HFV_INT']
+            V_cal_line = self.calibration['HFV_INT']
             V = np.polyval(V_cal_line, HFV)
         else:
             # no calibration..
@@ -774,6 +775,7 @@ class TeoSystem(object):
                 wfm_names.append(name)
         return wfm_names
 
+
     def delete_all_wfms(self):
         for name in self.get_wfm_names():
             self.AWG_WaveformManager.DeleteWaveform(name)
@@ -805,6 +807,7 @@ class TeoSystem(object):
         external = False
         self.LF_Measurement.SetLF_Mode(0, external)
 
+
     def LF_voltage(self, value=None):
         '''
         Gets or sets the LF source voltage value
@@ -821,7 +824,6 @@ class TeoSystem(object):
             return value
         else:
             self.LF_Measurement.LF_Voltage.SetValue(value)
-
 
 
     def LF_current(self, NPLC=10):
