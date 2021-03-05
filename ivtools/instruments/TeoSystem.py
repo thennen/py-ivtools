@@ -246,7 +246,7 @@ class TeoSystem(object):
         from win32com.client import CastTo
         # CastTo that clearly lets you know something isn't working right with the software setup
         try:
-            result = win32com.client.CastTo(to, name)
+            result = CastTo(to, name)
         except Exception as E:
             log.error(f'Teo software connection failed! CastTo({name}, {to})')
         if result is None:

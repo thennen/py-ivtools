@@ -399,7 +399,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
-        # measure.beep()
+        measure.beep()
         return data
     return measfunc_interactive
 

@@ -104,7 +104,7 @@ if hostname == 'pciwe46':
     elif username == 'munoz':
         munoz = 'D:/munoz/'
         datafolder = os.path.join(munoz, 'ivdata')
-        db_path = os.path.join(munoz, 'Thesis/Metadata/munoz_database.db')
+        db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
         logging_prints = {
             'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
@@ -175,7 +175,7 @@ elif hostname == 'CHMP2':
 elif username == 'alexgar':
     munoz = '/Users/alexgar/sciebo/munoz/'
     datafolder = os.path.join(munoz, 'ivdata')
-    db_path = os.path.join(munoz, 'Thesis/Metadata/munoz_database.db')
+    db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
     logging_prints = {
         'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
         'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},

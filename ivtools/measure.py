@@ -1680,7 +1680,7 @@ def teo_calibration(Rload, plot=False):
             teo.LF_voltage(v)
             # To avoid logging 100 of "Actual picoscope sample freq..."
             logging.getLogger('instruments').setLevel(31)  # Only ERRORS or high
-            d1 = ps.measure(ch=['A', 'B', 'C', 'D'], freq=None, duration=0.005,
+            d1 = ps.measure(ch=['A', 'B', 'C', 'D'], freq=None, duration=pico_dur,
                                 nsamples=pico_nsamples,
                                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=1,
                                 pretrig=0.0,
@@ -1986,6 +1986,146 @@ def teo_calibration_plot(cal, data, save_path=None, focus='before'):
             json.dump(cal, outfile)
         with open(os.path.join(save_path, 'data.json'), 'w') as outfile:
             json.dump(data, outfile)
+
+
+def teo_cal_check(R_real, teo_gain, mode='HF', save_path=None):
+    teo = instruments.TeoSystem()
+    dp = instruments.WichmannDigipot()
+    dp.set_R(0)
+    teo.HF_mode()
+    teo.LF_voltage(0)
+    teo.gain(teo_gain)
+
+    if save_path is not None:
+        os.makedirs(save_path, exist_ok=True)
+
+    fig, ax = plt.subplots(2, 2, figsize=(11, 9))
+    ax[0][0].set_ylabel('Current (A)')
+    ax[0][0].set_xlabel('Voltage (V)')
+    ax[0][1].set_ylabel('Measured current - fitted (A)')
+    ax[0][1].set_xlabel('Voltage (V)')
+    ax[1][0].set_ylabel('Current (A)')
+    ax[1][0].set_xlabel('Time (seconds)')
+    ax[1][1].set_ylabel('Voltage (V)')
+    ax[1][1].set_xlabel('Time (seconds)')
+
+    print('You have 5 seconds to position the window as you like')
+    plt.pause(5)
+
+    def clean_plots():
+        ax[0][0].cla()
+        ax[0][1].cla()
+        ax[1][0].cla()
+        ax[1][1].cla()
+
+        ax[0][0].set_ylabel('Current (A)')
+        ax[0][0].set_xlabel('Voltage (V)')
+        ax[0][1].set_ylabel('Measured current - fitted (A)')
+        ax[0][1].set_xlabel('Voltage (V)')
+        ax[1][0].set_ylabel('Current (A)')
+        ax[1][0].set_xlabel('Time (seconds)')
+        ax[1][1].set_ylabel('Voltage (V)')
+        ax[1][1].set_xlabel('Time (seconds)')
+
+    R_meas = []
+    data = []
+
+    v = 1
+
+    for R in R_real:
+        input(f'Contact {R} ohms resistor press enter')
+        ok = False
+        while not ok:
+            # Data collection
+
+            if mode == 'HF':
+                wfm = teo.sine(amp=v, freq=1e5)
+                teo.output_wfm(wfm)
+                d = teo.get_data(raw=True)
+            elif mode == 'LF':
+                nwfm = 100
+                wfm_p = np.geomspace(1, v + 1, nwfm // 2) - 1
+                wfm_n = [-w for w in wfm_p[::-1][0:-1]]
+                wfm = np.append(wfm_n, wfm_p)
+                nwfm = len(wfm)
+
+
+            # Data treatment
+
+            clean_plots()
+
+            V = d['V']
+            I = d['I']
+            t = d['t']
+
+            ax[0][0].plot(V, I, color='lavender')
+            ax[1][0].plot(t, I, color='lavender')
+            ax[1][1].plot(t, V, color='lavender')
+
+            s = 100
+
+            Vs = ivtools.analyze.smooth(V, s)
+            Is = ivtools.analyze.smooth(I, s)
+            ts = ivtools.analyze.smooth(t, s)
+
+            ax[0][0].plot(Vs, Is, color='blue')
+            ax[1][0].plot(ts, Is, color='blue')
+            ax[1][1].plot(ts, Vs, color='blue')
+
+            fit = np.polyfit(V, I, 1)
+
+            ax[0][0].plot(V, np.polyval(fit, V), color='red')
+
+            I_diff = I - np.polyval(fit, V)
+            Is_diff = Is - np.polyval(fit, Vs)
+            ax[0][1].plot(V, I_diff, color='lavender')
+            ax[0][1].plot(Vs, Is_diff, color='blue')
+            ax[0][1].axhline(0, color='red')
+
+            R_m = 1 / fit[0]
+
+            ax[0][0].set_title(f"R_real = {int(R)} ohms")
+            ax[0][1].set_title(f"R_meas = {int(R_m)} ohms")
+
+            plt.show()
+            plt.pause(0.1)
+
+            ipt = input('Write a number to repeat the measurement with tat value,'
+                        'or press enter to continue with next:\n')
+
+            if ipt == '':
+                ok = True
+                R_meas.append(R_m)
+                data.append(d)
+                if save_path is not None:
+                    plt.savefig(os.path.join(save_path, f'{R}.png'))
+            else:
+                ok = False
+                v = float(ipt)
+
+    plt.clf()
+
+    diff = [(m - r) / r * 100 for m, r in zip(R_meas, R_real)]
+
+    plt.semilogx(R_real, diff, color='blue', marker='.')
+    plt.semilogx(R_real, np.ones(len(diff)) * 0, color='red', label='Target')
+    plt.xlabel('labeled resistance (ohm)')
+    plt.ylabel('error in measured (%)')
+    R_cal = teo.calibration['cal_Rload']
+    plt.vlines(R_cal, min(diff), max(diff), color='green', label='Resistance used for calibration')
+    plt.legend()
+
+    if save_path is not None:
+        plt.savefig(os.path.join(save_path, f'error.png'))
+        pd.DataFrame(data).to_pickle(os.path.join(save_path, 'data.s'))
+
+    return data
+
+
+
+
+
+
 
 
 
