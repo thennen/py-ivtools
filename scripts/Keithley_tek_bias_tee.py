@@ -314,40 +314,40 @@ def ferro_measurement(samplename,
 padname,
 polarity,
 attenuation,
-scale1 = 0.12,
-scale4 = 1.2,
-position1 = -1,
-position4 = -4,
+scale = 0.12,
+#scale4 = 1.2,
+position = -1,
+#position4 = -4,
 trigger_level = 0.7):
     data = {}
     data['padname'] = padname
     data['samplename'] = samplename
     data['attenuation'] = attenuation
-    data['scale1'] = scale1
-    data['scale4'] = scale4
-    data['position1'] = position1
-    data['position4'] = position4
+    data['scale'] = scale
+ #   data['scale4'] = scale4
+    data['position'] = position
+    #data['position4'] = position4
     data['trigger_level'] = trigger_level
 
     
-    ttx.inputstate(1, True)
+    ttx.inputstate(1, False)
     ttx.inputstate(2, False)
-    ttx.inputstate(3, False)
-    ttx.inputstate(4, True)
+    ttx.inputstate(3, True)
+    ttx.inputstate(4, False)
 
 
-    ttx.scale(1, scale1)
-    ttx.scale(4, scale4)
-    ttx.position(1, polarity*position1)
-    ttx.position(4, polarity*position4)
+    #ttx.scale(1, scale1)
+    ttx.scale(3, scale)
+    #ttx.position(1, polarity*position1)
+    ttx.position(3, polarity*position)
 
 
-    ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength = 5e3)
+    ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength = 20e3)
     ttx.trigger_position(20)
     if polarity == 1:
-        ttx.arm(source = 4, level = trigger_level*polarity, edge = 'r')
+        ttx.arm(source = 3, level = trigger_level*polarity, edge = 'r')
     elif polarity == -1:
-        ttx.arm(source = 4, level = trigger_level*polarity, edge = 'f')
+        ttx.arm(source = 3, level = trigger_level*polarity, edge = 'f')
     else:
         print('wrong polarity')
         return np.nan
@@ -357,15 +357,15 @@ trigger_level = 0.7):
         plt.pause(0.1)
         status = ttx.triggerstate()
     plt.pause(0.5)
-    data_1 = ttx.get_curve(1)
-    data_4 = ttx.get_curve(4)
+    data_3 = ttx.get_curve(3)
+    #data_4 = ttx.get_curve(4)
 
-    ax0.plot(data_1['t_ttx'], data_1['V_ttx'])
-    ax1.plot(data_4['t_ttx'], data_4['V_ttx'])
+    ax0.plot(data_3['t_ttx'], data_3['V_ttx'])
+    #ax1.plot(data_4['t_ttx'], data_4['V_ttx'])
 
-    data['t_ttx'] = data_1['t_ttx']
-    data['v_scope'] = data_4['V_ttx']
-    data['v_answer'] = data_1['V_ttx']
+    data['t_ttx'] = data_3['t_ttx']
+    #data['v_scope'] = data_4['V_ttx']S
+    data['v_answer'] = data_3['V_ttx']
 
     datafolder = os.path.join('X:/emrl/Pool/Bulletin/Berg/Messungen/', samplename, padname)
     file_exits = True
@@ -396,6 +396,10 @@ cycles = 1,
 pulse_width = 50e-12,
 attenuation = 0,
 automatic_measurement = True,
+pg5_measurement = True,
+recordlength = 250,
+trigger_position = 25,
+edge = 'r',
 sweep = True,
 two_sweeps = False,
 scale = 0.12,
@@ -449,28 +453,32 @@ cc_step = 25e-6):
             ttx.position(3, position)
 
 
-            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
+            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength = recordlength)
             if pulse_width < 100e-12:
                 ttx.trigger_position(40)
             elif pulse_width < 150e-12:
                 ttx.trigger_position(30)
             else:
-                ttx.trigger_position(20)
+                ttx.trigger_position(trigger_position)
 
             plt.pause(0.1)
 
-            ttx.arm(source = 3, level = trigger_level, edge = 'r')
+            ttx.arm(source = 3, level = trigger_level, edge = edge)
 
 
             ### Applying pulse and reading scope data #############################################################
-            pg5.set_pulse_width(pulse_width)
+            if pg5_measurement:
+                pg5.set_pulse_width(pulse_width)
             if not automatic_measurement:
                 input('Connect the RF probes and press enter')
                 plt.pause(0.5)
             else:
                 plt.pause(0.1)
-                
-            pg5.trigger()
+            
+            if pg5_measurement:
+                pg5.trigger()
+            else:
+                print('Apply pulse')
             plt.pause(0.1)
             plt.pause(0.2)
             status = ttx.triggerstate()
