@@ -163,12 +163,16 @@ def ivfunc(func):
 
 
 class paramlist(list):
-    # Wraps a list to identify itself to ivfunc as a list that it should index into
-    # This is so you can pass a list of parameters to use for each individual IV curve
+    '''
+    Wraps a list to identify itself to ivfunc as a list that it should index into
+    This is so you can pass a list of parameters to use for each individual IV curve
+    '''
     pass
 
 def paramfunc(func):
-    # Wraps a function to identify itself to ivfunc as a function to be called on the data to determine input parameters
+    '''
+    Wraps a function to identify itself to ivfunc as a function to be called on the data to determine input parameters
+    '''
     func.__name__ = 'paramfunc'
     return func
 
@@ -182,8 +186,8 @@ def find_data_arrays(data):
     '''
     Try to find the names of arrays in a dataframe that have the same length
     If the keys 'I' or 'V' exist, use the arrays that have the same length as those.
-    If those keys are not present, and there are arrays different sizes, choose the one
-    that has the most arrays of that size
+    If those keys are not present, and there are arrays of different length, choose
+    the most frequent length
     '''
     # Get lengths of all arrays
     #arraykeys = [k for k,v in data.items() if (type(v) == np.ndarray and len(v) == lenI)]
@@ -205,21 +209,25 @@ def find_data_arrays(data):
 
 
 def add_missing_keys(datain, dataout):
-    # kind of like dataout.update(datain) but doesn't overwrite values
-    # TODO: return the new dict instead of modifying the input
+    '''
+    Kind of like dataout.update(datain) but doesn't overwrite values
+    TODO: return the new dict instead of modifying the input
+    '''
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
 
 
-#### These are for pulling single points, or sets of points out of each IV curve using some criteria
+#################################################################################################################
+# These are for pulling single points, or sets of points out of each IV curve using some criteria
 # 'select' returns the indices of the array matching the criteria, which at some point I considered a useful thing
+# you can send their output to indexiv() to get the corresponding datapoints
+#################################################################################################################
 
 @ivfunc
 def select_by_crossing(data, column='I', thresh=0.5, direction=True):
     '''
-    Determine threshold datapoint index the first to cross a certain value
-    return the whole datastructure with the data arrays replaced by the value at the threshold point
+    Determine threshold datapoint index that is first to cross a certain value in specified column
     If data in column is decreasing, specify direction=False
     Return a new iv structure with the values at the threshold in place of data arrays
     '''
@@ -239,12 +247,14 @@ def select_by_crossing(data, column='I', thresh=0.5, direction=True):
 
 
 @ivfunc
-def select_by_maxdiff(data, column='I', stride=1):
+def select_by_maxdiff(data, column='I', stride=1, direction=True):
     '''
     Find switching thresholds by finding the maximum differences.
     Return index of the threshold datapoint
     '''
     diff = data[column][stride:] - data[column][:-stride]
+    if not direction:
+        diff *= -1
     argmaxdiff = np.argmax(diff)
 
     return argmaxdiff
@@ -260,6 +270,7 @@ def select_by_derivative(data, threshold=None, debug=False):
     # I don't want the real dI/dV, because dV can be close to zero, or negative on a transition due to source resistance.
     # I will assume the array is ~equally spaced in voltage and use the mean value for dV
     # slope will therefore be considered negative for decreasing voltages
+    # TODO use np.gradient, obviously
     dV = np.mean(np.abs(np.diff(data['V'])))
     dI = np.diff(data['I'])
 
@@ -283,8 +294,8 @@ def select_by_derivative(data, threshold=None, debug=False):
     # So it doesn't know to add the lines to the appropriate figure.
 
     # Don't make a figure because this function gets called for every row.  Need to make an empty figure manually before calling.
-    ax = plt.gca()
     if debug == 1:
+        ax = plt.gca()
         #fig, ax = plt.subplots()
         ax.plot(dI/dV)
         xmin, xmax = ax.get_xlim()
@@ -305,7 +316,10 @@ def select_from_func():
 
 @ivfunc
 def select_nclosest(data, n=2, x=None, y=None, xarr='V', yarr='I'):
-    # Return the indices of the n data points nearest to the indicated x, y value
+    '''
+    Return the indices of the n data points nearest to the indicated x, y value
+    # TODO: use normalized_euclidean_distance
+    '''
     X = data[xarr]
     Y = data[yarr]
     if x is None:
@@ -319,11 +333,13 @@ def select_nclosest(data, n=2, x=None, y=None, xarr='V', yarr='I'):
 
     return nclosest
 
-
+###########################################################################################
 # All these do is index into the arrays of the datastructure by combining select_??? and indexiv
+# TODO: think of a better name than threshold - it's more general than for extracting switching thresholds
+###########################################################################################
 
 @ivfunc
-def thresholds_bydiff(data, stride=1):
+def threshold_bydiff(data, stride=1):
     ''' Find switching thresholds by finding the maximum differences. '''
     argmaxdiffI = select_by_maxdiff(data, column='I', stride=stride)
 
@@ -370,7 +386,7 @@ def thresholds_byval(data, value):
     pindex(data, 'I', value)
 '''
 
-###
+#####################################
 
 @ivfunc
 def arrayfun(func, columns=None):
@@ -389,8 +405,10 @@ def arrayfun(func, columns=None):
 @ivfunc
 def maketimearray(data, basedon=None):
     '''
-    Sometimes the time array is dropped from data to save memory/disk space,
+    Sometimes the time array is dropped from picoscope data to save memory/disk space,
     because it can easily be reconstructed from the sample rate, number of samples, downsampling
+    This is the recipe to reconstruct it.
+
     data should contain 'sample_rate' key
     can also contain a 'downsampling' key
     otherwise the duration between each sample will be 1/sample_rate
@@ -409,7 +427,9 @@ def maketimearray(data, basedon=None):
     return t
 
 
-#### Filtering/resampling/signal processing
+#####################################################
+# Filtering/resampling/signal processing
+#####################################################
 
 @ivfunc
 def moving_avg(data, window=5, columns=None):
@@ -452,7 +472,10 @@ def medfilt(data, window=5, columns=('I', 'V')):
 
 @ivfunc
 def savgolfilt(window, order, columns=None):
+    '''
+    Social scientist's filter
     # TODO implement this
+    '''
     if columns is None:
         columns = find_data_arrays(data)
     arrays = [data[c] for c in columns]
@@ -584,6 +607,7 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
 def smoothimate_adaptive(data, x='V', y='I', maxpercent=.3, vmin=None, vmax=None):
     '''
     NOT FINISHED!
+    have implemented several times in orphan files..
 
     We sometimes have data where there is a tiny subset where something fast happens but the
     rest is just very slowly varying. This tries to smooth out and downsample the boring stuff
@@ -627,6 +651,7 @@ def smoothimate_adaptive(data, x='V', y='I', maxpercent=.3, vmin=None, vmax=None
     # horribly slow python implementation until I find a better way
     #...
 
+
 @ivfunc
 def downsample_dumb(data, nsamples, columns=None):
     ''' Downsample arrays with equal spacing. Probably won't be exactly nsamples'''
@@ -642,14 +667,17 @@ def downsample_dumb(data, nsamples, columns=None):
 
 
 
-#### These take one piece out of each IV measurement, and throws away the rest
+##################################################################################
+# Parallel slicing and fancy indexing of the arrays contained inside the IV measurement structures
+##################################################################################
 
 @ivfunc
 def indexiv(data, index):
     '''
     Index all the data arrays inside an iv loop container at once.
-    Index can be anything that works with np array __getitem__
-    if index is np.nan, return np.nan
+    index can be anything that works with np array __getitem__
+    index can also be a function, then it will be called on each data and the output used as the index
+    if any of the indices are np.nan, map to np.nan instead of error
     '''
     colnames = find_data_arrays(data)
 
@@ -672,7 +700,7 @@ def indexiv(data, index):
 
 
 @ivfunc
-def sliceiv(data, stop=None, start=0, step=1, columns=None):
+def sliceiv(data, start=0, stop=None, step=1, columns=None):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start, stop can be functions that take the iv loop as argument
@@ -687,7 +715,7 @@ def sliceiv(data, stop=None, start=0, step=1, columns=None):
         if np.isnan(start): start = 0
     if callable(stop):
         stop = stop(data)
-        if np.isnan(stop): stop = -1
+        if np.isnan(stop): stop = len(data[slicekeys[0]])
     dataout = {}
     def int_or_none(ind):
         return None if ind is None else int(ind)
@@ -699,7 +727,7 @@ def sliceiv(data, stop=None, start=0, step=1, columns=None):
 
 
 @ivfunc
-def slicefraction(data, stop=1/2, start=0, step=1):
+def slicefraction(data, start=0, stop=1, step=1):
     '''
     Slice all the data arrays inside an iv loop container at once.
     start and stop point given as fraction of data length
@@ -1440,10 +1468,13 @@ def iloop(data):
 
 def whats_different(df):
     '''
-    A lot of times we have a dataframe of values and a lot of them are the same
+    A lot of times we have a dataframe of values and many rows are the same for a large subset of columns
     this drops everything that is the same
     ignores nested arrays
     '''
+    # for some reason this version breaks if the the dataframe index isn't reset
+    df = df.reset_index()
+
     # Got a better way to tell which columns have arrays nested in them?
     # This is the clunkiest thing ever
     arrays = df.apply(lambda x: type(x[0])) == np.ndarray
@@ -1553,8 +1584,9 @@ def insert(data, key, vals):
 def extract(data, key):
     '''
     Get array of values from list of dicts
+    like getting a column from a dataframe
     '''
-    return array([d[key] for d in data])
+    return np.array([d[key] for d in data])
 
 
 # I like typing smooth instead of Rolling/running/moving average/mean
@@ -1999,7 +2031,7 @@ def correct_phase(phase, test=False):
 def replace_nanvals(array):
     # Keithley returns this special value when the measurement is out of range
     # replace it with a nan so it doesn't mess up the plots
-    # They aren't that smart at Keithley, so different models return different special values.
+    # The Keithley folks want us to suffer, so different models return different special values.
     nanvalues = (9.9100000000000005e+37, 9.9099995300309287e+37)
     for nv in nanvalues:
         array[array == nv] = np.nan
@@ -2040,15 +2072,15 @@ def filter_byhand(df, groupby=None, **kwargs):
     Can also truncate each loop with the up/down arrows
     Can select one or zero per group
     '''
-    log.info('\n\n')
-    log.info('left arrow: previous loop')
-    log.info('right arrow: next loop')
-    log.info('down arrow: truncate n data points')
-    log.info('left arrow: untruncate n data points')
-    log.info('[1-9]: Set n')
-    log.info('Enter: select loop and move to the next')
-    log.info('q: discard')
-    log.info('\n\n')
+    print('\n\n')
+    print('left arrow: previous loop')
+    print('right arrow: next loop')
+    print('down arrow: truncate n data points')
+    print('left arrow: untruncate n data points')
+    print('[1-9]: Set n')
+    print('Enter: select loop and move to the next')
+    print('q: discard')
+    print('\n\n')
 
     # Shitty manual loop selection written as fast as I could
     def selectloop(data):
@@ -2062,7 +2094,7 @@ def filter_byhand(df, groupby=None, **kwargs):
                 self.step = 1
                 self.select = False
             def press(self, event):
-                log.info('press', event.key)
+                print('press', event.key)
                 if event.key == 'right':
                     # plot next loop
                     self.l = None
@@ -2093,11 +2125,11 @@ def filter_byhand(df, groupby=None, **kwargs):
 
                 if len(data) >= self.n + 1:
                     del ax.lines[-1]
-                    log.info(self.n, self.l)
-                    log.debug(data.iloc[self.n].Irange[0])
+                    print(self.n, self.l)
+                    print(data.iloc[self.n].Irange[0])
                     ivtools.plot.plotiv(sliceiv(data.iloc[self.n], stop=self.l), x='Vcalc', color='red', ax=ax)
                 else:
-                    log.info('no more data')
+                    print('no more data')
                     self.n -= 1
 
                 sys.stdout.flush()
