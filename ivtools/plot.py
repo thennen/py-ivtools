@@ -906,8 +906,15 @@ def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
 class InteractiveFigs(object):
     '''
     A class to manage the figures used for automatic plotting of IV data while it is measured.
+
+    it contains a list of plotting functions that each get called when new data arrives
+    via self.newline(data) or self.updateline(data)
+
+    Data also goes through a list of preprocessing functions (self.preprocessing) before being passed
+    to the plotting functions. This is used e.g. for smoothing/downsampling input data
+
     Right now we are limited to one axis per figure ...  could be extended.
-    can have several plotting functions per axis though ..
+    can have several plotting functions per axis though, I think?
     '''
     # TODO: save/load configurations to disk?
     def __init__(self, n=4, clear_state=False):
@@ -918,34 +925,35 @@ class InteractiveFigs(object):
         if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...
-            import ctypes
-            user32 = ctypes.windll.user32
-            wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-            dc = user32.GetDC(0)
-            LOGPIXELSX = 88
-            LOGPIXELSY = 90
-            hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
-            vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
-            ctypes.windll.user32.ReleaseDC(0, dc)
-            bordertop = 79
-            borderleft = 7
-            borderbottom = 28
-            taskbar = 40
-            figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+
+            bordertop = 44
+            borderleft = 0
+            borderbottom = 0
+
+            # Get working area
+            from win32api import GetMonitorInfo, MonitorFromPoint
+            monitor_info = GetMonitorInfo(MonitorFromPoint((0,0)))
+            x0, y0, x1, y1 = monitor_info['Work']
+            xpixels = x1 - x0
+            ypixels = y1 - y0
+
+            figheight = ypixels / 2 - bordertop
             figwidth = figheight * 1.3
-            self.hdpi = hdpi
-            self.vdpi = vdpi
-            self.figsize = (figwidth / hdpi, figheight / vdpi)
-            self.figlocs = [(wpixels - figwidth - 2*borderleft, 0),
-                    (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
-                    (wpixels - 2*figwidth - 4*borderleft, 0),
-                    (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
-                    (wpixels - 3*figwidth - 6*borderleft, 0),
-                    (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
+
+            self.figsize = (figwidth, figheight)
+
+            # strange ordering of plots, top to bottom, right to left
+            def figloc(n):
+                x = x1 - (1 + n // 2) * (figwidth + borderleft)
+                y = y0 + (n % 2) * (figheight + bordertop + borderbottom)
+                return x,y
+            self.figlocs = [figloc(i) for i in range(7)]
+
             self.figs = []
             self.axs = []
             for i in range(n):
                 self.createfig(n=i)
+            self.tile()
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
@@ -957,10 +965,10 @@ class InteractiveFigs(object):
 
     def createfig(self, n):
         '''
-        Create the nth figure and move it into position.
+        Create the nth figure
         Store the fig, ax objects in self.figs, self.axs
         '''
-        fig, ax = plt.subplots(figsize=self.figsize, dpi=self.hdpi)
+        fig, ax = plt.subplots()
         fig.set_tight_layout(True)
         fig.canvas.set_window_title('Interactive Plot {}'.format(n))
         if len(self.figs) <= n:
@@ -972,19 +980,15 @@ class InteractiveFigs(object):
         # Give attribute names to each figure and ax: self.fig1 self.ax1 etc.
         setattr(self, 'fig'+str(n), fig)
         setattr(self, 'ax'+str(n), ax)
-        self.tile(n)
         plt.show()
 
-    def tile(self, n=None):
+    def tile(self):
         '''
-        Move figures to their default positions
+        Move and resize figures so that they are nicely tiled on the screen
         '''
-        if n is None:
-            for fig, loc in zip(self.figs, self.figlocs):
-                fig.canvas.manager.window.move(*loc)
-        else:
-            if (len(self.figs) > n) and (len(self.figlocs) > n):
-                self.figs[n].canvas.manager.window.move(*self.figlocs[n])
+        for fig, loc in zip(self.figs, self.figlocs):
+            fig.canvas.manager.window.move(*loc)
+            fig.canvas.manager.window.resize(*self.figsize)
 
     def del_plotters(self, axnum):
         ''' Delete the plotters for the specified axis '''

@@ -794,9 +794,6 @@ class TeoSystem(object):
         '''
         Switch to LF mode (HF LED should turn off)
 
-        The voltage output goes to port HFI, not HFV for some reason
-        HFV goes to zero. So the polarity is reversed wrt HF mode.
-
         There's no software controllable internal/external mode anymore.
         for internal mode, put jumpers J4 and J5 to position 2-3
         for external mode, put jumpers J4 and J5 to position 1-2
@@ -804,7 +801,8 @@ class TeoSystem(object):
         J4 and J5 are located underneath the square metal RF shield,
         you can pry off the top cover to access them.
         '''
-        external = False
+        # This argument does nothing!
+        external = True
         self.LF_Measurement.SetLF_Mode(0, external)
 
 
@@ -824,6 +822,7 @@ class TeoSystem(object):
             return value
         else:
             self.LF_Measurement.LF_Voltage.SetValue(value)
+            time.sleep(0.002)  # It takes around 2ms to stabilize the voltage
 
 
     def LF_current(self, NPLC=10):
@@ -832,8 +831,10 @@ class TeoSystem(object):
 
         specs say ADC is 24 bits, 4 uA range, 1pA resolution
         but in practice the noise may be much higher than 1pA
+        For 1Mohm and 1V the standard deviation is around 300 pA before averaging
+        After averaging with NPLC=1 standard deviation is 150 pA
 
-        the ADC has a sample rate of something like 31,248 Hz, but the buffer size is 8,000
+        the ADC has a sample rate of 31,248 Hz, but the buffer size is 8,000
 
         LF_MeasureCurrent(duration) returns all the samples it could store for that duration
         you can then average them.
