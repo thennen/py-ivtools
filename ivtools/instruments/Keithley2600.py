@@ -769,7 +769,7 @@ class Keithley2600(object):
                                             f"Set a current limit higher than {lim_min}A or change the measurement range")
                 elif source_param == 'v':
                     log.warning("You can not limit the voltage when sourcing voltage.")
-            elif sf is 'i':
+            elif sf == 'i':
                 if source_param == 'v':
                     mr = self.measure_range('v')
                     if mr != 'auto':
