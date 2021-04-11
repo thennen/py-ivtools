@@ -926,9 +926,33 @@ class InteractiveFigs(object):
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...
 
-            bordertop = 44
-            borderleft = 0
-            borderbottom = 0
+            # Borders of the figure window depend on the system, matplotlib can't access it
+            # make a figure and ask windows what the size is before closing it
+            import win32gui
+            fig = plt.figure('what')
+            xtest = 500
+            ytest = 500
+            fig.canvas.manager.window.resize(xtest, ytest)
+            plt.show()
+            w = win32gui.FindWindow(None, 'what')
+            # This is not accurate for some reason
+            #x0, y0, x1, y1 = win32gui.GetWindowRect(w)
+            import ctypes
+            f = ctypes.windll.dwmapi.DwmGetWindowAttribute
+            rect = ctypes.wintypes.RECT()
+            DWMWA_EXTENDED_FRAME_BOUNDS = 9
+            f(ctypes.wintypes.HWND(w),
+            ctypes.wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
+            ctypes.byref(rect),
+            ctypes.sizeof(rect)
+            )
+            x0, y0, x1, y1 = rect.left, rect.top, rect.right, rect.bottom
+
+            wx = x1 - x0
+            wy = y1 - y0
+            yborder = wy - ytest
+            xborder = wx - xtest
+            plt.close(fig)
 
             # Get working area
             from win32api import GetMonitorInfo, MonitorFromPoint
@@ -937,15 +961,15 @@ class InteractiveFigs(object):
             xpixels = x1 - x0
             ypixels = y1 - y0
 
-            figheight = ypixels / 2 - bordertop
+            figheight = ypixels / 2 - yborder
             figwidth = figheight * 1.3
 
             self.figsize = (figwidth, figheight)
 
             # strange ordering of plots, top to bottom, right to left
             def figloc(n):
-                x = x1 - (1 + n // 2) * (figwidth + borderleft)
-                y = y0 + (n % 2) * (figheight + bordertop + borderbottom)
+                x = x1 - (1 + n // 2) * (figwidth + xborder)
+                y = y0 + (n % 2) * (figheight + yborder)
                 return x,y
             self.figlocs = [figloc(i) for i in range(7)]
 
