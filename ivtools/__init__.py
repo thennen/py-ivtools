@@ -3,6 +3,7 @@ from colorama import Fore, Back, Style
 import os.path
 import ivtools
 import ivtools.settings
+import sys
 
 # Order matters, because of crazy circular imports..
 
@@ -52,7 +53,7 @@ loggers = {
     'plots':       Fore.YELLOW + stream_format + Style.RESET_ALL,
     'analyze':     Fore.BLUE + stream_format + Style.RESET_ALL,
     'interactive': Fore.MAGENTA + stream_format + Style.RESET_ALL,
-    'measure':     Fore.BLACK + stream_format + Style.RESET_ALL
+    'measure':     Style.RESET_ALL + stream_format + Style.RESET_ALL
 }
 
 logging_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
@@ -92,6 +93,7 @@ for logger in list(loggers.keys()):
 
     # Stream Handlers
     for level in logging_levels:
+        #handler = logging.StreamHandler(sys.__stdout__)
         handler = logging.StreamHandler()
         handler.setLevel(1)
         formatter = logging.Formatter(loggers[logger])

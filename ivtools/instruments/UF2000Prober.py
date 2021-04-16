@@ -2,7 +2,7 @@ import itertools
 import time
 import logging
 log = logging.getLogger('instruments')
-import visa
+import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 
 class UF2000Prober(object):

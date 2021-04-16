@@ -1,31 +1,28 @@
 //PT1000-Temperature READER with ARDUINO Micro
-
-
 #include <Wire.h>
-#include <Adafruit_GFX.h>
 #include <math.h>
 #include <CmdMessenger.h>
 #include <Adafruit_MCP4725.h> // Digital-Analog-Converter
-#include <LiquidCrystal.h> // LCD-Library
-//#include "Adafruit_LEDBackpack.h" // LED-Display
 #include <Filter.h> // Exponential-Filter
 
 //LCD-Konfiguration
-const int rs = 12, en = 11, d4 = 5, d5 = 4, d6 = 10, d7 = 8;
-LiquidCrystal lcd(rs, en, d4, d5, d6, d7);
-
+const byte LCDa = 0x28;         //LCD address on I2C bus
+const char unit[] = {223,67,' ',' ',' ',' ' };  //degree Celsius + some spaces to fill display buffer
+int count = 0;
 // Attach a new CmdMessenger object to the default Serial port
 CmdMessenger cmdMessenger = CmdMessenger(Serial);
 
 //Global-Variables
-  int analogWriteValue;
+  int analogWriteValue = 655; //Start-Temperature (19*Celsius) / Voltage (0.8V)
   int analogReadValue;
 
   int analogWriteChannel;
   int analogReadChannel;
-
-  //LED-Matrix
-  //Adafruit_7segment matrix = Adafruit_7segment(); // Not in use right now
+  
+  //Display backlight RGB pins
+  int rPin = 6;
+  int gPin = 5;
+  int bPin = 4;
   
   //Digital-Analog-Converter
   Adafruit_MCP4725 dac;
@@ -33,6 +30,7 @@ CmdMessenger cmdMessenger = CmdMessenger(Serial);
   
   //Average Measurement for smooth Display-Output
   ExponentialFilter<float> FilteredTemperature(20, 0);
+  ExponentialFilter<float> FilteredSP(20, 0);
 
 
 // This is the list of recognized commands. These can be commands that can either be sent or received.
@@ -71,7 +69,7 @@ void AnalogOutput()
  // analogWrite(analogWriteChannel, analogWriteValue);
   
  // cmdMessenger.sendCmdArg(analogWriteValue);
-    dac.setVoltage(analogWriteValue, false); //call dac-function "setVoltage"
+    dac.setVoltage(analogWriteValue, false); //call dac-function "setVoltage"    
  // cmdMessenger.sendCmdEnd();
 }
 
@@ -86,8 +84,7 @@ void attachCommandCallbacks()
 }
 
 //Function to calculate the RTD-Resistance
-float pt_resistor(float volt_now, float volt_bridge)
-{
+float pt_resistor(float volt_now, float volt_bridge){
   //Resistor-Values
   float r_1, r_3, r_4;
   r_1 = 9975;
@@ -100,19 +97,74 @@ float pt_resistor(float volt_now, float volt_bridge)
 
   //Getting RTD-Reistance
   float pt_res = (pt_zaehler / pt_nenner);
-  return pt_res;
+  return pt_res; 
+}
+
+
+
+
+
+// LCD functions
+void LCDclear() {
+  Wire.setClock(50000);
+  Wire.beginTransmission(LCDa);
+  Wire.write (0xFE);
+  Wire.write(0x51);
+  Wire.endTransmission();
+  delay(2);
+}
+
+// Set Cursor to specified position line 0 or 1, pos 0 ... 15;
+void LCDprint(char msg[], int line, byte pos) {
+  Wire.setClock(50000);
+  Wire.beginTransmission(LCDa);
+  Wire.write (0xFE);
+  Wire.write(0x45);
+  pos = pos &0xF; //limit pos to 15 cut upper 4 bits
+  line == 0 ? Wire.write(0x00+pos) : Wire.write(0x40+pos);   
+  Wire.write(msg);
+  Wire.endTransmission();
+  delay(2);
+}
+
+void LCDprintTemp(float temp) {
+  char buff[8];
+  dtostrf(temp,6,2,buff);    //convert float to ascii char array
+  LCDprint(strcat(buff,unit),0,6);
+  delay(100);
   
 }
+
+void LCDprintSP(float dacBitValue) {
+
+  float gain = 12.55; //Gain for Bridge-OPAmp
+  float volt_now = 10;
+  float SPvoltage = dacBitValue*5/4096;
+
+  float temp = (log(pt_resistor(volt_now, SPvoltage/gain) / 1000) / log(1.00385));
+  
+  char buff[8];
+  dtostrf(temp,6,2,buff);    //convert float to ascii char array
+  LCDprint(strcat(buff,unit),1,6);
+}
+
+
 
 
 void setup() {
   // initialize serial communication at 9600 bits per second:
   Serial.begin(9600);
-  //matrix.begin(0x70);
   // initialize DAC
   dac.begin(0x62);
   // initialize the LCD's number of columns and rows:
-  lcd.begin(16,2); 
+  LCDclear();
+  delay(500);     // to show somesthing happend 
+  LCDprint("Temp:",0,0);
+  LCDprint("Set:",1,0);
+  
+  pinMode(rPin,OUTPUT);
+  pinMode(gPin,OUTPUT);
+  pinMode(bPin,OUTPUT);
   
   // Adds newline to every command
   cmdMessenger.printLfCr();
@@ -121,30 +173,12 @@ void setup() {
   attachCommandCallbacks();
   
   //Start-Temperature (19*Celsius) / Voltage (0.8V)
-  dac.setVoltage(655, false); 
-
-
-  // Frequency Tuning if necessary
-  //TCCR0B = TCCR0B & 0b11111000 |  0x01;  //B00000001; // for PWM frequency  TIMER 1
-  //TCCR1B = TCCR1B & 0b11111000 |  0x01;  //B00000001; // for PWM frequency about 32kHz  TIMER 2
-  //pinMode(9, OUTPUT);
-
-
+  dac.setVoltage(analogWriteValue, false); 
 }
 
 void loop() {
   float sensorValue1 = analogRead(A1); //Analog-Pin 1, it reads the Output-Voltage from Bridge
   float sensorValue2 = analogRead(A2); //Checking for PowerSupply-Conection
-  
-  //Average-Filter
-  //float AverageTemp = 0;
-  //float MeasurementsAverage = 10;
-  //for (int i=0; i < MeasurementsAverage; ++i)
-  //{ 
-  //  AverageTemp += sensorValue1;    
-  //  delay(1);
-  //}
-  //AverageTemp /= MeasurementsAverage;
 
   // Convert the analog reading (which goes from 0 - 1023) to a voltage of (0 - 5V):
   float gain = 12.55; //Gain for Bridge-OPAmp
@@ -155,48 +189,63 @@ void loop() {
   //Power-Supply Voltage, should be above 5V
   float volt_powerSupply = (sensorValue2 * 5) / 1023;
 
-
   // Temperature Equation
   float temperature = (log(pt_resistor(volt_now, voltbridge) / 1000) / log(1.00385));
   float temp_log = temperature; 
-
   
   // Average Temperature Values
   FilteredTemperature.Filter(temp_log);
   float SmoothTemperature = FilteredTemperature.Current();
-
-  // LED-Matrix print
-  //matrix.println(temp_log);
-  //matrix.writeDisplay();
   
-  // Turn on the LC-display:
-  lcd.display();
-
-  // Cleaning Display
-  for (int i = 0; i<=1; ++i){
-    for (int y = 0; y<=15; ++y){
-      lcd.setCursor(y,i);
-      lcd.write("");
-    }
-  }
-  
+ 
+   
   //Checking if Circuit has enough power
-  if (volt_powerSupply == NULL){
-    lcd.setCursor(2,1);
-    lcd.print("POWER OFF?");
-    delay(40);
+  if (volt_powerSupply < 2){
+   
+    LCDprint("  Check   ",0,6);
+    LCDprint("  Power!  ",1,6);
+    delay(10);
+
+    //Violett in case of Power Failture
+    analogWrite(rPin,0xFF);
+    analogWrite(gPin,0x00);
+    analogWrite(bPin,0xFF);
   } 
   else { 
-    lcd.setCursor(3,0);
-    lcd.print("   ");  // This covers up the previous value
-    lcd.setCursor(3,0);
-    lcd.print(SmoothTemperature);
-    lcd.setCursor(9,0);
-    lcd.print((char)223);
-    lcd.print("C");
-    delay(40);
+    
+    LCDprintTemp(SmoothTemperature);
+    LCDprintSP(analogWriteValue); 
+    delay(10);
+
+    // Convert Temperature to RGB color 
+    if(SmoothTemperature<8){
+      analogWrite(rPin,0x00);
+      analogWrite(gPin,0x00);
+      analogWrite(bPin,0xFF);
+    }else if(SmoothTemperature<15){
+      analogWrite(rPin,0x00);
+      analogWrite(gPin,0xFF);
+      analogWrite(bPin,0xFF);
+    }else if(SmoothTemperature<40){
+      analogWrite(rPin,0x00);
+      analogWrite(gPin,0xFF);
+      analogWrite(bPin,0x00);
+    }else if(SmoothTemperature<60){
+      analogWrite(rPin,0xFF);
+      analogWrite(gPin,0x8F);
+      analogWrite(bPin,0x00);
+    }else if(SmoothTemperature<80){
+      analogWrite(rPin,0xFF);
+      analogWrite(gPin,0x40);
+      analogWrite(bPin,0x00);
+    }else{
+      analogWrite(rPin,0xFF);
+      analogWrite(gPin,0x00);
+      analogWrite(bPin,0x00);
+    }
   }  
 
+  
   // Process incoming serial data, and perform callbacks
   cmdMessenger.feedinSerialData();
 }

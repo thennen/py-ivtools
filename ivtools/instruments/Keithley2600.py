@@ -6,7 +6,7 @@ from collections import deque
 import ivtools
 import logging
 log = logging.getLogger('instruments')
-import visa
+import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 
 class Keithley2600(object):
@@ -545,9 +545,6 @@ class Keithley2600(object):
         ch = self._convert_to_ch(ch)
         self.write(f'smu{ch}.reset()')
 
-    def waitcomplete(self):
-        self.write('waitcomplete()')
-
     def prepare_buffers(self, source_func, buffers=None, ch='A'):
         '''
         Configure the typical buffer settings used for triggering.
@@ -646,7 +643,7 @@ class Keithley2600(object):
         else:
             return self._set_or_query(f'smu{ch}.measure.range{meas_func}', m_range)
 
-    def source_level(self, source_func='v', source_val=None, ch='A'):
+    def source_level(self, source_val=None, source_func='v', ch='A'):
         '''
         Set the source level, or ask for it.
 
@@ -772,7 +769,7 @@ class Keithley2600(object):
                                             f"Set a current limit higher than {lim_min}A or change the measurement range")
                 elif source_param == 'v':
                     log.warning("You can not limit the voltage when sourcing voltage.")
-            elif sf is 'i':
+            elif sf == 'i':
                 if source_param == 'v':
                     mr = self.measure_range('v')
                     if mr != 'auto':

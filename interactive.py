@@ -2,17 +2,17 @@
 IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
 
 This file should be run using the %run -i magic in ipython.
-Provides a command based user interface for IV measurements.
+Provides a command based user interface for interactive IV measurements.
 Binds convenient names to functions contained in other modules
 
 This script is designed to be rerun, and all of the code will be updated,
-with everything but your measurement settings not overwritten.
+with everything but your measurement settings overwritten.
 
 Therefore you can modify any part of the code/library while making measurements
 and without ever leaving the running program or closing instrument connections.
 
 TODO: fix the %matplotlib thing
-TODO: GUI for displaying and changing channel settings, other status information
+TODO: GUI for displaying and changing channel settings, other status information?
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad
 '''
@@ -37,7 +37,7 @@ from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
-import visa
+import pyvisa as visa
 
 import ivtools
 import importlib
@@ -65,8 +65,6 @@ from ivtools.io import *
 from ivtools.instruments import *
 import logging
 
-log = logging.getLogger('interactive')
-
 
 magic = get_ipython().magic
 
@@ -89,6 +87,10 @@ if firstrun:
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
         print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
+    print()
+    sys.stdout.flush()
+
+log = logging.getLogger('interactive')
 
 hostname = settings.hostname
 username = settings.username
@@ -98,14 +100,15 @@ datestr = time.strftime('%Y-%m-%d')
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     log.warning('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
-    log.warning('Automatically committing changes!')
-    gitCommit(message='AUTOCOMMIT')
+    if settings.autocommit:
+        # TODO: auto commit to some kind of separate auto commit branch
+        # problem is I don't want to pollute my commit history with a million autocommits
+        # and git is not really designed to commit to branches that are not checked out
+        # is this relevant?  https://github.com/bartman/git-wip
+        log.info('Automatically committing changes!')
+        gitCommit(message='AUTOCOMMIT')
 if '??' in gitstatus:
-    log.warning('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
-# TODO: auto commit to some kind of auto commit branch
-# problem is I don't want to pollute my commit history with a million autocommits
-# and git is not really designed to commit to branches that are not checked out
-# is this relevant?  https://github.com/bartman/git-wip
+    log.info('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 gitrev = io.getGitRevision()
 
 # Helps you step through the metadata of your samples/devices
@@ -144,15 +147,15 @@ def R_series():
 pico_plotters = [[0, ivplot.ivplotter],
                  [1, ivplot.chplotter],
                  [2, ivplot.VoverIplotter],
-                 [3, partial(ivplot.vcalcplotter, R=R_series)]]
+                 [3, partial(ivplot.vdeviceplotter, R=R_series)]]
 # For keithley
 kargs = {'marker':'.'}
-keithley_plotters = [[0, partial(ivplot.vcalcplotter, R=R_series, **kargs)],
+keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
                      [1, partial(ivplot.itplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 # For Teo
-teo_plotters = [[0, partial(ivplot.ivplotter, x='wfm')], # programmed waveform is less noisy
+teo_plotters = [[0, partial(ivplot.ivplotter, x='Vwfm')], # programmed waveform is less noisy
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
@@ -236,9 +239,9 @@ if ps is not None:
 
 class autocaller():
     '''
-    Ugly hack to make a function call itself without the parenthesis.
+    Ugly hack to make a function call itself without typing the parentheses.
     There's an ipython magic for this, but I only want it to apply to certain functions
-    This is only for interactive convenience! Don't use it in a program or a script.
+    This is only for interactive convenience! Don't use it in a program or a script!
     '''
     def __init__(self, function, *args):
         self.function = function
@@ -281,7 +284,7 @@ del_plotters = iplots.del_plotters
 
 
 # noinspection SpellCheckingInspection
-def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
+def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=settings.drop_cols):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
@@ -303,6 +306,19 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
         database_path = db_path
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
+def savefig(name=None, fig=None, **kwargs):
+    '''
+    Save a png of the figure in the data directory
+    '''
+    if fig is None:
+        fig = plt.gcf()
+    fn = meta.filename()
+    if name:
+        fn += '_' + name
+    fp = os.path.join(datadir(), fn)
+    fig.savefig(fp, **kwargs)
+    log.info(f'Wrote {fp}')
+
 def load_metadb(database_path=None, table_name='meta'):
     """
     Load the database into a data frame.
@@ -318,7 +334,16 @@ def load_metadb(database_path=None, table_name='meta'):
 s = autocaller(savedata)
 
 
-#############################################################
+###### Common configurations? ############
+
+def setup_ccircuit_measurements():
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.range.b = 2
+    ps.range.c = 2
+    settings.pico_to_iv = ccircuit_to_iv
+    iplots.plotters = pico_plotters
 
 ###### Interactive measurement functions #######
 
@@ -378,10 +403,11 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
     return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
+digipotiv = interactive_wrapper(measure.digipotiv)
 
 # If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
-if k and hasattr(k, 'query'):
+if k and k.connected():
     live = True
     if '2636A' in k.idn():
         # This POS doesn't support live plotting
@@ -401,11 +427,16 @@ if dp:
 if ts:
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
+        meta.static['T'] = T
         ivplot.mybreakablepause(delay)
-        meta.static['R_series'] = Rs
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measure)
+
+def set_compliance(cc_value):
+    # Just calls normal set_compliance and also puts the value in metadata
+    meta.static['CC'] = cc_value
+    measure.set_compliance(cc_value)
 
 # TODO def reload_settings, def reset_state

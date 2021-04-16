@@ -105,7 +105,7 @@ def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, *
 
 def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfunc=None, yfunc=None,
            plotfunc=plt.plot, autotitle=False, labels=None, labelfmt=None, colorbyval=True,
-           hold=False , **kwargs):
+           hold=False, **kwargs):
     '''
     IV loop plotting which can handle single or multiple loops.
     the point is mainly to do coloring and labeling in a nice way.
@@ -154,15 +154,17 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     lendata = len(data)
 
     ##### Line coloring #####
-    if lendata > 1:
+    if 'color' in kwargs:
+        # color keyword overrides everything
+        colors = [kwargs['color']] * len(data)
+        # Don't pass it through to the plot function, because passing c and color is an error now
+        del kwargs['color']
+    elif lendata > 1:
         # There are several loops
         # Pick colors for each line
         # you can either pass a list of colors, or a colormap
         if isinstance(cm, list):
             colors = cm
-        elif 'color' in kwargs:
-            # color overrides everything
-            colors = [kwargs['color']] * len(data)
         else:
             if isinstance(cm, str):
                 # Str refers to the name of a colormap
@@ -251,7 +253,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         # Don't know if this is a good idea
         yname = '[{}, ..., {}]'.format(y[0], y[-1])
     else:
-        raise exception('I do not know wtf you are trying to plot')
+        raise Exception('I do not know wtf you are trying to plot')
     if x is None:
         xname = None
     elif type(x) == str:
@@ -262,7 +264,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         # Don't know if this is a good idea
         xname = '[{}, ..., {}]'.format(x[0], x[-1])
     else:
-        raise exception('I do not know wtf you are trying to plot')
+        raise Exception('I do not know wtf you are trying to plot')
 
     defaultunits = {'V':     ('Voltage', 'V'),
                     'Vcalc': ('Device Voltage', 'V'),
@@ -545,7 +547,7 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
         cycle1 = resist1.index
         cycle2 = resist2.index
     else:
-        cycle1 = cycle2 = len(resist1)
+        cycle1 = cycle2 = range(len(resist1))
 
     fig, ax = plt.subplots()
     scatterargs = dict(s=10, alpha=.8, edgecolor='none')
@@ -718,7 +720,6 @@ def grouped_hist(df, col, groupby=None, range=None, bins=30, logx=True, ax=None)
     ax.set_ylabel('N')
 
 
-
 def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatter=None,
               sparseticks=True, xlog=False, ylog=False, sortparams=False, paramvals=None,
               ax=None, **kwargs):
@@ -788,35 +789,50 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     channels = ['A', 'B', 'C', 'D']
     # Remove the previous range indicators
     ax.collections = []
-    for c in channels:
-        if c in chdata.keys():
-            # Do we need to convert to voltage?  There's not a good way to tell for sure!
-            # 8-bit channel data may have been smoothed, in which case it may have been converted to float
-            if chdata[c].dtype == np.int8:
-                # Should definitely be 8-bit values, not yet converted to V
-                # Convert to voltage for plot
-                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
-            elif 'smoothing' in chdata:
-                # I am going to assume this is smoothed 8-bit values, not converted to V yet
-                # Sorry future self for the inevitable case when this not true..
-                # e.g. if you get data with ps.get_data(..., raw=False), then smooth it, then send it here
-                chplotdata = chdata[c] / 2**8 * chdata['RANGE'][c] * 2 - chdata['OFFSET'][c]
-            else:
-                chplotdata = chdata[c]
-            if 'sample_rate' in chdata:
-                # If sample rate is available, plot vs time
-                x = ivtools.analyze.maketimearray(chdata, c)
-                ax.set_xlabel('Time [s]')
-                ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
-            else:
-                x = range(len(chdata[c]))
-                ax.set_xlabel('Data Point')
-            chcoupling = chdata['COUPLINGS'][c]
-            ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
-            # lightly indicate the channel range
-            choffset = chdata['OFFSET'][c]
-            chrange = chdata['RANGE'][c]
-            ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+
+    def iterdata():
+        if type(chdata) in (dict, pd.Series):
+            return [(0,chdata),]
+        elif type(chdata) == pd.DataFrame:
+            return chdata.iterrows()
+        else:
+            # should be list
+            return enumerate(chdata)
+
+    for i,data in iterdata():
+        for c in channels:
+            if c in data.keys():
+                # Do we need to convert to voltage?  There's not a good way to tell for sure!
+                # 8-bit channel data may have been smoothed, in which case it may have been converted to float
+                if data[c].dtype == np.int8:
+                    # Should definitely be 8-bit values, not yet converted to V
+                    # Convert to voltage for plot
+                    chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
+                elif 'smoothing' in data:
+                    # I am going to assume this is smoothed 8-bit values, not converted to V yet
+                    # Sorry future self for the inevitable case when this not true..
+                    # e.g. if you get data with ps.get_data(..., raw=False), then smooth it, then send it here
+                    chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
+                else:
+                    chplotdata = data[c]
+                if 'sample_rate' in data:
+                    # If sample rate is available, plot vs time
+                    x = ivtools.analyze.maketimearray(data, c)
+                    ax.set_xlabel('Time [s]')
+                    ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
+                else:
+                    x = range(len(data[c]))
+                    ax.set_xlabel('Data Point')
+                chcoupling = data['COUPLINGS'][c]
+                if i == 0:
+                    ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
+                    # lightly indicate the channel range
+                    choffset = data['OFFSET'][c]
+                    chrange = data['RANGE'][c]
+                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+                else:
+                    ax.plot(x, chplotdata, color=colors[c], label=None, alpha=alpha, **kwargs)
+
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
 
@@ -826,8 +842,8 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
         ax = plt.gca()
     if hasattr(vmin, '__iter__'):
         # I think you meant to send in the values directly instead of min and max
-        vmin = np.min(vmin)
         vmax = np.max(vmin)
+        vmin = np.min(vmin)
     norm = mpl.colors.Normalize(vmin=vmin, vmax=vmax)
     sm = mpl.cm.ScalarMappable(cmap=cmap, norm=norm)
     sm.set_array([])
@@ -838,15 +854,16 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
 
 def mypause(interval):
     ''' plt.pause calls plt.show, which steals focus on some systems.  Use this instead '''
-    backend = plt.rcParams['backend']
-    if backend in mpl.rcsetup.interactive_bk:
-        figManager = mpl._pylab_helpers.Gcf.get_active()
-        if figManager is not None:
-            canvas = figManager.canvas
-            if canvas.figure.stale:
-                canvas.draw()
-            canvas.start_event_loop(interval)
-            return
+    if interval > 0:
+        backend = plt.rcParams['backend']
+        if backend in mpl.rcsetup.interactive_bk:
+            figManager = mpl._pylab_helpers.Gcf.get_active()
+            if figManager is not None:
+                canvas = figManager.canvas
+                if canvas.figure.stale:
+                    canvas.draw()
+                canvas.start_event_loop(interval)
+                return
 
 def mybreakablepause(interval):
     ''' pauses but allows you to press ctrl-c if the pause is long '''
@@ -889,8 +906,15 @@ def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
 class InteractiveFigs(object):
     '''
     A class to manage the figures used for automatic plotting of IV data while it is measured.
+
+    it contains a list of plotting functions that each get called when new data arrives
+    via self.newline(data) or self.updateline(data)
+
+    Data also goes through a list of preprocessing functions (self.preprocessing) before being passed
+    to the plotting functions. This is used e.g. for smoothing/downsampling input data
+
     Right now we are limited to one axis per figure ...  could be extended.
-    can have several plotting functions per axis though ..
+    can have several plotting functions per axis though, I think?
     '''
     # TODO: save/load configurations to disk?
     def __init__(self, n=4, clear_state=False):
@@ -901,49 +925,74 @@ class InteractiveFigs(object):
         if not self.__dict__ or clear_state:
             # Find nice sizes and locations for the figures
             # Need to get monitor information. Only works in windows ...
+
+            # Borders of the figure window depend on the system, matplotlib can't access it
+            # make a figure and ask windows what the size is before closing it
+            import win32gui
+            fig = plt.figure('what')
+            xtest = 500
+            ytest = 500
+            fig.canvas.manager.window.resize(xtest, ytest)
+            plt.show()
+            w = win32gui.FindWindow(None, 'what')
+            # This is not accurate for some reason
+            #x0, y0, x1, y1 = win32gui.GetWindowRect(w)
             import ctypes
-            user32 = ctypes.windll.user32
-            wpixels, hpixels = user32.GetSystemMetrics(0), user32.GetSystemMetrics(1)
-            dc = user32.GetDC(0)
-            LOGPIXELSX = 88
-            LOGPIXELSY = 90
-            hdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSX)
-            vdpi = ctypes.windll.gdi32.GetDeviceCaps(dc, LOGPIXELSY)
-            ctypes.windll.user32.ReleaseDC(0, dc)
-            bordertop = 79
-            borderleft = 7
-            borderbottom = 28
-            taskbar = 40
-            figheight = (hpixels - bordertop*2 - borderbottom*2 - taskbar) / 2
+            f = ctypes.windll.dwmapi.DwmGetWindowAttribute
+            rect = ctypes.wintypes.RECT()
+            DWMWA_EXTENDED_FRAME_BOUNDS = 9
+            f(ctypes.wintypes.HWND(w),
+            ctypes.wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
+            ctypes.byref(rect),
+            ctypes.sizeof(rect)
+            )
+            x0, y0, x1, y1 = rect.left, rect.top, rect.right, rect.bottom
+
+            wx = x1 - x0
+            wy = y1 - y0
+            yborder = wy - ytest
+            xborder = wx - xtest
+            plt.close(fig)
+
+            # Get working area
+            from win32api import GetMonitorInfo, MonitorFromPoint
+            monitor_info = GetMonitorInfo(MonitorFromPoint((0,0)))
+            x0, y0, x1, y1 = monitor_info['Work']
+            xpixels = x1 - x0
+            ypixels = y1 - y0
+
+            figheight = ypixels / 2 - yborder
             figwidth = figheight * 1.3
-            self.hdpi = hdpi
-            self.vdpi = vdpi
-            self.figsize = (figwidth / hdpi, figheight / vdpi)
-            self.figlocs = [(wpixels - figwidth - 2*borderleft, 0),
-                    (wpixels - figwidth - 2*borderleft, figheight + bordertop + borderbottom),
-                    (wpixels - 2*figwidth - 4*borderleft, 0),
-                    (wpixels - 2*figwidth - 4*borderleft, figheight + bordertop + borderbottom),
-                    (wpixels - 3*figwidth - 6*borderleft, 0),
-                    (wpixels - 3*figwidth - 6*borderleft, figheight + bordertop + borderbottom)]
+
+            self.figsize = (figwidth, figheight)
+
+            # strange ordering of plots, top to bottom, right to left
+            def figloc(n):
+                x = x1 - (1 + n // 2) * (figwidth + xborder)
+                y = y0 + (n % 2) * (figheight + yborder)
+                return x,y
+            self.figlocs = [figloc(i) for i in range(7)]
+
             self.figs = []
             self.axs = []
             for i in range(n):
                 self.createfig(n=i)
+            self.tile()
             # To be implemented..
             #self.colorcycle = ['C0', 'C1', 'C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9']
             self.plotters = []
             # if False, disables updateline, newline
             self.enable = True
             # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
-            self.preprocessing = []
+            self.preprocessing = [sweep_decimator, ivtools.analyze.autosmoothimate]
             self.processed_data = None
 
     def createfig(self, n):
         '''
-        Create the nth figure and move it into position.
+        Create the nth figure
         Store the fig, ax objects in self.figs, self.axs
         '''
-        fig, ax = plt.subplots(figsize=self.figsize, dpi=self.hdpi)
+        fig, ax = plt.subplots()
         fig.set_tight_layout(True)
         fig.canvas.set_window_title('Interactive Plot {}'.format(n))
         if len(self.figs) <= n:
@@ -955,19 +1004,15 @@ class InteractiveFigs(object):
         # Give attribute names to each figure and ax: self.fig1 self.ax1 etc.
         setattr(self, 'fig'+str(n), fig)
         setattr(self, 'ax'+str(n), ax)
-        self.tile(n)
         plt.show()
 
-    def tile(self, n=None):
+    def tile(self):
         '''
-        Move figures to their default positions
+        Move and resize figures so that they are nicely tiled on the screen
         '''
-        if n is None:
-            for fig, loc in zip(self.figs, self.figlocs):
-                fig.canvas.manager.window.move(*loc)
-        else:
-            if (len(self.figs) > n) and (len(self.figlocs) > n):
-                self.figs[n].canvas.manager.window.move(*self.figlocs[n])
+        for fig, loc in zip(self.figs, self.figlocs):
+            fig.canvas.manager.window.move(*loc)
+            fig.canvas.manager.window.resize(*self.figsize)
 
     def del_plotters(self, axnum):
         ''' Delete the plotters for the specified axis '''
@@ -1122,57 +1167,25 @@ class InteractiveFigs(object):
 # Should handle single or multiple loops
 # TODO: Can I make a wrapper that makes that easier?
 # TODO: don't have each plot function downsample themselves, just do it once and share the result
-def parametrized(dec):
-    '''
-    NOT USED, JUST AN IDEA
-    This is a meta-decorator to create a parametrized decorator.  You got a better idea?
-    '''
-    def layer(*args, **kwargs):
-        def repl(f):
-            return dec(f, *args, **kwargs)
-        return repl
-    return layer
 
-@parametrized
-def plotter(plotfunc, cmap='jet', maxloops=100, maxsamples=5000, clear=False):
+def sweep_decimator(data, maxloops=100):
     '''
-    NOT USED, JUST AN IDEA
-    Plotting functions decorated with this can be written as though they are plotting a single loop,
-    but will automatically plot multiple loops if passed.
-    Will also try to avoid plotting too much data by decimating (not implemented) it and plotting a maximum number of loops at a time
-    if the plotter does not plot the arrays directly, then you might not need to decimate/limit the number
-    I wish python had pattern matching...
+    interactive plots slow down massively if you try to show too much at once
+    this attempts to keep it under control by not plotting all of the data
+    returns data downsampled in time and in cycle
+    can be used in the preprocessing list
     '''
-    # TODO: Usually the data is in list or dict form when this is used. extend to series and dataframes?
-    cmap = plt.get_cmap(cmap)
-    @wraps(plotfunc)
-    def wrap(data, ax=None, *args, **kwargs):
-        if clear:
-            ax.cla()
-        typein = type(data)
-        if typein is dict:
-            # if data is length 1, simply call plotfunc
-            plotfunc(data, ax, *args, **kwargs)
-        elif typein is list:
-            # if data is longer than length 1, call plotfunc several times, and try to apply a color map
-            # use inspect to check if plotfunc can take keywords
-            lendata = len(data)
-            if lendata > maxloops:
-                data = [data[int(n)] for n in np.round(np.linspace(0, lendata - 1, maxloops))]
-            passcolor = False
-            argspec = inspect.getfullargspec(plotfunc)
-            if (argspec.varkw is not None) or ('color' in argspec.kwonlyargs) or ('color' in argspec.args):
-                # plotter won't error if we pass the color keyword argument
-                # it might even work ..
-                colors = cmap(np.linspace(0, 1, len(data)))
-                passcolor = True
-            for i,d in enumerate(data):
-                if passcolor:
-                    kwargs['color'] = colors[i]
-                plotfunc(d, ax, *args, **kwargs)
+    if type(data) in (list, pd.DataFrame):
+        nloops = len(data)
+        if nloops > maxloops:
+            loopstep = int(np.ceil(nloops / maxloops))
+            log.info('You captured {} loops.  Only plotting {} loops'.format(nloops, nloops//loopstep))
+            return data[::loopstep]
         else:
-            log.error('Cannot plot that kind of data')
-    return wrap
+            return data
+    else:
+        return data
+
 
 def plottertemplate(data, ax, **kwargs):
     '''
@@ -1183,15 +1196,11 @@ def plottertemplate(data, ax, **kwargs):
     ax.set_xlabel('x')
     ax.set_ylabel('y')
 
-def ivplotter(data, ax=None, maxloops=100, smooth=False, **kwargs):
-    # Maybe smooth data a bit and give it to plotiv
+def ivplotter(data, ax=None, maxloops=100, **kwargs):
     # Make sure not too much data gets plotted, or it slows down the program a lot.
-    # Would be better to smooth before splitting ...
     # kwargs gets passed through to plotiv, which passes them through to plt.plot
     if ax is None:
         fig, ax = plt.subplots()
-    if smooth:
-        data = ivtools.analyze.moving_avg(data, window=10)
     if type(data) is list:
         nloops = len(data)
     else:
@@ -1227,17 +1236,25 @@ def R_vs_cycle_plotter(data, ax=None, **kwargs):
     ax.set_ylabel('Resistance (from line fit) [$\Omega$]')
     engformatter('y')
 
-#@plotter(clear=True)
 def chplotter(data, ax=None, **kwargs):
     # basically just plot_channels with downsampling
     if ax is None:
         fig, ax = plt.subplots()
     # Remove previous lines
     for l in ax.lines[::-1]: l.remove()
+
+    if type(data) is list:
+        firstsweep = data[0]
+        nloops = len(data)
+    else:
+        firstsweep = data
+        nloops = 1
+
+    channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in firstsweep]
+    lendata = len(firstsweep[channels[0]])
+
     # Plot at most 100000 datapoints of the waveform
-    channels = [ch for ch in ['A', 'B', 'C', 'D'] if ch in data]
     if len(channels) > 0:
-        lendata = len(data[channels[0]])
         if lendata > 100000:
             log.warning('Captured waveform has {} pts.  Downsampling data.'.format(lendata))
             step = lendata // 50000
@@ -1249,9 +1266,14 @@ def chplotter(data, ax=None, **kwargs):
                 plotdata['downsampling'] = step
         else:
             plotdata = data
+
+        maxloops = 50
+        if nloops > maxloops:
+            loopstep = int(np.ceil(nloops / maxloops))
+            plotdata = plotdata[::loopstep]
+
         plot_channels(plotdata, ax=ax)
 
-#@plotter
 def dVdIplotter(data, ax=None, **kwargs):
     ''' Plot dV/dI vs V'''
     if ax is None:
@@ -1372,7 +1394,7 @@ def VoverIplotter(data, ax=None, **kwargs):
 
 # TODO differential resistance plotter
 
-def vcalcplotter(data, ax=None, R=None, **kwargs):
+def vdeviceplotter(data, ax=None, R=None, **kwargs):
     '''
     Subtract internal series resistance voltage drop
     For Lassen R = 143, 2164, 8197, 12857
@@ -1388,9 +1410,12 @@ def vcalcplotter(data, ax=None, R=None, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
 
-    if 'Vd' in data:
+    def haskey(key):
+        return (key in data) or (type(data) is list and key in data[0])
+
+    if haskey('Vd'):
         plotiv(data, ax=ax, x='Vd', **kwargs)
-    elif 'Vcalc' in data:
+    elif haskey('Vcalc'):
         plotiv(data, ax=ax, x='Vcalc', **kwargs)
     else:
         # Desperately try to figure out the series resistance and calculate Vd
@@ -1468,11 +1493,11 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
     if data is None:
         # Check for global variables ...
         # Sorry if this offends you ..  it offends me
-        log.warning('No data passed. Looking for global variable d')
+        print('No data passed. Looking for global variable d')
         try:
             data = d
         except:
-            log.warning('No global variable d. Looking for global variable df')
+            print('No global variable d. Looking for global variable df')
             try:
                 data = df
             except:
@@ -1486,7 +1511,7 @@ def plot_span(data=None, ax=None, plotfunc=plotiv, **kwargs):
         xmax = int(xmax)
         n = xmax - xmin
         step = max(1, int(n / 1000))
-        log.info('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
+        print('Plotting loops {}:{}:{}'.format(xmin, xmax+1, step))
         plotfunc(data[xmin:xmax+1:step], **kwargs)
         plt.show()
     rectprops = dict(facecolor='blue', alpha=0.3)
@@ -1508,11 +1533,11 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
     if data is None:
         # Check for global variables ...
         # Sorry if this offends you ..  it offends me
-        log.warning('No data passed. Looking for global variable d')
+        print('No data passed. Looking for global variable d')
         try:
             data = d
         except:
-            log.warning('No global variable d. Looking for global variable df')
+            print('No global variable d. Looking for global variable df')
             try:
                 data = df
             except:
@@ -1531,24 +1556,51 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
         ymin = min(y1, y2)
         ymax = max(y1, y2)
 
-        log.debug("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
-        log.debug("The button you used were: %s %s" % (eclick.button, erelease.button))
+        print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        print("The button you used were: %s %s" % (eclick.button, erelease.button))
         # Find the data that has values in the selected range
-        log.info(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
         def inside(d):
             X = d[x]
             Y = d[y]
             return np.any((X > xmin) & (X < xmax) & (Y > ymin) & (Y < ymax))
         if type(data) is pd.DataFrame:
-            log.info(data.index[data.apply(inside, 1)])
+            print(data.index[data.apply(inside, 1)])
         else:
             # Should be a list of dicts/Series
-            log.info([i for i,d in enumerate(data) if inside(d)])
+            print([i for i,d in enumerate(data) if inside(d)])
     rectprops = dict(facecolor='blue', alpha=0.3)
     RS = RectangleSelector(ax, onselect, 'box', useblit=True, rectprops=rectprops)
 
     return RS
 
+
+def draw_line(ax=None):
+    '''
+    Just lets you draw a line and then gives you the equation for the line you drew
+
+    DOESN'T ACTUALLY WORK YET
+    '''
+    if ax is None:
+        ax = plt.gca()
+
+    def onselect(eclick, erelease):
+        x1, y1 = eclick.xdata, eclick.ydata
+        x2, y2 = erelease.xdata, erelease.ydata
+
+        xmin = min(x1, x2)
+        xmax = max(x1, x2)
+        ymin = min(y1, y2)
+        ymax = max(y1, y2)
+
+        print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
+        print("The button you used were: %s %s" % (eclick.button, erelease.button))
+        # Find the data that has values in the selected range
+        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
+    rectprops = dict(facecolor='blue', alpha=0.3)
+    RS = RectangleSelector(ax, onselect, 'line', useblit=True, rectprops=rectprops)
+
+    return RS
 
 ### Animation
 # TODO: check out the library "celluloid"
@@ -1818,6 +1870,10 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
 
 ### Other kinds of plotting utilities
 def metric_prefix(x):
+    '''
+    returns a string representation of x using metrix prefix (μ, m, k, M)
+    should be equivalent to mpl.ticker.EngFormatter()(x)
+    '''
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
     prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
@@ -1825,7 +1881,7 @@ def metric_prefix(x):
         return '{:n}'.format(x)
     for v, p in zip(values, prefix):
         if abs(x) >= v:
-            return '{:n}{}'.format(x/v, p)
+            return '{:n} {}'.format(x/v, p)
 
 def metric_prefix_longname(x, decimals=1):
     longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
@@ -1838,6 +1894,7 @@ def metric_prefix_longname(x, decimals=1):
             return f'{x/v:.{decimals}f} {p}'
 
 def engformatter(axis='y', ax=None):
+    ''' puts the metric prefix on the tick labels '''
     if ax is None:
         ax = plt.gca()
     if axis.lower() == 'x':
@@ -1845,6 +1902,26 @@ def engformatter(axis='y', ax=None):
     else:
         axis = ax.yaxis
     axis.set_major_formatter(mpl.ticker.EngFormatter())
+
+
+def scale_axis_labels(scale=6, axis='y', ax=None):
+    '''
+    Scale the axis labels by factors of 10 without having to scale the data itself
+    attempts to insert the metric prefix into the axis label
+    don't attempt to apply it twice, it will mess up your axis label
+    '''
+    if ax is None:
+        ax = plt.gca()
+
+    prefix = mpl.ticker.EngFormatter()(10**-scale)[-1]
+
+    axis = getattr(ax, axis+'axis')
+    fmter = mpl.ticker.FuncFormatter(lambda x, pos: '{0:g}'.format(x*10**scale))
+    axis.set_major_formatter(fmter)
+    label =  axis.get_label_text()
+    bracket = label.find('[')
+    if (bracket > -1) and label[bracket+1] != prefix:
+        axis.set_label_text(prefix.join((label[:bracket+1], label[bracket+1:])))
 
 def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
     new_cmap = mpl.colors.LinearSegmentedColormap.from_list(

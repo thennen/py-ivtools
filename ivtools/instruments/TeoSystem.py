@@ -2,12 +2,12 @@ import numpy as np
 import itertools
 import sys
 import time
-import win32com.client
-from win32com.client import CastTo, WithEvents, Dispatch
-from pythoncom import com_error
 import hashlib
 import logging
 from numbers import Number
+import json
+import os
+import ivtools.settings # for calibration file path
 log = logging.getLogger('instruments')
 
 class TeoSystem(object):
@@ -94,11 +94,14 @@ class TeoSystem(object):
             1. on first initialization (Dispatch('TSX_HMan'))
             2. if you disconnect USB and plug it back in
 
-    # TODO: store a calibration to remove the offsets and scale voltages.
+    # DONE: store a calibration to remove the offsets and scale voltages.
             monitor has a big offset and for the other channel it depends a bit on the gain setting.
     '''
 
     def __init__(self):
+        # This imports are here os a macOS user can import ivtools and use
+        from win32com.client import Dispatch
+        from pythoncom import com_error
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
         requires TEO software package and drivers to be installed on the PC
@@ -181,6 +184,14 @@ class TeoSystem(object):
         #self.constants.min_LFgain = self.LF_Measurement.LF_Gain.GetMinValue() # also 0?
         self.constants.AWG_memory = self.AWG_WaveformManager.GetTotalMemory()
 
+        if os.path.isfile(ivtools.settings.teo_calibration_file):
+            with open(ivtools.settings.teo_calibration_file, 'r') as tc:
+                self.calibration = json.load(tc)
+        else:
+            log.warning('Calibration file not found!')
+            self.calibration = None
+
+
         # if you have the jumper, HFI impedance is 50 ohm, otherwise 100 ohm
         self.J29 = True
 
@@ -232,9 +243,10 @@ class TeoSystem(object):
 
     @staticmethod
     def _CastTo(name, to):
+        from win32com.client import CastTo
         # CastTo that clearly lets you know something isn't working right with the software setup
         try:
-            result = win32com.client.CastTo(to, name)
+            result = CastTo(to, name)
         except Exception as E:
             log.error(f'Teo software connection failed! CastTo({name}, {to})')
         if result is None:
@@ -487,6 +499,8 @@ class TeoSystem(object):
             # Convert for the 250 MHz FPGA
             trig2 = np.repeat(np.array(trig2[::2], bool), 2)[:n]
 
+        varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
+
         loaded_names = self.get_wfm_names()
 
         if name is None:
@@ -501,7 +515,6 @@ class TeoSystem(object):
             log.debug(f'Overwriting waveform named {name}')
 
         wf = self.AWG_WaveformManager.CreateWaveform(name)
-        varray, trig1, trig2 = self._pad_wfms(varray, trig1, trig2)
         wf.AddSamples(varray, trig1, trig2)
 
         # also write all the waveform data to the class instance
@@ -574,8 +587,6 @@ class TeoSystem(object):
         if raw is True, then keys 'HFV' and 'HFI' will be in the returned dict
         which are the ADC values before calibration/conversion/trimming
 
-        TODO: Calibrate voltages and currents
-              Store the calibrations here in the class definition
         TODO: How should we align data with trigger?  we want to return arrays of the same length, even if the
               triggers are not always on. We have two options:
               1. delete programmed voltage waveform and time waveform where trig1 is False
@@ -604,12 +615,23 @@ class TeoSystem(object):
         HFI = np.array(wf01.GetWaveformDataArray())
 
         R_HFI = 50 if self.J29 else 100
+        gain_step = self.gain()
 
-        # Very approximate conversion to current
-        # TODO: calibrate this better
-        I = HFI * 99.4e-5 / R_HFI
-        # TODO: also calibrate this, this is just a guess
-        V = (HFV + 320e-3) / 2.047
+        # Conversion to current if calibration is available
+        if self.calibration:
+            # Teo divides by gain internally before we get the HFI values,
+            # so this is just a fine-tuning of the calibration
+            gain_key = format(gain_step % 4)
+
+            I_cal_line = self.calibration['HFI_INT'][gain_step % 4]
+            I = np.polyval(I_cal_line, HFI)
+            V_cal_line = self.calibration['HFV_INT']
+            V = np.polyval(V_cal_line, HFV)
+        else:
+            # no calibration..
+            I = HFI
+            V = HFV
+
 
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
 
@@ -676,7 +698,7 @@ class TeoSystem(object):
         # TODO: This could return a really large data structure.
         #       we might need options to return something more minimal if we want to use long waveforms
         #       could also convert to float32, then I would use a dtype argument: get_data(..., dtype=float32)
-        out = dict(V=V, I=I, t=t, wfm=wfm,
+        out = dict(V=V, I=I, t=t, Vwfm=wfm,
                    idn=self.constants.idn,
                    sample_rate=sample_rate,
                    gain_step=self.last_gain,
@@ -753,6 +775,7 @@ class TeoSystem(object):
                 wfm_names.append(name)
         return wfm_names
 
+
     def delete_all_wfms(self):
         for name in self.get_wfm_names():
             self.AWG_WaveformManager.DeleteWaveform(name)
@@ -771,9 +794,6 @@ class TeoSystem(object):
         '''
         Switch to LF mode (HF LED should turn off)
 
-        The voltage output goes to port HFI, not HFV for some reason
-        HFV goes to zero. So the polarity is reversed wrt HF mode.
-
         There's no software controllable internal/external mode anymore.
         for internal mode, put jumpers J4 and J5 to position 2-3
         for external mode, put jumpers J4 and J5 to position 1-2
@@ -781,8 +801,10 @@ class TeoSystem(object):
         J4 and J5 are located underneath the square metal RF shield,
         you can pry off the top cover to access them.
         '''
-        external = False
+        # This argument does nothing!
+        external = True
         self.LF_Measurement.SetLF_Mode(0, external)
+
 
     def LF_voltage(self, value=None):
         '''
@@ -796,9 +818,12 @@ class TeoSystem(object):
         TODO: rename?  LF_Voltage is the name of a class within LF_Measurement
         '''
         if value is None:
-            return self.LF_Measurement.LF_Voltage.GetValue()
+            value = self.LF_Measurement.LF_Voltage.GetValue()
+            return value
         else:
             self.LF_Measurement.LF_Voltage.SetValue(value)
+            time.sleep(0.002)  # It takes around 2ms to stabilize the voltage
+
 
     def LF_current(self, NPLC=10):
         '''
@@ -806,8 +831,10 @@ class TeoSystem(object):
 
         specs say ADC is 24 bits, 4 uA range, 1pA resolution
         but in practice the noise may be much higher than 1pA
+        For 1Mohm and 1V the standard deviation is around 300 pA before averaging
+        After averaging with NPLC=1 standard deviation is 150 pA
 
-        the ADC has a sample rate of something like 31,248 Hz, but the buffer size is 8,000
+        the ADC has a sample rate of 31,248 Hz, but the buffer size is 8,000
 
         LF_MeasureCurrent(duration) returns all the samples it could store for that duration
         you can then average them.

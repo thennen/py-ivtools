@@ -33,28 +33,39 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 ######## Default settings that may get overwritten by hostname/user settings ########
 #####################################################################################
 
+# TODO: why did I put these in all caps?
 ### Settings for compliance circuit
 COMPLIANCE_CURRENT = 0
 INPUT_OFFSET = 0
-COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'calibration', 'compliance_calibration.pkl')
+COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'instruments', 'calibration', 'compliance_calibration.pkl')
 CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 
 # This is the channel where you are sampling the input waveform
 MONITOR_PICOCHANNEL = 'A'
 
+teo_calibration_file = os.path.join(ivtools_dir, 'instruments', 'calibration', 'teo_calibration.json')
+
+# Drop these data columns before writing to disk
+# usually if you need to save space and the columns can be recomputed
+drop_cols = [] # ['I', 'V', 't']
+
 ### Change this when you change probing circuits - defines how to get from pico channels to I, V
 # pico_to_iv = ivtools.measure.rehan_to_iv
 # pico_to_iv = ivtools.measure.ccircuit_to_iv
-pico_to_iv = partial(ivtools.measure.Rext_to_iv, R=50)
+pico_to_iv = ivtools.measure.Rext_to_iv # 50 ohm channel C
 # pico_to_iv = ivtools.measure.TEO_HFext_to_iv
 
 # More settings?
+# Like picoscope defaults?
 # For interactive mode?
 
 hostname = socket.gethostname()
 username = getpass.getuser()
 
 datafolder = r'C:\data\{}'.format(username)
+
+# Should interactive script automatically commit changes?
+autocommit = False
 
 '''
 logging_print allows you to chose how verbose the logging module is. You can custom every level 
@@ -86,18 +97,32 @@ logging_file = os.path.join(pyivtools_dir, 'logging.log')
 if hostname == 'pciwe46':
     db_path = 'D:\metadata.db'
     if username == 'hennen':
+        autocommit = True
         datafolder = r'D:\t\ivdata'
         for di in logging_prints.values():
             di['all'] = True
     elif username == 'munoz':
-        datafolder = r'D:\{}\ivdata'.format(username)
+        munoz = 'D:/munoz/'
+        datafolder = os.path.join(munoz, 'ivdata')
+        db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
+        logging_file = os.path.join(munoz, 'ivtools_logging.log')
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+        }
+    elif username == 'wtf':
+        datafolder = r'D:\{}\ivdata'.format(username)
+        logging_prints = {
+            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
         }
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
@@ -148,5 +173,18 @@ elif hostname == 'CHMP2':
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         # TEO
                         ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
+elif username == 'alexgar':
+    munoz = '/Users/alexgar/sciebo/munoz/'
+    datafolder = os.path.join(munoz, 'ivdata')
+    db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
+    logging_file = os.path.join(munoz, 'ivtools_logging.log')
+    logging_prints = {
+        'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+    }
 else:
     print(f'No Hostname specific settings found for {hostname}.  Using defaults.')

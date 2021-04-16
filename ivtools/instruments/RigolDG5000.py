@@ -4,7 +4,7 @@ import os
 import hashlib
 import logging
 log = logging.getLogger('instruments')
-import visa
+import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 
 class RigolDG5000(object):
@@ -57,7 +57,7 @@ class RigolDG5000(object):
             self.query = self.conn.query
             self.ask = self.query
             self.close = self.conn.close
-            idn = self.conn.ask('*IDN?').replace('\n', '')
+            idn = self.query('*IDN?').replace('\n', '')
             log.debug('Rigol connection succeeded. *IDN?: {}'.format(idn))
         except:
             log.error('Connection to Rigol AWG failed.')
@@ -424,9 +424,6 @@ class RigolDG5000(object):
         or at the very least, 2**14 = 16k samples!
         Maybe we need to issue a :TRACe:DATA:POINTs VOLATILE, <value> command to "set the number of initial points"
         '''
-        # It seems to be possible to send bytes to the rigol instead of strings.  This would be much better.
-        # But I haven't been able to figure out how to convert the data to the required format.  It's complicated.
-        # Construct a string out of the waveform
         # TODO: Maybe also detect an offset to use?  Then we can make full use of the 12 bit resolution
         waveform = np.array(waveform, dtype=np.float32)
         maxamp = np.max(np.abs(waveform))

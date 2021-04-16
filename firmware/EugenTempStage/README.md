@@ -17,15 +17,17 @@ First of all the official Arduino-IDE to program the "Micro" is required. A Pyth
 
 Those Arduino-Libaries are necessary:
 
+
 ```sh
 Wire.h
-Adafruit_GFX.h
 math.h
 CmdMessenger.h
 Adafruit_MCP4725.h
-Liquid_Crystal.h
 Filter.h
 ```
+
+All extern libraries, which are not part of the Arduino IDE are put into the Libraries.zip, to compile extract these into your local library folder
+
 
 Python modules required:
 ```sh

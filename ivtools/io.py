@@ -1,9 +1,10 @@
-""" Functions for saving and loading data """
+''' Functions for saving and loading data '''
 # we don't make heavy use of these other modules
 # don't reference them on the top level
 # this is to avoid circular import problems
 import ivtools.analyze
 import ivtools.plot
+from ivtools import settings
 
 import os
 import re
@@ -33,7 +34,10 @@ pjoin = os.path.join
 splitext = os.path.splitext
 psplit = os.path.split
 
-gitdir = os.path.split(__file__)[0]
+# Directory above the one containing this file
+gitdir = psplit(psplit(__file__)[0])[0]
+
+db_path = settings.db_path
 
 
 class MetaHandler(object):
@@ -55,7 +59,7 @@ class MetaHandler(object):
     Attach the currently selected meta data and the static meta data with the attach() function
 
     MetaHandler is Borg.  Its state lives in an separate module.
-    This is so if io module is reloaded, Metahandler instance keeps the metadata
+    This is so if io module is reloaded, a new Metahandler instance keeps the metadata state
     '''
 
     def __init__(self, clear_state=False):
@@ -119,13 +123,12 @@ class MetaHandler(object):
         else:
             self.meta = self.df[self.i]
 
-    def load_sample_table(self, **filters):
+    def load_sample_table(self, fpath, sheet=0, header=0, skiprows=None, **filters):
         ''' load data (pd.read_excel) from some tabular format'''
-        fpath = 'sampledata/CeRAM_Depositions.xlsx'
         if not os.path.isfile(fpath):
             # Maybe it's a relative path
             fpath = os.path.join(self.moduledir, fpath)
-        df = pd.read_excel(fpath, header=8, skiprows=[9])
+        df = pd.read_excel(fpath, sheet, header=header, skiprows=skiprows)
         # TODO: Apply filters
         for name, value in filters.items():
             if name in df:
@@ -138,8 +141,9 @@ class MetaHandler(object):
         if 'sample_name' in df:
             filenamekeys = ['sample_name'] + filenamekeys
         self.prettykeys = None
-        self.select(0)
         self.df = df
+        self.select(0)
+
 
     # TODO: Unified metadata loader that just loads every possible sample
 
@@ -394,15 +398,15 @@ class MetaHandler(object):
         mask = np.ones(len(self.df), bool)
         for k, v in kwargs.items():
             mask &= self.df[k] == v
-
         w = np.where(mask)
-        if any(w):
+        if any(mask):
             i = w[0][0]
             self.select(i)
             log.info('You have selected this device (index {}):'.format(self.i))
-            self.print()
+            return self.i
         else:
             log.error('No matching devices found')
+            return None
 
     def print(self, keys=None, hlkeys=None):
         ''' Print the selected metadata '''
@@ -427,37 +431,6 @@ class MetaHandler(object):
         May modify the input data in addition to returning it
         # TODO make it always modify the input data, or never
         '''
-        # Old version below, I don't know if it's faster but it's surely harder to read
-        '''
-        #if len(self.meta) > 0:
-        #    print('Attaching the following metadata:')
-        #    TODO this does not consider meta.static, which in fact can overwrite the values of meta.meta
-        #    self.print()
-        dtype = type(data)
-        if dtype is dict:
-            # Make shallow copy
-            dataout = data.copy()
-            dataout.update(self.meta)
-            dataout.update(self.static)
-        elif dtype is list:
-            dataout = [d.copy() for d in data]
-            for d in dataout:
-                d.update(self.meta)
-                d.update(self.static)
-        elif dtype is pd.Series:
-            # Series can't be updated by dicts
-            dataout = data.append(pd.Series(self.meta)).append(pd.Series(self.static))
-        elif dtype is pd.DataFrame:
-            dupedmeta = pd.DataFrame([self.meta] * len(data), index=data.index)
-            dupedstatic = pd.DataFrame([self.static] * len(data), index=data.index)
-            allmeta = dupedmeta.join(dupedstatic)
-            dataout = data.join(allmeta)
-        else:
-            print('MetaHandler does not understand what kind of data you are trying to attach to.')
-            dataout = data.append(self.meta).append(self.static)
-        return dataout
-        '''
-
         dataout = self.attach_keys(data, **self.meta)
         dataout = self.attach_keys(dataout, **self.static)
         return dataout
@@ -481,7 +454,6 @@ class MetaHandler(object):
             dataout = pd.DataFrame([{**d, **kwargs} for d in datadict])
         return dataout
 
-
     def timestamp(self):
         return datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
 
@@ -496,7 +468,7 @@ class MetaHandler(object):
         return filename
 
     def savedata(self, data, folder_path=None, database_path=None, table_name='meta', drop=None):
-        """
+        '''
         Save data to disk and write a row of metadata to an sqlite3 database
 
         :param data: Row of data to be add to the database.
@@ -504,7 +476,8 @@ class MetaHandler(object):
         :param database_path: Path of the database where data will be saved. If None, data will be saved in Desktop.
         :param table_name: Name of the table in the database. If the table doesn't exist, create a new one.
         :param drop: drop columns to save disk space.
-        """
+        '''
+
         # save in current directory by default
         if folder_path is None:
             folder_path = '.'
@@ -548,7 +521,7 @@ class MetaHandler(object):
 
 
 def db_create_table(db_conn, table_name, data):
-    """
+    '''
     Creates a table from the 'pandas.series' array of data.
     It names columns and inserts the first row of data.
     To apply this change, the function "db_commit()" must be ran.
@@ -557,7 +530,7 @@ def db_create_table(db_conn, table_name, data):
     :param table_name: Name of the table in the database.
     :param data: pandas.series array from which to create the table
     :return: None
-    """
+    '''
 
     c = db_conn.cursor()
 
@@ -601,7 +574,7 @@ def db_create_table(db_conn, table_name, data):
 
 
 def db_insert_row(db_conn, table_name, row):
-    """
+    '''
     Insert a row of data of any length, creating new columns if necessary.
     To apply this change, the function "db_commit()" must be ran.
 
@@ -609,7 +582,7 @@ def db_insert_row(db_conn, table_name, row):
     :param table_name: Name of the table in the database.
     :param row: Row to be added to the table.
     :return: None
-    """
+    '''
 
     datatype = type(row)
     if datatype not in (dict, pd.core.series.Series):
@@ -661,18 +634,18 @@ def db_insert_row(db_conn, table_name, row):
     qmarks = "(?" + ", ?" * (len(params) - 1) + ")"
     params = tuple(params)
 
-    # log.info(f"INSERT INTO {table_name} VALUES {qmarks}", params)
+    # log.debug(f"INSERT INTO {table_name} VALUES {qmarks}", params)
     c.execute(f"INSERT INTO {table_name} VALUES {qmarks}", params)
 
 
 def db_get_col_names(db_conn, table_name):
-    """
+    '''
     Return a list with the name of the columns.
 
     :param db_conn: Connection with the database established by db_connect()
     :param table_name:
     :return: List of the names.
-    """
+    '''
 
     c = db_conn.cursor()
 
@@ -682,14 +655,14 @@ def db_get_col_names(db_conn, table_name):
 
 
 def db_add_col(db_conn, table_name, col_name):
-    """
+    '''
     Add a new columns at the end of the table.
 
     :param db_conn: Connection with the database established by db_connect().
     :param table_name: Table i nthe database.
     :param col_name: Name of the new column
     :return: None
-    """
+    '''
 
     c = db_conn.cursor()
 
@@ -697,12 +670,12 @@ def db_add_col(db_conn, table_name, col_name):
 
 
 def db_change_type(var):
-    """
+    '''
     Change the type of a variable to the best option to be in the database.
 
     :param var: variable to change its type
     :return: Changed variable
-    """
+    '''
     types_dict = {np.ndarray: None, list: None, dict: str, pd._libs.tslibs.timestamps.Timestamp: str,
                   np.float64: float,
                   np.float32: float, np.int64: int, np.int32: int, np.int16: int, str: str, int: int, float: float,
@@ -728,14 +701,14 @@ def db_change_type(var):
     return var
 
 
-def db_load(db_path, table_name):
-    """
+def db_load(db_path=db_path, table_name='meta'):
+    '''
     Load a dataframe from a database table.
 
     :param db_path: Path of the database
     :param table_name: name of the table
     :return: dataframe
-    """
+    '''
     db_conn = sqlite3.connect(db_path)
     query = db_conn.execute(f"SELECT * From {table_name}")
     col_names_encoded = [column[0] for column in query.description]
@@ -748,18 +721,44 @@ def db_load(db_path, table_name):
             name = col_names[i]
             changes[name_encoded] = name
     df = df.rename(columns=changes)
+    # Empty cells in a column of numbers are load as numpy.nan; and in a column of strings, as None.
+    # In next line I left all empty cells as None.
+    df = df.replace({np.nan: None})
     db_conn.close()
     return df
 
 
+def db_filter(db, **kwargs):
+    '''
+    Filter a pandas.dataframe by column name and delete all the empty columns
+
+    :param db: pandas.dataframe
+    :param kwargs: like (username='munoz', color= ['blue', 'red'])
+    :return: Processed dataframe
+    '''
+    newdb = db.copy()
+
+    for k in kwargs.keys():
+        a = kwargs[k]
+        if type(a) is not list:
+            a = [a]
+        newdb = newdb[newdb[k].isin(a)]
+
+    for k in newdb.keys():
+        if all(i is None for i in newdb[k]):
+            del newdb[k]
+
+    return newdb
+
+
 def db_encode(col_names):
-    """
+    '''
     Sqlite cannot store keys that only differ in case
     Return a list of names where names that only differed in case are encoded like This, this&, THIS&&, tHIs&&&...
 
     :param col_names_encoded: list of names
     :return: encoded list of names
-    """
+    '''
     col_names_low = [col.lower() for col in col_names]
     col_names_encoded_low = list(col_names_low)
     col_names_encoded = list(col_names)
@@ -784,23 +783,23 @@ def db_encode(col_names):
 
 
 def db_decode(col_names_encoded):
-    """
+    '''
     Remove the & from the encoded names (This, this&, THIS&&, tHIs&&&).
 
     :param col_names_encoded: encoded list of names
     :return: decoded list of names
-    """
+    '''
     return [cn.strip('&') for cn in col_names_encoded]
 
 
 def db_exist_table(db_conn, table_name):
-    """
+    '''
     Check if a table exists in a databse.
 
     :param db_conn: Connection with the database established by db_connect()
     :param table_name: table to check if exists
     :return: bool
-    """
+    '''
 
     c = db_conn.cursor()
     # get the count of tables with the name
@@ -813,24 +812,24 @@ def db_exist_table(db_conn, table_name):
 
 
 def db_connect(db_path):
-    """
+    '''
     Establish a connection with the database.
 
     :param db_path: Path of the database.
     :return: Connection var.
-    """
+    '''
     db_conn = sqlite3.connect(db_path)
     return db_conn
 
 
 def db_commit(db_conn):
-    """
+    '''
     Commit changes to a database, and close connection.
     It has an independent function to avoid using it unnecessarily, since it takes too long.
 
     :param db_conn: Name of the connection established previously
     :return: None
-    """
+    '''
     db_conn.commit()
     db_conn.close()
 
@@ -877,7 +876,7 @@ def timestamp(date=True, time=True, ms=True, us=False):
 
 
 def getGitRevision():
-    rev = subprocess.getoutput('cd \"{}\" & git rev-parse --short HEAD'.format(gitdir))
+    rev = subprocess.getoutput(f'cd \"{gitdir}\" & git rev-parse --short HEAD')
     # return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
     if 'not recognized' in rev:
         # git not installed probably
@@ -888,7 +887,7 @@ def getGitRevision():
 
 def getGitStatus():
     # attempt to parse the git status
-    status = subprocess.check_output(['git', 'status', '--porcelain']).decode().strip()
+    status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=gitdir).decode().strip()
     status = [l.strip().split(' ', maxsplit=1) for l in status.split('\n')]
     # I like dict of lists better
     output = {}
@@ -904,7 +903,7 @@ def getGitStatus():
 
 def gitCommit(message='AUTOCOMMIT'):
     # I think it will give an error if there is nothing to commit..
-    output = subprocess.check_output(['git', 'commit', '-a', f'-m {message}']).decode()
+    output = subprocess.check_output(['git', 'commit', '-a', f'-m {message}'], cwd=gitdir).decode()
     return output
 
 
@@ -1245,8 +1244,17 @@ def write_pandas_pickle(data, filepath=None, drop=None):
                 data = data.drop(todrop, 1)
     data.to_pickle(filepath)
     set_readonly(filepath)
+    size = os.path.getsize(filepath)
+    if size > 2**30:
+        size = f'{size/2**30:.2f} GB'
+    elif size > 2**20:
+        size = f'{size/2**20:.2f} MB'
+    elif size > 2**10:
+        size = f'{size/2**10:.2f} KB'
+    else:
+        size = f'{size:.2f} B'
     abspath = os.path.abspath(filepath)
-    log.info('Wrote {}'.format(abspath))
+    log.info(f'Wrote {abspath}\n{size}')
     return abspath
 
 def pandas_pickle_extension(data):
