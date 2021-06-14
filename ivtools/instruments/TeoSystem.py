@@ -266,8 +266,9 @@ class TeoSystem(object):
 
 
     def kill_TSX(self):
-        os.system("taskkill /im TSX_HardwareManager")
-        os.system("taskkill /im TSX_DM.exe")
+        # /F tells taskkill we aren't Fing around here
+        os.system("taskkill /F /im TSX_HardwareManager")
+        os.system("taskkill /F /im TSX_DM.exe")
 
     def restart_TSX(self):
         self.kill_TSX()
