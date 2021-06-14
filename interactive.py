@@ -345,8 +345,17 @@ def setup_ccircuit():
     settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
 
+def setup_digipot():
+    ps.coupling.a = 'DC' # monitor
+    ps.coupling.b = 'DC50' # device voltage
+    ps.coupling.c = 'DC50' # current (unamplified)
+    ps.range.b = 2
+    ps.range.c = 0.05
+    settings.pico_to_iv = digipot_to_iv
+    iplots.plotters = pico_plotters
+
 def setup_teo():
-    # TODO: finish setup
+    # TODO: anything else?
     iplots.pico_to_iv = teo_to_iv # for ext mode
     iplots.plotters = teo_plotters
 
