@@ -346,11 +346,17 @@ class TeoSystem(object):
     # TODO: define some standard waveforms that use 500 Msample/second
     # e.g. pulse trains
     @staticmethod
-    def sine(freq=1e5, amp=1):
-        ''' One cycle of a sine wave '''
-        nsamples = int(round(500e6/freq))
-        x = np.linspace(0, 2*np.pi, nsamples)
-        return amp * np.sin(x)
+    def sine(freq=1e5, amp=1, offs=0, cycles=1):
+        '''
+        Basic sine wave
+        can modulate amplitude if len(amp) == cycles
+        '''
+        nsamples = int(round(500e6*cycles/freq))
+        x = np.linspace(0, 2*cycles*np.pi, nsamples)
+        if hasattr(amp, '__iter__') and (len(amp) == cycles):
+            icycle = x // (2*np.pi + 1e-15)
+            amp = np.repeat(amp, [sum(icycle == i) for i in range(cycles)])
+        return amp * np.sin(x) + offs
 
     @staticmethod
     def tri(V, sweeprate=1e6):

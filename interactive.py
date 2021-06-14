@@ -336,7 +336,7 @@ s = autocaller(savedata)
 
 ###### Common configurations? ############
 
-def setup_ccircuit_measurements():
+def setup_ccircuit():
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
@@ -344,6 +344,11 @@ def setup_ccircuit_measurements():
     ps.range.c = 2
     settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
+
+def setup_teo():
+    # TODO: finish setup
+    iplots.pico_to_iv = teo_to_iv # for ext mode
+    iplots.plotters = teo_plotters
 
 ###### Interactive measurement functions #######
 
@@ -432,7 +437,7 @@ if ts:
 
 if teo:
     # HF mode
-    teoiv = interactive_wrapper(teo.measure)
+    teoiv = interactive_wrapper(teo.measureHF)
 
 def set_compliance(cc_value):
     # Just calls normal set_compliance and also puts the value in metadata
