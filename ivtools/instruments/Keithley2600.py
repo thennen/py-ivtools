@@ -76,7 +76,7 @@ class Keithley2600(object):
             self.debug = False
             # Store up to 100 loops in memory in case you forget to save them to disk
             self.data = deque(maxlen=100)
-            self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+            self.conn = visa_rm.open_resource(addr, open_timeout=0)
             self.conn.timeout = 4000
             # Expose a few methods directly to self
             self.ask = self.query
