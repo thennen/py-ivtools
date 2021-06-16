@@ -72,7 +72,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidt
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
-    lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
+    lc = LineCollection(segments, cmap=plt.get_cmap(cmap), joinstyle='round', capstyle='round')
     #lc.set_array(c)
     lc.set_color(colors)
     lc.set_linewidth(linewidth)
@@ -96,10 +96,9 @@ def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, *
     # absolute distance may not work if x and y have different units
     # to account for scale, we divide by the range of the input data
     xrange = np.max(x) - np.min(x)
-    yrange = np.max(y) - np.max(y)
+    yrange = np.max(y) - np.min(y)
     speed = np.sqrt(np.gradient(x/xrange)**2 + np.gradient(y/yrange)**2)
-    if 'c' in kwargs:
-        del kwargs['c']
+    kwargs = {k:v for k,v in kwargs.items() if k != 'c'}
     plot_multicolor(x, y, c=speed, cmap=cmap, vmin=vmin, vmax=vmax, ax=ax, **kwargs)
     return speed
 
