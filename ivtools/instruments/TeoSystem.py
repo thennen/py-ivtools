@@ -590,24 +590,21 @@ class TeoSystem(object):
         return success
 
 
-    def get_data(self, raw=False):
+    def get_data(self, raw=False, nanpad=True):
         '''
         Get the data for both ADC channels for the last capture.
         Returns a dict of information.
 
+        if raw is True, then keys 'HFV' and 'HFI' will also be in the returned dict
+        which are the ADC values before calibration/conversion/trimming
+
         We return the programmed waveform data as well,
         which is useful because the monitor signal can have a lot of noise
 
-        if raw is True, then keys 'HFV' and 'HFI' will be in the returned dict
-        which are the ADC values before calibration/conversion/trimming
-
-        TODO: How should we align data with trigger?  we want to return arrays of the same length, even if the
-              triggers are not always on. We have two options:
-              1. delete programmed voltage waveform and time waveform where trig1 is False
-              2. pad measured waveform with np.nan where trig1 is False
-              we could also think about slicing the arrays where there are gaps in the capturing
-              then this would return a list of dicts
-              currently we do 2. but there are some potential problems with extra samples
+        We want all the returned arrays to be the same length, even if the triggers are not always on.
+        We have two options:
+        nanpad=False: delete programmed voltage waveform and time waveform where trig1 is False
+        nanpad=True: pad measured waveform with np.nan where trig1 is False
         '''
         # We only get waveform samples where trigger is True, so these could be shorter than wfm
         # V monitor waveform (HFV)
@@ -622,9 +619,9 @@ class TeoSystem(object):
         if wf01.IsSaturated():
             log.warning('TEO ADC channel 1 (HFI) is saturated!')
 
-        # Signals on the ports
+        # Signals on the HFV, HFI ports
         # Gain is divided out already before it is read in here
-        # they are not in volts and they need calibration
+        # but they values are still not in volts and they require calibration
         HFV = np.array(wf00.GetWaveformDataArray())
         HFI = np.array(wf01.GetWaveformDataArray())
 
@@ -696,14 +693,16 @@ class TeoSystem(object):
         trig1 = np.tile(trig1, nshots)
         # trig2 = np.tile(trig2, nshots) # we do nothing with trig2 at the moment
 
-        # Align measurement waveforms with the programmed waveform (for the case that not all(trig1))
-        # TODO: the extra samples might come at the end of every chunk, every shot, random locations,
-        #    we don't know yet.  the following assumes that they are all at the end!
-        I, V = self._align_with_trigger(trig1, I, V)
-        # Alternatively we could cut the programmed wfm to match trig1
-        # This would use less memory, but the time array will reflect the gap in data acquisition
-        # prog_wfm = prog_wfm[trig1]
-        # t = t[trig1]
+        if nanpad:
+            # Align measurement waveforms with the programmed waveform (for the case that not all(trig1))
+            # TODO: the extra samples might come at the end of every chunk, every shot, random locations,
+            #    we don't know yet.  the following assumes that they are all at the end!
+            I, V = self._align_with_trigger(trig1, I, V)
+        else:
+            # Alternatively we can cut the programmed wfm to match trig1, dropping some information
+            # This uses less memory, but the time array will still reflect the gap in data acquisition
+            prog_wfm = prog_wfm[trig1]
+            t = t[trig1]
 
         # TODO: should we compress the trigger signals and return them?
         #       otherwise they could be up to 64 MB per shot.
@@ -870,12 +869,12 @@ class TeoSystem(object):
 
     ##################################### Highest level commands #############################################
 
-    def measureHF(self, wfm):
+    def measureHF(self, wfm, n=1, trig1=None, trig2=None):
         '''
         Pulse wfm and return I,V,... data
         '''
         self.HF_mode()
-        self.output_wfm(wfm)
+        self.output_wfm(wfm, n=n, trig1=trig1, trig2=trig2)
         return self.get_data()
 
 
