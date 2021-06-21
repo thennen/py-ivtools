@@ -76,7 +76,7 @@ class Keithley2600(object):
             self.debug = False
             # Store up to 100 loops in memory in case you forget to save them to disk
             self.data = deque(maxlen=100)
-            self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+            self.conn = visa_rm.open_resource(addr, open_timeout=0)
             self.conn.timeout = 4000
             # Expose a few methods directly to self
             self.ask = self.query
@@ -769,7 +769,7 @@ class Keithley2600(object):
                                             f"Set a current limit higher than {lim_min}A or change the measurement range")
                 elif source_param == 'v':
                     log.warning("You can not limit the voltage when sourcing voltage.")
-            elif sf is 'i':
+            elif sf == 'i':
                 if source_param == 'v':
                     mr = self.measure_range('v')
                     if mr != 'auto':

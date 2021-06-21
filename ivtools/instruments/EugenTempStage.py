@@ -57,7 +57,7 @@ class EugenTempStage(object):
             self.write = self.conn.write
             self.close = self.conn.close
             if self.connected():
-                log.info(f'Connected to PID controller on {addr}')
+                log.info(f'Connected to EugenTempStage controller on {addr}')
 
     def connected(self):
         if hasattr(self, 'conn'):

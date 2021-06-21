@@ -16,12 +16,24 @@ TODO: GUI for displaying and changing channel settings, other status information
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad
 '''
-from functools import partial
-
+import numpy
+import numpy as np
+import matplotlib
+import matplotlib as mpl
+from matplotlib import pyplot
+from matplotlib import pyplot as plt
+from functools import wraps, partial
+import os
+import getpass # to get user name
+import sys
+import time
 import pandas as pd
-
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
+import subprocess
+import socket
+from datetime import datetime
+from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -29,6 +41,8 @@ import pyvisa as visa
 
 import ivtools
 import importlib
+from importlib import reload
+from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -48,6 +62,7 @@ from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
+from ivtools.instruments import *
 import logging
 
 
@@ -321,7 +336,7 @@ s = autocaller(savedata)
 
 ###### Common configurations? ############
 
-def setup_ccircuit_measurements():
+def setup_ccircuit():
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
@@ -428,7 +443,7 @@ if ts:
 
 if teo:
     # HF mode
-    teoiv = interactive_wrapper(teo.measure)
+    teoiv = interactive_wrapper(teo.measureHF)
 
 def set_compliance(cc_value):
     # Just calls normal set_compliance and also puts the value in metadata

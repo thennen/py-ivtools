@@ -85,13 +85,16 @@ logging_prints = {
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
 inst_connections = []
 
+# Shared metadatabase
 db_path = os.path.join(pyivtools_dir, 'metadata.db')
 
+# Shared logging file
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
 
 #################################################
 ######## Hostname/user specific settings ########
+######## May override the above settings ########
 #################################################
 
 if hostname == 'pciwe46':
