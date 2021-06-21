@@ -1,24 +1,23 @@
 """
 Functions for measuring IV data
 """
+import datetime
 import json
+import logging
+import os
+import pickle
+import signal
+import time
+from fractions import Fraction
+from math import gcd
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
 
 import ivtools.analyze
 import ivtools.instruments as instruments
 import ivtools.settings
-
-from matplotlib import pyplot as plt
-from fractions import Fraction
-from math import gcd
-import numpy as np
-import time
-import pandas as pd
-import os
-import datetime
-from functools import partial
-import pickle
-import signal
-import logging
 
 log = logging.getLogger('measure')
 
@@ -180,6 +179,158 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         log.debug('Splitting data into individual pulses')
         if splitbylevel is None:
             nsamples = duration * actual_fs
+            if 'downsampling' in ivdata:
+                # Not exactly correct but I hope it's close enough
+                nsamples /= ivdata['downsampling']
+            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
+        elif splitbylevel is not None:
+            # splitbylevel can split loops even if they are not the same length
+            # Could take more time though?
+            # This is not a genius way to determine to split at + or - dV/dt
+            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
+            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+
+    return ivdata
+
+
+def picoteo(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
+            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
+            savewfm=False, pretrig=0, posttrig=0):
+    '''
+    Pulse a waveform, measure on picoscope, and return data
+
+    smartrange 1 autoranges the monitor channel
+    smartrange 2 tries some other fancy shit to autorange the current measurement channel
+
+    autosplit will split the waveforms into n chunks
+
+    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
+
+    by default we sample for exactly the length of the waveform,
+    use "pretrig" and "posttrig" to sample before and after the waveform
+    units are fraction of one pulse duration
+
+    '''
+
+    teo = instruments.TeoSystem()
+    ps = instruments.Picoscope()
+
+    if type(wfm) is str:
+        wfm_name = wfm
+        wfm = teo.download_wfm(wfm_name)
+        log.warning('You are using a wfm that is already in Teo memory, so the duration of it will be the previous one')
+    else:
+        wfm_name = None
+        if not type(wfm) == np.ndarray:
+            wfm = np.array(wfm)
+
+    if not (bool(fs) ^ bool(nsamples)):
+        raise Exception('Must pass either fs or nsamples, and not both')
+    if fs is None:
+        fs = nsamples / duration
+
+    teo_freq = 500_000_000
+    pico_freq = fs
+
+    if smartrange == 2:
+        # Smart range for the compliance circuit
+        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
+    elif smartrange:
+        # Smart range the monitor channel
+        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
+
+    if wfm_name is None:
+        wfm = teo.interp_wfm(wfm, duration)
+
+    teo_nsamples = len(wfm)
+
+    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
+
+
+    sampling_factor = (n + pretrig + posttrig)
+
+    # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
+    # in clock cycles units.
+    # Actually, each channel has its own delay, V_MONITOR is 4 ns, HF_LIMITED_BW is 13 ns, and HF_FULL_BW is 9 ns
+    pico_clock_freq = 1e9
+    delay_sec = 4e-9
+    delay = int(pico_clock_freq * delay_sec)
+
+    # Set picoscope to capture
+    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+    actual_pico_freq = ps.capture(ch=channels,
+                                  freq=pico_freq,
+                                  duration=duration * sampling_factor,
+                                  pretrig=pretrig / sampling_factor,
+                                  delay=delay)
+
+    pico_nsamples = int(duration * actual_pico_freq)
+
+    log.debug(f"Teo frequency: 500.0 MHz\n"
+              f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
+              f"Teo number of samples: {teo_nsamples}\n"
+              f"Picoscope number of samples: {pico_nsamples}")
+
+
+    # This makes me feel good, but I don't think it's really necessary
+    time.sleep(.05)
+    if termination:
+        # Account for terminating resistance
+        # e.g. multiply applied voltages by 2 for 50 ohm termination
+        wfm *= (50 + termination) / termination
+
+    # Send a pulse
+
+    teo.output_wfm(wfm, n=n)
+
+    trainduration = n * duration
+    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    time.sleep(n * duration * 1.05)
+    #ps.waitReady()
+    log.debug('Getting data from picoscope.')
+    # Get the picoscope data
+    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
+    chdata = ps.get_data(channels, raw=False)
+    log.debug('Got data from picoscope.')
+    # Convert to IV data (keeps channel data)
+    ivdata = ivtools.settings.pico_to_iv(chdata)
+
+    ivdata['nshots'] = n
+
+    if savewfm:
+        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
+        # You will need to interpolate it, however..
+        # Or can we read it off the rigol??
+        ivdata['Vwfm'] = wfm
+
+    if autosmoothimate:
+        # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
+        # if you do that, the data still gets written in its raw form, which is preferable usually
+        # Below, we irreversibly drop data.
+        nsamples_shot = ivdata['nsamples_capture'] / n
+        # Smooth by 0.3% of a shot
+        window = max(int(nsamples_shot * 0.003), 1)
+        # End up with about 1000 data points per shot
+        # This will be bad if you send in a single shot waveform with multiple cycles
+        # In that case, you shouldn't be using autosmoothimate or autosplit
+        # TODO: make a separate function for IV trains?
+        if autosmoothimate is True:
+            # yes I meant IS true..
+            npts = 1000
+        else:
+            # Can pass the number of data points you would like to end up with
+            npts = autosmoothimate
+        factor = max(int(nsamples_shot / npts), 1)
+        log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
+        # TODO: What if we want to retain a copy of the non-smoothed data?
+        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
+        # Maybe only smoothimate I and V?
+        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+
+    if autosplit and (n > 1):
+        log.debug('Splitting data into individual pulses')
+        if splitbylevel is None:
+            nsamples = duration * actual_pico_freq
             if 'downsampling' in ivdata:
                 # Not exactly correct but I hope it's close enough
                 nsamples /= ivdata['downsampling']
@@ -1644,6 +1795,22 @@ def teo_calibration(Rload, plot=False):
 
 
     ############### Measurements ###############
+
+    # Signal may saturate, we could
+    # A. apply voltages so that saturation doesn't happen
+    # B. prune the saturated data points out afterward
+    # I choose method B
+
+    # HF_FULL_BW output saturates at about +800 mV, -700 mV
+    # HF_LIMITED_BW output saturates at about 1.8V
+    # HFI_INT is the HF_LIMITED_BW signal internally sampled, but it saturates some lower voltage
+
+    # At step 0 (highest gain), the HF FULL and HF LIMITED gains are roughly equal
+    # ~1V / 400uA, or 2.500 V/A (with J29)
+    # HF FULL BW possible step settings 0-31, each step corresponds to 1dB (1.122×)
+    # HF LIMITED BW possible step settings 0-3, each step corresponds to 6dB (2×)
+
+    # Voltage gain of the monitor is roughly 1/20
 
     nVprog = 100
     V_max = 9

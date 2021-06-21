@@ -16,24 +16,12 @@ TODO: GUI for displaying and changing channel settings, other status information
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad
 '''
-import numpy
-import numpy as np
-import matplotlib
-import matplotlib as mpl
-from matplotlib import pyplot
-from matplotlib import pyplot as plt
-from functools import wraps, partial
-import os
-import getpass # to get user name
-import sys
-import time
+from functools import partial
+
 import pandas as pd
+
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
-import subprocess
-import socket
-from datetime import datetime
-from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -41,8 +29,6 @@ import pyvisa as visa
 
 import ivtools
 import importlib
-from importlib import reload
-from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -62,7 +48,6 @@ from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
-from ivtools.instruments import *
 import logging
 
 
@@ -155,7 +140,7 @@ keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 # For Teo
-teo_plotters = [[0, partial(ivplot.ivplotter, x='Vwfm')], # programmed waveform is less noisy
+teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is less noisy but I want to check V
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
@@ -345,6 +330,16 @@ def setup_ccircuit_measurements():
     settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
 
+def setup_picoteo():
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.coupling.d = 'DC50'
+    ps.range.b = 0.2
+    ps.range.c = 0.2
+    ps.range.d = 0.2
+    settings.pico_to_iv = TEO_HFext_to_iv
+    iplots.plotters = teo_plotters
+
 ###### Interactive measurement functions #######
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
@@ -404,6 +399,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
 
 picoiv = interactive_wrapper(measure.picoiv)
 digipotiv = interactive_wrapper(measure.digipotiv)
+picoteoiv = interactive_wrapper(measure.picoteo)
 
 # If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
