@@ -1,13 +1,15 @@
-import numpy as np
-import itertools
-import sys
-import time
 import hashlib
-import logging
-from numbers import Number
+import itertools
 import json
+import logging
 import os
-import ivtools.settings # for calibration file path
+import time
+from numbers import Number
+
+import numpy as np
+
+import ivtools.settings  # for calibration file path
+
 log = logging.getLogger('instruments')
 
 class TeoSystem(object):
@@ -359,19 +361,71 @@ class TeoSystem(object):
         return amp * np.sin(x) + offs
 
     @staticmethod
-    def tri(V, sweeprate=1e6):
+    def tri(V, sweep_rate=1e6):
         '''
-        this should take a list of voltages, and sweep to all of them at a fixed sweep rate
+        take a list of voltages, and sweep to all of them at a fixed sweep rate
+
+        todo: do we want it to start and end at zero?
         '''
-        pass
+
+        teo_freq = 500e6
+        sweep_samples = int(teo_freq / sweep_rate)
+        if len(V) <= 1:
+            raise Exception("'V' must be a list with at least two values")
+        wfm = np.array([V[0]])
+        for v in V[1:]:
+            wfm = np.append(wfm, np.linspace(wfm[-1], v, sweep_samples+1)[1:])
+
+        return wfm
+
 
     @staticmethod
-    def pulse_train(amps, durs, delays):
+    def pulse_train(amps, durs, delays=0, n=1):
         '''
         This should create a rectangular pulse train
         durs, delays can either be scalar or have same length as amps
+
+        todo: do we want it to start and end at zero? we can do that with eg. amps=[0, 1, 2, 3, 0], durs=[0, 1, 2, 3, 0]
         '''
-        pass
+        teo_freq = 500e6
+
+        if not hasattr(amps, '__iter__'):
+            amps = np.array([amps])
+        if not hasattr(durs, '__iter__'):
+            durs = np.array([durs])
+        if not hasattr(delays, '__iter__'):
+            delays = np.array([delays])
+
+        namps = len(amps)
+        ndurs = len(durs)
+        ndelays = len(delays)
+        if namps != 1 and namps != ndurs and ndurs != 1:
+            raise Exception()
+
+        npulses = max(namps, ndurs)
+        if namps == 1:
+            amps = np.repeat(amps[0], npulses)
+        if ndurs == 1:
+            durs = np.repeat(durs[0], npulses)
+        if ndelays == 1:
+            delays = np.repeat(delays[0], npulses-1)
+            delays = np.append(delays, 0)
+        elif ndelays != npulses-1:
+            raise Exception()
+        else:
+            delays = np.append(delays, 0)
+
+        wfm = []
+        for amp, dur, delay in zip(amps, durs, delays):
+            amp_samples = int(teo_freq*dur)
+            delay_samples = int(teo_freq*delay)
+            wfm = np.concatenate((wfm, np.repeat(amp, amp_samples)))
+            wfm = np.concatenate((wfm, np.repeat(0, delay_samples)))
+
+        wfm = np.concatenate(np.repeat([wfm], n, axis=0))
+
+        return wfm
+
 
 
     def gain(self, step=None):

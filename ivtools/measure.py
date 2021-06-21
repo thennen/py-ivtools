@@ -193,7 +193,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     return ivdata
 
 
-def picoteo(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
+def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
             termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
             savewfm=False, pretrig=0, posttrig=0):
     '''
@@ -215,22 +215,24 @@ def picoteo(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=None, au
     teo = instruments.TeoSystem()
     ps = instruments.Picoscope()
 
+    teo_freq = 500e6
+
     if type(wfm) is str:
         wfm_name = wfm
-        wfm = teo.download_wfm(wfm_name)
-        log.warning('You are using a wfm that is already in Teo memory, so the duration of it will be the previous one')
+        wfm = teo.download_wfm(wfm_name)[0]
+        if duration is not None:
+            raise Exception("You can't pass 'duration' if when using a saved waveform")
+        duration = (len(wfm)-1)/teo_freq
     else:
         wfm_name = None
         if not type(wfm) == np.ndarray:
             wfm = np.array(wfm)
+        if duration is not None:
+            wfm = teo.interp_wfm(wfm, duration)
+        else:
+            duration = (len(wfm) - 1) / teo_freq
 
-    if not (bool(fs) ^ bool(nsamples)):
-        raise Exception('Must pass either fs or nsamples, and not both')
-    if fs is None:
-        fs = nsamples / duration
-
-    teo_freq = 500_000_000
-    pico_freq = fs
+    pico_fs = teo_freq
 
     if smartrange == 2:
         # Smart range for the compliance circuit
@@ -239,13 +241,9 @@ def picoteo(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=None, au
         # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
 
-    if wfm_name is None:
-        wfm = teo.interp_wfm(wfm, duration)
-
     teo_nsamples = len(wfm)
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
-
 
     sampling_factor = (n + pretrig + posttrig)
 
@@ -259,7 +257,7 @@ def picoteo(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=None, au
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_pico_freq = ps.capture(ch=channels,
-                                  freq=pico_freq,
+                                  freq=pico_fs,
                                   duration=duration * sampling_factor,
                                   pretrig=pretrig / sampling_factor,
                                   delay=delay)
