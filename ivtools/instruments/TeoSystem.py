@@ -372,15 +372,20 @@ class TeoSystem(object):
         sweep_samples = int(teo_freq / sweep_rate)
         if len(V) <= 1:
             raise Exception("'V' must be a list with at least two values")
-        wfm = np.array([V[0]])
+        sweeps = [[V[0]]]
+
         for v in V[1:]:
-            wfm = np.append(wfm, np.linspace(wfm[-1], v, sweep_samples+1)[1:])
+            last = sweeps[-1][-1]
+            sweep_samples = int(abs(v-last)*teo_freq/sweep_rate)
+            sweep = np.linspace(last, v, sweep_samples+1)[1:]
+            sweeps.append(sweep)
+
+        wfm = np.concatenate(sweeps)
 
         return wfm
 
-
     @staticmethod
-    def pulse_train(amps, durs, delays=0, n=1):
+    def pulse_train(amps, durs=1e-6, delays=0, zero_val=0, n=1):
         '''
         This should create a rectangular pulse train
         durs, delays can either be scalar or have same length as amps
@@ -389,43 +394,45 @@ class TeoSystem(object):
         '''
         teo_freq = 500e6
 
-        if not hasattr(amps, '__iter__'):
+        amps   = np.array(amps)
+        durs   = np.array(durs)
+        amps = amps * durs/durs
+        durs = durs * amps/amps
+
+        if isinstance(amps, Number):
             amps = np.array([amps])
-        if not hasattr(durs, '__iter__'):
+        if isinstance(durs, Number):
             durs = np.array([durs])
-        if not hasattr(delays, '__iter__'):
+        if isinstance(delays, Number):
             delays = np.array([delays])
 
-        namps = len(amps)
-        ndurs = len(durs)
+        npulses = len(amps)
         ndelays = len(delays)
-        if namps != 1 and namps != ndurs and ndurs != 1:
-            raise Exception()
 
-        npulses = max(namps, ndurs)
-        if namps == 1:
-            amps = np.repeat(amps[0], npulses)
-        if ndurs == 1:
-            durs = np.repeat(durs[0], npulses)
         if ndelays == 1:
-            delays = np.repeat(delays[0], npulses-1)
-            delays = np.append(delays, 0)
-        elif ndelays != npulses-1:
-            raise Exception()
+            delays = np.concatenate([[0], np.repeat(delays, npulses-1), [0]])
+        elif ndelays == npulses-1:
+            delays = np.concatenate([[0], delays, [0]])
+        elif ndelays == npulses:
+            delays = np.concatenate([[0], delays])
+        elif ndelays == npulses+1:
+            pass
         else:
-            delays = np.append(delays, 0)
+            raise Exception("Length of 'delays' is not matching with the other parameters")
 
         wfm = []
-        for amp, dur, delay in zip(amps, durs, delays):
+        delay_samples = int(teo_freq * delays[0])
+        wfm.append(np.repeat(zero_val, delay_samples))
+        for amp, dur, delay in zip(amps, durs, delays[1:]):
             amp_samples = int(teo_freq*dur)
             delay_samples = int(teo_freq*delay)
-            wfm = np.concatenate((wfm, np.repeat(amp, amp_samples)))
-            wfm = np.concatenate((wfm, np.repeat(0, delay_samples)))
+            wfm.append(np.repeat(amp, amp_samples))
+            wfm.append(np.repeat(zero_val, delay_samples))
 
+        wfm = np.concatenate(wfm)
         wfm = np.concatenate(np.repeat([wfm], n, axis=0))
 
         return wfm
-
 
 
     def gain(self, step=None):
