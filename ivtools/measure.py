@@ -221,7 +221,7 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
         wfm_name = wfm
         wfm = teo.download_wfm(wfm_name)[0]
         if duration is not None:
-            raise Exception("You can't pass 'duration' if when using a saved waveform")
+            raise Exception("You can't pass 'duration' when using a saved waveform")
         duration = (len(wfm)-1)/teo_freq
     else:
         wfm_name = None
@@ -1478,23 +1478,33 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
     if V_MONITOR and (V_MONITOR in datain):
         dataout['units']['V'] = 'V'
         if calibration:
-            dataout['V'] = np.polyval(calibration['V_MONITOR'], datain[V_MONITOR])
+            Vdata = np.polyval(calibration['V_MONITOR'], datain[V_MONITOR])
         else:
-            dataout['V'] = datain[V_MONITOR]
+            Vdata = datain[V_MONITOR]
+        if datain['COUPLINGS'][V_MONITOR] == 'DC':
+            Vdata /= 2
+        dataout['V'] = Vdata
+
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
         dataout['units']['I'] = 'I'
         if calibration:
-            dataout['I'] = np.polyval(calibration['HF_LIMITED_BW'][gainstep % 4], datain[HF_LIMITED_BW])
+            Idata = np.polyval(calibration['HF_LIMITED_BW'][gainstep % 4], datain[HF_LIMITED_BW])
         else:
-            dataout['I'] = datain[V_MONITOR]
+            Idata = datain[V_MONITOR]
+        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
+            Idata /= 2
+        dataout['I'] = Idata
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
         dataout['units']['I2'] = 'I2'
         if calibration:
-            dataout['I2'] = np.polyval(calibration['HF_FULL_BW'][gainstep], datain[HF_FULL_BW])
+            I2data = np.polyval(calibration['HF_FULL_BW'][gainstep], datain[HF_FULL_BW])
         else:
-            dataout['I2'] = datain[HF_FULL_BW]
+            I2data = datain[HF_FULL_BW]
+        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
+            I2data /= 2
+        dataout['I2'] = I2data
 
     # TODO if only one of HF_LIMITED or HF_FULL is used, call the signal I, and indicate somehow where it came from
     # TODO Store calibration slope and intercept used
@@ -1915,7 +1925,7 @@ def teo_calibration(Rload, plot=False):
     ## Substituting saturated values with nan
     HF_FULL_BW_sat = .7
     HF_LIMITED_BW_sat = 1.8
-    HFI_INT_sat = 15.2 # unknown unit (not volts)
+    HFI_INT_sat = 15.2  # unknown unit (not volts)
 
     data2fit = data.copy()
 

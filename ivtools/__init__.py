@@ -1,9 +1,10 @@
 import logging.config
-from colorama import Fore, Back, Style
 import os.path
+
+from colorama import Fore, Style
+
 import ivtools
 import ivtools.settings
-import sys
 
 # Order matters, because of crazy circular imports..
 
@@ -53,7 +54,7 @@ loggers = {
     'plots':       Fore.YELLOW + stream_format + Style.RESET_ALL,
     'analyze':     Fore.BLUE + stream_format + Style.RESET_ALL,
     'interactive': Fore.MAGENTA + stream_format + Style.RESET_ALL,
-    'measure':     Style.RESET_ALL + stream_format + Style.RESET_ALL
+    'measure':     Fore.BLACK + stream_format + Style.RESET_ALL
 }
 
 logging_levels = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']
