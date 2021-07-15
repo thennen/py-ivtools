@@ -54,6 +54,7 @@ class TeoSystem(object):
     DeviceID
     DeviceControl
     LF_Measurement
+    LF_Voltage
     HF_Measurement
     HF_Gain
     AWG_WaveformManager
@@ -93,87 +94,27 @@ class TeoSystem(object):
     '''
 
     def __init__(self):
-        # This imports are here os a macOS user can import ivtools and use
         from win32com.client import Dispatch
-        from pythoncom import com_error
-        '''
-        This will do software/hardware initialization and set HFV output voltage to zero
-        requires TEO software package and drivers to be installed on the PC
 
-        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        Make sure there is no DUT connected when you initialize!
-        HFV output goes to the negative rail!
-        !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-        '''
-        try:
-            ## Launch programs for software interface to TEO board
-            # Starts two processes:
-            # TSX_DM.exe is the process we communicate with to send commands to the board
-            # TSX_HardwareManager.exe is a gui that sits in the tray area that displays whether
-            # a board is connected.  it communicates with TSX_DM.exe and does not seem to be needed
-            # for the python code to function.
-            # First time it runs:
-            #   Takes a few seconds to start
-            #   round board gets power and HFV output goes to the negative rail!!!
-            # subsequent runs also work and seem not to produce anything bad on the output
-            HMan = Dispatch('TSX_HMan')
-        except com_error as e:
-            # TODO is this necessarily the meaning of this error?
-            #raise type(e)(str(e) +
-            #              ' TEO software not installed?').with_traceback(sys.exc_info()[2])
-            log.error('Teo software not installed?')
-            return
-
-        # Asks the program for a device called MEMORY_TESTER
-        MemTester = HMan.GetSystem('MEMORY_TESTER')
-        if MemTester is None:
-            log.error('Teo software cannot locate a connected memory tester. Check USB connection.')
-            return
-
-        # Access a bunch of COM classes used to control the TEO board.
-        # The contained methods/attributes appear in tab completion, but the contained classes do not
-        DriverID =            TeoSystem._CastTo('ITS_DriverIdentity'     , MemTester)
-        DeviceID =            TeoSystem._CastTo('ITS_DeviceIdentity'     , DriverID)
-        DeviceControl =       TeoSystem._CastTo('ITS_DeviceControl'      , DriverID)
-        LF_Measurement =      TeoSystem._CastTo('ITS_LF_Measurement'     , DriverID)
-        #LF_Voltage =          LF_Measurement.LF_Voltage # ?
-        HF_Measurement =      TeoSystem._CastTo('ITS_HF_Measurement'     , DriverID)
-        # Is this different from HF_Gain = HF_Measurement.HF_Gain?
-        # TODO: why can't we see e.g. HF_Measurement.HF_Gain in tab completion?
-        HF_Gain =             TeoSystem._CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
-        AWG_WaveformManager = TeoSystem._CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
-
-        # Assign com methods/attributes to the instance
-        # store these in a dumb container (dotdict),
-        # this Python wrapper will expose what is needed with easier to type names
-        class dotdict(dict):
-            __getattr__ = dict.__getitem__
-            __setattr__ = dict.__setitem__
-        self.com = dotdict()
-        self.com.HMan = HMan
-        self.com.MemTester = MemTester
-        self.com.DriverID = DriverID
-        self.com.DeviceID = DeviceID
-        self.com.DeviceControl = DeviceControl
-        self.com.LF_Measurement = LF_Measurement
-        self.com.HF_Measurement = HF_Measurement
-        self.com.HF_Gain = HF_Gain
-        self.com.AWG_WaveformManager = AWG_WaveformManager
+        self.base = ivtools.instruments.TeoBase()
 
         # TODO: Break the hierarchy/rename some functions for convenience?
-        self.memoryleft = AWG_WaveformManager.GetFreeMemory
+        self.memoryleft = self.base.AWG_WaveformManager_GetFreeMemory()
 
         # Assign properties that do not change, like max/min values
         # so that we don't keep polling the instrument for fixed values
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
         self.constants = dotdict()
         self.constants.idn = self.idn()
-        self.constants.maxLFVoltage = LF_Measurement.LF_Voltage.GetMaxValue()
-        self.constants.minLFVoltage = LF_Measurement.LF_Voltage.GetMinValue()
+        self.constants.maxLFVoltage = self.base.LF_Voltage_GetMaxValue()
+        self.constants.minLFVoltage = self.base.LF_Voltage_GetMinValue()
         #self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
         #self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
         #self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
         #self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
-        self.constants.AWG_memory = AWG_WaveformManager.GetTotalMemory()
+        self.constants.AWG_memory = self.base.AWG_WaveformManager_GetTotalMemory()
 
         if os.path.isfile(ivtools.settings.teo_calibration_file):
             with open(ivtools.settings.teo_calibration_file, 'r') as tc:
@@ -198,9 +139,9 @@ class TeoSystem(object):
         # So I think it starts in some undefined mode
         # subsequent calls seem to stay in whatever mode it was in before,
         # even if we lost the python-TSX_DM connection for some reason
-        DeviceControl.StartDevice()
+        self.base.DeviceControl_StartDevice()
         # This command sets the idle level for HF mode
-        LF_Measurement.LF_Voltage.SetValue(0)
+        self.base.LF_Voltage_SetValue(0)
         #self.HF_mode()
 
         # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
@@ -216,568 +157,16 @@ class TeoSystem(object):
         log.info('TEO connection successful: ' + self.constants.idn)
 
 
-    ###### Direct wrappers for adding python function signatures and docstrings ####
-    ## Could it be better with classes and subclasses?
-
-    ## DeviceID
-
-    def GetDeviceDescription(self, *args):
-        '''
-
-        '''
-        v = self.com.DeviceID.GetDeviceDescription(*args)
-        log.debug(f"DeviceID.GetDeviceDescription{args}  -->  {v}")
-        return v
-
-    def GetDeviceMajorRevision(self, *args):
-        '''
-
-        '''
-        v = self.com.DeviceID.GetDeviceMajorRevision(*args)
-        log.debug(f"DeviceID.GetDeviceMajorRevision{args}  -->  {v}")
-        return v
-
-    def GetDeviceMinorRevision(self, *args):
-        '''
-
-        '''
-        v = self.com.DeviceID.GetDeviceMinorRevision(*args)
-        log.debug(f"DeviceID.GetDeviceMinorRevision{args}  -->  {v}")
-        return v
-
-    def GetDeviceName(self, *args):
-        '''
-
-        '''
-        v = self.com.DeviceID.GetDeviceName(*args)
-        log.debug(f"DeviceID.GetDeviceName{args}  -->  {v}")
-        return v
-
-    def GetDeviceSerialNumber(self, *args):
-        '''
-
-        '''
-        v = self.com.DeviceID.GetDeviceSerialNumber(*args)
-        log.debug(f"DeviceID.GetDeviceSerialNumber{args}  -->  {v}")
-        return v
-
-
-    ## DeviceControl
-
-    def InitDevice(self, *args):
-        '''
-
-        '''
-
-        v = self.com.DeviceControl.InitDevice(*args)
-        log.debug(f"DeviceControl.InitDevice{args}  -->  {v}")
-        return v
-
-    def IsCompatible(self, *args):
-        '''
-
-        '''
-
-        v = self.com.DeviceControl.IsCompatible(*args)
-        log.debug(f"DeviceControl.IsCompatible{args}  -->  {v}")
-        return v
-
-    def IsStarted(self, *args):
-        '''
-
-        '''
-
-        v = self.com.DeviceControl.IsStarted(*args)
-        log.debug(f"DeviceControl.IsStarted{args}  -->  {v}")
-        return v
-
-    def ReinitDevice(self, *args):
-        '''
-
-        '''
-
-        v = self.com.DeviceControl.ReinitDevice(*args)
-        log.debug(f"DeviceControl.ReinitDevice{args}  -->  {v}")
-        return v
-
-    def ResetDevice(self, *args):
-        '''
-
-        '''
-
-        v = self.com.DeviceControl.ResetDevice(*args)
-        log.debug(f"DeviceControl.ResetDevice{args}  -->  {v}")
-        return v
-
-    def StartDevice(self, *args):
-        '''
-
-        '''
-
-        v = self.com.DeviceControl.StartDevice(*args)
-        log.debug(f"DeviceControl.StartDevice{args}  -->  {v}")
-        return v
-
-    def StopDevice(self, *args):
-        '''
-        Lights should turn off on the round board and HFV output probably floats.*args
-        Controller board remains on.
-        '''
-
-        v = self.com.DeviceControl.StopDevice(*args)
-        log.debug(f"DeviceControl.StopDevice{args}  -->  {v}")
-        return v
-
-
-    ## LF_Measurement
-
-    def GetLF_Mode(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.GetLF_Mode(*args)
-        log.debug(f"LF_Measurement.GetLF_Mode{args}  -->  {v}")
-        return v
-
-    def GetLF_ModeDescription(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.GetLF_ModeDescription(*args)
-        log.debug(f"LF_Measurement.GetLF_ModeDescription{args}  -->  {v}")
-        return v
-
-    def GetLF_ModeMax(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.GetLF_ModeMax(*args)
-        log.debug(f"LF_Measurement.GetLF_ModeMax{args}  -->  {v}")
-        return v
-
-    def GetLF_Supported(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.GetLF_Supported(*args)
-        log.debug(f"LF_Measurement.GetLF_Supported{args}  -->  {v}")
-        return v
-
-    def LF_MeasureCurrent(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_MeasureCurrent(*args)
-        log.debug(f"LF_Measurement.LF_MeasureCurrent{args}  -->  {v}")
-        return v
-
-    def RunLF_Calibration(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.RunLF_Calibration(*args)
-        log.debug(f"LF_Measurement.RunLF_Calibration{args}  -->  {v}")
-        return v
-
-    def SetLF_Mode(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.SetLF_Mode(*args)
-        log.debug(f"LF_Measurement.SetLF_Mode{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetMaxValue(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetMaxValue(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetMaxValue{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetMinValue(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetMinValue(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetMinValue{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetPrefix(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetPrefix(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetPrefix{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetStep(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetStep(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetStep{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetStepForValue(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetStepForValue(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetStepForValue{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetStepNumber(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetStepNumber(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetStepNumber{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetUnit(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetUnit(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetUnit{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetValue(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetValue(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetValue{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_GetValueForStep(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.GetValueForStep(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.GetValueForStep{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_SetStep(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.SetStep(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.SetStep{args}  -->  {v}")
-        return v
-
-    def LF_Voltage_SetValue(self, *args):
-        '''
-
-        '''
-        v = self.com.LF_Measurement.LF_Voltage.SetValue(*args)
-        log.debug(f"LF_Measurement..LF_Voltage.SetValue{args}  -->  {v}")
-        return v
-
-
-    ## HF_Measurement
-
-    def GetHF_Mode(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.GetHF_Mode(*args)
-        log.debug(f"HF_Measurement.GetHF_Mode{args}  -->  {v}")
-        return v
-
-    def GetHF_ModeDescription(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.GetHF_ModeDescription(*args)
-        log.debug(f"HF_Measurement.GetHF_ModeDescription{args}  -->  {v}")
-        return v
-
-    def GetHF_ModeMax(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.GetHF_ModeMax(*args)
-        log.debug(f"HF_Measurement.GetHF_ModeMax{args}  -->  {v}")
-        return v
-
-    def GetHF_Supported(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.GetHF_Supported(*args)
-        log.debug(f"HF_Measurement.GetHF_Supported{args}  -->  {v}")
-        return v
-
-    def SetHF_Mode(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.SetHF_Mode(*args)
-        log.debug(f"HF_Measurement.SetHF_Mode{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetMaxValue(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetMaxValue(*args)
-        log.debug(f"HF_Gain.GetMaxValue{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetMinValue(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetMinValue(*args)
-        log.debug(f"HF_Gain.GetMinValue{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetPrefix(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetPrefix(*args)
-        log.debug(f"HF_Gain.GetPrefix{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetStep(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetStep(*args)
-        log.debug(f"HF_Gain.GetStep{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetStepForValue(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetStepForValue(*args)
-        log.debug(f"HF_Gain.GetStepForValue{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetStepNumber(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetStepNumber(*args)
-        log.debug(f"HF_Gain.GetStepNumber{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetUnit(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetUnit(*args)
-        log.debug(f"HF_Gain.GetUnit{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetValue(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetValue(*args)
-        log.debug(f"HF_Gain.GetValue{args}  -->  {v}")
-        return v
-
-    def HF_Gain_GetValueForStep(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.GetValueForStep(*args)
-        log.debug(f"HF_Gain.GetValueForStep{args}  -->  {v}")
-        return v
-
-    def HF_Gain_SetStep(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.SetStep(*args)
-        log.debug(f"HF_Gain.SetStep{args}  -->  {v}")
-        return v
-
-    def HF_Gain_SetValue(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Gain.SetValue(*args)
-        log.debug(f"HF_Gain.SetValue{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_CreateWaveform(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.CreateWaveform(*args)
-        log.debug(f"HF_Measurement.WaveformManager.CreateWaveform{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_DeleteWaveform(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.DeleteWaveform(*args)
-        log.debug(f"HF_Measurement.WaveformManager.DeleteWaveform{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_GetFreeMemory(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.GetFreeMemory(*args)
-        log.debug(f"HF_Measurement.WaveformManager.GetFreeMemory{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_GetLastResult(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.GetLastResult(*args)
-        log.debug(f"HF_Measurement.WaveformManager.GetLastResult{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_GetTotalMemory(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.GetTotalMemory(*args)
-        log.debug(f"HF_Measurement.WaveformManager.GetTotalMemory{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_GetWaveform(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.GetWaveform(*args)
-        log.debug(f"HF_Measurement.WaveformManager.GetWaveform{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_GetWaveformName(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.GetWaveformName(*args)
-        log.debug(f"HF_Measurement.WaveformManager.GetWaveformName{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_GetWaveformNumber(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.GetWaveformNumber(*args)
-        log.debug(f"HF_Measurement.WaveformManager.GetWaveformNumber{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_LoadWaveform(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.LoadWaveform(*args)
-        log.debug(f"HF_Measurement.WaveformManager.LoadWaveform{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_Reset(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.Reset(*args)
-        log.debug(f"HF_Measurement.WaveformManager.Reset{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_Run(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.Run(*args)
-        log.debug(f"HF_Measurement.WaveformManager.Run{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_StartFromTrigger(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.StartFromTrigger(*args)
-        log.debug(f"HF_Measurement.WaveformManager.StartFromTrigger{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_UnloadWaveform(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.UnloadWaveform(*args)
-        log.debug(f"HF_Measurement.WaveformManager.UnloadWaveform{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_WaveformAddress(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.WaveformAddress(*args)
-        log.debug(f"HF_Measurement.WaveformManager.WaveformAddress{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_WaveformIsLoaded(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.WaveformIsLoaded(*args)
-        log.debug(f"HF_Measurement.WaveformManager.WaveformIsLoaded{args}  -->  {v}")
-        return v
-
-    def HF_WaveformManager_WaveformMemoryUsed(self, *args):
-        '''
-
-        '''
-        v = self.com.HF_Measurement.WaveformManager.WaveformMemoryUsed(*args)
-        log.debug(f"HF_Measurement.WaveformManager.WaveformMemoryUsed{args}  -->  {v}")
-        return v
-
-
-
-
-    # TODO add more wrappers with docstrings
-    #      I understand that win32com actually generates the python wrapper code.
-    #      might be interesting to look at it, maybe just modify that
-
     ################################################################################
-
-    @staticmethod
-    def _CastTo(name, to):
-        from win32com.client import CastTo
-        # CastTo that clearly lets you know something isn't working right with the software setup
-        try:
-            result = CastTo(to, name)
-        except Exception as E:
-            log.error(f'Teo software connection failed! CastTo({name}, {to})')
-        if result is None:
-            log.error(f'Teo software connection failed! CastTo({name}, {to})')
-        return result
-
 
     def idn(self):
         # Get and print some information from the board
-        DevName = self.GetDeviceName()
-        DevRevMajor = self.GetDeviceMajorRevision()
-        DevRevMinor = self.GetDeviceMinorRevision()
-        DevSN = self.GetDeviceSerialNumber()
+        DevName = self.base.DeviceID_GetDeviceName()
+        DevRevMajor = self.base.DeviceID_GetDeviceMajorRevision()
+        DevRevMinor = self.base.DeviceID_GetDeviceMinorRevision()
+        DevSN = self.base.DeviceID_GetDeviceSerialNumber()
         return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
 
-
-    def print_function_names(self):
-        '''
-        Because there's no manual yet
-        TODO: find out if we can discover the class names
-        '''
-        top_level_classes = ['DeviceID', 'DeviceControl', 'LF_Measurement', 'HF_Measurement']
-
-        for tlc in top_level_classes:
-            print(tlc)
-            c = getattr(self.com, tlc)
-            for node in dir(c):
-                if not node.startswith('_'):
-                    print(f'\t{node}')
 
 
     def kill_TSX(self):
@@ -804,7 +193,7 @@ class TeoSystem(object):
         # First argument (0) does nothing?
         # So does second argument apparently
         external = False
-        self.SetHF_Mode(0, external)
+        self.base.HF_Measurement_SetHF_Mode(0, external)
 
     @staticmethod
     def _hash_arrays(wfm, trig1, trig2):
@@ -981,7 +370,7 @@ class TeoSystem(object):
         # Note: Do not use HF_gain.Get/SetValue
 
         if step is None:
-            return self.HF_Gain_GetStep()
+            return self.base.HF_Gain_GetStep()
 
         if step > 31:
             log.warning('Requested TEO gain step is too high')
@@ -990,7 +379,7 @@ class TeoSystem(object):
             log.warning('Requested TEO gain step is too low')
             step = 0
 
-        self.HF_Gain_SetStep(step)
+        self.base.HF_Gain_SetStep(step)
 
 
     def _pad_wfms(self, varray, trig1, trig2):
@@ -1010,7 +399,7 @@ class TeoSystem(object):
         remainder = lenv % chunksize
         if remainder != 0:
             npad = chunksize - remainder
-            Vstandby = self.LF_Voltage_GetValue()
+            Vstandby = self.base.LF_Voltage_GetValue()
             # resolution is not below 1 mV, and LF_Voltage returns some strange numbers
             Vstandby = np.round(Vstandby, 3)
             varray = np.concatenate((varray, np.repeat(Vstandby, npad)))
@@ -1094,7 +483,7 @@ class TeoSystem(object):
         if name in loaded_names:
             log.debug(f'Overwriting waveform named {name}')
 
-        wf = self.HF_WaveformManager_CreateWaveform(name)
+        wf = self.base.AWG_WaveformManager_CreateWaveform(name)
         wf.AddSamples(varray, trig1, trig2)
 
         # also write all the waveform data to the class instance
@@ -1111,7 +500,7 @@ class TeoSystem(object):
         return (varray, trig1, trig2)
         seems not to come from hardware memory, just the TSX_DM process working set
         '''
-        wfm = self.HF_WaveformManager_GetWaveform(name)
+        wfm = self.base.AWG_WaveformManager_GetWaveform(name)
         v = np.array(wfm.AllSamples())
         trig1 = np.array(wfm.All_ADC_Gates())
         trig2 = np.array(wfm.All_BER_Gates())
@@ -1126,9 +515,9 @@ class TeoSystem(object):
         return {name:self.download_wfm(name) for name in self.get_wfm_names()}
 
     def delete_all_wfms(self):
-        name = self.HF_WaveformManager_GetWaveformName(0)
+        name = self.base.AWG_WaveformManager_GetWaveformName(0)
         if name != '':
-            self.HF_WaveformManager_DeleteWaveform(name)
+            self.base.AWG_WaveformManager_DeleteWaveform(name)
             self.delete_all_wfms()
         # there is also
         # teo.HF_WaveformManager_Reset() which might do something similar
@@ -1145,14 +534,14 @@ class TeoSystem(object):
         '''
         if type(wfm) is str:
             name = wfm
-            success = self.HF_WaveformManager_Run(name, n)
+            success = self.base.AWG_WaveformManager_Run(name, n)
             if not success:
                 log.error('No waveform with that name has been uploaded')
         elif type(wfm) in (np.ndarray, list, tuple):
             # this will hash the data to make a name
             # won't upload again if the hash matches
             name = self.upload_wfm(wfm, trig1=trig1, trig2=trig2)
-            success = self.HF_WaveformManager_Run(name, n)
+            success = self.base.AWG_WaveformManager_Run(name, n)
 
         if success:
             self.last_waveform = name
@@ -1182,9 +571,9 @@ class TeoSystem(object):
         '''
         # We only get waveform samples where trigger is True, so these could be shorter than wfm
         # V monitor waveform (HFV)
-        wf00 = self.HF_WaveformManager_GetLastResult(0)
+        wf00 = self.base.AWG_WaveformManager_GetLastResult(0)
         # Current waveform (HFI)
-        wf01 = self.HF_WaveformManager_GetLastResult(1)
+        wf01 = self.base.AWG_WaveformManager_GetLastResult(1)
 
         if wf00.IsSaturated():
             # I don't think this will ever happen.
@@ -1355,7 +744,7 @@ class TeoSystem(object):
     def get_wfm_names(self):
         wfm_names = []
         for i in itertools.count():
-            name = self.HF_WaveformManager_GetWaveformName(i)
+            name = self.base.AWG_WaveformManager_GetWaveformName(i)
             if name == '':
                 break
             else:
@@ -1365,7 +754,7 @@ class TeoSystem(object):
 
     def delete_all_wfms(self):
         for name in self.get_wfm_names():
-            self.HF_WaveformManager_DeleteWaveform(name)
+            self.base.AWG_WaveformManager_DeleteWaveform(name)
 
 
     ##################################### LF mode #############################################
@@ -1389,7 +778,7 @@ class TeoSystem(object):
         '''
         # This argument does nothing!
         external = True
-        self.SetLF_Mode(0, external)
+        self.base.LF_Measurement_SetLF_Mode(0, external)
 
 
     def LF_voltage(self, value=None):
@@ -1404,10 +793,10 @@ class TeoSystem(object):
         TODO: rename?  LF_Voltage is the name of a class within LF_Measurement
         '''
         if value is None:
-            value = self.LF_Voltage_GetValue()
+            value = self.base.LF_Voltage_GetValue()
             return value
         else:
-            self.LF_Voltage_SetValue(value)
+            self.base.LF_Voltage_SetValue(value)
             time.sleep(0.002)  # It takes around 2ms to stabilize the voltage
 
 
@@ -1434,7 +823,7 @@ class TeoSystem(object):
             log.warning(f'I THINK the LF Output buffer is too small for NPLC={NPLC}')
 
         duration = NPLC / self.PLF
-        Iwfm = self.LF_MeasureCurrent(duration)
+        Iwfm = self.base.LF_Measurement_LF_MeasureCurrent(duration)
         if Iwfm.IsSaturated():
             log.warning('TEO LF Output is saturated!')
         I = Iwfm.GetWaveformDataArray()
@@ -1447,7 +836,7 @@ class TeoSystem(object):
         '''
         Pulse wfm and return I,V,... data
         '''
-        self.HF_mode()
+        self.base.HF_Measurement_GetHF_Mode()
         self.output_wfm(wfm, n=n, trig1=trig1, trig2=trig2)
         return self.get_data()
 
