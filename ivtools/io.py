@@ -1,22 +1,22 @@
 ''' Functions for saving and loading data '''
+import fnmatch
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+
 # we don't make heavy use of these other modules
 # don't reference them on the top level
 # this is to avoid circular import problems
 import ivtools.analyze
 import ivtools.plot
 from ivtools import settings
-
-import os
-import re
-import fnmatch
-import pandas as pd
-from datetime import datetime
-from matplotlib import pyplot as plt
-import sys
-import subprocess
-import numpy as np
-import time
-from matplotlib import pyplot as plt
 
 try:
     import cPickle as pickle
@@ -395,14 +395,17 @@ class MetaHandler(object):
 
     def goto(self, **kwargs):
         ''' Assuming you loaded metadata already, this goes to the first row that matches the keys'''
+        # TODO: if there is more than one device with those parameters, don't select the first, instead, raise exception
         mask = np.ones(len(self.df), bool)
         for k, v in kwargs.items():
             mask &= self.df[k] == v
         w = np.where(mask)
+        print(mask)
+        print(w)
         if any(mask):
             i = w[0][0]
             self.select(i)
-            log.info('You have selected this device (index {}):'.format(self.i))
+            log.debug('You have selected this device (index {}):'.format(self.i))
             return self.i
         else:
             log.error('No matching devices found')
