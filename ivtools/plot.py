@@ -1,20 +1,21 @@
 """ Functions for making plots with IV data """
 
-import ivtools
-import ivtools.analyze
+import inspect
+import logging
+import os
+from collections import deque
+from functools import wraps
+from inspect import signature
+from numbers import Number
 
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import inspect
 from matplotlib.widgets import SpanSelector, RectangleSelector
-from inspect import signature
-import os
-from numbers import Number
-from functools import wraps
-from collections import deque
-import logging
+
+import ivtools
+import ivtools.analyze
 
 log = logging.getLogger('plots')
 
@@ -72,7 +73,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidt
     points = np.array([x, y]).T.reshape(-1, 1, 2)
     segments = np.concatenate([points[:-1], points[1:]], axis=1)
 
-    lc = LineCollection(segments, cmap=plt.get_cmap(cmap))
+    lc = LineCollection(segments, cmap=plt.get_cmap(cmap), joinstyle='round', capstyle='round')
     #lc.set_array(c)
     lc.set_color(colors)
     lc.set_linewidth(linewidth)
@@ -96,10 +97,9 @@ def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, *
     # absolute distance may not work if x and y have different units
     # to account for scale, we divide by the range of the input data
     xrange = np.max(x) - np.min(x)
-    yrange = np.max(y) - np.max(y)
+    yrange = np.max(y) - np.min(y)
     speed = np.sqrt(np.gradient(x/xrange)**2 + np.gradient(y/yrange)**2)
-    if 'c' in kwargs:
-        del kwargs['c']
+    kwargs = {k:v for k,v in kwargs.items() if k != 'c'}
     plot_multicolor(x, y, c=speed, cmap=cmap, vmin=vmin, vmax=vmax, ax=ax, **kwargs)
     return speed
 
@@ -1316,29 +1316,49 @@ def complianceplotter(data, ax=None, **kwargs):
     # Plot a dotted line indicating compliance current
     pass
 
-def vtplotter(data, ax=None, **kwargs):
+def vtplotter(data, ax=None, maxloops=100, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
     ''' This defines what gets plotted on ax2'''
-    if 't' not in data:
-        t = ivtools.analyze.maketimearray(data)
+    if type(data) is list:
+        nloops = len(data)
+        for d in data:
+            if 't' not in d:
+                d['t'] = ivtools.analyze.maketimearray(d)
     else:
-        t = data['t']
-    ax.plot(t, data['V'], **kwargs)
+        nloops = 1
+        if 't' not in data:
+            data['t'] = ivtools.analyze.maketimearray(data)
+    if nloops > maxloops:
+        log.info('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        loopstep = int(nloops / 99)
+        data = data[::loopstep]
+
+    plotiv(data, x='t', y='V', ax=ax, maxsamples=5000, **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Voltage [V]', color=color)
     ax.set_ylabel('Voltage [V]')
     ax.set_xlabel('Time [s]')
     ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
-def itplotter(data, ax=None, **kwargs):
+def itplotter(data, ax=None, maxloops=100, **kwargs):
     if ax is None:
         fig, ax = plt.subplots()
-    if 't' in data:
-        t = data['t']
+    if type(data) is list:
+        nloops = len(data)
+        for d in data:
+            if 't' not in d:
+                d['t'] = ivtools.analyze.maketimearray(d)
     else:
-        t = ivtools.analyze.maketimearray(data)
-    ax.plot(t, data['I'], **kwargs)
+        nloops = 1
+        if 't' not in data:
+            data['t'] = ivtools.analyze.maketimearray(data)
+    if nloops > maxloops:
+        log.info('You captured {} loops.  Only plotting {} loops'.format(nloops, maxloops))
+        loopstep = int(nloops / 99)
+        data = data[::loopstep]
+
+    plotiv(data, x='t', y='I', ax=ax, maxsamples=5000, **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Current [$\mu$A]', color=color)
     ax.set_ylabel('Current [A]')

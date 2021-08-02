@@ -155,7 +155,7 @@ keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 # For Teo
-teo_plotters = [[0, partial(ivplot.ivplotter, x='Vwfm')], # programmed waveform is less noisy
+teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is less noisy but I want to check V
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
@@ -354,9 +354,14 @@ def setup_digipot():
     settings.pico_to_iv = digipot_to_iv
     iplots.plotters = pico_plotters
 
-def setup_teo():
-    # TODO: anything else?
-    iplots.pico_to_iv = teo_to_iv # for ext mode
+def setup_picoteo():
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.coupling.d = 'DC50'
+    ps.range.b = 0.2
+    ps.range.c = 0.2
+    ps.range.d = 0.2
+    settings.pico_to_iv = TEO_HFext_to_iv
     iplots.plotters = teo_plotters
 
 ###### Interactive measurement functions #######
@@ -418,6 +423,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
 
 picoiv = interactive_wrapper(measure.picoiv)
 digipotiv = interactive_wrapper(measure.digipotiv)
+picoteoiv = interactive_wrapper(measure.picoteo)
 
 # If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
