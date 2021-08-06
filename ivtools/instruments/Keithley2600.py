@@ -40,7 +40,8 @@ class Keithley2600(object):
             ipresources = [r for r in visa_rm.list_resources() if r.startswith('TCPIP')]
             if not any(ipresources):
                 # whether ip resources appear has nothing to do with them being connected
-                ipresources = ['192.168.11.13', '192.168.11.12', '192.168.11.11']
+                # they will never appear unless you add them in NI MAX first
+                ipresources = ['192.168.11.13:', '192.168.11.12:', '192.168.11.11:']
             log.debug('Looking for ip address for Keithley...')
             for ipr in ipresources:
                 # Sorry..
@@ -65,9 +66,9 @@ class Keithley2600(object):
                 say_if_successful = False
             self.__dict__ = ivtools.instrument_states[statename]
             self.connect(addr)
-            self.display('ALL YOUR BASE', 'ARE BELONG TO US')
-            self.write('delay(2)')
-            self.display_SMU()
+            # self.display('ALL YOUR BASE', 'ARE BELONG TO US')
+            # self.write('delay(2)')
+            # self.display_SMU()
             if say_if_successful:
                 log.info('Keithley connection successful at {}'.format(addr))
         except Exception as E:
