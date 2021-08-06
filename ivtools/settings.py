@@ -97,7 +97,7 @@ logging_file = os.path.join(pyivtools_dir, 'logging.log')
 ######## May override the above settings ########
 #################################################
 
-if hostname == 'pciwe46':
+if hostname in ('pciwe46', 'iwe21705'):
     db_path = 'D:\metadata.db'
     if username == 'hennen':
         autocommit = True
