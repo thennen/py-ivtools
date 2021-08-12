@@ -1,10 +1,13 @@
-import numpy as np
-from ..instruments import ping
+import logging
 import os
 import re
 from collections import deque
+
+import numpy as np
+
 import ivtools
-import logging
+from ..instruments import ping
+
 log = logging.getLogger('instruments')
 import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
@@ -62,9 +65,10 @@ class Keithley2600(object):
                 say_if_successful = False
             self.__dict__ = ivtools.instrument_states[statename]
             self.connect(addr)
-            self.display('ALL YOUR BASE', 'ARE BELONG TO US')
-            self.write('delay(2)')
-            self.display_SMU()
+            # this could be the cause of a bug that makes connexion impossible and needs Keithley to be rebooted.
+            # self.display('ALL YOUR BASE', 'ARE BELONG TO US')
+            # self.write('delay(2)')
+            # self.display_SMU()
             if say_if_successful:
                 log.info('Keithley connection successful at {}'.format(addr))
         except Exception as E:

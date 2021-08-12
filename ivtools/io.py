@@ -400,8 +400,6 @@ class MetaHandler(object):
         for k, v in kwargs.items():
             mask &= self.df[k] == v
         w = np.where(mask)
-        print(mask)
-        print(w)
         if any(mask):
             i = w[0][0]
             self.select(i)

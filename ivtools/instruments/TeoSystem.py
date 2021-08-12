@@ -76,21 +76,34 @@ class TeoSystem(object):
     Saturation values in volts:
         V MONITOR: -1 ; 1
 
-    # TODO: do all the commands work regardless of which mode we are in? e.g. waveform upload, gain setting
-            how do we avoid issuing commands and expecting it to do something but we are in the wrong mode?
-            need to check something like isin(HF_mode) ?
+    There is a PowerPoint with documentation of some bugs at:
+    'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\teo_bugs.pptm'
 
-    # TODO: could wrap all of the Teo COM functions only for the purpose of giving them signatures, docstrings,
-            default arguments.
+    TODO: Software is only working on Tyler's account
 
-    # TODO: Debug mode that always prints out all the COM calls, so we have code that is recognizable to Teo
-            for support purposes
+    TODO: The maximum waveform length is not constant and much smaller than expected, memory is not being wiped
+     properly?
 
-    # TODO: since there seem to be several situations that cause the HFV output to go to the negative rail
-            and blow up your device, make sure to document them here
-            seems to be whenever TSX_DM.exe connects to the system
-            1. on first initialization (Dispatch('TSX_HMan'))
-            2. if you disconnect USB and plug it back in
+    TODO: Waveform reproducibility bug. Documented on powerpoint.
+
+    TODO: if it's possible to make a more accurate calibration. Right now on the highest gain I have a 5% error
+     measuring 10kΩ with ±1V
+
+    TODO: We can think about a way to correct the time delay between voltage and current signals. Right now if you
+     try to plot an I,V loop for a <1 μs signal you get a circle. This is because it takes time for the signal to go
+     through the sample and into the HFI port, depending on how long the cables are.
+
+    TODO: Gain goes back to 0 everytime we do teo = instriments.TeoSystem(), this is a problem if you are using that
+     line inside your code. Documented on powerpoint.
+
+    TODO: do all the commands work regardless of which mode we are in? e.g. waveform upload, gain setting how do we
+     avoid issuing commands and expecting it to do something but we are in the wrong mode? need to check something
+     like isin(HF_mode) ?
+
+    TODO: since there seem to be several situations that cause the HFV output to go to the negative rail and blow up
+     your device, make sure to document them here seems to be whenever TSX_DM.exe connects to the system
+          1. on first initialization (Dispatch('TSX_HMan'))
+          2. if you disconnect USB and plug it back in
 
     '''
 
@@ -113,8 +126,6 @@ class TeoSystem(object):
 
         self.base = TeoBase()
 
-
-        # TODO: Break the hierarchy/rename some functions for convenience?
         self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
 
         # Assign properties that do not change, like max/min values
@@ -259,9 +270,7 @@ class TeoSystem(object):
 
         return np.interp(new_t, t, wfm)
 
-
-    # TODO: define some standard waveforms that use 500 Msample/second
-    # e.g. pulse trains
+    # Some standard waveforms
     @staticmethod
     def sine(freq=1e5, amp=1, offs=0, cycles=1):
         '''
@@ -280,7 +289,7 @@ class TeoSystem(object):
         '''
         take a list of voltages, and sweep to all of them at a fixed sweep rate
 
-        todo: do we want it to start and end at zero?
+        # do we want it to start and end at zero?
         '''
 
         teo_freq = 500e6
@@ -302,10 +311,10 @@ class TeoSystem(object):
     @staticmethod
     def pulse_train(amps, durs=1e-6, delays=0, zero_val=0, n=1):
         '''
-        This should create a rectangular pulse train
+        Create a rectangular pulse train
         durs, delays can either be scalar or have same length as amps
 
-        todo: do we want it to start and end at zero? we can do that with eg. amps=[0, 1, 2, 3, 0], durs=[0, 1, 2, 3, 0]
+        it is not making start and end at zero, but you can do that with eg. amps=[0, 1, 2, 3, 0], durs=[0, 1, 2, 3, 0]
         '''
         teo_freq = 500e6
 
@@ -803,7 +812,6 @@ class TeoSystem(object):
         Alejandro said this is not actually the case..
 
         TODO: check that we are in the possible output voltage range
-        TODO: rename?  LF_Voltage is the name of a class within LF_Measurement
         '''
         if value is None:
             value = self.base.LF_Voltage.GetValue()
@@ -879,8 +887,6 @@ class TeoSystem(object):
         return dict(I=I, V=Vvalues)
 
 
-
-
 class TeoBase(object):
 
     def __init__(self):
@@ -921,8 +927,7 @@ class TeoBase(object):
         LF_Measurement =      self._CastTo('ITS_LF_Measurement'     , DriverID)
         LF_Voltage =          LF_Measurement.LF_Voltage
         HF_Measurement =      self._CastTo('ITS_HF_Measurement'     , DriverID)
-        # Is this different from HF_Gain = HF_Measurement.HF_Gain?
-        # TODO: why can't we see e.g. HF_Measurement.HF_Gain in tab completion?
+        #TODO: Is this different from HF_Gain = HF_Measurement.HF_Gain?
         HF_Gain =             self._CastTo('ITS_DAC_Control'        , HF_Measurement.HF_Gain)
         AWG_WaveformManager = self._CastTo('ITS_AWG_WaveformManager', HF_Measurement.WaveformManager)
 
