@@ -97,7 +97,7 @@ logging_file = os.path.join(pyivtools_dir, 'logging.log')
 ######## May override the above settings ########
 #################################################
 
-if hostname == 'pciwe46':
+if hostname in ('pciwe46', 'iwe21705'):
     db_path = 'D:\metadata.db'
     if username == 'hennen':
         autocommit = True
@@ -134,7 +134,7 @@ if hostname == 'pciwe46':
                         ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                         ('rigol2', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
                         #('teo', instruments.TeoSystem),
-                        ('daq', instruments.USB2708HS),
+                        #('daq', instruments.USB2708HS),
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
