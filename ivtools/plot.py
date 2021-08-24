@@ -149,7 +149,11 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     if dtype in (dict, pd.Series):
         data = [data]
     elif dtype == pd.DataFrame:
-        data = data.to_dict(orient='records')
+        # actually a list of series is enough..
+        # otherwise you will cause errors when functions are passed as arguments that expect Series notation
+        # e.g. y=lambda y: y.V/y.I
+        indices, data = zip(*df.iterrows())
+        #data = data.to_dict(orient='records')
 
     lendata = len(data)
 
@@ -788,9 +792,9 @@ def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
                             label=label)
             plotkwargs.update(kwargs)
             plotg = g.sort_values(by=x)
-            plt.plot(plotg[x], plotg[y], **plotkwargs)
+            ax.plot(plotg[x], plotg[y], **plotkwargs)
             if yerr is not None:
-                plt.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
+                ax.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
     if sparseticks:
         # Only label the values present
         ux = np.sort(df[x].unique())

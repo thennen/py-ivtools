@@ -2165,6 +2165,7 @@ def filter_byhand(df, groupby=None, **kwargs):
 
 def category(alist):
     unique, category = np.unique(alist, return_inverse=True)
+    # for multiple columns of dataframe, use e.g. df.groupby(['thickness_1', 'width_nm']).ngroup()
     return category
 
 # From David Mertz book
