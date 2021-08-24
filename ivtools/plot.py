@@ -152,7 +152,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
         # actually a list of series is enough..
         # otherwise you will cause errors when functions are passed as arguments that expect Series notation
         # e.g. y=lambda y: y.V/y.I
-        indices, data = zip(*df.iterrows())
+        indices, data = zip(*data.iterrows())
         #data = data.to_dict(orient='records')
 
     lendata = len(data)
