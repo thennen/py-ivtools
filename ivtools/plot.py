@@ -214,11 +214,10 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             #       but there is an ambiguity if the length of that list happens to be the
             #       same as the length of the data..
             # label by the key with this name
-            if type(data) == list:
-                label_list = [d[labels] for d in data]
-            else:
-                #should be dataframe
+            if type(data) is pd.DataFrame:
                 label_list = list(data[labels])
+            else:
+                label_list = [d[labels] for d in data]
         else:
             # otherwise we will iterate through labels directly (so you can pass a list of labels)
             # make np.nan count as None (not labelled)
@@ -1978,6 +1977,8 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
         'trunc({n},{a:.2f},{b:.2f})'.format(n=cmap.name, a=minval, b=maxval),
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
+
+clip_colormap = truncate_colormap
 
 def xylim():
     # return the command to set a plot xlim,ylim to the xlim and ylim of the current plot
