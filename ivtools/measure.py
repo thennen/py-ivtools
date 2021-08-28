@@ -1540,11 +1540,13 @@ def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
 
     return dataout
 
-def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.float32):
+def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', Vd_gain=0.5, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for digipot circuit with device voltage probe
     gain is in A/V, in case you put an amplifier on the output
+
+    Vd_gain 0.5 for V follower and 50 ohm output/input
 
     Simultaneous sampling is faster when not using adjacent channels (i.e. A&B)
     '''
@@ -1570,7 +1572,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', dtype=np.flo
         dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
         dataout['units']['V'] = 'V'
     if Vd_channel in datain:
-        Vd = datain[Vd_channel]*2
+        Vd = datain[Vd_channel]/Vd_gain
         dataout['Vd'] = Vd
         dataout['units']['Vd'] = 'V'
     if I_channel in datain:
