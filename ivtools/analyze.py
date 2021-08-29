@@ -423,7 +423,8 @@ def maketimearray(data, basedon=None):
         nsamples = len(data[basedon])
     t = np.linspace(0, nsamples/data['sample_rate'], nsamples)
     if 'downsampling' in data:
-        t *= data['downsampling']
+        if not np.isnan(data['downsampling']):
+            t *= data['downsampling']
     return t
 
 
@@ -1027,7 +1028,7 @@ def slicebyvalue(data, column='V', startval=None, endval=None, occurance=0):
 def sortvalues(data, column='V', ascending=True):
     # Sort the iv data points by a certain column
     sortkeys = find_data_arrays(data)
-    reindex = np.argsort(data['V'])
+    reindex = np.argsort(data[column])
     if not ascending:
         reindex = reindex[::-1]
     dataout = {}
@@ -2165,6 +2166,7 @@ def filter_byhand(df, groupby=None, **kwargs):
 
 def category(alist):
     unique, category = np.unique(alist, return_inverse=True)
+    # for multiple columns of dataframe, use e.g. df.groupby(['thickness_1', 'width_nm']).ngroup()
     return category
 
 # From David Mertz book

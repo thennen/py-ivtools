@@ -12,7 +12,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.widgets import SpanSelector, RectangleSelector
+from matplotlib.widgets import SpanSelector, RectangleSelector, AxesWidget
 
 import ivtools
 import ivtools.analyze
@@ -149,7 +149,11 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     if dtype in (dict, pd.Series):
         data = [data]
     elif dtype == pd.DataFrame:
-        data = data.to_dict(orient='records')
+        # actually a list of series is enough..
+        # otherwise you will cause errors when functions are passed as arguments that expect Series notation
+        # e.g. y=lambda y: y.V/y.I
+        indices, data = zip(*data.iterrows())
+        #data = data.to_dict(orient='records')
 
     lendata = len(data)
 
@@ -210,11 +214,10 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             #       but there is an ambiguity if the length of that list happens to be the
             #       same as the length of the data..
             # label by the key with this name
-            if type(data) == list:
-                label_list = [d[labels] for d in data]
-            else:
-                #should be dataframe
+            if type(data) is pd.DataFrame:
                 label_list = list(data[labels])
+            else:
+                label_list = [d[labels] for d in data]
         else:
             # otherwise we will iterate through labels directly (so you can pass a list of labels)
             # make np.nan count as None (not labelled)
@@ -560,8 +563,8 @@ def plot_R_states(data, v0=.1, v1=None, **kwargs):
     ax.set_ylabel('Resistance [$\\Omega$]')
 
 
-def violinhist(data, x, histrange=None, bins=50, alpha=.8, color=None, logbin=True, logx=True, ax=None,
-               label=None, sharescale=True, **kwargs):
+def violinhist(data, x, range=None, bins=50, alpha=.8, color=None, logbin=True, logx=True, ax=None,
+               label=None, fixscale=None, sharescale=True, hlines=True, vlines=True, **kwargs):
     '''
     histogram version of violin plot (when there's not a lot of data so the KDE looks weird)
     Can handle log scaling the x-axis, which plt.violinplot cannot do
@@ -569,26 +572,26 @@ def violinhist(data, x, histrange=None, bins=50, alpha=.8, color=None, logbin=Tr
     data should be a list of arrays of values
     kwargs go to plt.bar
     This was pretty difficult to write -- mostly because I want the log ticks..
-    TODO: could extend to make a real violin plot by increasing # of bins, adding some gaussian noise to the data, and doing line plots
-          this is called dithering
+    TODO: could extend to make a real violin plot by increasing # of bins, adding some gaussian noise to the data (dithering), and doing line plots
     '''
     if ax is None:
         ax = plt.gca()
     if color is None:
         color = ax._get_lines.get_next_color()
+    # sort data
     order = np.argsort(x)
     x = np.array(x)[order]
     data = [data[o] for o in order]
-    if histrange is None:
-        #histrange = np.percentile(np.concatenate(data), (1,99))
+    if range is None:
+        #range = np.percentile(np.concatenate(data), (1,99))
         alldata = np.concatenate(data)
-        histrange = (np.min(alldata), np.max(alldata))
+        range = (np.min(alldata), np.max(alldata))
 
     # values will be converted back to linear scale before plotting
     # so that we can use the log-scale axes
     if logbin:
         data = [np.log(d) for d in data]
-        histrange = np.log(histrange)
+        range = np.log(range)
         ax.set_yscale('log')
     if logx:
         x = np.log(x)
@@ -596,79 +599,105 @@ def violinhist(data, x, histrange=None, bins=50, alpha=.8, color=None, logbin=Tr
 
     dx = np.diff(x)
     # Calculate stats
-    n = [len(d) for d in data]
-    means = [np.mean(d) for d in data]
-    maxs = [np.max(d) for d in data]
-    mins = [np.min(d) for d in data]
-    p99s = [np.percentile(d, 99) for d in data]
-    p01s = [np.percentile(d, 1) for d in data]
+    a = np.array
+    n = a([len(d) for d in data])
+    means = a([np.mean(d) for d in data])
+    medians = a([np.median(d) for d in data])
+    maxs = a([np.max(d) for d in data])
+    mins = a([np.min(d) for d in data])
+    p99s = a([np.percentile(d, 99) for d in data])
+    p01s = a([np.percentile(d, 1) for d in data])
 
     # Calculate the histograms
     hists = []
     for d,xi in zip(data, x):
-        edges = np.linspace(*histrange, bins+1)
+        edges = np.linspace(*range, bins+1)
         hist, edges = np.histogram(d, bins=edges)
-        if logbin:
+        #if logbin:
             # normalize to account for different bin widths
-            hist = hist / np.diff(np.exp(edges))
+            # this only needs to be done if we are putting a log binned dataset back onto a linear scale! we are not!
+            # hist = hist / np.diff(np.exp(edges))
         hists.append((hist, edges))
 
-    ### try linear x case
-    # for log case, you just do the same to the logged values, then exp them all before plotting
-
-
-    # Figure out how to scale everything
-    # scale should not be hugely different for different hists
-    # so we should scale them so the peak doesn't exceed the minimum 
-    maxscale = 0.49
-    maxamp = np.min(dx) * maxscale
-
-    if sharescale:
-        # scale all hists by the same factor so that the globally maximum bin reaches maxamp
-        maxbin = np.max([h for h,e in hists])
-        hists = [(h*maxamp/maxbin, e) for h,e in hists]
+    # Figure out how to scale the bin heights
+    if fixscale:
+        # fixscale overrides everything, useful for manual tuning or if you need to plot many
+        # different violinhists on the same plot and want all the bin heights to be consistent
+        hists = [(h*fixscale, e) for h,e in hists]
     else:
-        # scale every hist to maxscale
-        hists = [(h*maxamp/np.max(h), e) for h,e in hists]
+        # we don't want violins to overlap, and we don't want one to look much bigger than any other
+        maxscale = 0.49
+        maxamp = np.min(dx) * maxscale
+        if sharescale:
+            # Usually I will want 1 sample to correspond to the same height everywhere (sharescale)
+            # scale all hists by the same factor so that the globally maximum bin reaches maxamp
+            maxbin = np.max([h for h,e in hists])
+            hists = [(h*maxamp/maxbin, e) for h,e in hists]
+        else:
+            # scale every hist to maxscale
+            hists = [(h*maxamp/np.max(h), e) for h,e in hists]
 
+    # return data to normal scale by overwriting. This is awful.
     if logx:
         x = np.exp(x)
+        hists = [(np.exp(hist), edges) for (hist, edges) in hists]
     if logbin:
-        maxs = [np.exp(v) for v in maxs]
-        mins = [np.exp(v) for v in mins]
-        means = [np.exp(v) for v in means]
+        hists = [(hist, np.exp(edges)) for (hist, edges) in hists]
+        maxs = np.exp(maxs)
+        mins = np.exp(mins)
+        means = np.exp(means)
+        medians = np.exp(medians)
+        p99s = np.exp(p99s)
+        p01s = np.exp(p01s)
+        range = np.exp(range)
 
     # Plot the histograms
     for (hist, edges), xi in zip(hists, x):
-        if logbin:
-            edges = np.exp(edges)
         heights = np.diff(edges)
         if logx:
-            ax.barh(edges[:-1], xi*np.exp(hist) - xi, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+            ax.barh(edges[:-1], xi*hist - xi, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
             label = None # only label the first one
-            ax.barh(edges[:-1], xi*np.exp(-hist) - xi, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
+            ax.barh(edges[:-1], xi/hist - xi, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
         else:
             ax.barh(edges[:-1], hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
             label = None # only label the first one
             ax.barh(edges[:-1], -hist, height=heights, align='edge', left=xi, color=color, alpha=alpha, linewidth=1, label=label, **kwargs)
 
-    # Plot bars
-    # Bars should all have the same scale
-    barwidth = np.min(dx * .2)
-    if logx:
-        ax.hlines([mins, means ,maxs], x*np.exp(-barwidth) - x, x*np.exp(barwidth) - x, colors=color)
-    else:
-        ax.hlines([mins, means ,maxs], x-barwidth, x+barwidth, colors=color)
-    ax.vlines(x, mins, maxs, colors=color)
+    # Plot hlines (why not just a plt.box? I forgot why.)
+    if hlines:
+        barwidth = np.min(dx * .2)
+        midscale = .5
+        if logx:
+            # I don't understand how I ever ended up with this code..
+            #ax.hlines([mins, means ,maxs], x*np.exp(-barwidth) - x, x*np.exp(barwidth) - x, colors=color)
+            #ax.hlines(mins, x*np.exp(-barwidth), x*np.exp(barwidth), colors=color)
+            #ax.hlines(maxs, x*np.exp(-barwidth), x*np.exp(barwidth), colors=color)
+            ax.hlines(p01s, x*np.exp(-barwidth), x*np.exp(barwidth), colors=color)
+            ax.hlines(p99s, x*np.exp(-barwidth), x*np.exp(barwidth), colors=color)
+            ax.hlines(medians, x*np.exp(-barwidth*midscale), x*np.exp(barwidth*midscale), colors=color)
+        else:
+            #ax.hlines([mins, means ,maxs], x-barwidth, x+barwidth, colors=color)
+            ax.hlines(mins, x-barwidth, x+barwidth, colors=color)
+            ax.hlines(maxs, x-barwidth, x+barwidth, colors=color)
+            ax.hlines(medians, x-barwidth*.5, x+barwidth*.5, colors=color)
+    if vlines:
+        if vlines == 'full':
+            for xx in x:
+                ax.axvline(xx, color=color)
+        else:
+            ax.vlines(x, mins, maxs, colors=color)
 
     # only label the x axis where there are histograms
     ax.xaxis.set_ticks(x)
     ax.xaxis.set_ticklabels(x)
+    ax.xaxis.set_major_formatter(mpl.ticker.ScalarFormatter())
     ax.xaxis.set_minor_formatter(mpl.ticker.NullFormatter())
-    r0, r1 = histrange
-    m = (r0 + r1) / 2
-    ax.set_ylim((r0-m)*1.05 + m, (r1-m)*1.05 +m)
-
+    r0, r1 = range
+    if logbin:
+        ax.set_ylim(r0, r1)
+    else:
+        m = (r0 + r1) / 2
+        ax.set_ylim((r0-m)*1.05 + m, (r1-m)*1.05 +m)
 def violinhist_fromdf(df, col, xcol, **kwargs):
     histd = []
     histx = []
@@ -762,9 +791,9 @@ def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
                             label=label)
             plotkwargs.update(kwargs)
             plotg = g.sort_values(by=x)
-            plt.plot(plotg[x], plotg[y], **plotkwargs)
+            ax.plot(plotg[x], plotg[y], **plotkwargs)
             if yerr is not None:
-                plt.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
+                ax.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
     if sparseticks:
         # Only label the values present
         ux = np.sort(df[x].unique())
@@ -794,7 +823,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
         if type(chdata) in (dict, pd.Series):
             return [(0,chdata),]
         elif type(chdata) == pd.DataFrame:
-            return chdata.iterrows()
+            return chdata.reset_index(drop=True).iterrows()
         else:
             # should be list
             return enumerate(chdata)
@@ -815,6 +844,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                     chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
                 else:
                     chplotdata = data[c]
+
                 if 'sample_rate' in data:
                     # If sample rate is available, plot vs time
                     x = ivtools.analyze.maketimearray(data, c)
@@ -823,15 +853,19 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                 else:
                     x = range(len(data[c]))
                     ax.set_xlabel('Data Point')
+
                 chcoupling = data['COUPLINGS'][c]
+                choffset = data['OFFSET'][c]
+                chrange = data['RANGE'][c]
                 if i == 0:
                     ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
                     # lightly indicate the channel range
-                    choffset = data['OFFSET'][c]
-                    chrange = data['RANGE'][c]
-                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.05, color=colors[c])
+                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.1, color=colors[c])
                 else:
                     ax.plot(x, chplotdata, color=colors[c], label=None, alpha=alpha, **kwargs)
+                    # lightly indicate the channel range
+                    # TODO: only if different from i == 0, otherwise we get too many overlapping
+                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.1, color=colors[c])
 
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
@@ -1595,32 +1629,81 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
     return RS
 
 
-def draw_line(ax=None):
-    '''
-    Just lets you draw a line and then gives you the equation for the line you drew
+class Cursor(AxesWidget):
+    """
+    Simple widget that prints out the points you click on while showing some lines
+    Started with matplotlib.widgets.Cursor
+    TODO: draw a line between points as you move cursor, sticking to points that you click
+          put the list of points on the clipboard
+    """
+    def __init__(self, ax=None, horizOn=True, vertOn=True, useblit=True,
+                 **lineprops):
+        if ax is None:
+            ax = plt.gca()
+        AxesWidget.__init__(self, ax)
+        self.connect_event('motion_notify_event', self.onmove)
+        self.connect_event('draw_event', self.clear)
+        self.connect_event('button_press_event', self.onclick)
+        self.visible = True
+        self.horizOn = horizOn
+        self.vertOn = vertOn
+        self.useblit = useblit and self.canvas.supports_blit
+        self.n = 0
+        lineprops = {'alpha':.5, 'linewidth':.5, 'color':'black', **lineprops}
+        if self.useblit:
+            lineprops['animated'] = True
+        self.lineh = ax.axhline(ax.get_ybound()[0], visible=False, **lineprops)
+        self.linev = ax.axvline(ax.get_xbound()[0], visible=False, **lineprops)
+        self.background = None
+        self.needclear = False
 
-    DOESN'T ACTUALLY WORK YET
-    '''
-    if ax is None:
-        ax = plt.gca()
+    def clear(self, event):
+        """Internal event handler to clear the cursor."""
+        if self.ignore(event):
+            return
+        if self.useblit:
+            self.background = self.canvas.copy_from_bbox(self.ax.bbox)
+        self.linev.set_visible(False)
+        self.lineh.set_visible(False)
 
-    def onselect(eclick, erelease):
-        x1, y1 = eclick.xdata, eclick.ydata
-        x2, y2 = erelease.xdata, erelease.ydata
+    def onclick(self, event):
+        print(f'x{self.n}, y{self.n} = {event.xdata:.3e}, {event.ydata:.3e}')
+        self.ax.scatter(event.xdata, event.ydata, c='black', marker='x')
+        self.n += 1
 
-        xmin = min(x1, x2)
-        xmax = max(x1, x2)
-        ymin = min(y1, y2)
-        ymax = max(y1, y2)
+    def onmove(self, event):
+        """Internal event handler to draw the cursor when the mouse moves."""
+        if self.ignore(event):
+            return
+        if not self.canvas.widgetlock.available(self):
+            return
+        if event.inaxes != self.ax:
+            self.linev.set_visible(False)
+            self.lineh.set_visible(False)
 
-        print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
-        print("The button you used were: %s %s" % (eclick.button, erelease.button))
-        # Find the data that has values in the selected range
-        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
-    rectprops = dict(facecolor='blue', alpha=0.3)
-    RS = RectangleSelector(ax, onselect, 'line', useblit=True, rectprops=rectprops)
+            if self.needclear:
+                self.canvas.draw()
+                self.needclear = False
+            return
+        self.needclear = True
+        if not self.visible:
+            return
+        self.linev.set_xdata((event.xdata, event.xdata))
+        self.lineh.set_ydata((event.ydata, event.ydata))
+        self.linev.set_visible(self.visible and self.vertOn)
+        self.lineh.set_visible(self.visible and self.horizOn)
+        self._update()
 
-    return RS
+    def _update(self):
+        if self.useblit:
+            if self.background is not None:
+                self.canvas.restore_region(self.background)
+            self.ax.draw_artist(self.linev)
+            self.ax.draw_artist(self.lineh)
+            self.canvas.blit(self.ax.bbox)
+        else:
+            self.canvas.draw_idle()
+        return False
 
 ### Animation
 # TODO: check out the library "celluloid"
@@ -1949,18 +2032,22 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
 
-def xylim():
+clip_colormap = truncate_colormap
+
+def xylim(ax=None, clip=True):
     # return the command to set a plot xlim,ylim to the xlim and ylim of the current plot
     # also put it on the clipboard
     # got sick of repeating this over and over
-    xlim = plt.xlim()
-    ylim = plt.ylim()
+    if ax is None:
+        ax = plt.gca()
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
     cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
     print(cmd)
-    # I don't know how to copy a new line onto the clipboard
-    df = pd.DataFrame([cmd.replace('\n', ';')])
-    df.to_clipboard(index=False,header=False)
-
+    if clip:
+        # I don't know how to copy a new line onto the clipboard
+        df = pd.DataFrame([cmd.replace('\n', ';')])
+        df.to_clipboard(index=False,header=False)
 
 def auto_range(xy='y', ax=None):
     # Pick a yrange that fits all the data, in the current x range,
