@@ -423,7 +423,8 @@ def maketimearray(data, basedon=None):
         nsamples = len(data[basedon])
     t = np.linspace(0, nsamples/data['sample_rate'], nsamples)
     if 'downsampling' in data:
-        t *= data['downsampling']
+        if not np.isnan(data['downsampling']):
+            t *= data['downsampling']
     return t
 
 
