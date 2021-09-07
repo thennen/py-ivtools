@@ -1147,6 +1147,9 @@ def read_pandas(filepaths, concat=True, dropcols=None):
             try:
                 # pdlist may have some combination of Series and DataFrames.  Series should be rows
                 pdobject = pd.read_pickle(f)
+            except KeyboardInterrupt:
+                print('KeyboardInterrupt. Returning whatever was loaded so far.')
+                break
             except:
                 log.error('Failed to interpret {} as a pickle!'.format(f))
                 continue

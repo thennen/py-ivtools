@@ -84,7 +84,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidt
     ax.add_collection(lc)
     ax.autoscale()
 
-def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
+def plot_multicolor_speed(x, y, t=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     '''
     Multicolor line that is colored by how far consecutive datapoints are from each other
 
@@ -93,12 +93,19 @@ def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, *
 
     Does not look that great when there aren't a lot of samples.
     TODO: we could do some kind of color interpolation in that case.  Interpolate x,y,c and smooth c only
+
+    can't just interpolate to a huge number of timesteps,
+    because then we have to plot millions of line segments, mostly where "speed" is low
+    You can interpolate more when speed is higher, then pass the array of t to this function
+
     '''
     # absolute distance may not work if x and y have different units
     # to account for scale, we divide by the range of the input data
     xrange = np.max(x) - np.min(x)
     yrange = np.max(y) - np.min(y)
     speed = np.sqrt(np.gradient(x/xrange)**2 + np.gradient(y/yrange)**2)
+    if t is not None:
+        speed /= np.gradient(t)
     kwargs = {k:v for k,v in kwargs.items() if k != 'c'}
     plot_multicolor(x, y, c=speed, cmap=cmap, vmin=vmin, vmax=vmax, ax=ax, **kwargs)
     return speed
@@ -128,6 +135,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     '''
     if hold:
         # you can type hold=1 instead of ax=plt.gca()
+        # or use hplotiv()
         fig = plt.gcf()
         ax = plt.gca()
     if ax is None:
@@ -1394,7 +1402,7 @@ def itplotter(data, ax=None, maxloops=100, **kwargs):
 
     plotiv(data, x='t', y='I', ax=ax, maxsamples=5000, **kwargs)
     #color = ax.lines[-1].get_color()
-    #ax.set_ylabel('Current [$\mu$A]', color=color)
+    #ax.set_ylabel('Current [μA]', color=color)
     ax.set_ylabel('Current [A]')
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     ax.set_xlabel('Time [s]')
@@ -1514,7 +1522,7 @@ def vdeviceplotter(data, ax=None, R=None, **kwargs):
         if 'units' in representative:
             if 'I' in representative['units']:
                 Iunit = representative['units']['I']
-        if Iunit == '$\mu$A':
+        if Iunit in ('μA', '$\mu$A'):
             Iunit = 1e-6
         else:
             Iunit = 1
@@ -1799,7 +1807,7 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
 
         plt.title('Loop {}'.format(i))
         ax.set_xlabel('Applied Voltage [V]')
-        ax.set_ylabel('Device Current [$\mu$A]')
+        ax.set_ylabel('Device Current [μA]')
         imax = np.argmax(l['V'])
         imin = np.argmin(l['V'])
         firstextreme = min(imax, imin)
@@ -1978,7 +1986,7 @@ def metric_prefix(x):
     should be equivalent to mpl.ticker.EngFormatter()(x)
     '''
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
     if abs(x) < min(values):
         return '{:n}'.format(x)
@@ -1988,7 +1996,7 @@ def metric_prefix(x):
 
 def metric_prefix_longname(x, decimals=1):
     longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
     if abs(x) < min(values):
         return '{:n}'.format(x)
