@@ -13,13 +13,14 @@ to avoid circular imports, you shouldn't import anything here that uses the sett
 TODO: some way to export and load settings
 '''
 import getpass  # to get user name
-import socket
 import os
-from functools import partial
+import socket
 from importlib import reload
+
+import ivtools.instruments as instruments
 # circular import?
 import ivtools.measure
-import ivtools.instruments as instruments
+
 
 # untested..
 def reload():

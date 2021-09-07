@@ -1,10 +1,13 @@
-import numpy as np
-from ..instruments import ping
+import logging
 import os
 import re
 from collections import deque
+
+import numpy as np
+
 import ivtools
-import logging
+from ..instruments import ping
+
 log = logging.getLogger('instruments')
 import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
