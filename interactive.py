@@ -16,24 +16,12 @@ TODO: GUI for displaying and changing channel settings, other status information
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad
 '''
-import numpy
-import numpy as np
-import matplotlib
-import matplotlib as mpl
-from matplotlib import pyplot
-from matplotlib import pyplot as plt
-from functools import wraps, partial
-import os
-import getpass # to get user name
-import sys
-import time
+from functools import partial
+
 import pandas as pd
+
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
-import subprocess
-import socket
-from datetime import datetime
-from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -41,8 +29,6 @@ import pyvisa as visa
 
 import ivtools
 import importlib
-from importlib import reload
-from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -62,7 +48,6 @@ from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
-from ivtools.instruments import *
 import logging
 
 
@@ -343,6 +328,15 @@ def setup_ccircuit():
     ps.range.b = 2
     ps.range.c = 2
     settings.pico_to_iv = ccircuit_to_iv
+    iplots.plotters = pico_plotters
+
+def setup_digipot():
+    ps.coupling.a = 'DC' # monitor
+    ps.coupling.b = 'DC50' # device voltage
+    ps.coupling.c = 'DC50' # current (unamplified)
+    ps.range.b = 2
+    ps.range.c = 0.05
+    settings.pico_to_iv = digipot_to_iv
     iplots.plotters = pico_plotters
 
 def setup_picoteo():

@@ -105,6 +105,8 @@ class TeoSystem(object):
           1. on first initialization (Dispatch('TSX_HMan'))
           2. if you disconnect USB and plug it back in
 
+    TODO: some basic gate where I wanted to capture half of the waveform did not work
+
     '''
 
     def __init__(self):
@@ -194,8 +196,9 @@ class TeoSystem(object):
         return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
 
     def kill_TSX(self):
-        os.system("taskkill /im TSX_HardwareManager")
-        os.system("taskkill /im TSX_DM.exe")
+        # /F tells taskkill we aren't Fing around here
+        os.system("taskkill /F /im TSX_HardwareManager")
+        os.system("taskkill /F /im TSX_DM.exe")
 
     def restart_TSX(self):
         self.kill_TSX()
@@ -305,6 +308,9 @@ class TeoSystem(object):
             sweeps.append(sweep)
 
         wfm = np.concatenate(sweeps)
+
+        log.info(f"Waveform duration: {len(wfm)/teo_freq} s\n"
+                 f"Waveform samples: {len(wfm)}")
 
         return wfm
 
@@ -534,7 +540,8 @@ class TeoSystem(object):
         With this we can resynchronize our instance with the TSX_DM memory
         e.g. self.waveforms = self.download_all_wfms()
         '''
-        return {name:self.download_wfm(name) for name in self.get_wfm_names()}
+        return {name: self.download_wfm(name) for name in self.get_wfm_names()}
+
 
     def delete_all_wfms(self):
         name = self.base.AWG_WaveformManager.GetWaveformName(0)
@@ -886,6 +893,149 @@ class TeoSystem(object):
 
         return dict(I=I, V=Vvalues)
 
+    ########################################## Tests ##########################################
+
+    def wfm_length_test(self):
+        import psutil
+        from datetime import datetime
+        import winsound
+
+        def log_and_write(msg):
+            file.write(msg)
+            log.info(msg)
+
+        path = 'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester/tests/memory_test.txt'
+        p = 1
+        while os.path.exists(path):
+            p += 1
+            path = f'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester/tests/memory_test_{p}.txt'
+        file = open(path, "w")
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+        file.write(f"Teo memory test\n{timestamp}\nAll waveforms are deleted before each upload\n"
+                   f"Output time does NOT include the duration time of the waveform\n")
+        log.info(f"Teo memory test\n{timestamp}\nAll waveforms are deleted before each upload\n"
+                   f"Output time does NOT include the duration time of the waveform\n")
+        teo_freq = 500e6
+        self.delete_all_wfms()
+        n = 4
+        ok = True
+        while ok is True:
+            self.delete_all_wfms()
+            wfm = [1] * 2**n
+            name = f'mt{n}'
+            samples = 2**n
+            duration = samples/teo_freq
+            try:
+                log_and_write(f"Waveform with 2^{n} = {samples} samples and {duration}s\n")
+
+                vm = psutil.virtual_memory()
+                log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                t0 = time.time()
+                self.upload_wfm(wfm, name)
+                upload_time = time.time() - t0
+                log_and_write(f"\tUpload: {upload_time}s\n")
+
+                vm = psutil.virtual_memory()
+                log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                t0 = time.time()
+                self.output_wfm(name)
+                output_time = time.time() - t0 - duration
+                log_and_write(f"\tOutput: {output_time}s\n")
+
+                vm = psutil.virtual_memory()
+                log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                t0 = time.time()
+                self.get_data()
+                data_time = time.time() - t0
+                log_and_write(f"\tdata collection: {data_time}s\n")
+
+                vm = psutil.virtual_memory()
+                log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                t0 = time.time()
+                self.output_wfm(name)
+                output_time = time.time() - t0 - duration
+                log_and_write(f"\tOutput: {output_time}s\n")
+
+                vm = psutil.virtual_memory()
+                log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                t0 = time.time()
+                self.get_data()
+                data_time = time.time() - t0
+                log_and_write(f"\tdata collection: {data_time}s\n")
+
+                vm = psutil.virtual_memory()
+                log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                self.delete_all_wfms()
+                n += 1
+            except Exception as E:
+                log_and_write(f"Teo raised the following error:\n\t{E}")
+                ok = False
+
+        log_and_write(f"Now the memory will try to be filled with biggest waveforms first.")
+
+        self.delete_all_wfms()
+
+        wfms = dict()
+        n = 26
+
+        while n > 4:
+            wfm = [1] * 2**n
+            samples = 2**n
+            duration = samples/teo_freq
+            ok = True
+            nn = 1
+
+            while ok is True:
+                name = f'mt{n}_{nn}'
+                try:
+                    log_and_write(f"Waveform with 2^{n} = {samples} samples and {duration}s, number {nn}")
+
+                    vm = psutil.virtual_memory()
+                    log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                    t0 = time.time()
+                    self.upload_wfm(wfm, name)
+                    upload_time = time.time() - t0
+                    log_and_write(f"\tUpload: {upload_time}s\n")
+
+                    vm = psutil.virtual_memory()
+                    log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                    t0 = time.time()
+                    self.output_wfm(name)
+                    output_time = time.time() - t0 - duration
+                    log_and_write(f"\tOutput: {output_time}s\n")
+
+                    vm = psutil.virtual_memory()
+                    log_and_write(f"\t\tUsed memory: {round(vm.used*10**-9, 2)}GB\n")
+
+                    wfms[n] = nn
+                    nn += 1
+
+                except Exception as E:
+                    ok = False
+                    n -= 1
+
+        log_and_write("Memory is full\nThis waveforms could be fitted:\n")
+        for k, v in wfms.items:
+            log_and_write(f"\t2^{k} smaples: {v} waveforms\n")
+        total_samples_loaded = np.sum([2**k * v for k, v in wfms.items])
+        total_time_loaded = total_samples_loaded/teo_freq
+        log_and_write(f"Total samples loaded: {total_samples_loaded}\n")
+        log_and_write(f"Total seconds loaded: {total_time_loaded}s")
+
+        file.close()
+
+        self.delete_all_wfms()
+
+        winsound.Beep(1700, 0.1)
+        winsound.Beep(2000, 0.1)
 
 class TeoBase(object):
 
