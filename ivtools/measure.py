@@ -2283,6 +2283,120 @@ def teo_cal_check(R_real, teo_gain, save_path=None):
     return data
 
 
+def teo_calibration_2():
+    """
+    TeoSystem calibration using Digipot, Picoscope and Keitheley.
+
+    Returns
+    -------
+
+    """
+
+    '''
+    Things to calibratie:
+        High Frequency - Internal:
+            "HFV": Desired Voltage -> Applied Voltage
+            "V_MONITOR": Read Voltage -> Applied Voltage
+            "HFV_INT": Read Voltage -> Applied Voltage
+            "HF_LIMITED_BW": Read Current -> Real Current
+            "HFI_INT": Read Current -> Real Current
+            "HF_FULL_BW": Read Current -> Real Current
+        High Frequency - External
+        Low Frequency - Internal
+        Low Frequency - External
+    '''
+
+    teo = instruments.TeoSystem()
+    dp = instruments.WichmannDigipot()
+    ps = instruments.Picoscope()
+
+    teo.calibration = None
+    teo.HF_mode()
+    dp.set_R(0)
+    V = 5
+    SR = 1_000_000
+    wfm = teo.tri([0, V, -V, 0], sweep_rate=SR)
+    wfm_dur = (V * 4) / SR
+    wfm_samples = len(wfm)
+    wfm_name = f"V{V}_SR{SR}"
+    teo.upload_wfm(wfm, name=wfm_name)
+    R = 1000
+    I_max = V / R
+    V_ps = I_max * 50
+    pschannels = ['A', 'B', 'C', 'D']
+    pscoupling = dict(A='DC50', B='DC50', C='DC50', D='DC50')
+    psranges = dict(A=5, B=0.5, C=5, D=5)
+    psoffset = dict(A=0, B=0, C=0, D=0)
+    psatten = dict(A=1, B=1, C=1, D=1)
+
+    def pico_to_iv(datain, dtype=np.float32):
+        '''
+        Convert picoscope channel data to IV dict
+        for digipot circuit with device voltage probe
+        gain is in A/V, in case you put an amplifier on the output
+        Simultaneous sampling is faster when not using adjacent channels (i.e. A&B)
+        '''
+        # Keep all original data from picoscope
+        # Make I, V arrays and store the parameters used to make them
+        HFV_channel = 'A'
+        V_monitor_channel = 'B'
+        HF_limited_channel = 'C'
+        HF_full_channel = 'D'
+        chs_sampled = [ch for ch in ['A', 'B', 'C', 'D'] if ch in datain]
+        if not chs_sampled:
+            log.error('No picoscope data detected')
+            return datain
+        dataout = datain
+        # If data is raw, convert it here
+        if datain[chs_sampled[0]].dtype == np.int8:
+            datain = measure.raw_to_V(datain, dtype=dtype)
+        if 'units' not in dataout:
+            dataout['units'] = {}
+        if HFV_channel in datain:
+            V = datain[HFV_channel]
+            if pscoupling[HFV_channel] == 'DC50':
+                V *= 2
+            dataout['HFV'] = V  # Subtract voltage on output?  Don't know what it is necessarily.
+            dataout['units']['HFV'] = 'V'
+        if V_monitor_channel in datain:
+            V = datain[V_monitor_channel]
+            if pscoupling[V_monitor_channel] == 'DC50':
+                V *= 2
+            dataout['V_monitor'] = V
+            dataout['units']['V_monitor'] = 'V'
+        if HF_limited_channel in datain:
+            I = datain[HF_limited_channel]
+            dataout['HF_limited'] = I
+            dataout['units']['HF_limited'] = 'A'
+        if HF_full_channel in datain:
+            I = datain[HF_full_channel]
+            dataout['HF_full'] = I
+            dataout['units']['HF_full'] = 'A'
+        return dataout
+
+    teo.gain(0)
+    ps.capture(ch=pschannels, freq=None, duration=wfm_dur, nsamples=wfm_samples,
+               trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
+               pretrig=0.0, delay=0,
+               chrange=psranges, choffset=psoffset, chcoupling=pscoupling, chatten=psatten, chbwlimit=None)
+    teo.output_wfm(wfm_name)
+    d1 = ps.get_data(ch=['A', 'B', 'C', 'D'], raw=True)
+    d1 = pico_to_iv(d1)
+    d1 = analyze.smoothimate(d1, 100, len(d1['t']) // 1000)
+    d2 = teo.get_data(raw=True)
+    d2 = analyze.smoothimate(d2, 100, len(d2['t']) // 1000)
+
+
+
+    return d1, d2
+
+
+
+
+
+
+
+
 
 
 

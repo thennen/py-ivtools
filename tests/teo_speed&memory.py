@@ -291,7 +291,7 @@ def test():
     ax.set_ylabel('Memory used [GB]')
     ax.set_xscale('log', base=2)
     t_max = memory_results['memory_time'].iloc[-1]
-    ticks = [2 ** i for i in range(int(np.log2(t_max)))]
+    ticks = [2 ** i for i in range(int(np.log2(t_max))+2)]
     ax.set_xticks(ticks)
     ax.set_xticklabels(ticks)
 
