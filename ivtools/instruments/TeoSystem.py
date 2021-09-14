@@ -108,11 +108,6 @@ class TeoSystem(object):
 
     def __init__(self):
 
-        class dotdict(dict):
-            __getattr__ = dict.__getitem__
-            __setattr__ = dict.__setitem__
-
-
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
         requires TEO software package and drivers to be installed on the PC
@@ -127,7 +122,40 @@ class TeoSystem(object):
         if statename not in ivtools.instrument_states:
             ivtools.instrument_states[statename] = {}
             self.__dict__ = ivtools.instrument_states[statename]
-            self.base = TeoBase()
+            self.connect()
+        else:
+            self.__dict__ = ivtools.instrument_states[statename]
+            if not self.connected():
+                self.connect()
+
+
+    ################################################################################
+
+    def idn(self):
+        # Get and print some information from the board
+        DevName = self.base.DeviceID.GetDeviceName()
+        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
+        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
+        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
+        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
+
+    def kill_TSX(self):
+        # /F tells taskkill we aren't Fing around here
+        os.system("taskkill /F /im TSX_HardwareManager")
+        os.system("taskkill /F /im TSX_DM.exe")
+
+    def restart_TSX(self):
+        self.kill_TSX()
+        self.connect()
+
+    def connect(self):
+
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        self.base = TeoBase()
+        if self.base.conn:
 
             self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
 
@@ -183,31 +211,22 @@ class TeoSystem(object):
             self.last_nshots = None
 
             log.info('TEO connection successful: ' + self.constants.idn)
+            self.conn = True
         else:
-            self.__dict__ = ivtools.instrument_states[statename]
+            self.conn = False
+
+        return self.conn
+
+    def connected(self):
+        MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
+        if MemTester is None:
+            self.conn = False
+        else:
+            self.conn = True
+
+        return self.conn
 
 
-
-
-
-    ################################################################################
-
-    def idn(self):
-        # Get and print some information from the board
-        DevName = self.base.DeviceID.GetDeviceName()
-        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
-        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
-        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
-        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
-
-    def kill_TSX(self):
-        # /F tells taskkill we aren't Fing around here
-        os.system("taskkill /F /im TSX_HardwareManager")
-        os.system("taskkill /F /im TSX_DM.exe")
-
-    def restart_TSX(self):
-        self.kill_TSX()
-        self.__init__()
 
 
     ##################################### HF mode #############################################
@@ -928,7 +947,10 @@ class TeoBase(object):
         MemTester = HMan.GetSystem('MEMORY_TESTER')
         if MemTester is None:
             log.error('Teo software cannot locate a connected memory tester. Check USB connection.')
+            self.conn = False
             return
+
+        self.conn = True
 
         # Access a bunch of COM classes used to control the TEO board.
         # The contained methods/attributes appear in tab completion, but the contained classes do not
