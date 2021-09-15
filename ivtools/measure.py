@@ -674,6 +674,20 @@ def raw_to_V(datain, dtype=np.float32):
             dataout[k] = datain[k]
     return dataout
 
+def V_to_raw(datain):
+    '''
+    inverse of raw_to_V
+    '''
+    channels = ['A', 'B', 'C', 'D']
+    dataout = {}
+    for c in channels:
+        if (c in datain.keys()) and (datain[c].dtype in (np.float32, np.float64)):
+            dataout[c] = np.int8(np.round((datain[c] + datain['OFFSET'][c]) * 2**8 / datain['RANGE'][c] / 2))
+    for k in datain.keys():
+        if k not in dataout.keys():
+            dataout[k] = datain[k]
+    return dataout
+
 def _rate_duration(v1, v2, rate=None, duration=None):
     '''
     Determines the duration or sweep rate of a triangle type pulse with constant sweep rate.

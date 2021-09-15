@@ -1138,10 +1138,11 @@ def read_pandas(filepaths, concat=True, dropcols=None):
         # Single series or df
         return pd.read_pickle(filepaths)
     else:
+        N = len(filepaths)
         # Should be a list of filepaths
         pdlist = []
         # Try to get pandas to read the files, but don't give up if some fail
-        for f in filepaths:
+        for i,f in enumerate(filepaths):
             try:
                 # pdlist may have some combination of Series and DataFrames.  Series should be rows
                 pdobject = pd.read_pickle(f)
@@ -1171,7 +1172,7 @@ def read_pandas(filepaths, concat=True, dropcols=None):
                 # pdlist.append(pd.DataFrame(pdobject).transpose())
             else:
                 log.warning('Do not know wtf this file is:')
-            log.info('Loaded {}.'.format(f))
+            log.info(f'{i+1}/{N} Loaded {f}.')
         if concat:
             return pd.concat(pdlist).reset_index()
         else:
