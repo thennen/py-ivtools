@@ -44,7 +44,7 @@ CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 # This is the channel where you are sampling the input waveform
 MONITOR_PICOCHANNEL = 'A'
 
-teo_calibration_file = os.path.join(ivtools_dir, 'instruments', 'calibration', 'teo_calibration.json')
+teo_calibration_file = os.path.join(ivtools_dir, 'instruments', 'calibration', 'teo_calibration.df')
 
 # Drop these data columns before writing to disk
 # usually if you need to save space and the columns can be recomputed
@@ -111,12 +111,12 @@ if hostname == 'iwe21705':
         db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
         logging_file = os.path.join(munoz, 'ivtools_logging.log')
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+            'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
         }
     elif username == 'wtf':
         datafolder = r'D:\{}\ivdata'.format(username)
