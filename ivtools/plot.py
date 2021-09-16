@@ -12,7 +12,7 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from matplotlib.widgets import SpanSelector, RectangleSelector
+from matplotlib.widgets import SpanSelector, RectangleSelector, AxesWidget
 
 import ivtools
 import ivtools.analyze
@@ -84,7 +84,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidt
     ax.add_collection(lc)
     ax.autoscale()
 
-def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
+def plot_multicolor_speed(x, y, t=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     '''
     Multicolor line that is colored by how far consecutive datapoints are from each other
 
@@ -93,12 +93,19 @@ def plot_multicolor_speed(x, y, cmap='rainbow', vmin=None, vmax=None, ax=None, *
 
     Does not look that great when there aren't a lot of samples.
     TODO: we could do some kind of color interpolation in that case.  Interpolate x,y,c and smooth c only
+
+    can't just interpolate to a huge number of timesteps,
+    because then we have to plot millions of line segments, mostly where "speed" is low
+    You can interpolate more when speed is higher, then pass the array of t to this function
+
     '''
     # absolute distance may not work if x and y have different units
     # to account for scale, we divide by the range of the input data
     xrange = np.max(x) - np.min(x)
     yrange = np.max(y) - np.min(y)
     speed = np.sqrt(np.gradient(x/xrange)**2 + np.gradient(y/yrange)**2)
+    if t is not None:
+        speed /= np.gradient(t)
     kwargs = {k:v for k,v in kwargs.items() if k != 'c'}
     plot_multicolor(x, y, c=speed, cmap=cmap, vmin=vmin, vmax=vmax, ax=ax, **kwargs)
     return speed
@@ -128,6 +135,7 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     '''
     if hold:
         # you can type hold=1 instead of ax=plt.gca()
+        # or use hplotiv()
         fig = plt.gcf()
         ax = plt.gca()
     if ax is None:
@@ -149,7 +157,11 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
     if dtype in (dict, pd.Series):
         data = [data]
     elif dtype == pd.DataFrame:
-        data = data.to_dict(orient='records')
+        # actually a list of series is enough..
+        # otherwise you will cause errors when functions are passed as arguments that expect Series notation
+        # e.g. y=lambda y: y.V/y.I
+        indices, data = zip(*data.iterrows())
+        #data = data.to_dict(orient='records')
 
     lendata = len(data)
 
@@ -210,11 +222,10 @@ def plotiv(data, x='V', y='I', c=None, ax=None, maxsamples=500000, cm='jet', xfu
             #       but there is an ambiguity if the length of that list happens to be the
             #       same as the length of the data..
             # label by the key with this name
-            if type(data) == list:
-                label_list = [d[labels] for d in data]
-            else:
-                #should be dataframe
+            if type(data) is pd.DataFrame:
                 label_list = list(data[labels])
+            else:
+                label_list = [d[labels] for d in data]
         else:
             # otherwise we will iterate through labels directly (so you can pass a list of labels)
             # make np.nan count as None (not labelled)
@@ -788,9 +799,9 @@ def paramplot(df, x, y, parameters, yerr=None, cmap=plt.cm.gnuplot, labelformatt
                             label=label)
             plotkwargs.update(kwargs)
             plotg = g.sort_values(by=x)
-            plt.plot(plotg[x], plotg[y], **plotkwargs)
+            ax.plot(plotg[x], plotg[y], **plotkwargs)
             if yerr is not None:
-                plt.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
+                ax.errorbar(plotg[x], plotg[y], plotg[yerr], color=colordict[k], label=None)
     if sparseticks:
         # Only label the values present
         ux = np.sort(df[x].unique())
@@ -820,7 +831,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
         if type(chdata) in (dict, pd.Series):
             return [(0,chdata),]
         elif type(chdata) == pd.DataFrame:
-            return chdata.iterrows()
+            return chdata.reset_index(drop=True).iterrows()
         else:
             # should be list
             return enumerate(chdata)
@@ -841,6 +852,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                     chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
                 else:
                     chplotdata = data[c]
+
                 if 'sample_rate' in data:
                     # If sample rate is available, plot vs time
                     x = ivtools.analyze.maketimearray(data, c)
@@ -849,15 +861,19 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                 else:
                     x = range(len(data[c]))
                     ax.set_xlabel('Data Point')
+
                 chcoupling = data['COUPLINGS'][c]
+                choffset = data['OFFSET'][c]
+                chrange = data['RANGE'][c]
                 if i == 0:
                     ax.plot(x, chplotdata, color=colors[c], label=f'{c} ({chcoupling})', alpha=alpha, **kwargs)
                     # lightly indicate the channel range
-                    choffset = data['OFFSET'][c]
-                    chrange = data['RANGE'][c]
-                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.3, color=colors[c])
+                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.1, color=colors[c])
                 else:
                     ax.plot(x, chplotdata, color=colors[c], label=None, alpha=alpha, **kwargs)
+                    # lightly indicate the channel range
+                    # TODO: only if different from i == 0, otherwise we get too many overlapping
+                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.1, color=colors[c])
 
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
@@ -1386,7 +1402,7 @@ def itplotter(data, ax=None, maxloops=100, **kwargs):
 
     plotiv(data, x='t', y='I', ax=ax, maxsamples=5000, **kwargs)
     #color = ax.lines[-1].get_color()
-    #ax.set_ylabel('Current [$\mu$A]', color=color)
+    #ax.set_ylabel('Current [μA]', color=color)
     ax.set_ylabel('Current [A]')
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     ax.set_xlabel('Time [s]')
@@ -1506,7 +1522,7 @@ def vdeviceplotter(data, ax=None, R=None, **kwargs):
         if 'units' in representative:
             if 'I' in representative['units']:
                 Iunit = representative['units']['I']
-        if Iunit == '$\mu$A':
+        if Iunit in ('μA', '$\mu$A'):
             Iunit = 1e-6
         else:
             Iunit = 1
@@ -1621,32 +1637,81 @@ def plot_selector(data=None, ax=None, plotfunc=plotiv, x='V', y='I', **kwargs):
     return RS
 
 
-def draw_line(ax=None):
-    '''
-    Just lets you draw a line and then gives you the equation for the line you drew
+class Cursor(AxesWidget):
+    """
+    Simple widget that prints out the points you click on while showing some lines
+    Started with matplotlib.widgets.Cursor
+    TODO: draw a line between points as you move cursor, sticking to points that you click
+          put the list of points on the clipboard
+    """
+    def __init__(self, ax=None, horizOn=True, vertOn=True, useblit=True,
+                 **lineprops):
+        if ax is None:
+            ax = plt.gca()
+        AxesWidget.__init__(self, ax)
+        self.connect_event('motion_notify_event', self.onmove)
+        self.connect_event('draw_event', self.clear)
+        self.connect_event('button_press_event', self.onclick)
+        self.visible = True
+        self.horizOn = horizOn
+        self.vertOn = vertOn
+        self.useblit = useblit and self.canvas.supports_blit
+        self.n = 0
+        lineprops = {'alpha':.5, 'linewidth':.5, 'color':'black', **lineprops}
+        if self.useblit:
+            lineprops['animated'] = True
+        self.lineh = ax.axhline(ax.get_ybound()[0], visible=False, **lineprops)
+        self.linev = ax.axvline(ax.get_xbound()[0], visible=False, **lineprops)
+        self.background = None
+        self.needclear = False
 
-    DOESN'T ACTUALLY WORK YET
-    '''
-    if ax is None:
-        ax = plt.gca()
+    def clear(self, event):
+        """Internal event handler to clear the cursor."""
+        if self.ignore(event):
+            return
+        if self.useblit:
+            self.background = self.canvas.copy_from_bbox(self.ax.bbox)
+        self.linev.set_visible(False)
+        self.lineh.set_visible(False)
 
-    def onselect(eclick, erelease):
-        x1, y1 = eclick.xdata, eclick.ydata
-        x2, y2 = erelease.xdata, erelease.ydata
+    def onclick(self, event):
+        print(f'x{self.n}, y{self.n} = {event.xdata:.3e}, {event.ydata:.3e}')
+        self.ax.scatter(event.xdata, event.ydata, c='black', marker='x')
+        self.n += 1
 
-        xmin = min(x1, x2)
-        xmax = max(x1, x2)
-        ymin = min(y1, y2)
-        ymax = max(y1, y2)
+    def onmove(self, event):
+        """Internal event handler to draw the cursor when the mouse moves."""
+        if self.ignore(event):
+            return
+        if not self.canvas.widgetlock.available(self):
+            return
+        if event.inaxes != self.ax:
+            self.linev.set_visible(False)
+            self.lineh.set_visible(False)
 
-        print("(%.2e, %.2e) --> (%.2e, %.2e)" % (x1, y1, x2, y2))
-        print("The button you used were: %s %s" % (eclick.button, erelease.button))
-        # Find the data that has values in the selected range
-        print(f'[{xmin}, {xmax}, {ymin}, {ymax}]')
-    rectprops = dict(facecolor='blue', alpha=0.3)
-    RS = RectangleSelector(ax, onselect, 'line', useblit=True, rectprops=rectprops)
+            if self.needclear:
+                self.canvas.draw()
+                self.needclear = False
+            return
+        self.needclear = True
+        if not self.visible:
+            return
+        self.linev.set_xdata((event.xdata, event.xdata))
+        self.lineh.set_ydata((event.ydata, event.ydata))
+        self.linev.set_visible(self.visible and self.vertOn)
+        self.lineh.set_visible(self.visible and self.horizOn)
+        self._update()
 
-    return RS
+    def _update(self):
+        if self.useblit:
+            if self.background is not None:
+                self.canvas.restore_region(self.background)
+            self.ax.draw_artist(self.linev)
+            self.ax.draw_artist(self.lineh)
+            self.canvas.blit(self.ax.bbox)
+        else:
+            self.canvas.draw_idle()
+        return False
 
 ### Animation
 # TODO: check out the library "celluloid"
@@ -1742,7 +1807,7 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
 
         plt.title('Loop {}'.format(i))
         ax.set_xlabel('Applied Voltage [V]')
-        ax.set_ylabel('Device Current [$\mu$A]')
+        ax.set_ylabel('Device Current [μA]')
         imax = np.argmax(l['V'])
         imin = np.argmin(l['V'])
         firstextreme = min(imax, imin)
@@ -1921,7 +1986,7 @@ def metric_prefix(x):
     should be equivalent to mpl.ticker.EngFormatter()(x)
     '''
     #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
     if abs(x) < min(values):
         return '{:n}'.format(x)
@@ -1931,7 +1996,7 @@ def metric_prefix(x):
 
 def metric_prefix_longname(x, decimals=1):
     longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', '$\mu$', 'n', 'p', 'f', 'a']
+    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
     values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
     if abs(x) < min(values):
         return '{:n}'.format(x)
@@ -1975,18 +2040,22 @@ def truncate_colormap(cmap, minval=0.0, maxval=1.0, n=256):
         cmap(np.linspace(minval, maxval, int(256*(maxval-minval)))), N=n)
     return new_cmap
 
-def xylim():
+clip_colormap = truncate_colormap
+
+def xylim(ax=None, clip=True):
     # return the command to set a plot xlim,ylim to the xlim and ylim of the current plot
     # also put it on the clipboard
     # got sick of repeating this over and over
-    xlim = plt.xlim()
-    ylim = plt.ylim()
+    if ax is None:
+        ax = plt.gca()
+    xlim = ax.get_xlim()
+    ylim = ax.get_ylim()
     cmd = 'plt.xlim({:.5e}, {:.5e})\nplt.ylim({:.5e}, {:.5e})'.format(*xlim, *ylim)
     print(cmd)
-    # I don't know how to copy a new line onto the clipboard
-    df = pd.DataFrame([cmd.replace('\n', ';')])
-    df.to_clipboard(index=False,header=False)
-
+    if clip:
+        # I don't know how to copy a new line onto the clipboard
+        df = pd.DataFrame([cmd.replace('\n', ';')])
+        df.to_clipboard(index=False,header=False)
 
 def auto_range(xy='y', ax=None):
     # Pick a yrange that fits all the data, in the current x range,

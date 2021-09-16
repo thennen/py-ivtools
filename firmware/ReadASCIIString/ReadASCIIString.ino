@@ -41,7 +41,8 @@ void loop() {
     // Indicator LEDs
     LEDvalue = ~LEDvalue;
     digitalWrite(redPin,LEDvalue);
-    digitalWrite(reedPin,!reed);   
+    // digitalWrite(reedPin,!reed);
+    digitalWrite(reedPin,reed);
     digitalWrite(trigPin, HIGH);  
     // Send Data to DS1808z 
     // use 7 bit Addr: 0101XXX, XXX = set Addr. bits on Board
