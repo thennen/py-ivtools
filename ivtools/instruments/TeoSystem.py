@@ -125,9 +125,7 @@ class TeoSystem(object):
             self.connect()
         else:
             self.__dict__ = ivtools.instrument_states[statename]
-            if not self.conn:  # If there is not connection then connect
-                self.connect()
-            elif not self.connected():  # If there is connection then check it, if false then connect
+            if not self.connected():
                 self.connect()
 
 
@@ -223,12 +221,14 @@ class TeoSystem(object):
         return self.conn
 
     def connected(self):
-
-        MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
-        if MemTester is None:
+        if not hasattr(self, 'conn'):
             self.conn = False
-        else:
-            self.conn = True
+        elif self.conn is True:
+            MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
+            if MemTester is None:
+                self.conn = False
+            else:
+                self.conn = True
 
         return self.conn
 

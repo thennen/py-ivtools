@@ -26,7 +26,7 @@ Returns
 '''
 Things to calibrate:
     High Frequency:
-        "HFV": Desired Voltage -> Applied Voltage  # Looks already ok
+        "HFV": Desired Voltage -> Applied Voltage
         "V_MONITOR": Read Voltage -> Applied Voltage
         "HFV_INT": Read Voltage -> Applied Voltage
         "HF_LIMITED_BW": Read Current -> Real Current
@@ -43,16 +43,26 @@ Used on HF_FULL_BW
 Amp2 uses the two LSB, for possible step settings 0,1,2,3
 each step corresponds to 6dB (2×)
 Used on HF_LIMITED_BW and HFI_INT
+
+Connections:
+Teo 'HFV' -> Picoscope 'A' -> Resistor 'Input'  (Signal divider)
+Resistor 'Output' -> Teo 'HFI'
+Teo 'V_MONITOR' -> Picoscope 'B'
+Teo 'HF_FULL_BW' -> Picoscope 'C'
+Teo 'HF_LIMITED_BW' -> Picoscope 'D'
+Teo 'TRIG1' -> Picoscope 'Aux Trigger'
+Teo 'SW1' swithch in internal mode (Gray position)
 '''
 
 ### Parameters ###
 save_folder = "X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\calibration"
 set_up = 'Teo_Digipot_Picoscope'
-V = 5  # Maximum voltage to apply
-SR = 100_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations
-R = 10_000  # Resistor used to measure
+V = 10        # Amplitude of the triangle pulse, positive and negative
+SR = 100_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
+                # and 100_000 about a minute.
+R = 47_000    # Resistor used to measure
 check = True  # If True: the existing calibration will be used so you can check it, otherwise it will
-# perform an actual calibration
+                # perform an actual calibration
 
 
 def pico_to_iv(datain, dtype=np.float32):
@@ -66,8 +76,8 @@ def pico_to_iv(datain, dtype=np.float32):
     # Make I, V arrays and store the parameters used to make them
     HFV_channel = 'A'
     V_monitor_channel = 'B'
-    HF_limited_channel = 'C'
-    HF_full_channel = 'D'
+    HF_full_channel = 'C'
+    HF_limited_channel = 'D'
 
     gain_step = teo.gain()
 
@@ -83,9 +93,10 @@ def pico_to_iv(datain, dtype=np.float32):
         dataout['units'] = {}
     if HFV_channel in datain:
         V = datain[HFV_channel]
-        if datain['COUPLINGS'][HFV_channel] == 'DC50':
-            V *= 2
         dataout['HFV'] = V  # Subtract voltage on output?  Don't know what it is necessarily.
+        if datain['COUPLINGS'][HFV_channel] == 'DC50':  # Don't let this happen
+            raise Exception("If you are using a signal divider in channel {HFV_channel} and you set 'DC50' only half "
+                            "of the current will go to digipot")
         dataout['units']['HFV'] = 'V'
     if V_monitor_channel in datain:
         V = datain[V_monitor_channel]
@@ -114,10 +125,6 @@ teo = instruments.TeoSystem()
 dp = instruments.WichmannDigipot()
 ps = instruments.Picoscope()
 
-if check is True:
-    timestamp = teo.calibration.attrs['timestamp']
-else:
-    timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
 
 teo.HF_mode()
 dp.set_R(0)
@@ -131,10 +138,7 @@ ps_channels = ['A', 'B', 'C', 'D']
 ps.offset = dict(A=0, B=0, C=0, D=0)
 ps.atten = dict(A=1, B=1, C=1, D=1)
 
-if V > 5:
-    ps.coupling.a = 'DC'
-else:
-    ps.coupling.a = 'DC50'
+ps.coupling.a = 'DC'  # If DC50 half of the voltage is going to Pisoscope and half to Digipot, due to the signal divider
 ps.coupling.b = 'DC50'
 ps.coupling.c = 'DC50'
 ps.coupling.d = 'DC50'
@@ -198,22 +202,26 @@ def measure(gain_step):
 
     return d
 
-# # FIRST MEASUREMENT WITH S=31 TO ESTIMATE RANGES # #
+# # # # # # # # # # # # # # # # # # # # Measurement to find good ranges # # # # # # # # # # # # # # # # # # # # #
 teo.calibration = None
 d_test = measure(31)
 
-max_HF_FULL_BW = max(abs(d_test['HF_FULL_BW'])) * 1.1
-max_HF_LIMITED_BW = max(abs(d_test['HF_LIMITED_BW'])) * 1.1
-max_V_MONITOR = max(abs(d_test['V_MONITOR'])) * 1.1
+max_HF_FULL_BW = max(abs(d_test['HF_FULL_BW']))
+max_HF_LIMITED_BW = max(abs(d_test['HF_LIMITED_BW']))
+max_V_MONITOR = max(abs(d_test['V_MONITOR']))
 
-if check:
+if check is True:
     if os.path.isfile(ivtools.settings.teo_calibration_file):
         teo.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
+        timestamp_chek = teo.calibration.attrs['timestamp']
+        timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+
     else:
         log.warning('Calibration file not found!')
         teo.calibration = None
 else:
     teo.calibration = None
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
 
 if max_V_MONITOR > 5:
     ps.coupling.b = 'DC'
@@ -221,13 +229,13 @@ else:
     ps.coupling.b = 'DC50'
 ps.range.b = max_V_MONITOR
 
+# # # # # # # # # # # # # # # # # # # # # #  Measuring # # # # # # # # # # # # # # # # # # # # # #
+
 data = pd.DataFrame(dict())
 data.index.name = 'Gain Step'
 
 log.info('_' * 50)
 log.info('_' * 50)
-
-# # # # # # # # # # # # # # # # # # # # # #  Measuring # # # # # # # # # # # # # # # # # # # # # #
 
 for s in teo_gain_steps[::-1]:
     log.info(f"Step {s}")
@@ -237,19 +245,19 @@ for s in teo_gain_steps[::-1]:
 
     # Setting Picoscope ranges #
 
-    max_C = max_HF_LIMITED_BW * 2 ** (4 - limited_step)
-    if max_C > 5:
-        ps.coupling.c = 'DC'
-    else:
-        ps.coupling.c = 'DC50'
-    ps.range.c = max_C
-
-    max_D = max_HF_FULL_BW * (101 / 90) ** (31 - full_step)  # 101 / 90 = 1.12222222...
+    max_D = max_HF_LIMITED_BW * 2 ** (4 - limited_step)
     if max_D > 5:
         ps.coupling.d = 'DC'
     else:
         ps.coupling.d = 'DC50'
     ps.range.d = max_D
+
+    max_C = max_HF_FULL_BW * (101 / 90) ** (31 - full_step)  # 101 / 90 = 1.12222222...
+    if max_C > 5:
+        ps.coupling.c = 'DC'
+    else:
+        ps.coupling.c = 'DC50'
+    ps.range.c = max_C
 
     d = measure(s)
 
@@ -273,61 +281,65 @@ for s, d in data.iterrows():
 
     nsamples = len(d['t'])
     V_wfm = d['V_wfm']
-    I_wfm = V_wfm/R
+    I_expected = d['HFV'] / R
+    HFV = tuple(np.polyfit(V_wfm, d['HFV'], 1))
     HFV_INT = tuple(np.polyfit(d['HFV'], d['HFV_INT'], 1))
     V_MONITOR = tuple(np.polyfit(d['HFV'], d['V_MONITOR'], 1))
-    HFI_INT = tuple(np.polyfit(I_wfm, d['HFI_INT'], 1))
-    HF_LIMITED_BW = tuple(np.polyfit(I_wfm, d['HF_LIMITED_BW'], 1))
-    HF_FULL_BW = tuple(np.polyfit(I_wfm, d['HF_FULL_BW'], 1))
+    HFI_INT = tuple(np.polyfit(I_expected, d['HFI_INT'], 1))
+    HF_LIMITED_BW = tuple(np.polyfit(I_expected, d['HF_LIMITED_BW'], 1))
+    HF_FULL_BW = tuple(np.polyfit(I_expected, d['HF_FULL_BW'], 1))
 
-    f = pd.Series(dict(HFV_INT=HFV_INT, HFI_INT=HFI_INT,
+    f = pd.Series(dict(HFV=HFV, HFV_INT=HFV_INT, HFI_INT=HFI_INT,
                        V_MONITOR=V_MONITOR, HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW))
     f.name = s
     fits = fits.append(f)
 
 
-# HFV_INT, V_MONITOR don't have steps, so they are the same fit 31 times, here I average:
+# HFV, HFV_INT, V_MONITOR don't have steps, so they are the same fit 31 times, here I average:
+HFV_slope = np.mean([fits.loc[s]['HFV'][0] for s in teo_gain_steps])
+HFV_offset = np.mean([fits.loc[s]['HFV'][1] for s in teo_gain_steps])
+fits['HFV'] = [(HFV_slope, HFV_offset)] * 32
 
-HFV_INT_offset = np.mean([fits.loc[s]['HFV_INT'][0] for s in teo_gain_steps])
-HFV_INT_slope = np.mean([fits.loc[s]['HFV_INT'][1] for s in teo_gain_steps])
-fits['HFV_INT'] = [(HFV_INT_offset, HFV_INT_slope)] * 32
+HFV_INT_slope = np.mean([fits.loc[s]['HFV_INT'][0] for s in teo_gain_steps])
+HFV_INT_offset = np.mean([fits.loc[s]['HFV_INT'][1] for s in teo_gain_steps])
+fits['HFV_INT'] = [(HFV_INT_slope, HFV_INT_offset)] * 32
 
-V_MONITOR_offset = np.mean([fits.loc[s]['V_MONITOR'][0] for s in teo_gain_steps])
-V_MONITOR_slope = np.mean([fits.loc[s]['V_MONITOR'][1] for s in teo_gain_steps])
-fits['V_MONITOR'] = [(V_MONITOR_offset, V_MONITOR_slope)] * 32
+V_MONITOR_slope = np.mean([fits.loc[s]['V_MONITOR'][0] for s in teo_gain_steps])
+V_MONITOR_offset = np.mean([fits.loc[s]['V_MONITOR'][1] for s in teo_gain_steps])
+fits['V_MONITOR'] = [(V_MONITOR_slope, V_MONITOR_offset)] * 32
 
 
 # And HF_LIMITED_BW and HFI_INT only have 4 steps, so there are many fits repeated, here I average:
-HF_LIMITED_BW_offset_0 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[0::4]])
-HF_LIMITED_BW_slope_0 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[0::4]])
-HF_LIMITED_BW_offset_1 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[1::4]])
-HF_LIMITED_BW_slope_1 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[1::4]])
-HF_LIMITED_BW_offset_2 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[2::4]])
-HF_LIMITED_BW_slope_2 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[2::4]])
-HF_LIMITED_BW_offset_3 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[3::4]])
-HF_LIMITED_BW_slope_3 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[3::4]])
-fits['HF_LIMITED_BW'] = [(HF_LIMITED_BW_offset_3, HF_LIMITED_BW_slope_3),
-                         (HF_LIMITED_BW_offset_2, HF_LIMITED_BW_slope_2),
-                         (HF_LIMITED_BW_offset_1, HF_LIMITED_BW_slope_1),
-                         (HF_LIMITED_BW_offset_0, HF_LIMITED_BW_slope_0)] * 8
+HF_LIMITED_BW_slope_0 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[0::4]])
+HF_LIMITED_BW_offset_0 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[0::4]])
+HF_LIMITED_BW_slope_1 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[1::4]])
+HF_LIMITED_BW_offset_1 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[1::4]])
+HF_LIMITED_BW_slope_2 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[2::4]])
+HF_LIMITED_BW_offset_2 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[2::4]])
+HF_LIMITED_BW_slope_3 = np.mean([fits.loc[s]['HF_LIMITED_BW'][0] for s in teo_gain_steps[3::4]])
+HF_LIMITED_BW_offset_3 = np.mean([fits.loc[s]['HF_LIMITED_BW'][1] for s in teo_gain_steps[3::4]])
+fits['HF_LIMITED_BW'] = [(HF_LIMITED_BW_slope_3, HF_LIMITED_BW_offset_3),
+                         (HF_LIMITED_BW_slope_2, HF_LIMITED_BW_offset_2),
+                         (HF_LIMITED_BW_slope_1, HF_LIMITED_BW_offset_1),
+                         (HF_LIMITED_BW_slope_0, HF_LIMITED_BW_offset_0)] * 8
 
-HFI_INT_offset_0 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[0::4]])
-HFI_INT_slope_0 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[0::4]])
-HFI_INT_offset_1 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[1::4]])
-HFI_INT_slope_1 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[1::4]])
-HFI_INT_offset_2 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[2::4]])
-HFI_INT_slope_2 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[2::4]])
-HFI_INT_offset_3 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[3::4]])
-HFI_INT_slope_3 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[3::4]])
-fits['HFI_INT'] = [(HFI_INT_offset_3, HFI_INT_slope_3),
-                   (HFI_INT_offset_2, HFI_INT_slope_2),
-                   (HFI_INT_offset_1, HFI_INT_slope_1),
-                   (HFI_INT_offset_0, HFI_INT_slope_0)] * 8
+HFI_INT_slope_0 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[0::4]])
+HFI_INT_offset_0 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[0::4]])
+HFI_INT_slope_1 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[1::4]])
+HFI_INT_offset_1 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[1::4]])
+HFI_INT_slope_2 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[2::4]])
+HFI_INT_offset_2 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[2::4]])
+HFI_INT_slope_3 = np.mean([fits.loc[s]['HFI_INT'][0] for s in teo_gain_steps[3::4]])
+HFI_INT_offset_3 = np.mean([fits.loc[s]['HFI_INT'][1] for s in teo_gain_steps[3::4]])
+fits['HFI_INT'] = [(HFI_INT_slope_3, HFI_INT_offset_3),
+                   (HFI_INT_slope_2, HFI_INT_offset_2),
+                   (HFI_INT_slope_1, HFI_INT_offset_1),
+                   (HFI_INT_slope_0, HFI_INT_offset_0)] * 8
 
 calibration = fits.copy()
 
 for s, v in fits.iterrows():
-    for column in ['HFV_INT', 'V_MONITOR', 'HFI_INT', 'HF_LIMITED_BW', 'HF_FULL_BW']:
+    for column in ['HFV', 'HFV_INT', 'V_MONITOR', 'HFI_INT', 'HF_LIMITED_BW', 'HF_FULL_BW']:
         fit = fits.loc[s, column]
         calibration.loc[s, column] = np.array([1 / fit[0], -fit[1] / fit[0]])
 
@@ -342,7 +354,7 @@ calibration.attrs['set_up'] = set_up
 if teo.calibration is None:
     save_folder = os.path.join(save_folder, f'{timestamp}')
 else:
-    save_folder = os.path.join(save_folder, f'{timestamp}_check')
+    save_folder = os.path.join(save_folder, f'{timestamp_chek}_check_{timestamp}')
 os.makedirs(save_folder)
 os.makedirs(os.path.join(save_folder, f'plots'))
 
@@ -355,89 +367,111 @@ for s, d in data.iterrows():
     log.info(f"Plotting Gain Step = {s}")
     ## Ploting fits ##
     V_wfm = d['V_wfm']
-    I_wfm = V_wfm/R
+    I_expected = d['HFV'] / R
 
     size_factor = 3
-    fig = plt.figure("a", figsize=(4 * size_factor, 3 * size_factor), dpi=400)
+    fig = plt.figure("a", figsize=(4 * size_factor, 3 * size_factor), dpi=200)
     fig.clf()
     axs = fig.subplots(2, 3)
 
+    ax = axs[0, 0]  # HFV fit
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.axvline(0, color='gray', alpha=0.7)
+    ax.plot(V_wfm, d['HFV'], label="Measurement", linewidth=3)
+    ax.plot(V_wfm, np.polyval(fits.loc[s, 'HFV'], V_wfm), label="Fit")
+    ax.set_xlabel("Programmed voltage [V]")
+    ax.set_ylabel("HFV [V]")
+    ax.legend(loc="upper left")
+
     ax = axs[0, 1]  # HFV_INT fit
-    line1 = ax.plot(d['HFV'], d['HFV_INT'], label="Measurement")[0]
-    line2 = ax.plot(V_wfm, np.polyval(fits.loc[s, 'HFV_INT'], V_wfm), label="Fit")[0]
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.axvline(0, color='gray', alpha=0.7)
+    ax.plot(d['HFV'], d['HFV_INT'], label="Measurement", linewidth=3)
+    ax.plot(d['HFV'], np.polyval(fits.loc[s, 'HFV_INT'], d['HFV']), label="Fit")
     ax.set_xlabel("Picoscope HFV [V]")
     ax.set_ylabel("HFV_INT [V]")
 
     ax = axs[0, 2]  # V_MONITOR fit
-    ax.plot(d['HFV'], d['V_MONITOR'], label="Measurement")
-    ax.plot(V_wfm, np.polyval(fits.loc[s, 'V_MONITOR'], V_wfm), label="Fit")
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.axvline(0, color='gray', alpha=0.7)
+    ax.plot(d['HFV'], d['V_MONITOR'], label="Measurement", linewidth=3)
+    ax.plot(d['HFV'], np.polyval(fits.loc[s, 'V_MONITOR'], d['HFV']), label="Fit")
     ax.set_xlabel("Picoscope HFV [V]")
     ax.set_ylabel("V_MONITOR [V]")
 
     ax = axs[1, 0]  # HFI_INT fit
-    ax.plot(I_wfm, d['HFI_INT'], label="Measurement")
-    ax.plot(I_wfm, np.polyval(fits.loc[s, 'HFI_INT'], I_wfm), label="Fit")
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.axvline(0, color='gray', alpha=0.7)
+    ax.plot(I_expected, d['HFI_INT'], label="Measurement", linewidth=3)
+    ax.plot(I_expected, np.polyval(fits.loc[s, 'HFI_INT'], I_expected), label="Fit")
     ax.set_xlabel("Expected current [A]")
     ax.set_ylabel("HFI_INT [A]")
 
     ax = axs[1, 1]  # HF_LIMITED_BW fit
-    ax.plot(I_wfm, d['HF_LIMITED_BW'], label="Measurement")
-    ax.plot(I_wfm, np.polyval(fits.loc[s, 'HF_LIMITED_BW'], I_wfm), label="Fit")
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.axvline(0, color='gray', alpha=0.7)
+    ax.plot(I_expected, d['HF_LIMITED_BW'], label="Measurement", linewidth=3)
+    ax.plot(I_expected, np.polyval(fits.loc[s, 'HF_LIMITED_BW'], I_expected), label="Fit")
     ax.set_xlabel("Expected current [A]")
     ax.set_ylabel("HF_LIMITED_BW [A]")
 
     ax = axs[1, 2]  # HF_FULL_BW fit
-    ax.plot(I_wfm, d['HF_FULL_BW'], label="Measurement")
-    ax.plot(I_wfm, np.polyval(fits.loc[s, 'HF_FULL_BW'], I_wfm), label="Fit")
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.axvline(0, color='gray', alpha=0.7)
+    ax.plot(I_expected, d['HF_FULL_BW'], label="Measurement", linewidth=3)
+    ax.plot(I_expected, np.polyval(fits.loc[s, 'HF_FULL_BW'], I_expected), label="Fit")
     ax.set_xlabel("Expected current [A]")
     ax.set_ylabel("HF_FULL_BW [A]")
 
-    ax = axs[0, 0]  # Metadata
-    ax.axis('off')
-    ax.legend([line1, line2], ['Measurement', 'Fit'], loc="lower left")
-    text = f"Gain step = {s}\n"\
-           f"timestamp = {timestamp}\n" \
-           f"resistor = {R}\n" \
-           f"sweep_rate = {SR}\n" \
-           f"wfm_samples = {wfm_samples}\n" \
-           f"set_up = {set_up}"
-    ax.text(0.01, 0.99, text, transform=ax.transAxes, horizontalalignment='left', verticalalignment='top')
+    title = f"Gain step = {s} ; " \
+            f"Timestamp = {timestamp} ; " \
+            f"Resistor = {R} ; " \
+            f"Sweep rate = {SR}\n" \
+            f"Wfm samples = {wfm_samples} ; " \
+            f"Set up = {set_up}"
 
+    fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(os.path.join(save_folder, f'plots/s{s}_fits.png'))
 
     ## Ploting measurements ##
 
-    fig = plt.figure("a", figsize=(4 * size_factor, 3 * size_factor), dpi=400)
+    fig = plt.figure("a", figsize=(4 * size_factor, 3 * size_factor), dpi=200)
     fig.clf()
     axs = fig.subplots(2, 3)
 
-    ax = axs[0, 0]  # teo_HFV
-    ax.plot(d['t'], d['HFV_INT'])
-    ax.set_xlabel("Time [s]")
-    ax.set_ylabel("HFV_INT [V]")
-
-    ax = axs[0, 1]  # ps_HFV
+    ax = axs[0, 0]  # ps_HFV
+    ax.axhline(0, color='gray', alpha=0.7)
     ax.plot(d['t'], d['HFV'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HFV [V]")
 
+    ax = axs[0, 1]  # teo_HFV
+    ax.axhline(0, color='gray', alpha=0.7)
+    ax.plot(d['t'], d['HFV_INT'])
+    ax.set_xlabel("Time [s]")
+    ax.set_ylabel("HFV_INT [V]")
+
     ax = axs[0, 2]  # V_MONITOR
+    ax.axhline(0, color='gray', alpha=0.7)
     ax.plot(d['t'], d['V_MONITOR'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("V_MONITOR [V]")
 
     ax = axs[1, 0]  # HFI
+    ax.axhline(0, color='gray', alpha=0.7)
     ax.plot(d['t'], d['HFI_INT'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HFI_INT [A]")
 
     ax = axs[1, 1]  # HF_LIMITED_BW
+    ax.axhline(0, color='gray', alpha=0.7)
     ax.plot(d['t'], d['HF_LIMITED_BW'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HF_LIMITED_BW [A]")
 
     ax = axs[1, 2]  # HF_FULL_BW
+    ax.axhline(0, color='gray', alpha=0.7)
     ax.plot(d['t'], d['HF_FULL_BW'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HF_FULL_BW [A]")
@@ -453,5 +487,9 @@ for s, d in data.iterrows():
     fig.tight_layout()
     fig.savefig(os.path.join(save_folder, f'plots/s{s}_measurements.png'))
 
+if check is False:
+    if os.path.isfile(ivtools.settings.teo_calibration_file):
+        teo.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)  # so you don't get crazy trying to
+        # apply calibration later
 
 log.info(f"Done! Results saved at:\n{save_folder}")
