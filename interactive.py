@@ -190,9 +190,10 @@ for varname, inst_class, *args in inst_connections:
 # Default data subfolder -- will reflect the date of the last time this script ran
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
 subfolder = datestr
-if len(sys.argv) > 1:
+argv = sys.argv
+if len(argv) > 1:
     # Can give a folder name with command line argument
-    subfolder += '_' + sys.argv[1]
+    subfolder += '_' + argv[1]
 log.info('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
 log.info('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 io.makefolder(datafolder, subfolder)
