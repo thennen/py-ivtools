@@ -481,7 +481,7 @@ def poole_frenkel_plot(data, V='V', I='I', T=None):
         ax.set_ylabel('G')
     ax.set_xlabel(f'sqrt({V})')
 
-def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=plt.cm.viridis, **kwargs):
+def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cmap=plt.cm.viridis, **kwargs):
     # Thermal activation plot -- needs some work though
     # log(I) or log(G) vs 1000/T
     # This is a little tricky because voltage values need to be interpolated in general
@@ -498,8 +498,11 @@ def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=
     colors = cmap(np.linspace(0, 1, len(vs)))
     fits = []
     for v,c in zip(vs, colors):
-        it = ivtools.analyze.interpiv(data, v, column=V, left=np.nan, right=np.nan, findmonotonic=True)
-        plt.plot(1000/it['T'], np.log(it[I]), marker='.', color=c, label=format(v, '.2f'), **kwargs)
+        #it = ivtools.analyze.interpiv(data, v, column=V, fill_value=np.nan, findmonotonic=False)
+        it = ivtools.analyze.interpiv(data, v, column=V)
+        it = it.dropna(0, how='any', subset=[I,T])
+        plt.plot(1000/it[T], it[I], marker='.', color=c, label=format(v, '.2f'), **kwargs)
+        plt.yscale('log')
         #notnan = ~it['I'].isnull()
         #fits.append(polyfit(1/it['T'][notnan], log(it['G'][notnan]), 1))
         #fitx = np.linspace(1/300, 1/81)
@@ -508,8 +511,8 @@ def arrhenius_plot(data, V='V', I='I', T='T', numv=20, minv=None, maxv=None, cm=
         #ax.lines[-1].set_label(None)
     #plt.legend(title='Device Voltage')
     colorbar_manual(minv, maxv, cmap=cmap, label='Applied Voltage [V]')
-    plt.xlabel('Temperature [K] (scale 1/T)')
-    plt.ylabel('log(I)')
+    plt.xlabel('Ambient Temperature [K] (scale 1/T)')
+    plt.ylabel('Current [A]')
     formatter = mpl.ticker.FuncFormatter(lambda x, y: format(1000/x, '.0f'))
     plt.gca().xaxis.set_major_formatter(formatter)
 

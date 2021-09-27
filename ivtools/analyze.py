@@ -592,12 +592,19 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
     for ik in interpkeys:
         if reverse:
             interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0, bounds_error=False, fill_value=fill_value)
-            dataout[ik] = interpolator(interpvalues)
             #dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
         else:
             interpolator = interp1d(data[column], data[ik], axis=0, bounds_error=False, fill_value=fill_value)
-            dataout[ik] = interpolator(interpvalues)
             #dataout[ik] = np.interp(interpvalues, data[column], data[ik], left=left, right=right)
+
+        if isinstance(interpvalues, Number):
+            # avoid this retarded numpy scalar object thing
+            # ie the difference between np.array(1) and np.array([1])
+            # if you don't do this, you can end up with np arrays of np scalars which is just the dumbest thing I have ever seen
+            dataout[ik] = interpolator(interpvalues).item()
+        else:
+            dataout[ik] = interpolator(interpvalues)
+
     dataout[column] = interpvalues
     add_missing_keys(data, dataout)
 
@@ -1440,6 +1447,40 @@ def df_to_nested_series(df):
     return pd.Series(df_dict)
 
 
+def unnest(df, nested=None):
+    '''
+    I abuse pandas to contain nested arrays, for voltage, current, time, etc
+    for me this makes complete sense to do, but is not actually supported, and no one else ever does it
+    this function turns a nested dataframe into a flat one, by expanding all the arrays
+    '''
+    if nested is None:
+        nested = find_data_arrays(df)
+    flat_df = pd.DataFrame(df[nested].apply(np.hstack, 0))
+    flat_df.index = np.repeat(df.index, df[nested[0]].apply(len))
+    return pd.merge(df.drop(nested,1), flat_df, left_index=True, right_index=True)
+
+
+def nest(flatdf, groupby=None):
+    '''
+    takes a standard flat df and produces a new df containing nested arrays of values
+    each group turns into a row of data
+    anything whose value changes within the groups gets nested
+    '''
+    def nester(g):
+        # what changes in the group?
+        same = g.apply(lambda x: np.all(x == x.iloc[0]), 0)
+        series = g.iloc[0][same]
+        for col in same[~same].index:
+            series[col] = g[col].values
+        return series
+
+    if groupby is not None:
+        grps = flatdf.groupby(groupby)
+        return grps.apply(nester)
+    else:
+        return nester(flatdf)
+
+
 #### ####
 
 def iloc(data, index):
@@ -1475,7 +1516,6 @@ def whats_different(df):
     '''
     # for some reason this version breaks if the the dataframe index isn't reset
     df = df.reset_index()
-
     # Got a better way to tell which columns have arrays nested in them?
     # This is the clunkiest thing ever
     arrays = df.apply(lambda x: type(x[0])) == np.ndarray
