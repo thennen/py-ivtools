@@ -79,7 +79,7 @@ class TeoSystem(object):
     There is a PowerPoint with documentation of some bugs at:
     'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\teo_bugs.pptm'
 
-    TODO: The maximum waveform length is not being reached because of lack of ReRAM on PC, we currently have 32GB
+    TODO: The maximum waveform length is not being reached because of lack of ReRAM on PC, we currently have 64GB
 
     TODO: Waveform reproducibility bug. Documented on powerpoint.
 
@@ -116,6 +116,13 @@ class TeoSystem(object):
         Make sure there is no DUT connected when you initialize!
         HFV output goes to the negative rail!
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+        '''
+
+        '''
+        Connection steps:
+        1. Look for previous connections on ivtools.instrument_states dictionary.
+        2. If there is a previous connection, check if it is still available.
+        3. If not, connect.
         '''
 
         statename = self.__class__.__name__
@@ -155,66 +162,63 @@ class TeoSystem(object):
             __setattr__ = dict.__setitem__
 
         self.base = TeoBase()
-        if self.base.conn:
+        if self.base.conn is True:
 
-            try:
-                self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
+            self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
 
-                # Assign properties that do not change, like max/min values
-                # so that we don't keep polling the instrument for fixed values
+            # Assign properties that do not change, like max/min values
+            # so that we don't keep polling the instrument for fixed values
 
-                self.constants = dotdict()
-                self.constants.idn = self.idn()
-                self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
-                self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
-                # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
-                # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
-                # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
-                # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
-                self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
+            self.constants = dotdict()
+            self.constants.idn = self.idn()
+            self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
+            self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
+            # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
+            # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
+            # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
+            # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
+            self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
 
-                if os.path.isfile(ivtools.settings.teo_calibration_file):
-                    self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
-                else:
-                    log.warning('Calibration file not found!')
-                    self.calibration = None
+            if os.path.isfile(ivtools.settings.teo_calibration_file):
+                self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
+            else:
+                log.warning('Calibration file not found!')
+                self.calibration = None
 
-                # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
-                self.J29 = True
+            # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
+            self.J29 = True
 
-                # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
+            # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
 
-                # set the power line frequency for averaging over integer cycles
-                self.PLF = 50
+            # set the power line frequency for averaging over integer cycles
+            self.PLF = 50
 
-                ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
-                # it appears to be fine to call it multiple times;
-                # everything still works, and I didn't see any disturbances on the HFV output
-                # TODO: what state do we exactly start up in the first time this is called?
-                # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
-                # So I think it starts in some undefined mode
-                # subsequent calls seem to stay in whatever mode it was in before,
-                # even if we lost the python-TSX_DM connection for some reason
-                self.base.DeviceControl.StartDevice()
-                # This command sets the idle level for HF mode
-                self.base.LF_Voltage.SetValue(0)
-                # self.HF_mode()
+            ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
+            # it appears to be fine to call it multiple times;
+            # everything still works, and I didn't see any disturbances on the HFV output
+            # TODO: what state do we exactly start up in the first time this is called?
+            # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
+            # So I think it starts in some undefined mode
+            # subsequent calls seem to stay in whatever mode it was in before,
+            # even if we lost the python-TSX_DM connection for some reason
+            self.base.DeviceControl.StartDevice()
+            # This command sets the idle level for HF mode
+            self.base.LF_Voltage.SetValue(0)
+            # self.HF_mode()
 
-                # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
-                # TODO: somehow prevent this from taking too much memory
-                #       should always reflect the state of the teo board
-                # self.waveforms = {}
-                self.waveforms = self.download_all_wfms()
-                # Store the name of the last played waveform
-                self.last_waveform = None
-                self.last_gain = None
-                self.last_nshots = None
+            # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
+            # TODO: somehow prevent this from taking too much memory
+            #       should always reflect the state of the teo board
+            # self.waveforms = {}
+            self.waveforms = self.download_all_wfms()  # This is taking long
+            # Store the name of the last played waveform
+            self.last_waveform = None
+            self.last_gain = None
+            self.last_nshots = None
 
-                log.info('TEO connection successful: ' + self.constants.idn)
-                self.conn = True
-            except Exception as E:
-                log.error(f"Teo connection failed:\n{E}")
-                self.conn = False
+            log.info('TEO connection successful: ' + self.constants.idn)
+            self.conn = True
+
         else:
             self.conn = False
 
@@ -818,11 +822,11 @@ class TeoSystem(object):
 
     # Source meter mode
     # I believe you just set voltages and read currents in a software defined sequence
-    # TODO: what is the output impedance in LF mode?  hope it's still 50 so we don't risk blowing up 50 ohm inputs
+    # Output impedance is 50Ω
     # TODO: will we blow up the input if we have more than 4 uA? how careful should we be?
     # TODO: is the current range bipolar?
 
-    def LF_mode(self):
+    def LF_mode(self, external=True):
         '''
         Switch to LF mode (HF LED should turn off)
 
@@ -832,9 +836,10 @@ class TeoSystem(object):
 
         J4 and J5 are located underneath the square metal RF shield,
         you can pry off the top cover to access them.
+
+        If external is True, setting voltages is disabled
         '''
-        # This argument does nothing!
-        external = True
+
         self.base.LF_Measurement.SetLF_Mode(0, external)
 
 
@@ -842,6 +847,7 @@ class TeoSystem(object):
         '''
         Gets or sets the LF source voltage value
         This also sets the idle level for HF mode..  but doesn't switch to LF_mode or anything
+        Minimum voltage step is 0.002V.
 
         Teo indicated that in LF mode, the voltage appears on the HFI port, not HFV, which is the reverse of HF mode.
         Alejandro said this is not actually the case..
@@ -897,29 +903,38 @@ class TeoSystem(object):
         return self.get_data()
 
 
-    def measureLF(self, Vvalues, NPLC=10):
+    def measureLF(self, V_list, NPLC=10):
         '''
         Use internal LF mode to make a low-current measurement
         not tested
-        TODO: test this!
         '''
-        self.LF_mode()
+
+        self.LF_mode(external=False)
 
         Vidle = self.LF_voltage()
 
         I = []
-        for V in Vvalues:
-            self.LF_voltage(V)
-            time.sleep(.1)
-            i = self.LF_current(NPLC)
-            I.append(i)
-
-        I = np.array(I)
+        V = []
+        t = []
+        for v in V_list:
+            self.LF_voltage(v)
+            vv = self.LF_voltage()
+            tt1 = time.time()
+            ii = self.LF_current(NPLC)
+            tt2 = time.time()
+            tt = tt1 + (tt2 - tt1) / 2
+            I.append(ii)
+            V.append(vv)
+            t.append(tt)
+        t = np.array(t) - t[0]
 
         # Go back to the idle level
         self.LF_voltage(Vidle)
 
-        return dict(I=I, V=Vvalues)
+        data = dict(V_list=V_list, I=I, V=V, t=t, idn=self.idn(), gain_step=self.gain(),
+                    units=dict(V_list='V', I='A', V='V', t='s'))
+
+        return data
 
 class TeoBase(object):
 

@@ -15,6 +15,8 @@ import ivtools.settings
 
 log = logging.getLogger('instruments')
 
+# todo: test LF
+
 """
 TeoSystem calibration using Digipot, Picoscope and Keitheley.
 
@@ -63,6 +65,7 @@ SR = 100_000  # Sweep rate of the waveform. Lower sweep rates make more precise 
 R = 47_000    # Resistor used to measure
 check = True  # If True: the existing calibration will be used so you can check it, otherwise it will
                 # perform an actual calibration
+nplc = 10     # Number of power line cycles to use on low frequency mode
 
 
 def pico_to_iv(datain, dtype=np.float32):
@@ -202,7 +205,7 @@ def measure(gain_step):
 
     return d
 
-# # # # # # # # # # # # # # # # # # # # Measurement to find good ranges # # # # # # # # # # # # # # # # # # # # #
+# # # # # # # # # # # # # # # # # # # # Measurement to estimate ranges # # # # # # # # # # # # # # # # # # # # #
 teo.calibration = None
 d_test = measure(31)
 
@@ -272,6 +275,14 @@ data.attrs['sweep_rate'] = SR
 data.attrs['wfm_samples'] = wfm_samples
 data.attrs['set_up'] = set_up
 
+teo.LF_mode(external=False)
+LF_I_range = 45e-6
+LF_V_read = LF_I_range * R
+LF_wfm = np.concatenate([np.linspace(0, LF_V_read, 5),
+                         np.linspace(LF_V_read, -LF_V_read, 10)[1:-1],
+                         np.linspace(-LF_V_read, 0, 5)])
+
+LF_data = teo.measureLF(LF_wfm, NPLC=nplc)
 
 # # # # # # # # # # # # # # # # # # # # # #  Fitting # # # # # # # # # # # # # # # # # # # # # #
 
@@ -336,10 +347,17 @@ fits['HFI_INT'] = [(HFI_INT_slope_3, HFI_INT_offset_3),
                    (HFI_INT_slope_1, HFI_INT_offset_1),
                    (HFI_INT_slope_0, HFI_INT_offset_0)] * 8
 
+# Now I go with the Low frequency mode
+LFV = tuple(np.polyfit(LF_wfm, LF_data['V'], 1))
+I_expected = LF_data['V'] / R
+LFI = tuple(np.polyfit(I_expected, LF_data['I'], 1))
+fits['LFV'] = np.repeat([LFV], 32)
+fits['LFI'] = np.repeat([LFI], 32)
+
 calibration = fits.copy()
 
 for s, v in fits.iterrows():
-    for column in ['HFV', 'HFV_INT', 'V_MONITOR', 'HFI_INT', 'HF_LIMITED_BW', 'HF_FULL_BW']:
+    for column in ['HFV', 'HFV_INT', 'V_MONITOR', 'HFI_INT', 'HF_LIMITED_BW', 'HF_FULL_BW', 'LFV', 'LFI']:
         fit = fits.loc[s, column]
         calibration.loc[s, column] = np.array([1 / fit[0], -fit[1] / fit[0]])
 
@@ -486,6 +504,52 @@ for s, d in data.iterrows():
     fig.suptitle(title)
     fig.tight_layout()
     fig.savefig(os.path.join(save_folder, f'plots/s{s}_measurements.png'))
+
+## Ploting LF measurement ##
+I_expected = LF_data['V'] / R
+
+fig = plt.figure("a", figsize=(6 * size_factor, 3 * size_factor), dpi=200)
+fig.clf()
+axs = fig.subplots(2, 2)
+
+ax = axs[0, 0]  # LFV
+ax.axhline(0, color='gray', alpha=0.7)
+ax.plot(LF_data['t'], LF_data['LFV'])
+ax.set_xlabel("Time [s]")
+ax.set_ylabel("LFV [V]")
+
+ax = axs[0, 1]  # LFI
+ax.axhline(0, color='gray', alpha=0.7)
+ax.plot(LF_data['t'], LF_data['LFI'])
+ax.set_xlabel("Time [s]")
+ax.set_ylabel("LFI [A]")
+
+ax = axs[1, 0]  # LFV fit
+ax.axhline(0, color='gray', alpha=0.7)
+ax.axvline(0, color='gray', alpha=0.7)
+ax.plot(LF_wfm, LF_data['LFV'], label="Measurement", linewidth=3)
+ax.plot(LF_wfm, np.polyval(fits.loc[s, 'LFV'], LF_wfm), label="Fit")
+ax.set_xlabel("Programmed voltage [V]")
+ax.set_ylabel("LFV [V]")
+ax.legend(loc="upper left")
+
+ax = axs[1, 1]  # LFI fit
+ax.axhline(0, color='gray', alpha=0.7)
+ax.axvline(0, color='gray', alpha=0.7)
+ax.plot(I_expected, LF_data['LFI'], label="Measurement", linewidth=3)
+ax.plot(I_expected, np.polyval(fits.loc[s, 'LFI'], I_expected), label="Fit")
+ax.set_xlabel("Expected current [A]")
+ax.set_ylabel("LFI [A]")
+
+title = f"Timestamp = {timestamp} ; " \
+        f"Resistor = {R} ; " \
+        f"Data points = {len(LF_wfm)} ; " \
+        f"NPLC = {nplc}" \
+        f"Set up = {set_up}"
+
+fig.suptitle(title)
+fig.tight_layout()
+fig.savefig(os.path.join(save_folder, f'plots/LF_mode.png'))
 
 if check is False:
     if os.path.isfile(ivtools.settings.teo_calibration_file):
