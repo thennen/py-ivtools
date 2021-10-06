@@ -1486,9 +1486,10 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
 
     def processgroup(g):
         if smoothpercent > 0:
-            smoothn = max(int(smoothpercent * len(g.iloc[0].V) / 100), 1)
+            col = ivtools.analyze.find_data_arrays(g)[0]
+            smoothn = max(int(smoothpercent * len(g.iloc[0][col]) / 100), 1)
             g = ivtools.analyze.moving_avg(g, smoothn)
-        if 'R_series' in g:
+        if ('R_series' in g) and ('I' in g) and ('V' in g) and ('Vd' not in g):
             g['Vd'] = g['V'] - g['R_series'] * g['I']
         # ivtools.analyze.convert_to_uA(g)
         return g
@@ -1510,13 +1511,17 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
             pngfn = os.path.splitext(fn)[0] + '.png'
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
-                df = pd.read_pickle(fn)
-                # if type(df) is pd.Series:
-                # df = ivtools.analyze.series_to_df(df)
-                df = processgroup(df)
-                log.info('plotting')
-                plotgroup(df)
-                writefig(pngfp)
+                try:
+                    df = pd.read_pickle(fn)
+                    # if type(df) is pd.Series:
+                    # df = ivtools.analyze.series_to_df(df)
+                    df = processgroup(df)
+                    log.info('plotting')
+                    plotgroup(df)
+                    writefig(pngfp)
+                except Exception as e:
+                    log.warning('Failed to plot')
+                    log.error(e)
             elif not overwrite:
                 log.info(f'not overwriting file {pngfp}')
     else:

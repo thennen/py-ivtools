@@ -1460,18 +1460,25 @@ def unnest(df, nested=None):
     return pd.merge(df.drop(nested,1), flat_df, left_index=True, right_index=True)
 
 
-def nest(flatdf, groupby=None):
+def nest(flatdf, groupby=None, cols=None):
     '''
     takes a standard flat df and produces a new df containing nested arrays of values
     each group turns into a row of data
     anything whose value changes within the groups gets nested
     '''
     def nester(g):
-        # what changes in the group?
-        same = g.apply(lambda x: np.all(x == x.iloc[0]), 0)
-        series = g.iloc[0][same]
-        for col in same[~same].index:
-            series[col] = g[col].values
+        if cols is None:
+            # what changes in the group?
+            same = g.apply(lambda x: np.all(x == x.iloc[0]), 0)
+            series = g.iloc[0][same]
+            for col in same[~same].index:
+                series[col] = g[col].values
+        else:
+            nonest = set(cols) - set(g.index)
+            series = g.iloc[0][nonest]
+            for col in cols:
+                series[col] = g[col].values
+
         return series
 
     if groupby is not None:
