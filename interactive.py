@@ -63,6 +63,7 @@ if not firstrun:
     old['COMPLIANCE_CURRENT'] = measure.COMPLIANCE_CURRENT
     old['INPUT_OFFSET'] = measure.INPUT_OFFSET
     old['pg5'] = pg5
+    old['pg100'] = pg100
 
 # Dump everything into interactive namespace for convenience
 # TODO: run test for overlapping names
@@ -126,6 +127,7 @@ if firstrun:
     measure.connect_keithley()
     measure.connect_tektronix()
     measure.connect_pg5()
+    measure.connect_pg100()
     firstrun = False
     # Need to specify what the plots should do by default
     # There are a few different ways one could handle this
@@ -156,6 +158,10 @@ else:
         tresource = old['pg5'].conn.resource_name
         old['pg5'].close()
         measure.connect_pg5(tresource)
+    if old['pg100'] is not None:
+        tresource = old['pg100'].conn.resource_name
+        old['pg100'].close()
+        measure.connect_pg100(tresource)
     measure.COMPLIANCE_CURRENT = old['COMPLIANCE_CURRENT']
     measure.INPUT_OFFSET = old['INPUT_OFFSET']
     meta = io.MetaHandler(oldinstance=meta)
@@ -187,6 +193,7 @@ k = measure.k
 ttx = measure.ttx
 rigol = measure.rigol
 pg5 = measure.pg5
+pg100= measure.pg100
 
 # Metadata selector
 pp = autocaller(meta.print)

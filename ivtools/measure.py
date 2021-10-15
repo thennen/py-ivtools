@@ -36,6 +36,9 @@ ttx = None
 # Any PG5 found
 pg5 = None
 
+# Any PG100 found
+pg100 = None
+
 # TODO: try to connect to all known instruments
 
 # These are None until the instruments are connected
@@ -171,6 +174,34 @@ def connect_pg5(addr=None):
         print('Connection to PG5 failed.')
 
 
+def connect_pg100(addr=None):
+    global pg100
+    if addr is None:
+        addrs = ['ASRL4::INSTR']
+    else:
+        addrs = [addr]
+    for addr in addrs:
+        if pg100 is None:
+            try:
+                pg100 = instruments.PG100(addr)
+                idn = pg100.ask('*IDN?').replace('\n','')
+                print('PG100 *IDN?: {}'.format(idn))
+                pg100.read()   # read necessary to avoid empty line issue
+            except:
+                pg100 = None
+        else:
+            try:
+                # Is PG100 already connected?    
+                idn = pg100.ask('*IDN?')
+                print('PG100 already connected')
+                print('PG100 *IDN?: {}'.format(idn))
+                pg100.read()   # read necessary to avoid empty line issue
+            except:
+                print('PG100 not responding and pg100 variable is not None.')
+    if pg100 is None:
+        print('Connection to PG100 failed.')
+
+
 def connect_instruments():
     ''' Connect all the necessary equipment '''
     print('Attempting to connect all instruments.')
@@ -179,6 +210,7 @@ def connect_instruments():
     connect_keithley()
     connect_tektronix()
     connect_pg5()
+    connect_pg100()
 
 
 def close_instruments():
