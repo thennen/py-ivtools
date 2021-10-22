@@ -1585,14 +1585,17 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', Vd_gain=0.5,
         V = datain[monitor_channel]
         dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
         dataout['units']['V'] = 'V'
-    if Vd_channel in datain:
-        Vd = datain[Vd_channel]/Vd_gain
-        dataout['Vd'] = Vd
-        dataout['units']['Vd'] = 'V'
     if I_channel in datain:
         I = datain[I_channel] * gain
         dataout['I'] = I
         dataout['units']['I'] = 'A'
+    if Vd_channel in datain:
+        Vd = datain[Vd_channel]/Vd_gain
+        if I_channel in datain: # subtract voltage across 50 ohm to ground
+            dataout['Vd'] = Vd - dataout['I']
+        else:
+            dataout['Vd'] = Vd
+        dataout['units']['Vd'] = 'V'
 
     dataout['Igain'] = gain
 
