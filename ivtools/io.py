@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import time
+import shutil
 from datetime import datetime
 
 import numpy as np
@@ -34,8 +35,17 @@ pjoin = os.path.join
 splitext = os.path.splitext
 psplit = os.path.split
 
+# py-ivtools git repo
 # Directory above the one containing this file
-gitdir = psplit(psplit(__file__)[0])[0]
+repoDir = psplit(psplit(__file__)[0])[0]
+
+# Find the git executable.  Should be on the path.
+gitexe = shutil.which('git')
+if gitexe is None:
+    maybegit = 'C:\\Program Files\\Git\\cmd\\git.EXE'
+    if os.path.isfile(maybegit):
+        gitexe = maybegit
+
 
 db_path = settings.db_path
 
@@ -877,18 +887,20 @@ def timestamp(date=True, time=True, ms=True, us=False):
 
 
 def getGitRevision():
-    rev = subprocess.getoutput(f'cd \"{gitdir}\" & git rev-parse --short HEAD')
-    # return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
-    if 'not recognized' in rev:
-        # git not installed probably
+    if gitexe is None:
+        log.error('Cannot find git executable. Put git.exe on your path.')
         return 'Dunno'
-    else:
-        return rev
+    rev = subprocess.getoutput(f'cd \"{repoDir}\" & "{gitexe}" rev-parse --short HEAD')
+    # return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+    return rev
 
 
 def getGitStatus():
     # attempt to parse the git status
-    status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=gitdir).decode().strip()
+    if gitexe is None:
+        log.error('Cannot find git executable. Put git.exe on your path.')
+        return
+    status = subprocess.check_output([gitexe, 'status', '--porcelain'], cwd=repoDir).decode().strip()
     status = [l.strip().split(' ', maxsplit=1) for l in status.split('\n')]
     # I like dict of lists better
     output = {}
@@ -903,8 +915,11 @@ def getGitStatus():
 
 
 def gitCommit(message='AUTOCOMMIT'):
+    if gitexe is None:
+        log.error('Cannot find git executable. Put git.exe on your path.')
+        return
     # I think it will give an error if there is nothing to commit..
-    output = subprocess.check_output(['git', 'commit', '-a', f'-m {message}'], cwd=gitdir).decode()
+    output = subprocess.check_output([gitexe, 'commit', '-a', f'-m {message}'], cwd=repoDir).decode()
     return output
 
 
