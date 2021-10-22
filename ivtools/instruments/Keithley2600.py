@@ -1,10 +1,13 @@
-import numpy as np
-from ..instruments import ping
+import logging
 import os
 import re
 from collections import deque
+
+import numpy as np
+
 import ivtools
-import logging
+from ..instruments import ping
+
 log = logging.getLogger('instruments')
 import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
@@ -38,6 +41,10 @@ class Keithley2600(object):
             # I don't trust the resource manager at all, but you didn't pass an address so..
             # I assume you are using ethernet
             ipresources = [r for r in visa_rm.list_resources() if r.startswith('TCPIP')]
+            if not any(ipresources):
+                # whether ip resources appear has nothing to do with them being connected
+                # they will never appear unless you add them in NI MAX first
+                ipresources = ['192.168.11.13:', '192.168.11.12:', '192.168.11.11:']
             log.debug('Looking for ip address for Keithley...')
             for ipr in ipresources:
                 # Sorry..
@@ -62,9 +69,9 @@ class Keithley2600(object):
                 say_if_successful = False
             self.__dict__ = ivtools.instrument_states[statename]
             self.connect(addr)
-            self.display('ALL YOUR BASE', 'ARE BELONG TO US')
-            self.write('delay(2)')
-            self.display_SMU()
+            # self.display('ALL YOUR BASE', 'ARE BELONG TO US')
+            # self.write('delay(2)')
+            # self.display_SMU()
             if say_if_successful:
                 log.info('Keithley connection successful at {}'.format(addr))
         except Exception as E:
@@ -76,7 +83,7 @@ class Keithley2600(object):
             self.debug = False
             # Store up to 100 loops in memory in case you forget to save them to disk
             self.data = deque(maxlen=100)
-            self.conn = visa_rm.get_instrument(addr, open_timeout=0)
+            self.conn = visa_rm.open_resource(addr, open_timeout=0)
             self.conn.timeout = 4000
             # Expose a few methods directly to self
             self.ask = self.query

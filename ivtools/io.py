@@ -1,22 +1,22 @@
 ''' Functions for saving and loading data '''
+import fnmatch
+import os
+import re
+import subprocess
+import sys
+import time
+from datetime import datetime
+
+import numpy as np
+import pandas as pd
+from matplotlib import pyplot as plt
+
 # we don't make heavy use of these other modules
 # don't reference them on the top level
 # this is to avoid circular import problems
 import ivtools.analyze
 import ivtools.plot
 from ivtools import settings
-
-import os
-import re
-import fnmatch
-import pandas as pd
-from datetime import datetime
-from matplotlib import pyplot as plt
-import sys
-import subprocess
-import numpy as np
-import time
-from matplotlib import pyplot as plt
 
 try:
     import cPickle as pickle
@@ -395,6 +395,7 @@ class MetaHandler(object):
 
     def goto(self, **kwargs):
         ''' Assuming you loaded metadata already, this goes to the first row that matches the keys'''
+        # TODO: if there is more than one device with those parameters, don't select the first, instead, raise exception
         mask = np.ones(len(self.df), bool)
         for k, v in kwargs.items():
             mask &= self.df[k] == v
@@ -402,7 +403,7 @@ class MetaHandler(object):
         if any(mask):
             i = w[0][0]
             self.select(i)
-            log.info('You have selected this device (index {}):'.format(self.i))
+            log.debug('You have selected this device (index {}):'.format(self.i))
             return self.i
         else:
             log.error('No matching devices found')
@@ -1137,13 +1138,17 @@ def read_pandas(filepaths, concat=True, dropcols=None):
         # Single series or df
         return pd.read_pickle(filepaths)
     else:
+        N = len(filepaths)
         # Should be a list of filepaths
         pdlist = []
         # Try to get pandas to read the files, but don't give up if some fail
-        for f in filepaths:
+        for i,f in enumerate(filepaths):
             try:
                 # pdlist may have some combination of Series and DataFrames.  Series should be rows
                 pdobject = pd.read_pickle(f)
+            except KeyboardInterrupt:
+                print('KeyboardInterrupt. Returning whatever was loaded so far.')
+                break
             except:
                 log.error('Failed to interpret {} as a pickle!'.format(f))
                 continue
@@ -1167,7 +1172,7 @@ def read_pandas(filepaths, concat=True, dropcols=None):
                 # pdlist.append(pd.DataFrame(pdobject).transpose())
             else:
                 log.warning('Do not know wtf this file is:')
-            log.info('Loaded {}.'.format(f))
+            log.info(f'{i+1}/{N} Loaded {f}.')
         if concat:
             return pd.concat(pdlist).reset_index()
         else:
@@ -1481,9 +1486,10 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
 
     def processgroup(g):
         if smoothpercent > 0:
-            smoothn = max(int(smoothpercent * len(g.iloc[0].V) / 100), 1)
+            col = ivtools.analyze.find_data_arrays(g)[0]
+            smoothn = max(int(smoothpercent * len(g.iloc[0][col]) / 100), 1)
             g = ivtools.analyze.moving_avg(g, smoothn)
-        if 'R_series' in g:
+        if ('R_series' in g) and ('I' in g) and ('V' in g) and ('Vd' not in g):
             g['Vd'] = g['V'] - g['R_series'] * g['I']
         # ivtools.analyze.convert_to_uA(g)
         return g
@@ -1505,13 +1511,17 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
             pngfn = os.path.splitext(fn)[0] + '.png'
             pngfp = os.path.join(datadir, pngfn)
             if overwrite or not os.path.isfile(pngfp):
-                df = pd.read_pickle(fn)
-                # if type(df) is pd.Series:
-                # df = ivtools.analyze.series_to_df(df)
-                df = processgroup(df)
-                log.info('plotting')
-                plotgroup(df)
-                writefig(pngfp)
+                try:
+                    df = pd.read_pickle(fn)
+                    # if type(df) is pd.Series:
+                    # df = ivtools.analyze.series_to_df(df)
+                    df = processgroup(df)
+                    log.info('plotting')
+                    plotgroup(df)
+                    writefig(pngfp)
+                except Exception as e:
+                    log.warning('Failed to plot')
+                    log.error(e)
             elif not overwrite:
                 log.info(f'not overwriting file {pngfp}')
     else:

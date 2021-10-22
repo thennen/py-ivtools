@@ -13,13 +13,14 @@ to avoid circular imports, you shouldn't import anything here that uses the sett
 TODO: some way to export and load settings
 '''
 import getpass  # to get user name
-import socket
 import os
-from functools import partial
+import socket
 from importlib import reload
+
+import ivtools.instruments as instruments
 # circular import?
 import ivtools.measure
-import ivtools.instruments as instruments
+
 
 # untested..
 def reload():
@@ -85,16 +86,19 @@ logging_prints = {
 # list of (Variable name, Instrument class name, *arguments to pass to class init)
 inst_connections = []
 
+# Shared metadatabase
 db_path = os.path.join(pyivtools_dir, 'metadata.db')
 
+# Shared logging file
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
 
 #################################################
 ######## Hostname/user specific settings ########
+######## May override the above settings ########
 #################################################
 
-if hostname == 'pciwe46':
+if hostname in ('pciwe46', 'iwe21705'):
     db_path = 'D:\metadata.db'
     if username == 'hennen':
         autocommit = True
@@ -131,7 +135,7 @@ if hostname == 'pciwe46':
                         ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
                         ('rigol2', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
                         #('teo', instruments.TeoSystem),
-                        ('daq', instruments.USB2708HS),
+                        #('daq', instruments.USB2708HS),
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),

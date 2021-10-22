@@ -58,8 +58,8 @@ class WichmannDigipot(object):
                     self.fake_connect()
                     return
             self.conn = serial.Serial(addr, timeout=1)
-            self.read_all = self.conn.read_all
-            self.write = self.conn.write
+            #self.read_all = self.conn.read_all
+            #self.write = self.conn.write
             self.close = self.conn.close
             self.mode = mode
             # We don't know what state we are in initially
@@ -68,6 +68,16 @@ class WichmannDigipot(object):
             self.set_state(0,0,1)
             if self.connected():
                 log.info(f'Connected to digipot on {addr}')
+
+    def write(self, msg):
+        ''' write that outputs on debug '''
+        log.debug(f'digipot write: {msg}')
+        self.conn.write(msg.encode())
+
+    def read_all(self):
+        ''' read that outputs on debug '''
+        msg = self.conn.read_all().decode()
+        log.debug(f'digipot read: {msg}')
 
     def fake_connect(self, addr=None, mode='single'):
         '''
@@ -101,7 +111,6 @@ class WichmannDigipot(object):
 
     def query(self, textstr):
         # Simple send serial command and get answer
-        log.info(self.read_all())
         self.write(textstr)
         time.sleep(5e-3)
         reply = self.read_all()
@@ -136,7 +145,7 @@ class WichmannDigipot(object):
             wiper1 = self.wiper1state
         if wiper2 is None:
             wiper2 = self.wiper2state
-        self.write(f'{wiper1} {wiper2} {bypass}'.encode())
+        self.write(f'{wiper1} {wiper2} {bypass}')
         # Record the state in the instance
         self.wiper1state = wiper1
         self.R1state = self.R1list[wiper1]
@@ -144,8 +153,10 @@ class WichmannDigipot(object):
         self.R2state = self.R2list[wiper2]
         self.bypass_state = bypass
         #Wait until the AVR has sent a message back
-        time.sleep(5e-3)
-        return self.read_all().decode()
+        #time.sleep(5e-3) # this wasn't enough for one of the boards ...
+        # TODO: could do a loop that keeps trying to read until we get what we need
+        time.sleep(20e-3)
+        return self.read_all()
 
     def set_bypass(self, state):
         '''

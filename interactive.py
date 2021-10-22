@@ -155,7 +155,7 @@ keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
 # For Teo
-teo_plotters = [[0, partial(ivplot.ivplotter, x='Vwfm')], # programmed waveform is less noisy
+teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is less noisy but I want to check V
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
@@ -336,7 +336,7 @@ s = autocaller(savedata)
 
 ###### Common configurations? ############
 
-def setup_ccircuit_measurements():
+def setup_ccircuit():
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
@@ -344,6 +344,25 @@ def setup_ccircuit_measurements():
     ps.range.c = 2
     settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
+
+def setup_digipot():
+    ps.coupling.a = 'DC' # monitor
+    ps.coupling.b = 'DC50' # device voltage
+    ps.coupling.c = 'DC50' # current (unamplified)
+    ps.range.b = 2
+    ps.range.c = 0.05
+    settings.pico_to_iv = digipot_to_iv
+    iplots.plotters = pico_plotters
+
+def setup_picoteo():
+    ps.coupling.b = 'DC50'
+    ps.coupling.c = 'DC50'
+    ps.coupling.d = 'DC50'
+    ps.range.b = 0.2
+    ps.range.c = 0.2
+    ps.range.d = 0.2
+    settings.pico_to_iv = TEO_HFext_to_iv
+    iplots.plotters = teo_plotters
 
 ###### Interactive measurement functions #######
 
@@ -404,6 +423,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
 
 picoiv = interactive_wrapper(measure.picoiv)
 digipotiv = interactive_wrapper(measure.digipotiv)
+picoteoiv = interactive_wrapper(measure.picoteo)
 
 # If keithley is connected ..
 # because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
@@ -432,7 +452,7 @@ if ts:
 
 if teo:
     # HF mode
-    teoiv = interactive_wrapper(teo.measure)
+    teoiv = interactive_wrapper(teo.measureHF)
 
 def set_compliance(cc_value):
     # Just calls normal set_compliance and also puts the value in metadata
