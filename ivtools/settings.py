@@ -1,17 +1,15 @@
 '''
-This is a module for containing program global state
-which persists on reload of other modules
-the point is that you can reload everything else except this, so anything stored here can persist
+This is a module for containing settings and state information of the program.
+the point is so that we can reload every other module except this one, and anything stored here will persist
 
-You can store whatever settings you want here
+Note that this is not a typical config file -- it is programatically defined and shared with all users,
+at least while the number of users is manageable.
 
-There are hostname/username specific blocks that can set machine and user specific settings
-without messing everyone else up
-
-to avoid circular imports, you shouldn't import anything here that uses the settings module on the top level
-
-TODO: some way to export and load settings
+We first define default settings and afterward there are hostname/username specific blocks
+that can set hostname and user specific settings that don't affect anyone else.
 '''
+# TODO: some way to export and load settings
+# to avoid circular imports, you shouldn't import anything here that uses the settings module on the top level
 import getpass  # to get user name
 import os
 import socket
@@ -83,7 +81,8 @@ logging_prints = {
 
 # Specifies which instruments to connect to and what variable names to give them (for interactive script)
 # Could also use it to specify different addresses needed on different PCs to connect to the same kind of instrument
-# list of (Variable name, Instrument class name, *arguments to pass to class init)
+# list of (Variable name, Instrument class name, *arguments to pass to class init) tuples
+# TODO probably a dict of tuples would be better
 inst_connections = []
 
 # Shared metadatabase
@@ -100,11 +99,25 @@ logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
 if hostname in ('pciwe46', 'iwe21705'):
     db_path = 'D:\metadata.db'
+
+    inst_connections = [('ps', instruments.Picoscope),
+                        ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                        ('rigol2', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
+                        #('teo', instruments.TeoSystem),
+                        #('daq', instruments.USB2708HS),
+                        ('ts', instruments.EugenTempStage),
+                        ('dp', instruments.WichmannDigipot),
+                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                        ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
+
     if username == 'hennen':
         autocommit = True
         datafolder = r'D:\t\ivdata'
         for di in logging_prints.values():
             di['all'] = True
+    elif username == 'mohr':
+        inst_connections.append(('teo', instruments.TeoSystem))
     elif username == 'munoz':
         munoz = 'D:/munoz/'
         datafolder = os.path.join(munoz, 'ivdata')
@@ -131,16 +144,6 @@ if hostname in ('pciwe46', 'iwe21705'):
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
-    inst_connections = [('ps', instruments.Picoscope),
-                        ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                        ('rigol2', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
-                        #('teo', instruments.TeoSystem),
-                        #('daq', instruments.USB2708HS),
-                        ('ts', instruments.EugenTempStage),
-                        ('dp', instruments.WichmannDigipot),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                        ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
 elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'
