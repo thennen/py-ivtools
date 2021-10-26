@@ -165,22 +165,19 @@ teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is
 datafolder = settings.datafolder
 inst_connections = settings.inst_connections
 
+# Make varnames instances of this class until connected
+# then referring to them doesn't simply raise an error
+# (but don't overwrite them if they exist already)
+class NotConnected():
+    def __bool__(self):
+        return False
+    def __repr__(self):
+        return 'Instrument not connected yet!'
+instrument_varnames = ('ps','rigol','rigol2','k','teo','pg5','et','ttx','daq','dp','ts')
 globalvars = globals()
-instrument_varnames = {instruments.Picoscope:'ps',
-                       instruments.RigolDG5000:'rigol',
-                       instruments.Keithley2600:'k',
-                       instruments.TeoSystem:'teo',
-                       instruments.PG5:'pg5',
-                       instruments.Eurotherm2408:'et',
-                       instruments.TektronixDPO73304D:'ttx',
-                       instruments.USB2708HS:'daq',
-                       instruments.WichmannDigipot: 'dp',
-                       instruments.EugenTempStage: 'ts'}
-# Make varnames None until connected
-# but don't overwrite them if they exist already
-for kk, v in instrument_varnames.items():
+for v in instrument_varnames:
     if v not in globalvars:
-        globalvars[v] = None
+        globalvars[v] = NotConnected()
 
 if visa.visa_rm is not None:
     visa_resources = visa.visa_rm.list_resources()
@@ -222,20 +219,21 @@ def cd_data():
 
 # What the plots should do by default
 if not iplots.plotters:
-    if ps is not None:
+    if ps:
         iplots.plotters = pico_plotters
         log.info('Setting up default plots for picoscope')
-    elif k is not None:
+    elif k:
         iplots.plotters = keithley_plotters
         log.info('Setting up default plots for keithley')
+    elif teo:
+        iplots.plotters = teo_plotters
+        log.info('Setting up default plots for teo')
+
 
 ### Runs only the first time ###
 if firstrun:
     io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
     #iplots.plotters = keithley_plotters
-
-if ps is not None:
-    ps.print_settings()
 
 class autocaller():
     '''
@@ -425,9 +423,20 @@ picoiv = interactive_wrapper(measure.picoiv)
 digipotiv = interactive_wrapper(measure.digipotiv)
 picoteoiv = interactive_wrapper(measure.picoteo)
 
-# If keithley is connected ..
-# because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
-if k and k.connected():
+
+
+def set_compliance(cc_value):
+    # Just calls normal set_compliance and also puts the value in metadata
+    meta.static['CC'] = cc_value
+    measure.set_compliance(cc_value)
+
+
+####  Stuff that gets defined only if a given instrument is present and connected
+
+if ps:
+    ps.print_settings()
+
+if k and k.connected(): # Keithley is connected
     live = True
     if '2636A' in k.idn():
         # This POS doesn't support live plotting
@@ -436,27 +445,22 @@ if k and k.connected():
     kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
 
-# define this if digipot is connected
-if dp:
+if dp: # digipot is connected
+    # TODO: monkeypatch dp.set_R instead?
     def set_Rseries(val):
         Rs = dp.set_R(val)
         meta.static['R_series'] = Rs
         return Rs
 
-# define this if temperature stage is connected
-if ts:
+if ts: # temperature stage is connected
+    # TODO: monkeypatch ts.set_temperature instead?
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
-        meta.static['T'] = T
         ivplot.mybreakablepause(delay)
+        meta.static['T'] = ts.get_temperature()
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measureHF)
-
-def set_compliance(cc_value):
-    # Just calls normal set_compliance and also puts the value in metadata
-    meta.static['CC'] = cc_value
-    measure.set_compliance(cc_value)
 
 # TODO def reload_settings, def reset_state
