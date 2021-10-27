@@ -117,13 +117,17 @@ class MetaHandler(object):
             yield k, v
 
     def __getitem__(self, key):
-        return self.meta[key]
+        return self.asdict()[key]
 
     def __setitem__(self, key, value):
-        self.meta[key] = value
+        # Set a key:value to the static part of the meta data
+        self.static[key] = value
 
     def __delitem__(self, key):
-        self.meta[key].__delitem__
+        if key in self.meta:
+            del self.meta[key]
+        if key in self.static:
+            del self.static[key]
 
     def select(self, i):
         # select the ith row of the metadataframe
@@ -231,7 +235,7 @@ class MetaHandler(object):
         devices014 = [4, 5, 6, 7, 8, 9]
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-        meta_df = meta_df.dropna(1, 'all')
+        meta_df = meta_df.dropna(axis=1, how='all')
         # Sort values so that they are in the same order as you would probe them
         # Which is a strange order, since the mask is a disaster
         sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'wX', 'wY') if k in meta_df.columns]
@@ -304,7 +308,7 @@ class MetaHandler(object):
         for key, values in kwargs.items():
             meta_df = meta_df[meta_df[key].isin(values)]
         #### Filter devices to be measured #####
-        meta_df = meta_df.dropna(1, 'all')
+        meta_df = meta_df.dropna(axis=1, how='all')
 
         # Sort top to bottom, left to right
         meta_df['icol'] = meta_df.col.apply(columns.index)
@@ -355,7 +359,7 @@ class MetaHandler(object):
                 irow %= len(rows)
                 icol %= len(col)
                 log.warning('Went over edge of coupon -- wrapping around')
-                return
+                #return
             newcol = columns[icol]
             newrow = rows[irow]
             w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0]
@@ -366,11 +370,15 @@ class MetaHandler(object):
                 log.warning('skipping a device that is not loaded into memory')
         self.select(i)
 
+
         # Highlight keys that have changed
+        isnan = lambda x: isinstance(x, float) and np.isnan(x)
         hlkeys = []
         for key in self.meta.keys():
             if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
-                hlkeys.append(key)
+                # don't count nan → nan as a changed value even though nan ≠ nan ..
+                if not (isnan(self.meta[key]) and isnan(lastmeta[key])):
+                    hlkeys.append(key)
         log.info('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
@@ -389,10 +397,13 @@ class MetaHandler(object):
             self.select(meta_i)
 
         # Highlight keys that have changed
+        isnan = lambda x: isinstance(x, float) and np.isnan(x)
         hlkeys = []
         for key in self.meta.keys():
             if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
-                hlkeys.append(key)
+                # don't count nan → nan as a changed value even though nan ≠ nan ..
+                if not (isnan(self.meta[key]) and isnan(lastmeta[key])):
+                    hlkeys.append(key)
         log.info('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
