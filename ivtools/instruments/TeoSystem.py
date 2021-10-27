@@ -317,22 +317,19 @@ class TeoSystem(object):
         delays come after each pulse
 
         amps, durs, delays may be vectors or scalars
+
+        if vector lengths are not the same, they must at least be divisors of the maximum length
+        then they will be tiled to match the maximum length.
         '''
         teo_freq = 500e6
 
-        # this is a cute way to broadcast amps, durs, and delays to the same shape
-        amps = np.array(amps)
-        durs = np.array(durs)
-        delays = np.array(delays)
-        amps = amps * durs/durs * delays/delays
-        durs = durs * amps/amps * delays/delays
-        delays = delays * amps/amps * durs/durs
-
-        # They might be scalars..
-        if isinstance(amps, Number):
-            amps = [amps]
-            durs = [durs]
-            delays = [delays]
+        # Make everything the same length
+        length = lambda x: 1 if isinstance(x, Number) else len(x)
+        lengths = map(length, (amps, durs, delays))
+        npulses = max(lengths)
+        amps = np.tile(amps, int(npulses/length(amps)))
+        durs = np.tile(durs, int(npulses/length(durs)))
+        delays = np.tile(delays, int(npulses/length(delays)))
 
         if first_delay is None:
             first_delay = delays[0]
