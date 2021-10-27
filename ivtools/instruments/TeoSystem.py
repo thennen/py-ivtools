@@ -310,7 +310,7 @@ class TeoSystem(object):
         return wfm
 
     @staticmethod
-    def pulse_train(amps, durs=1e-6, delays=1e-6, firstdelay=None, zero_val=0, n=1):
+    def pulse_train(amps, durs=1e-6, delays=1e-6, first_delay=None, zero_val=0, n=1):
         '''
         Create a rectangular pulse train
 
@@ -328,10 +328,14 @@ class TeoSystem(object):
         durs = durs * amps/amps * delays/delays
         delays = delays * amps/amps * durs/durs
 
+        # They might be scalars..
+        if isinstance(amps, Number):
+            amps = [amps]
+            durs = [durs]
+            delays = [delays]
+
         if first_delay is None:
             first_delay = delays[0]
-
-        npulses = len(amps)
 
         wfm = [np.repeat(zero_val, int(round(teo_freq*first_delay)))]
         for amp, dur, delay in zip(amps, durs, delays):
