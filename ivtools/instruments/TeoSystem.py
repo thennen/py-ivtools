@@ -854,13 +854,13 @@ class TeoSystem(object):
 
     ##################################### Highest level commands #############################################
 
-    def measureHF(self, wfm, n=1, trig1=None, trig2=None):
+    def measureHF(self, wfm, n=1, trig1=None, trig2=None, raw=False, nanpad=True):
         '''
         Pulse wfm and return I,V,... data
         '''
-        self.base.HF_Measurement.GetHF_Mode()
+        self.HF_mode()
         self.output_wfm(wfm, n=n, trig1=trig1, trig2=trig2)
-        return self.get_data()
+        return self.get_data(raw=raw, nanpad=nanpad)
 
 
     def measureLF(self, Vvalues, NPLC=10):
