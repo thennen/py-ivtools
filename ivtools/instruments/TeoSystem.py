@@ -310,52 +310,39 @@ class TeoSystem(object):
         return wfm
 
     @staticmethod
-    def pulse_train(amps, durs=1e-6, delays=0, zero_val=0, n=1):
+    def pulse_train(amps, durs=1e-6, delays=1e-6, firstdelay=None, zero_val=0, n=1):
         '''
         Create a rectangular pulse train
-        durs, delays can either be scalar or have same length as amps
 
-        it is not making start and end at zero, but you can do that with eg. amps=[0, 1, 2, 3, 0], durs=[0, 1, 2, 3, 0]
+        delays come after each pulse
+
+        amps, durs, delays may be vectors or scalars
         '''
         teo_freq = 500e6
 
-        amps   = np.array(amps)
-        durs   = np.array(durs)
-        amps = amps * durs/durs
-        durs = durs * amps/amps
+        # this is a cute way to broadcast amps, durs, and delays to the same shape
+        amps = np.array(amps)
+        durs = np.array(durs)
+        delays = np.array(delays)
+        amps = amps * durs/durs * delays/delays
+        durs = durs * amps/amps * delays/delays
+        delays = delays * amps/amps * durs/durs
 
-        if isinstance(amps, Number):
-            amps = np.array([amps])
-        if isinstance(durs, Number):
-            durs = np.array([durs])
-        if isinstance(delays, Number):
-            delays = np.array([delays])
+        if first_delay is None:
+            first_delay = delays[0]
 
         npulses = len(amps)
-        ndelays = len(delays)
 
-        if ndelays == 1:
-            delays = np.concatenate([[0], np.repeat(delays, npulses-1), [0]])
-        elif ndelays == npulses-1:
-            delays = np.concatenate([[0], delays, [0]])
-        elif ndelays == npulses:
-            delays = np.concatenate([[0], delays])
-        elif ndelays == npulses+1:
-            pass
-        else:
-            raise Exception("Length of 'delays' is not matching with the other parameters")
-
-        wfm = []
-        delay_samples = int(teo_freq * delays[0])
-        wfm.append(np.repeat(zero_val, delay_samples))
-        for amp, dur, delay in zip(amps, durs, delays[1:]):
-            amp_samples = int(teo_freq*dur)
-            delay_samples = int(teo_freq*delay)
+        wfm = [np.repeat(zero_val, int(round(teo_freq*first_delay)))]
+        for amp, dur, delay in zip(amps, durs, delays):
+            amp_samples = int(round(teo_freq*dur))
+            delay_samples = int(round(teo_freq*delay))
             wfm.append(np.repeat(amp, amp_samples))
             wfm.append(np.repeat(zero_val, delay_samples))
 
         wfm = np.concatenate(wfm)
-        wfm = np.concatenate(np.repeat([wfm], n, axis=0))
+        if n > 1:
+            wfm = np.tile(wfm, n)
 
         return wfm
 
