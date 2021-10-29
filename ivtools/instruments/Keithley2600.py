@@ -1,6 +1,7 @@
 import logging
 import os
 import re
+import time
 from collections import deque
 
 import numpy as np
@@ -295,6 +296,8 @@ class Keithley2600(object):
         self.trigger_source_list(source_func, source_list, ch=ch)
         self.prepare_trigger('iv', source_list, ch=ch)
         self.trigger_initiate(ch=ch)
+        # I have a suspicion that calling get_data before there are any data points causes an error
+        time.sleep(.2)
 
     def vi(self, source_list, source_range=None, measure_range=None,
            v_limit=None, i_limit=None, p_limit=None,

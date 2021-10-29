@@ -1,5 +1,6 @@
 import hashlib
 import itertools
+import json
 import logging
 import os
 import time
@@ -79,7 +80,8 @@ class TeoSystem(object):
     There is a PowerPoint with documentation of some bugs at:
     'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\teo_bugs.pptm'
 
-    TODO: The maximum waveform length is not being reached because of lack of ReRAM on PC, we currently have 64GB
+    TODO: The maximum waveform length is not constant and much smaller than expected, memory is not being wiped
+     properly?
 
     TODO: Waveform reproducibility bug. Documented on powerpoint.
 
@@ -102,11 +104,14 @@ class TeoSystem(object):
           1. on first initialization (Dispatch('TSX_HMan'))
           2. if you disconnect USB and plug it back in
 
-    TODO: some basic gate where I wanted to capture half of the waveform did not work
-
     '''
 
     def __init__(self):
+
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
 
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
@@ -118,111 +123,64 @@ class TeoSystem(object):
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         '''
 
-        '''
-        Connection steps:
-        1. Look for previous connections on ivtools.instrument_states dictionary.
-        2. If there is a previous connection, check if it is still available.
-        3. If not, connect.
-        '''
+        self.base = TeoBase()
 
-        statename = self.__class__.__name__
-        if statename not in ivtools.instrument_states:
-            ivtools.instrument_states[statename] = {}
-            self.__dict__ = ivtools.instrument_states[statename]
-            self.connect()
+        self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
+
+        # Assign properties that do not change, like max/min values
+        # so that we don't keep polling the instrument for fixed values
+
+        self.constants = dotdict()
+        self.constants.idn = self.idn()
+        self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
+        self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
+        # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
+        # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
+        # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
+        # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
+        self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
+
+        if os.path.isfile(ivtools.settings.teo_calibration_file):
+            self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
         else:
-            self.__dict__ = ivtools.instrument_states[statename]
-            if not self.connected():
-                self.connect()
+            log.warning('Calibration file not found!')
+            self.calibration = None
+
+        # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
+        self.J29 = True
+
+        # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
+
+        # set the power line frequency for averaging over integer cycles
+        self.PLF = 50
+
+        ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
+        # it appears to be fine to call it multiple times;
+        # everything still works, and I didn't see any disturbances on the HFV output
+        # TODO: what state do we exactly start up in the first time this is called?
+        # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
+        # So I think it starts in some undefined mode
+        # subsequent calls seem to stay in whatever mode it was in before,
+        # even if we lost the python-TSX_DM connection for some reason
+        self.base.DeviceControl.StartDevice()
+        # This command sets the idle level for HF mode
+        self.base.LF_Voltage.SetValue(0)
+        #self.HF_mode()
+
+        # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
+        # TODO: somehow prevent this from taking too much memory
+        #       should always reflect the state of the teo board
+        #self.waveforms = {}
+        self.waveforms = self.download_all_wfms()
+        # Store the name of the last played waveform
+        self.last_waveform = None
+        self.last_gain = None
+        self.last_nshots = None
+
+        log.info('TEO connection successful: ' + self.constants.idn)
 
 
     ################################################################################
-
-    def idn(self):
-        # Get and print some information from the board
-        DevName = self.base.DeviceID.GetDeviceName()
-        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
-        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
-        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
-        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
-
-    def kill_TSX(self):
-        # /F tells taskkill we aren't Fing around here
-        os.system("taskkill /F /im TSX_HardwareManager")
-        os.system("taskkill /F /im TSX_DM.exe")
-
-    def restart_TSX(self):
-        self.kill_TSX()
-        self.connect()
-
-    def connect(self):
-
-        class dotdict(dict):
-            __getattr__ = dict.__getitem__
-            __setattr__ = dict.__setitem__
-
-        self.base = TeoBase()
-        if self.base.conn is True:
-
-            self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
-
-            # Assign properties that do not change, like max/min values
-            # so that we don't keep polling the instrument for fixed values
-
-            self.constants = dotdict()
-            self.constants.idn = self.idn()
-            self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
-            self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
-            # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
-            # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
-            # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
-            # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
-            self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
-
-            if os.path.isfile(ivtools.settings.teo_calibration_file):
-                self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
-            else:
-                log.warning('Calibration file not found!')
-                self.calibration = None
-
-            # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
-            self.J29 = True
-
-            # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
-
-            # set the power line frequency for averaging over integer cycles
-            self.PLF = 50
-
-            ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
-            # it appears to be fine to call it multiple times;
-            # everything still works, and I didn't see any disturbances on the HFV output
-            # TODO: what state do we exactly start up in the first time this is called?
-            # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
-            # So I think it starts in some undefined mode
-            # subsequent calls seem to stay in whatever mode it was in before,
-            # even if we lost the python-TSX_DM connection for some reason
-            self.base.DeviceControl.StartDevice()
-            # This command sets the idle level for HF mode
-            self.base.LF_Voltage.SetValue(0)
-            # self.HF_mode()
-
-            # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
-            # TODO: somehow prevent this from taking too much memory
-            #       should always reflect the state of the teo board
-            # self.waveforms = {}
-            self.waveforms = self.download_all_wfms()  # This is taking long
-            # Store the name of the last played waveform
-            self.last_waveform = None
-            self.last_gain = None
-            self.last_nshots = None
-
-            log.info('TEO connection successful: ' + self.constants.idn)
-            self.conn = True
-
-        else:
-            self.conn = False
-
-        return self.conn
 
     def connected(self):
         if not hasattr(self, 'conn'):
@@ -236,6 +194,26 @@ class TeoSystem(object):
 
         return self.conn
 
+    def idn(self):
+        # Get and print some information from the board
+        DevName = self.base.DeviceID.GetDeviceName()
+        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
+        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
+        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
+        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
+
+    def kill_TSX(self):
+        # /F tells taskkill we aren't Fing around here
+        os.system("taskkill /F /im TSX_HardwareManager.exe")
+        os.system("taskkill /F /im TSX_DM.exe")
+
+    def restart_TSX(self):
+        self.kill_TSX()
+        self.__init__()
+
+    def close(self):
+        self.base.DeviceControl.StopDevice()
+        self.kill_TSX()
 
 
     ##################################### HF mode #############################################
@@ -252,7 +230,7 @@ class TeoSystem(object):
         '''
         # First argument (0) does nothing?
         # So does second argument apparently
-        external = True
+        external = False
         self.base.HF_Measurement.SetHF_Mode(0, external)
 
     @staticmethod
@@ -342,58 +320,43 @@ class TeoSystem(object):
 
         wfm = np.concatenate(sweeps)
 
-        log.info(f"Waveform duration: {len(wfm)/teo_freq} s\n"
-                 f"Waveform samples: {len(wfm)}")
-
         return wfm
 
     @staticmethod
-    def pulse_train(amps, durs=1e-6, delays=0, zero_val=0, n=1):
+    def pulse_train(amps, durs=1e-6, delays=1e-6, first_delay=None, zero_val=0, n=1):
         '''
         Create a rectangular pulse train
-        durs, delays can either be scalar or have same length as amps
 
-        it is not making start and end at zero, but you can do that with eg. amps=[0, 1, 2, 3, 0], durs=[0, 1, 2, 3, 0]
+        delays come after each pulse
+
+        amps, durs, delays may be vectors or scalars
+
+        if vector lengths are not the same, they must at least be divisors of the maximum length
+        then they will be tiled to match the maximum length.
         '''
         teo_freq = 500e6
 
-        amps   = np.array(amps)
-        durs   = np.array(durs)
-        amps = amps * durs/durs
-        durs = durs * amps/amps
+        # Make everything the same length
+        length = lambda x: 1 if isinstance(x, Number) else len(x)
+        lengths = map(length, (amps, durs, delays))
+        npulses = max(lengths)
+        amps = np.tile(amps, int(npulses/length(amps)))
+        durs = np.tile(durs, int(npulses/length(durs)))
+        delays = np.tile(delays, int(npulses/length(delays)))
 
-        if isinstance(amps, Number):
-            amps = np.array([amps])
-        if isinstance(durs, Number):
-            durs = np.array([durs])
-        if isinstance(delays, Number):
-            delays = np.array([delays])
+        if first_delay is None:
+            first_delay = delays[0]
 
-        npulses = len(amps)
-        ndelays = len(delays)
-
-        if ndelays == 1:
-            delays = np.concatenate([[0], np.repeat(delays, npulses-1), [0]])
-        elif ndelays == npulses-1:
-            delays = np.concatenate([[0], delays, [0]])
-        elif ndelays == npulses:
-            delays = np.concatenate([[0], delays])
-        elif ndelays == npulses+1:
-            pass
-        else:
-            raise Exception("Length of 'delays' is not matching with the other parameters")
-
-        wfm = []
-        delay_samples = int(teo_freq * delays[0])
-        wfm.append(np.repeat(zero_val, delay_samples))
-        for amp, dur, delay in zip(amps, durs, delays[1:]):
-            amp_samples = int(teo_freq*dur)
-            delay_samples = int(teo_freq*delay)
+        wfm = [np.repeat(zero_val, int(round(teo_freq*first_delay)))]
+        for amp, dur, delay in zip(amps, durs, delays):
+            amp_samples = int(round(teo_freq*dur))
+            delay_samples = int(round(teo_freq*delay))
             wfm.append(np.repeat(amp, amp_samples))
             wfm.append(np.repeat(zero_val, delay_samples))
 
         wfm = np.concatenate(wfm)
-        wfm = np.concatenate(np.repeat([wfm], n, axis=0))
+        if n > 1:
+            wfm = np.tile(wfm, n)
 
         return wfm
 
@@ -651,7 +614,11 @@ class TeoSystem(object):
         HFI = np.array(wf01.GetWaveformDataArray())
 
         R_HFI = 50 if self.J29 else 100
-        gain_step = self.gain()
+        if self.last_gain is not None
+            gain_step = self.last_gain
+        else:
+            # could be wrong if you changed the gain between output_wfm and get_data
+            gain_step = self.gain()
 
         # Conversion to current if calibration is available
         if self.calibration is not None:
@@ -738,7 +705,7 @@ class TeoSystem(object):
         out = dict(V=V, I=I, t=t, Vwfm=wfm,
                    idn=self.constants.idn,
                    sample_rate=sample_rate,
-                   gain_step=self.last_gain,
+                   gain_step=gain_step,
                    nshots=self.last_nshots)
         if raw:
             out['HFV'] = HFV
@@ -894,13 +861,13 @@ class TeoSystem(object):
 
     ##################################### Highest level commands #############################################
 
-    def measureHF(self, wfm, n=1, trig1=None, trig2=None):
+    def measureHF(self, wfm, n=1, trig1=None, trig2=None, raw=False, nanpad=True):
         '''
         Pulse wfm and return I,V,... data
         '''
-        self.base.HF_Measurement.GetHF_Mode()
+        self.HF_mode()
         self.output_wfm(wfm, n=n, trig1=trig1, trig2=trig2)
-        return self.get_data()
+        return self.get_data(raw=raw, nanpad=nanpad)
 
 
     def measureLF(self, V_list, NPLC=10):

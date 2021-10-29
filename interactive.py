@@ -1,27 +1,59 @@
 '''
-IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
+This is a script that uses the ivtools library to provide a command-based user interface
+for interactive IV measurements, for when you want a human in the feedback loop.
 
-This file should be run using the %run -i magic in ipython.
-Provides a command based user interface for interactive IV measurements.
-Binds convenient names to functions contained in other modules
+This file should be run (and rerun) using
+%run -i interactive.py [folder name]
+in ipython (Jupyter qtconsole).
+
+Short version of what it does:
+⋅ Puts all the functions from every ivtools module into the global namespace
+⋅ Notifies user of the git status and can optionally auto-commit changes
+⋅ Automatically connects to instruments as specified in the settings.py file
+⋅ Uses a powerful metadata management system (meta) that is connected to a local database
+⋅ Creates a ISO8601 dated directory for storing data.
+⋅ Logging of text input and output to the data directory, as well as other logging functionality
+⋅ Opens a set of tiled figures (iplots) that know how to plot data and can be cleared etc from the console
+⋅ Provides interactive versions of measurement functions that automatically plot and save data
+⋅ Defines short bindings to certain function calls for interactive convenience (called without ())
+
 
 This script is designed to be rerun, and all of the code will be updated,
-with everything but your measurement settings overwritten.
-
+everything but the measurement settings/program state overwritten.
 Therefore you can modify any part of the code/library while making measurements
 and without ever leaving the running program or closing instrument connections.
+The need to restart the kernel should therefore be rare.
 
+
+IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
+
+
+TODO: In Spyder, ipython logging file isn't created, find out why
 TODO: fix the %matplotlib thing
 TODO: GUI for displaying and changing channel settings, other status information?
+TODO define reload_settings, def reset_state
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
-IDEA: buy a wireless keypad
+IDEA: buy a wireless keypad and make it index the metadata, start a measurement, etc
+
+Author: Tyler Hennen (tyler@hennen.us)
 '''
-from functools import partial
-
+# Some of these imports are just to make sure the interactive user has access to them
+# Not necessarily because they are used in this script!
+import numpy
+import numpy as np
+import matplotlib
+import matplotlib as mpl
+from matplotlib import pyplot
+from matplotlib import pyplot as plt
+from functools import wraps, partial
+import os
+import sys
+import time
 import pandas as pd
-
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
+from datetime import datetime
+from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -29,6 +61,8 @@ import pyvisa as visa
 
 import ivtools
 import importlib
+from importlib import reload
+from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -41,15 +75,14 @@ importlib.reload(ivtools.plot)
 importlib.reload(ivtools.instruments)
 importlib.reload(ivtools.io)
 importlib.reload(ivtools.measure)
-
 # Dump everything into interactive namespace for convenience
-# TODO: run test for overlapping names first
+# TODO: run test for overlapping names first (already written, in tests folder)
 from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
+from ivtools.instruments import *
 import logging
-
 
 magic = get_ipython().magic
 
@@ -67,7 +100,6 @@ if firstrun:
     # matplotlib state machine or whatever and nothing will update anymore
     # TODO find out whether it has been called already
     magic('matplotlib')
-
     # Preview of the logging colors
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
@@ -77,6 +109,7 @@ if firstrun:
 
 log = logging.getLogger('interactive')
 
+# 𝗚𝗶𝘁
 hostname = settings.hostname
 username = settings.username
 db_path = settings.db_path  # Database path
@@ -96,14 +129,60 @@ if '??' in gitstatus:
     log.info('The following files are untracked by git:\n\t' + '\n\t'.join(gitstatus['??']))
 gitrev = io.getGitRevision()
 
+# 𝗠𝗲𝘁𝗮𝗱𝗮𝘁𝗮 𝗼𝗯𝗷𝗲𝗰𝘁
 # Helps you step through the metadata of your samples/devices
 meta = io.MetaHandler()
 
-# 2634B : 192.168.11.11
-# 2636A : 192.168.11.12
-# 2636B : 192.168.11.13
+# Add items to meta.static and they will be appended as metadata to all subsequent measurements
+# even if you step through the device index
+meta.static['gitrev'] = gitrev
+meta.static['hostname'] = hostname
+meta.static['username'] = username
 
-######### Plotter configurations
+
+##########################################
+# 𝗖𝗼𝗻𝗻𝗲𝗰𝘁 𝘁𝗼 𝗶𝗻𝘀𝘁𝗿𝘂𝗺𝗲𝗻𝘁𝘀
+##########################################
+
+inst_connections = settings.inst_connections
+
+# Make varnames instances of this class until connected
+# then referring to them doesn't simply raise an error
+# (but don't overwrite them if they exist already)
+class NotConnected():
+    def __bool__(self):
+        return False
+    def __repr__(self):
+        return 'Instrument not connected yet!'
+instrument_varnames = ('ps','rigol','rigol2','k','teo','pg5','et','ttx','daq','dp','ts')
+globalvars = globals()
+for v in instrument_varnames:
+    if v not in globalvars:
+        globalvars[v] = NotConnected()
+
+if visa.visa_rm is not None:
+    visa_resources = visa.visa_rm.list_resources()
+else:
+    # you don't have visa installed, things probably won't end well.
+    visa_resources = []
+
+# Connect to all the instruments
+# VISA instrument classes should all be Borg, because the instrument manager cannot be trusted
+# to work properly and reuse existing inst_connections
+for varname, inst_class, *args in inst_connections:
+    if len(args) > 0:
+        if args[0].startswith('USB') or args[0].startswith('GPIB'):
+            # don't bother trying to connect to it if it's not in visa_resources
+            if args[0] not in visa_resources:
+                # TODO: I think there are multiple valid formats for visa addresses.
+                # How to equate them?
+                # https://pyvisa.readthedocs.io/en/stable/names.html
+                continue
+    globalvars[varname] = inst_class(*args)
+
+#######################################
+#𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
+#######################################
 
 # Make sure %matplotlib has been called! Or else figures will appear and then disappear.
 iplots = ivplot.InteractiveFigs(n=4)
@@ -145,129 +224,49 @@ teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
 
-#########
+# What the plots should do by default
+if not iplots.plotters:
+    if ps:
+        iplots.plotters = pico_plotters
+        log.info('Setting up default plots for picoscope')
+    elif k:
+        iplots.plotters = keithley_plotters
+        log.info('Setting up default plots for keithley')
+    elif teo:
+        iplots.plotters = teo_plotters
+        log.info('Setting up default plots for teo')
+
+
+#################################################################################
+# 𝗠𝗮𝗸𝗲 𝗱𝗮𝘁𝗮 𝗳𝗼𝗹𝗱𝗲𝗿 𝗮𝗻𝗱 𝗱𝗲𝗳𝗶𝗻𝗲 𝗵𝗼𝘄 𝗱𝗮𝘁𝗮 𝗶𝘀 𝘀𝗮𝘃𝗲𝗱
+#################################################################################
 
 datafolder = settings.datafolder
-inst_connections = settings.inst_connections
-
-globalvars = globals()
-instrument_varnames = {instruments.Picoscope:'ps',
-                       instruments.RigolDG5000:'rigol',
-                       instruments.Keithley2600:'k',
-                       instruments.TeoSystem:'teo',
-                       instruments.PG5:'pg5',
-                       instruments.Eurotherm2408:'et',
-                       instruments.TektronixDPO73304D:'ttx',
-                       instruments.USB2708HS:'daq',
-                       instruments.WichmannDigipot: 'dp',
-                       instruments.EugenTempStage: 'ts'}
-# Make varnames None until connected
-# but don't overwrite them if they exist already
-for kk, v in instrument_varnames.items():
-    if v not in globalvars:
-        globalvars[v] = None
-
-if visa.visa_rm is not None:
-    visa_resources = visa.visa_rm.list_resources()
-else:
-    # you don't have visa installed, things probably won't end well.
-    visa_resources = []
-
-# Connect to all the instruments
-# Instrument classes should all be Borg, because the instrument manager cannot be trusted
-# to work properly and reuse existing inst_connections
-for varname, inst_class, *args in inst_connections:
-    if len(args) > 0:
-        if args[0].startswith('USB') or args[0].startswith('GPIB'):
-            # don't bother trying to connect to it if it's not in visa_resources
-            if args[0] not in visa_resources:
-                # TODO: I think there are multiple valid formats for visa addresses.
-                # How to equate them?
-                # https://pyvisa.readthedocs.io/en/stable/names.html
-                continue
-    globalvars[varname] = inst_class(*args)
-
 # Default data subfolder -- will reflect the date of the last time this script ran
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
 subfolder = datestr
-argv = sys.argv
-if len(argv) > 1:
+if len(sys.argv) > 1:
     # Can give a folder name with command line argument
-    subfolder += '_' + argv[1]
+    subfolder += '_' + sys.argv[1]
 log.info('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
+# TODO:
 log.info('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
 io.makefolder(datafolder, subfolder)
 
-
 def datadir():
     return os.path.join(datafolder, subfolder)
+
 def open_datadir():
     os.system('explorer ' + datadir())
+
 def cd_data():
     magic('cd ' + datadir())
 
-# What the plots should do by default
-if not iplots.plotters:
-    if ps is not None:
-        iplots.plotters = pico_plotters
-        log.info('Setting up default plots for picoscope')
-    elif k is not None:
-        iplots.plotters = keithley_plotters
-        log.info('Setting up default plots for keithley')
-
-### Runs only the first time ###
+# set up ipython log in the data directory
+# TODO: make a copy and change location if datadir() changes
 if firstrun:
     io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
     #iplots.plotters = keithley_plotters
-
-if ps is not None:
-    ps.print_settings()
-
-class autocaller():
-    '''
-    Ugly hack to make a function call itself without typing the parentheses.
-    There's an ipython magic for this, but I only want it to apply to certain functions
-    This is only for interactive convenience! Don't use it in a program or a script!
-    '''
-    def __init__(self, function, *args):
-        self.function = function
-        self.args = args
-    def __repr__(self):
-        self.function(*self.args)
-        return 'autocalled ' + self.function.__name__
-
-# Add items to this and they will be appended as metadata to all subsequent measurements
-meta.static['gitrev'] = gitrev
-meta.static['hostname'] = hostname
-meta.static['username'] = username
-
-################ Bindings for interactive convenience #################
-
-# Metadata selector
-pp = autocaller(meta.print)
-n = autocaller(meta.next)
-p = autocaller(meta.previous)
-
-left = autocaller(meta.move_domeb, 'left')
-right = autocaller(meta.move_domeb, 'right')
-up = autocaller(meta.move_domeb, 'up')
-down = autocaller(meta.move_domeb, 'down')
-
-# Plotter
-figs = [None] * 6
-figs[:len(iplots.figs)] = iplots.figs
-fig0, fig1, fig2, fig3, fig4, fig5 = figs
-axs = [None] * 6
-axs[:len(iplots.axs)] = iplots.axs
-ax0, ax1, ax2, ax3, ax4, ax5 = axs
-clearfigs = iplots.clear
-showfigs = iplots.show
-c = autocaller(clearfigs)
-sf = autocaller(iplots.show)
-plotters = iplots.plotters
-add_plotter = iplots.add_plotter
-del_plotters = iplots.del_plotters
-
 
 # noinspection SpellCheckingInspection
 def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=settings.drop_cols):
@@ -305,22 +304,56 @@ def savefig(name=None, fig=None, **kwargs):
     fig.savefig(fp, **kwargs)
     log.info(f'Wrote {fp}')
 
-def load_metadb(database_path=None, table_name='meta'):
-    """
-    Load the database into a data frame.
-    :param database_path: Path of the database to load.
-    :param table_name: Name of the database to load.
-    :return: Table of the database as a pandas.DataFrame.
-    """
-    if database_path is None:
-        database_path = db_path
-    db = db_load(database_path, table_name)
-    return db
+
+################################################################
+# 𝗕𝗶𝗻𝗱𝗶𝗻𝗴𝘀 𝗳𝗼𝗿 𝗶𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗰𝗼𝗻𝘃𝗲𝗻𝗶𝗲𝗻𝗰𝗲
+################################################################
+
+class autocaller():
+    '''
+    Ugly hack to make a function call itself without typing the parentheses.
+    There's an ipython magic for this, but I only want it to apply to certain functions
+    This is only for interactive convenience! Don't use it in a program or a script!
+    '''
+    def __init__(self, function, *args):
+        self.function = function
+        self.args = args
+    def __repr__(self):
+        self.function(*self.args)
+        return 'autocalled ' + self.function.__name__
+
+
+# Metadata selector
+pp = autocaller(meta.print) # prettyprint
+n = autocaller(meta.next)
+p = autocaller(meta.previous)
+
+left = autocaller(meta.move_domeb, 'left')
+right = autocaller(meta.move_domeb, 'right')
+up = autocaller(meta.move_domeb, 'up')
+down = autocaller(meta.move_domeb, 'down')
+
+# Plotter
+figs = [None] * 6
+figs[:len(iplots.figs)] = iplots.figs
+fig0, fig1, fig2, fig3, fig4, fig5 = figs
+axs = [None] * 6
+axs[:len(iplots.axs)] = iplots.axs
+ax0, ax1, ax2, ax3, ax4, ax5 = axs
+clearfigs = iplots.clear
+showfigs = iplots.show
+c = autocaller(clearfigs)
+sf = autocaller(iplots.show)
+plotters = iplots.plotters
+add_plotter = iplots.add_plotter
+del_plotters = iplots.del_plotters
 
 s = autocaller(savedata)
 
 
-###### Common configurations? ############
+###########################################
+# 𝗖𝗼𝗺𝗺𝗼𝗻 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
+###########################################
 
 def setup_ccircuit():
     ps.coupling.a = 'DC'
@@ -350,7 +383,9 @@ def setup_picoteo():
     settings.pico_to_iv = TEO_HFext_to_iv
     iplots.plotters = teo_plotters
 
-###### Interactive measurement functions #######
+################################################################
+# 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀
+################################################################
 
 # Wrap any fuctions that you want to automatically make plots/write to disk with this:
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
@@ -411,9 +446,17 @@ picoiv = interactive_wrapper(measure.picoiv)
 digipotiv = interactive_wrapper(measure.digipotiv)
 picoteoiv = interactive_wrapper(measure.picoteo)
 
-# If keithley is connected ..
-# because I put keithley in a stupid class, I can't access the methods unless it was instantiated correctly
-if k and k.connected():
+def set_compliance(cc_value):
+    # Just calls normal set_compliance and also puts the value in metadata
+    meta.static['CC'] = cc_value
+    measure.set_compliance(cc_value)
+
+####  Stuff that gets defined only if a given instrument is present and connected
+
+if ps:
+    ps.print_settings()
+
+if k and k.connected(): # Keithley is connected
     live = True
     if '2636A' in k.idn():
         # This POS doesn't support live plotting
@@ -422,27 +465,20 @@ if k and k.connected():
     kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
     kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
 
-# define this if digipot is connected
-if dp:
+if dp: # digipot is connected
+    # TODO: monkeypatch dp.set_R instead?
     def set_Rseries(val):
         Rs = dp.set_R(val)
         meta.static['R_series'] = Rs
         return Rs
 
-# define this if temperature stage is connected
-if ts:
+if ts: # temperature stage is connected
+    # TODO: monkeypatch ts.set_temperature instead?
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
-        meta.static['T'] = T
         ivplot.mybreakablepause(delay)
+        meta.static['T'] = ts.get_temperature()
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measureHF)
-
-def set_compliance(cc_value):
-    # Just calls normal set_compliance and also puts the value in metadata
-    meta.static['CC'] = cc_value
-    measure.set_compliance(cc_value)
-
-# TODO def reload_settings, def reset_state
