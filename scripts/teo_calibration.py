@@ -53,7 +53,8 @@ Teo 'V_MONITOR' -> Picoscope 'B'
 Teo 'HF_FULL_BW' -> Picoscope 'C'
 Teo 'HF_LIMITED_BW' -> Picoscope 'D'
 Teo 'TRIG1' -> Picoscope 'Aux Trigger'
-Teo 'SW1' swithch in internal mode (Gray position)
+Teo 'SW1' switch in internal mode (Gray position)
+Teo 'J4' and 'J5' Jumpers in internal mode
 '''
 
 ### Parameters ###
@@ -156,7 +157,7 @@ teo_gain_steps = np.arange(32)
 
 def measure(gain_step):
     s = gain_step
-
+    teo.HF_mode()
     teo.gain(s)
 
     ps.capture(ch=ps_channels, freq=None, duration=wfm_dur, nsamples=wfm_samples,
@@ -234,8 +235,8 @@ ps.range.b = max_V_MONITOR
 
 # # # # # # # # # # # # # # # # # # # # # #  Measuring # # # # # # # # # # # # # # # # # # # # # #
 
-data = pd.DataFrame(dict())
-data.index.name = 'Gain Step'
+HF_data = pd.DataFrame(dict())
+HF_data.index.name = 'Gain Step'
 
 log.info('_' * 50)
 log.info('_' * 50)
@@ -264,31 +265,31 @@ for s in teo_gain_steps[::-1]:
 
     d = measure(s)
 
-    data = data.append(d)
+    HF_data = HF_data.append(d)
 
     log.info('_' * 50)
 
+attrs = dict(timestamp=timestamp, resistor=R, sweep_rate=SR, wfm_samples=wfm_samples, set_up=set_up, LF_nplc=nplc)
+HF_data.attrs = attrs
 
-data.attrs['timestamp'] = timestamp
-data.attrs['resistor'] = R
-data.attrs['sweep_rate'] = SR
-data.attrs['wfm_samples'] = wfm_samples
-data.attrs['set_up'] = set_up
-
+log.info(f"Low Frequency Mode")
 teo.LF_mode(external=False)
-LF_I_range = 45e-6
+LF_I_range = 4.5e-6
 LF_V_read = LF_I_range * R
+log.info(f"Voltage range = {round(LF_V_read, 3)}V")
 LF_wfm = np.concatenate([np.linspace(0, LF_V_read, 5),
                          np.linspace(LF_V_read, -LF_V_read, 10)[1:-1],
                          np.linspace(-LF_V_read, 0, 5)])
 
 LF_data = teo.measureLF(LF_wfm, NPLC=nplc)
-
+LF_data = pd.Series(LF_data)
+log.info('_' * 50)
+log.info('_' * 50)
 # # # # # # # # # # # # # # # # # # # # # #  Fitting # # # # # # # # # # # # # # # # # # # # # #
 
 fits = pd.DataFrame(dict())
 fits.index.name = 'Gain Step'
-for s, d in data.iterrows():
+for s, d in HF_data.iterrows():
 
     nsamples = len(d['t'])
     V_wfm = d['V_wfm']
@@ -351,22 +352,11 @@ fits['HFI_INT'] = [(HFI_INT_slope_3, HFI_INT_offset_3),
 LFV = tuple(np.polyfit(LF_wfm, LF_data['V'], 1))
 I_expected = LF_data['V'] / R
 LFI = tuple(np.polyfit(I_expected, LF_data['I'], 1))
-fits['LFV'] = np.repeat([LFV], 32)
-fits['LFI'] = np.repeat([LFI], 32)
+fits['LFV'] = pd.Series([LFV]*32, dtype='object')
+fits['LFI'] = pd.Series([LFI]*32, dtype='object')
 
-calibration = fits.copy()
-
-for s, v in fits.iterrows():
-    for column in ['HFV', 'HFV_INT', 'V_MONITOR', 'HFI_INT', 'HF_LIMITED_BW', 'HF_FULL_BW', 'LFV', 'LFI']:
-        fit = fits.loc[s, column]
-        calibration.loc[s, column] = np.array([1 / fit[0], -fit[1] / fit[0]])
-
-
-calibration.attrs['timestamp'] = timestamp
-calibration.attrs['resistor'] = R
-calibration.attrs['sweep_rate'] = SR
-calibration.attrs['wfm_samples'] = wfm_samples
-calibration.attrs['set_up'] = set_up
+calibration = fits.applymap(lambda fit: tuple([1 / fit[0], -fit[1] / fit[0]]))
+calibration.attrs = attrs
 
 # # # # # # # # # # # # # # # # # # # # # #  Saving results # # # # # # # # # # # # # # # # # # # # # #
 if teo.calibration is None:
@@ -377,11 +367,12 @@ os.makedirs(save_folder)
 os.makedirs(os.path.join(save_folder, f'plots'))
 
 calibration.to_pickle(os.path.join(save_folder, 'teo_calibration.df'))
-data.to_pickle(os.path.join(save_folder, 'calibration_data.df'))
+HF_data.to_pickle(os.path.join(save_folder, 'HF_data.df'))
+LF_data.to_pickle(os.path.join(save_folder, 'LF_data.s'))
 
 
 mpl.use('Agg')
-for s, d in data.iterrows():
+for s, d in HF_data.iterrows():
     log.info(f"Plotting Gain Step = {s}")
     ## Ploting fits ##
     V_wfm = d['V_wfm']
@@ -514,20 +505,20 @@ axs = fig.subplots(2, 2)
 
 ax = axs[0, 0]  # LFV
 ax.axhline(0, color='gray', alpha=0.7)
-ax.plot(LF_data['t'], LF_data['LFV'])
+ax.plot(LF_data['t'], LF_data['V'])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("LFV [V]")
 
 ax = axs[0, 1]  # LFI
 ax.axhline(0, color='gray', alpha=0.7)
-ax.plot(LF_data['t'], LF_data['LFI'])
+ax.plot(LF_data['t'], LF_data['I'])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("LFI [A]")
 
 ax = axs[1, 0]  # LFV fit
 ax.axhline(0, color='gray', alpha=0.7)
 ax.axvline(0, color='gray', alpha=0.7)
-ax.plot(LF_wfm, LF_data['LFV'], label="Measurement", linewidth=3)
+ax.plot(LF_wfm, LF_data['V'], label="Measurement", linewidth=3)
 ax.plot(LF_wfm, np.polyval(fits.loc[s, 'LFV'], LF_wfm), label="Fit")
 ax.set_xlabel("Programmed voltage [V]")
 ax.set_ylabel("LFV [V]")
@@ -536,15 +527,15 @@ ax.legend(loc="upper left")
 ax = axs[1, 1]  # LFI fit
 ax.axhline(0, color='gray', alpha=0.7)
 ax.axvline(0, color='gray', alpha=0.7)
-ax.plot(I_expected, LF_data['LFI'], label="Measurement", linewidth=3)
+ax.plot(I_expected, LF_data['I'], label="Measurement", linewidth=3)
 ax.plot(I_expected, np.polyval(fits.loc[s, 'LFI'], I_expected), label="Fit")
 ax.set_xlabel("Expected current [A]")
 ax.set_ylabel("LFI [A]")
 
 title = f"Timestamp = {timestamp} ; " \
         f"Resistor = {R} ; " \
-        f"Data points = {len(LF_wfm)} ; " \
-        f"NPLC = {nplc}" \
+        f"Data points = {len(LF_wfm)}\n" \
+        f"NPLC = {nplc} ; " \
         f"Set up = {set_up}"
 
 fig.suptitle(title)

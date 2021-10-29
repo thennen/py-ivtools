@@ -1,6 +1,5 @@
 import hashlib
 import itertools
-import json
 import logging
 import os
 import time
@@ -170,7 +169,7 @@ class TeoSystem(object):
         # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
         # TODO: somehow prevent this from taking too much memory
         #       should always reflect the state of the teo board
-        #self.waveforms = {}
+        # self.waveforms = {}
         self.waveforms = self.download_all_wfms()
         # Store the name of the last played waveform
         self.last_waveform = None
@@ -218,7 +217,7 @@ class TeoSystem(object):
 
     ##################################### HF mode #############################################
 
-    def HF_mode(self):
+    def HF_mode(self, external=True):
         '''
         Call to turn on HF mode
 
@@ -230,7 +229,6 @@ class TeoSystem(object):
         '''
         # First argument (0) does nothing?
         # So does second argument apparently
-        external = False
         self.base.HF_Measurement.SetHF_Mode(0, external)
 
     @staticmethod
@@ -614,7 +612,7 @@ class TeoSystem(object):
         HFI = np.array(wf01.GetWaveformDataArray())
 
         R_HFI = 50 if self.J29 else 100
-        if self.last_gain is not None
+        if self.last_gain is not None:
             gain_step = self.last_gain
         else:
             # could be wrong if you changed the gain between output_wfm and get_data
@@ -898,8 +896,17 @@ class TeoSystem(object):
         # Go back to the idle level
         self.LF_voltage(Vidle)
 
-        data = dict(V_list=V_list, I=I, V=V, t=t, idn=self.idn(), gain_step=self.gain(),
-                    units=dict(V_list='V', I='A', V='V', t='s'))
+        I = np.array(I)
+        V = np.array(V)
+        t = np.array(t)
+        V_list = np.array(V_list)
+        if self.calibration is not None:
+            I = np.polyval(self.calibration.loc[0, 'LFI'], I)
+
+        data = pd.Series(dict(V_list=V_list, I=I, V=V, t=t,
+                                 idn=self.idn(), gain_step=self.gain(),
+                                 units=dict(V_list='V', I='A', V='V', t='s')
+                                 ))
 
         return data
 
