@@ -28,9 +28,9 @@ def reload():
 ivtools_dir = os.path.split(os.path.abspath(__file__))[0]
 pyivtools_dir = os.path.split(ivtools_dir)[0]
 
-#####################################################################################
-######## Default settings that may get overwritten by hostname/user settings ########
-#####################################################################################
+#########################################################################################################################
+#𝗗𝗲𝗳𝗮𝘂𝗹𝘁 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀 𝘁𝗵𝗮𝘁 𝗺𝗮𝘆 𝗴𝗲𝘁 𝗼𝘃𝗲𝗿𝘄𝗿𝗶𝘁𝘁𝗲𝗻 𝗯𝘆 𝗵𝗼𝘀𝘁𝗻𝗮𝗺𝗲 𝗼𝗿 𝘂𝘀𝗲𝗿 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
+#########################################################################################################################
 
 # TODO: why did I put these in all caps?
 ### Settings for compliance circuit
@@ -92,12 +92,18 @@ db_path = os.path.join(pyivtools_dir, 'metadata.db')
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
 
-#################################################
-######## Hostname/user specific settings ########
-######## May override the above settings ########
-#################################################
+######################################################################################
+# 𝗛𝗼𝘀𝘁𝗻𝗮𝗺𝗲 𝗮𝗻𝗱 𝘂𝘀𝗲𝗿 𝘀𝗽𝗲𝗰𝗶𝗳𝗶𝗰 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
+# 𝗠𝗮𝘆 𝗼𝘃𝗲𝗿𝗿𝗶𝗱𝗲 𝘁𝗵𝗲 𝗮𝗯𝗼𝘃𝗲 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
+######################################################################################
+
+# 2634B : 192.168.11.11
+# 2636A : 192.168.11.12
+# 2636B : 192.168.11.13
 
 if hostname in ('pciwe46', 'iwe21705'):
+
+    datafolder = r'D:\data\{}'.format(username)
     db_path = 'D:\metadata.db'
 
     inst_connections = [('ps', instruments.Picoscope),
@@ -114,10 +120,11 @@ if hostname in ('pciwe46', 'iwe21705'):
     if username == 'hennen':
         autocommit = True
         datafolder = r'D:\t\ivdata'
-        for di in logging_prints.values():
-            di['all'] = True
+        for di in logging_prints.values(): di['all'] = True # print everything
+
     elif username == 'mohr':
         inst_connections.append(('teo', instruments.TeoSystem))
+
     elif username == 'munoz':
         munoz = 'D:/munoz/'
         datafolder = os.path.join(munoz, 'ivdata')
@@ -148,15 +155,11 @@ elif hostname == 'pciwe38':
     # Moritz computer
     datafolder = r'C:\Messdaten'
     inst_connections = {}
+
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'
-    inst_connections = [# ('et', instruments.Eurotherm2408),
-                        # ('ps', instruments.Picoscope),
-                        # ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                        # ('daq', instruments.USB2708HS),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                        ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
+    inst_connections = [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),]
+
 elif hostname == 'pciwe34':
     # Mark II
     # This computer and whole set up is a massive irredeemable piece of shit
@@ -166,20 +169,14 @@ elif hostname == 'pciwe34':
     # datafolder = r'G:\Messdaten\hennen'
     datafolder = r'C:\Messdaten\hennen'
     inst_connections = [('et', instruments.Eurotherm2408),
-                        # ('ps', instruments.Picoscope),
-                        # ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                        # ('daq', instruments.USB2708HS),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
+
 elif hostname == 'CHMP2':
     datafolder = r'C:\data'
     inst_connections = [('ps', instruments.Picoscope),
                         ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                        # TEO
                         ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
+
 elif username == 'alexgar':
     munoz = '/Users/alexgar/sciebo/munoz/'
     datafolder = os.path.join(munoz, 'ivdata')
@@ -193,5 +190,6 @@ elif username == 'alexgar':
         'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
         'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
     }
+
 else:
     print(f'No Hostname specific settings found for {hostname}.  Using defaults.')

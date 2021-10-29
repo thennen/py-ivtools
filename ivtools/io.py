@@ -732,7 +732,7 @@ def db_load(db_path=db_path, table_name='meta'):
 
     :param db_path: Path of the database
     :param table_name: name of the table
-    :return: dataframe
+    :return: Table of the database as a pandas.DataFrame.
     '''
     db_conn = sqlite3.connect(db_path)
     query = db_conn.execute(f"SELECT * From {table_name}")
@@ -858,6 +858,8 @@ def db_commit(db_conn):
     db_conn.commit()
     db_conn.close()
 
+
+load_metadb = db_load
 
 ###### Git ######
 
@@ -994,7 +996,7 @@ def insert_file_num(filepath, number, width=3):
     return '_{{:0{}}}'.format(width).format(number).join(os.path.splitext(filepath))
 
 
-###### File finding ######
+###### File finding / File system utilities ######
 
 def glob(pattern='*', directory='.', subdirs=False, exclude=None):
     pattern = pattern.join('**')
@@ -1059,8 +1061,6 @@ def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subd
         filepaths = filepaths[:maxlen]
     return [os.path.abspath(fp) for fp in filepaths]
 
-
-###### File system utilities ######
 
 def set_readonly(filepath):
     from stat import S_IREAD, S_IRGRP, S_IROTH
