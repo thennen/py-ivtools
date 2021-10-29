@@ -79,8 +79,6 @@ class TeoSystem(object):
     There is a PowerPoint with documentation of some bugs at:
     'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\teo_bugs.pptm'
 
-    TODO: Software is only working on Tyler's account
-
     TODO: The maximum waveform length is not constant and much smaller than expected, memory is not being wiped
      properly?
 
@@ -604,7 +602,11 @@ class TeoSystem(object):
         HFI = np.array(wf01.GetWaveformDataArray())
 
         R_HFI = 50 if self.J29 else 100
-        gain_step = self.gain()
+        if self.last_gain is not None
+            gain_step = self.last_gain
+        else:
+            # could be wrong if you changed the gain between output_wfm and get_data
+            gain_step = self.gain()
 
         # Conversion to current if calibration is available
         if self.calibration:
@@ -692,7 +694,7 @@ class TeoSystem(object):
         out = dict(V=V, I=I, t=t, Vwfm=wfm,
                    idn=self.constants.idn,
                    sample_rate=sample_rate,
-                   gain_step=self.last_gain,
+                   gain_step=gain_step,
                    nshots=self.last_nshots)
         if raw:
             out['HFV'] = HFV
