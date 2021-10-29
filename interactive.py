@@ -34,6 +34,8 @@ TODO: GUI for displaying and changing channel settings, other status information
 TODO define reload_settings, def reset_state
 IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
 IDEA: buy a wireless keypad and make it index the metadata, start a measurement, etc
+
+Author: Tyler Hennen (tyler@hennen.us)
 '''
 # Some of these imports are just to make sure the interactive user has access to them
 # Not necessarily because they are used in this script!
