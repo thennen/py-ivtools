@@ -442,9 +442,11 @@ def moving_avg(data, window=5, columns=None):
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
-        raise Exception('Arrays to be smoothed have different lengths!')
+        log.error('Arrays to be smoothed have different lengths!')
+        return data
     if lens[0] == 0:
-        raise Exception('No data to smooth')
+        log.error('No data to smooth')
+        return data
     #weights = np.repeat(1.0, window)/window
     #smootharrays = [np.convolve(ar, weights, 'valid') for ar in arrays]
     smootharrays = [smooth(ar, window) for ar in arrays]
@@ -462,9 +464,11 @@ def medfilt(data, window=5, columns=('I', 'V')):
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
-        raise Exception('Arrays to be smoothed have different lengths!')
+        log.error('Arrays to be smoothed have different lengths!')
+        return data
     if lens[0] == 0:
-        raise Exception('No data to smooth')
+        log.error('No data to smooth')
+        return data
     smootharrays = [signal.medfilt(ar, window) for ar in arrays]
     dataout = {c:sm for c,sm in zip(columns, smootharrays)}
     add_missing_keys(data, dataout)
@@ -493,9 +497,11 @@ def decimate(data, factor=5, columns=('I', 'V')):
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
-        raise Exception('Arrays to be decimated have different lengths!')
+        log.error('Arrays to be decimated have different lengths!')
+        return data
     if lens[0] == 0:
-        raise Exception('No data to decimate')
+        log.error('No data to decimate')
+        return data
     # Have seen Future warning on this command.  Hopefully they fix it.
     # This converts the datatype to float64
     decarrays = [signal.decimate(ar, factor, zero_phase=True) for ar in arrays]
@@ -519,9 +525,11 @@ def smoothimate(data, window=10, factor=1, passes=1, columns=None):
     arrays = [data[c] for c in columns]
     lens = [len(ar) for ar in arrays]
     if not all([l - lens[0] == 0 for l in lens]):
-        raise Exception('Arrays to be smoothimated have different lengths!')
+        log.error('Arrays to be smoothimated have different lengths!')
+        return
     if lens[0] == 0:
-        raise Exception('No data to smooth')
+        log.error('No data to smooth')
+        return data
     dataout = {}
     decarrays = arrays
     dtypes = [type(ar[0]) for ar in arrays]

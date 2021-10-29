@@ -364,6 +364,10 @@ def setup_ccircuit():
     settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
 
+def setup_keithley():
+    iplots.plotters = keithley_plotters
+    iplots.preprocessing = []
+
 def setup_digipot():
     ps.coupling.a = 'DC' # monitor
     ps.coupling.b = 'DC50' # device voltage
