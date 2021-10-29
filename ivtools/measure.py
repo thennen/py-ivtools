@@ -1,5 +1,9 @@
 """
 Functions for measuring IV data
+
+This contains code that is used to coordinate control and data collection from setups involving multiple instruments
+
+Also utilities that are just generally useful for doing measurements
 """
 import datetime
 import json
@@ -170,9 +174,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
-        # TODO: What if we want to retain a copy of the non-smoothed data?
-        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
-        # Maybe only smoothimate I and V?
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit and (n > 1):
@@ -192,12 +193,13 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     return ivdata
 
-
-def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
+def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
             termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
             savewfm=False, pretrig=0, posttrig=0):
     '''
-    Pulse a waveform, measure on picoscope, and return data
+    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
+
+    Pulse a waveform with teo, measure on picoscope, and return data
 
     smartrange 1 autoranges the monitor channel
     smartrange 2 tries some other fancy shit to autorange the current measurement channel
@@ -210,16 +212,28 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
     use "pretrig" and "posttrig" to sample before and after the waveform
     units are fraction of one pulse duration
 
+    TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
+    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
+          because that can take a lot of time, should include a switch for it
     '''
 
     teo = instruments.TeoSystem()
     ps = instruments.Picoscope()
 
+    # decide what sample rate to use
     teo_freq = 500e6
+    if fs is None:
+        if duration is None:
+            fs = teo_freq
+        else:
+            fs = nsamples / duration
 
     if type(wfm) is str:
         wfm_name = wfm
-        wfm = teo.download_wfm(wfm_name)[0]
+        if wfm_name in teo.waveforms:
+            wfm = teo.waveforms[wfm_name][0]
+        else:
+            wfm = teo.download_wfm(wfm_name)[0]
         if duration is not None:
             raise Exception("You can't pass 'duration' when using a saved waveform")
         duration = (len(wfm)-1)/teo_freq
@@ -232,19 +246,19 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
         else:
             duration = (len(wfm) - 1) / teo_freq
 
-    pico_fs = teo_freq
-
     if smartrange == 2:
         # Smart range for the compliance circuit
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
     elif smartrange:
         # Smart range the monitor channel
+        # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
+        # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
+        # offset/gain of the teo monitor output!
         smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
 
     teo_nsamples = len(wfm)
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
-
     sampling_factor = (n + pretrig + posttrig)
 
     # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
@@ -257,7 +271,7 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_pico_freq = ps.capture(ch=channels,
-                                  freq=pico_fs,
+                                  freq=fs,
                                   duration=duration * sampling_factor,
                                   pretrig=pretrig / sampling_factor,
                                   delay=delay)
@@ -279,10 +293,10 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
 
     # Send a pulse
 
+    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     teo.output_wfm(wfm, n=n)
 
     trainduration = n * duration
-    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     time.sleep(n * duration * 1.05)
     #ps.waitReady()
     log.debug('Getting data from picoscope.')
@@ -320,9 +334,6 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
-        # TODO: What if we want to retain a copy of the non-smoothed data?
-        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
-        # Maybe only smoothimate I and V?
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit and (n > 1):
@@ -341,7 +352,6 @@ def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
             ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
 
     return ivdata
-
 
 def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
               duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
