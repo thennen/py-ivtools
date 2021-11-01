@@ -2035,7 +2035,7 @@ def osc_analyze(data, x='V', y='I', ithresh=200e-6, hys=25, debug=False):
 
 
 @ivfunc
-def time_shift(data, column='I', dt=13e-9):
+def time_shift(data, column='I', dt=13e-9, left=np.nan, right=np.nan):
     '''
     For many common setups, the current signal lags behind the voltage signal because of difference in cable length.
     This offsets a column by dt and resamples it
@@ -2046,7 +2046,7 @@ def time_shift(data, column='I', dt=13e-9):
     else:
         t = maketimearray(data)
     # Interpolate the array to get its past value
-    colinterp = np.interp(t - dt, t, data[column], left=np.nan, right=np.nan)
+    colinterp = np.interp(t - dt, t, data[column], left=left, right=right)
     dataout = {column:colinterp}
     add_missing_keys(data, dataout)
     return dataout

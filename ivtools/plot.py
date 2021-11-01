@@ -925,7 +925,7 @@ def plot_cumulative_dist(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     ax.plot(np.sort(data), np.arange(len(data))/len(data), **kwargs)
 
-def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
+def plot_ivt(d, phaseshift=14, fig=None, V='V', I='I', **kwargs):
     ''' A not-so-refined subplot of current and voltage vs time'''
     if fig is None:
         fig, ax1 = plt.subplots()
@@ -939,8 +939,8 @@ def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
             ax2 = ax1.twinx()
     if 't' not in d:
         d['t'] = ivtools.analyze.maketimearray(d)
-    ax1.plot(d['t'], d['V'], c='blue', label='V')
-    ax2.plot(d['t'] - phaseshift* 1e-9, d['I'], c='green', label='I')
+    ax1.plot(d['t'], d[V], c='blue', label='V')
+    ax2.plot(d['t'] - phaseshift* 1e-9, d[I], c='green', label='I')
     ax2.set_ylabel('Current [A]', color='green')
     ax1.set_ylabel('Applied Voltage [V]', color='blue')
     ax1.set_xlabel('Time [s]')
