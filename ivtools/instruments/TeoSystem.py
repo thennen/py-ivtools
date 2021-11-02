@@ -226,6 +226,8 @@ class TeoSystem(object):
         following revisions remove AWG input entirely!
 
         External scope outputs are always active (no external mode needed)
+
+        If external is True, setting voltages is disabled
         '''
         # First argument (0) does nothing?
         # So does second argument apparently
@@ -903,10 +905,9 @@ class TeoSystem(object):
         if self.calibration is not None:
             I = np.polyval(self.calibration.loc[0, 'LFI'], I)
 
-        data = pd.Series(dict(V_list=V_list, I=I, V=V, t=t,
+        data = dict(V_list=V_list, I=I, V=V, t=t,
                                  idn=self.idn(), gain_step=self.gain(),
-                                 units=dict(V_list='V', I='A', V='V', t='s')
-                                 ))
+                                 units=dict(V_list='V', I='A', V='V', t='s'))
 
         return data
 
