@@ -54,20 +54,27 @@ Teo 'HF_FULL_BW' -> Picoscope 'C'
 Teo 'HF_LIMITED_BW' -> Picoscope 'D'
 Teo 'TRIG1' -> Picoscope 'Aux Trigger'
 Teo 'SW1' switch in internal mode (Gray position)
-Teo 'J4' and 'J5' Jumpers in internal mode
+Teo 'J4' and 'J5' Jumpers in internal mode (Both closer to the center of the board)
 '''
 
 ### Parameters ###
 save_folder = "X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\calibration"
-set_up = 'Teo_Digipot_Picoscope'
 V = 10        # Amplitude of the triangle pulse, positive and negative
-SR = 100_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
+SR = 10_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
                 # and 100_000 about a minute.
-R = 47_000    # Resistor used to measure
+R = 47_000    # Resistor used to measure (47_000Ω is the optimus)
 check = True  # If True: the existing calibration will be used so you can check it, otherwise it will
                 # perform an actual calibration
 nplc = 10     # Number of power line cycles to use on low frequency mode
+digipot = False  # Set it true if the resistor is sampled through a digipot
+set_up = 'Teo_Picoscope'
 
+info_txt = f"Sweep Amplitude: {V}V\n" \
+           f"Sweep Rate: {SR}V/s\n" \
+           f"Resitor used: {R}Ohm\n" \
+           f"NPLC for Low Frequency calibration = {nplc}\n" \
+           f"Digipot used: {digipot}\n" \
+           f"Setup: {set_up}"
 
 def pico_to_iv(datain, dtype=np.float32):
     '''
@@ -126,12 +133,14 @@ def pico_to_iv(datain, dtype=np.float32):
 
 
 teo = instruments.TeoSystem()
-dp = instruments.WichmannDigipot()
 ps = instruments.Picoscope()
 
+if digipot is True:
+    dp = instruments.WichmannDigipot()
+    dp.set_R(0)
 
 teo.HF_mode()
-dp.set_R(0)
+
 wfm = teo.tri([0, V, -V, 0], sweep_rate=SR)
 wfm_dur = (V * 4) / SR
 wfm_samples = len(wfm)
@@ -142,7 +151,8 @@ ps_channels = ['A', 'B', 'C', 'D']
 ps.offset = dict(A=0, B=0, C=0, D=0)
 ps.atten = dict(A=1, B=1, C=1, D=1)
 
-ps.coupling.a = 'DC'  # If DC50 half of the voltage is going to Pisoscope and half to Digipot, due to the signal divider
+ps.coupling.a = 'DC'  # If DC50 half of the voltage is going to Pisoscope and half to Resistor, due to the signal
+# divider
 ps.coupling.b = 'DC50'
 ps.coupling.c = 'DC50'
 ps.coupling.d = 'DC50'
@@ -156,6 +166,7 @@ teo_gain_steps = np.arange(32)
 
 
 def measure(gain_step):
+
     s = gain_step
     teo.HF_mode()
     teo.gain(s)
@@ -170,9 +181,9 @@ def measure(gain_step):
     teod = teo.get_data(raw=False)
     log.debug(f"Picoscope t: ({min(psd['t'])}, {max(psd['t'])}) ; len = {len(psd['t'])}")
     log.debug(f"Teo t      : ({min(teod['t'])}, {max(teod['t'])}) ; len = {len(teod['t'])}")
-    smoothing_window_teo = int(wfm_samples / 4 / 50)
+    smoothing_window_teo = int(wfm_samples / 4 / 100)
     decimate_factor_teo = len(teod['t']) // 1000
-    smoothing_window_ps = int(len(psd['t']) / 4 / 50)
+    smoothing_window_ps = int(len(psd['t']) / 4 / 100)
     decimate_factor_ps = len(psd['t']) // 1000
     log.debug(f"smoothing_window_teo = {smoothing_window_teo}\ndecimate_factor_teo = {decimate_factor_teo}")
     log.debug(f"smoothing_window_teo = {smoothing_window_ps}\ndecimate_factor_teo = {decimate_factor_ps}")
@@ -219,6 +230,7 @@ if check is True:
         teo.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
         timestamp_chek = teo.calibration.attrs['timestamp']
         timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+        info_txt = f"Testing calibration from {timestamp}\n\nTimestamp: {timestamp_chek}\n" + info_txt
 
     else:
         log.warning('Calibration file not found!')
@@ -226,12 +238,15 @@ if check is True:
 else:
     teo.calibration = None
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
+    info_txt = f"Timestamp: {timestamp}\n" + info_txt
 
 if max_V_MONITOR > 5:
     ps.coupling.b = 'DC'
 else:
     ps.coupling.b = 'DC50'
 ps.range.b = max_V_MONITOR
+
+log.info('\n'+info_txt)
 
 # # # # # # # # # # # # # # # # # # # # # #  Measuring # # # # # # # # # # # # # # # # # # # # # #
 
@@ -366,12 +381,47 @@ else:
 os.makedirs(save_folder)
 os.makedirs(os.path.join(save_folder, f'plots'))
 
+file = open(os.path.join(save_folder, 'info.txt'), "w")
+file.write(info_txt)
+file.close()
+
 calibration.to_pickle(os.path.join(save_folder, 'teo_calibration.df'))
 HF_data.to_pickle(os.path.join(save_folder, 'HF_data.df'))
 LF_data.to_pickle(os.path.join(save_folder, 'LF_data.s'))
 
 
 mpl.use('Agg')
+def plot_ref_lines(ax, x=None, y=None, V=V, R=R):
+    """
+    Parameters
+    ----------
+    ax: ax in which to plot
+    x: 'V', 'I', or None
+    y: 'V', 'I', or None
+    V: Voltage of the sweeps
+    R: Resistance used to calibrate
+    """
+
+    V_lines = [V, 0, -V]
+    I_lines = [V / R, 0, -V / R]
+    if x == 'V':
+        for v in V_lines:
+            ax.axvline(v, color='gray', alpha=0.7)
+    elif x == 'I':
+        for i in I_lines:
+            ax.axvline(i, color='gray', alpha=0.7)
+    elif x is not None:
+        log.error(f"plot_ref_lines argument x={x} is not an option")
+    if y == 'V':
+        for v in V_lines:
+            ax.axhline(v, color='gray', alpha=0.7)
+    elif y == 'I':
+        for i in I_lines:
+            ax.axhline(i, color='gray', alpha=0.7)
+    elif y is not None:
+        log.error(f"plot_ref_lines argument y={y} is not an option")
+
+
 for s, d in HF_data.iterrows():
     log.info(f"Plotting Gain Step = {s}")
     ## Ploting fits ##
@@ -384,8 +434,7 @@ for s, d in HF_data.iterrows():
     axs = fig.subplots(2, 3)
 
     ax = axs[0, 0]  # HFV fit
-    ax.axhline(0, color='gray', alpha=0.7)
-    ax.axvline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, x='V', y='V')
     ax.plot(V_wfm, d['HFV'], label="Measurement", linewidth=3)
     ax.plot(V_wfm, np.polyval(fits.loc[s, 'HFV'], V_wfm), label="Fit")
     ax.set_xlabel("Programmed voltage [V]")
@@ -393,40 +442,35 @@ for s, d in HF_data.iterrows():
     ax.legend(loc="upper left")
 
     ax = axs[0, 1]  # HFV_INT fit
-    ax.axhline(0, color='gray', alpha=0.7)
-    ax.axvline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, x='V', y='V')
     ax.plot(d['HFV'], d['HFV_INT'], label="Measurement", linewidth=3)
     ax.plot(d['HFV'], np.polyval(fits.loc[s, 'HFV_INT'], d['HFV']), label="Fit")
     ax.set_xlabel("Picoscope HFV [V]")
     ax.set_ylabel("HFV_INT [V]")
 
     ax = axs[0, 2]  # V_MONITOR fit
-    ax.axhline(0, color='gray', alpha=0.7)
-    ax.axvline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, x='V', y='V')
     ax.plot(d['HFV'], d['V_MONITOR'], label="Measurement", linewidth=3)
     ax.plot(d['HFV'], np.polyval(fits.loc[s, 'V_MONITOR'], d['HFV']), label="Fit")
     ax.set_xlabel("Picoscope HFV [V]")
     ax.set_ylabel("V_MONITOR [V]")
 
     ax = axs[1, 0]  # HFI_INT fit
-    ax.axhline(0, color='gray', alpha=0.7)
-    ax.axvline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, x='I', y='I')
     ax.plot(I_expected, d['HFI_INT'], label="Measurement", linewidth=3)
     ax.plot(I_expected, np.polyval(fits.loc[s, 'HFI_INT'], I_expected), label="Fit")
     ax.set_xlabel("Expected current [A]")
     ax.set_ylabel("HFI_INT [A]")
 
     ax = axs[1, 1]  # HF_LIMITED_BW fit
-    ax.axhline(0, color='gray', alpha=0.7)
-    ax.axvline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, x='I', y='I')
     ax.plot(I_expected, d['HF_LIMITED_BW'], label="Measurement", linewidth=3)
     ax.plot(I_expected, np.polyval(fits.loc[s, 'HF_LIMITED_BW'], I_expected), label="Fit")
     ax.set_xlabel("Expected current [A]")
     ax.set_ylabel("HF_LIMITED_BW [A]")
 
     ax = axs[1, 2]  # HF_FULL_BW fit
-    ax.axhline(0, color='gray', alpha=0.7)
-    ax.axvline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, x='I', y='I')
     ax.plot(I_expected, d['HF_FULL_BW'], label="Measurement", linewidth=3)
     ax.plot(I_expected, np.polyval(fits.loc[s, 'HF_FULL_BW'], I_expected), label="Fit")
     ax.set_xlabel("Expected current [A]")
@@ -450,37 +494,37 @@ for s, d in HF_data.iterrows():
     axs = fig.subplots(2, 3)
 
     ax = axs[0, 0]  # ps_HFV
-    ax.axhline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, y='V')
     ax.plot(d['t'], d['HFV'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HFV [V]")
 
     ax = axs[0, 1]  # teo_HFV
-    ax.axhline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, y='V')
     ax.plot(d['t'], d['HFV_INT'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HFV_INT [V]")
 
     ax = axs[0, 2]  # V_MONITOR
-    ax.axhline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, y='V')
     ax.plot(d['t'], d['V_MONITOR'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("V_MONITOR [V]")
 
     ax = axs[1, 0]  # HFI
-    ax.axhline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, y='I')
     ax.plot(d['t'], d['HFI_INT'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HFI_INT [A]")
 
     ax = axs[1, 1]  # HF_LIMITED_BW
-    ax.axhline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, y='I')
     ax.plot(d['t'], d['HF_LIMITED_BW'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HF_LIMITED_BW [A]")
 
     ax = axs[1, 2]  # HF_FULL_BW
-    ax.axhline(0, color='gray', alpha=0.7)
+    plot_ref_lines(ax, y='I')
     ax.plot(d['t'], d['HF_FULL_BW'])
     ax.set_xlabel("Time [s]")
     ax.set_ylabel("HF_FULL_BW [A]")
@@ -504,20 +548,19 @@ fig.clf()
 axs = fig.subplots(2, 2)
 
 ax = axs[0, 0]  # LFV
-ax.axhline(0, color='gray', alpha=0.7)
+plot_ref_lines(ax, y='V', V=LF_V_read)
 ax.plot(LF_data['t'], LF_data['V'])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("LFV [V]")
 
 ax = axs[0, 1]  # LFI
-ax.axhline(0, color='gray', alpha=0.7)
+plot_ref_lines(ax, y='I', V=LF_V_read)
 ax.plot(LF_data['t'], LF_data['I'])
 ax.set_xlabel("Time [s]")
 ax.set_ylabel("LFI [A]")
 
 ax = axs[1, 0]  # LFV fit
-ax.axhline(0, color='gray', alpha=0.7)
-ax.axvline(0, color='gray', alpha=0.7)
+plot_ref_lines(ax, x='V', y='V', V=LF_V_read)
 ax.plot(LF_wfm, LF_data['V'], label="Measurement", linewidth=3)
 ax.plot(LF_wfm, np.polyval(fits.loc[s, 'LFV'], LF_wfm), label="Fit")
 ax.set_xlabel("Programmed voltage [V]")
@@ -525,8 +568,7 @@ ax.set_ylabel("LFV [V]")
 ax.legend(loc="upper left")
 
 ax = axs[1, 1]  # LFI fit
-ax.axhline(0, color='gray', alpha=0.7)
-ax.axvline(0, color='gray', alpha=0.7)
+plot_ref_lines(ax, x='I', y='I', V=LF_V_read)
 ax.plot(I_expected, LF_data['I'], label="Measurement", linewidth=3)
 ax.plot(I_expected, np.polyval(fits.loc[s, 'LFI'], I_expected), label="Fit")
 ax.set_xlabel("Expected current [A]")
