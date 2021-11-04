@@ -76,23 +76,12 @@ class TeoSystem(object):
     Saturation values in volts:
         V MONITOR: -1 ; 1
 
-    There is a PowerPoint with documentation of some bugs at:
-    'X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\teo_bugs.pptm'
-
-    TODO: The maximum waveform length is not constant and much smaller than expected, memory is not being wiped
-     properly?
-
-    TODO: Waveform reproducibility bug. Documented on powerpoint.
-
-    TODO: if it's possible to make a more accurate calibration. Right now on the highest gain I have a 5% error
-     measuring 10kΩ with ±1V
-
     TODO: We can think about a way to correct the time delay between voltage and current signals. Right now if you
      try to plot an I,V loop for a <1 μs signal you get a circle. This is because it takes time for the signal to go
      through the sample and into the HFI port, depending on how long the cables are.
 
-    TODO: Gain goes back to 0 everytime we do teo = instriments.TeoSystem(), this is a problem if you are using that
-     line inside your code. Documented on powerpoint.
+    TODO: Gain goes back to 0 everytime we do teo = instruments.TeoSystem(), this is a problem if you are using that
+     line inside your code.
 
     TODO: do all the commands work regardless of which mode we are in? e.g. waveform upload, gain setting how do we
      avoid issuing commands and expecting it to do something but we are in the wrong mode? need to check something
@@ -110,7 +99,6 @@ class TeoSystem(object):
         class dotdict(dict):
             __getattr__ = dict.__getitem__
             __setattr__ = dict.__setitem__
-
 
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
@@ -177,7 +165,6 @@ class TeoSystem(object):
         self.last_nshots = None
 
         log.info('TEO connection successful: ' + self.constants.idn)
-
 
     ################################################################################
 
@@ -386,10 +373,7 @@ class TeoSystem(object):
         if step is None, return the current step setting
 
         TODO: find out which current saturates the input for each gain step
-              and document it here!
-
-        TODO: abstract away this "steps" stuff, which should have been hidden from API:
-              make two separate gain functions for the two amps, which only modify MSB or LSB
+              and document it!
         '''
         # Note: Do not use HF_gain.Get/SetValue
 
@@ -404,6 +388,57 @@ class TeoSystem(object):
             step = 0
 
         self.base.HF_Gain.SetStep(step)
+
+    def gain_LBW(self, gain=None):
+        '''
+        Set the low BW gain with minimal effect on the high BW gain.
+        This is the gain used for the internal HFI channel
+
+        Possible gain settings are 0,1,2,3
+        0 is the LOWEST gain, 3 is the HIGHEST.
+        each step corresponds to 6dB (2×)
+
+        Side effect is 1dB extra gain on HBW per step added to LBW.
+
+        TODO: WRITE THE GAIN VALUES HERE IN V/A OR V/V
+              GIVE SATURATION LEVEL in V!
+        '''
+        step = self.base.HF_Gain.GetStep()
+
+        if gain is None:
+            return 3 - (step & 0b00011)
+        elif gain in (0, 1, 2, 3):
+            newstep = step & 0b11100
+            newstep |= 3 - gain
+            self.base.HF_Gain.SetStep(newstep)
+        else:
+            raise Exception(f'{gain} is not a possible LBW gain.')
+
+
+    def gain_HBW(self, gain=None):
+        '''
+        Set the high BW gain without affecting the low BW gain.
+        This is the gain for the HF FULL BW SMA port.
+        Note that the HBW gain still depends up to 4 dB on the LBW gain ...
+        Fewer settings are available as we can only change the MSB as explained in self.gain()
+
+        Possible gain settings are 0-7
+        0 is the LOWEST gain, 7 is the HIGHEST.
+        each step corresponds to 4dB (1.585×)
+
+        TODO: WRITE THE GAIN VALUES HERE IN V/A OR V/V
+              GIVE SATURATION LEVEL IN V!
+        '''
+        step = self.base.HF_Gain.GetStep()
+
+        if gain is None:
+            return 7 - (step >> 2)
+        elif gain in (0, 1, 2, 3, 4, 5, 6, 7):
+            newstep = step & 0b00011
+            newstep |= (7 - gain) << 2
+            self.base.HF_Gain.SetStep(newstep)
+        else:
+            raise Exception(f'{gain} is not a possible LBW gain.')
 
 
     def _pad_wfms(self, varray, trig1, trig2):
@@ -912,7 +947,13 @@ class TeoSystem(object):
         return data
 
 class TeoBase(object):
+    '''
+    This class is basically a direct wrapper for the Teo API commands.
+    It launches the TSX processes and communicates with them using COM.
 
+    Each command prints itself to the debug log so that if we have problems we can provide code
+    that is understood by the instrument designer.
+    '''
     def __init__(self):
 
         from win32com.client import Dispatch
@@ -968,18 +1009,18 @@ class TeoBase(object):
         class hlc(object):
             pass
 
-        log.debug('-'*30 + '\nBASE FUNCTIONS:')
+        #log.debug('-'*30 + '\nBASE FUNCTIONS:')
         for cls_name, cls_obj in classes.items():
             # Create the instance of the High level class
             setattr(self, f"{cls_name}", hlc())
             cls_obj = classes[cls_name]
-            log.debug(f'{cls_name}')
+            #log.debug(f'{cls_name}')
             # Define all its methods
             for mtd in dir(cls_obj):
                 if not mtd.startswith('_') and mtd not in ['CLSID', 'coclass_clsid']:
                     setattr(getattr(self, f"{cls_name}"), f"{mtd}", self._wrapper(cls_name, cls_obj, mtd))
-                    log.debug(f'\t{mtd}')
-        log.debug('-' * 30)
+                    #log.debug(f'\t{mtd}')
+        #log.debug('-' * 30)
 
 
     @staticmethod
@@ -1007,7 +1048,6 @@ class TeoBase(object):
         Returns
         Function called 'cls_mtd'
         -------
-
         '''
 
         func = getattr(cls_obj, mtd)
@@ -1018,8 +1058,7 @@ class TeoBase(object):
             '''
 
             '''
-
-            # 'par' is a string than contains all the arguments passed to the function, so the log can look
+            # 'par' is a string that contains all the arguments passed to the function, so the log can look
             # exactly like the command used
             par = f'('
             if len(args) > 0:
@@ -1043,4 +1082,3 @@ class TeoBase(object):
         wfunc.__signature__ = sig
 
         return wfunc
-
