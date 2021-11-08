@@ -154,7 +154,7 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
-instrument_varnames = ('ps','rigol','rigol2','k','teo','pg5','et','ttx','daq','dp','ts')
+instrument_varnames = ('ps','rigol','rigol2','k','teo','pg5', 'pg100','et','ttx','daq','dp','ts')
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
