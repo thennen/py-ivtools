@@ -92,13 +92,12 @@ class TeoSystem(object):
           1. on first initialization (Dispatch('TSX_HMan'))
           2. if you disconnect USB and plug it back in
 
+
+    TODO: takes very long to connect when memory is full
     '''
 
     def __init__(self):
 
-        class dotdict(dict):
-            __getattr__ = dict.__getitem__
-            __setattr__ = dict.__setitem__
 
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
@@ -109,6 +108,57 @@ class TeoSystem(object):
         HFV output goes to the negative rail!
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         '''
+
+        # BORG needed to avoid loading all memory from TEO to Python everytime you call teo = instruments.TeoSystem()
+        # and to keep the gain value
+        statename = self.__class__.__name__
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+            self.__dict__ = ivtools.instrument_states[statename]
+            self.connect()
+        else:
+            self.__dict__ = ivtools.instrument_states[statename]
+            if not self.connected():
+                self.connect()
+
+    ################################################################################
+
+    def connected(self):
+        try:
+            MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
+        except:
+            return False
+        if MemTester is None:
+            return False
+        else:
+            return True
+
+    def idn(self):
+        # Get and print some information from the board
+        DevName = self.base.DeviceID.GetDeviceName()
+        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
+        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
+        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
+        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
+
+    def kill_TSX(self):
+        # /F tells taskkill we aren't Fing around here
+        os.system("taskkill /F /im TSX_HardwareManager.exe")
+        os.system("taskkill /F /im TSX_DM.exe")
+
+    def restart_TSX(self):
+        self.kill_TSX()
+        self.__init__()
+
+    def close(self):
+        self.base.DeviceControl.StopDevice()
+        self.kill_TSX()
+
+    def connect(self):
+
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
 
         self.base = TeoBase()
 
@@ -141,6 +191,8 @@ class TeoSystem(object):
         # set the power line frequency for averaging over integer cycles
         self.PLF = 50
 
+        self.freq = 500e6  # Teo frequency
+
         ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
         # it appears to be fine to call it multiple times;
         # everything still works, and I didn't see any disturbances on the HFV output
@@ -152,7 +204,7 @@ class TeoSystem(object):
         self.base.DeviceControl.StartDevice()
         # This command sets the idle level for HF mode
         self.base.LF_Voltage.SetValue(0)
-        #self.HF_mode()
+        # self.HF_mode()
 
         # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
         # TODO: somehow prevent this from taking too much memory
@@ -166,40 +218,6 @@ class TeoSystem(object):
 
         log.info('TEO connection successful: ' + self.constants.idn)
 
-    ################################################################################
-
-    def connected(self):
-        if not hasattr(self, 'conn'):
-            self.conn = False
-        elif self.conn is True:
-            MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
-            if MemTester is None:
-                self.conn = False
-            else:
-                self.conn = True
-
-        return self.conn
-
-    def idn(self):
-        # Get and print some information from the board
-        DevName = self.base.DeviceID.GetDeviceName()
-        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
-        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
-        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
-        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
-
-    def kill_TSX(self):
-        # /F tells taskkill we aren't Fing around here
-        os.system("taskkill /F /im TSX_HardwareManager.exe")
-        os.system("taskkill /F /im TSX_DM.exe")
-
-    def restart_TSX(self):
-        self.kill_TSX()
-        self.__init__()
-
-    def close(self):
-        self.base.DeviceControl.StopDevice()
-        self.kill_TSX()
 
 
     ##################################### HF mode #############################################
@@ -441,6 +459,13 @@ class TeoSystem(object):
             raise Exception(f'{gain} is not a possible LBW gain.')
 
 
+    def current_range(self, I_max):
+        pass
+        # Saturation values at s=0
+        HFI_INT_sat = 32e-6  # A  (x2 s)
+
+
+
     def _pad_wfms(self, varray, trig1, trig2):
         '''
         Make sure the number of samples in the waveform is compatible with the system
@@ -509,6 +534,8 @@ class TeoSystem(object):
         TODO: is there a limit to the NUMBER of waveforms that can be stored?
 
         TODO: is there a limit on the length of a waveforms name?
+
+        TODO: apply calibration? Right now applied voltages are around 10% smaller than programmed
         '''
         n = len(varray)
 
@@ -668,6 +695,8 @@ class TeoSystem(object):
             # no calibration..
             I = HFI
             V = HFV
+            I_cal_line = None
+            V_cal_line = None
 
 
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
@@ -741,7 +770,8 @@ class TeoSystem(object):
                    idn=self.constants.idn,
                    sample_rate=sample_rate,
                    gain_step=gain_step,
-                   nshots=self.last_nshots)
+                   nshots=self.last_nshots,
+                   calibration=dict(V=V_cal_line, I=I_cal_line))
         if raw:
             out['HFV'] = HFV
             out['HFI'] = HFI

@@ -191,133 +191,83 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     return ivdata
 
-def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
-            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
-            savewfm=False, pretrig=0, posttrig=0):
-    '''
-    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
+def picoteo(wfm=None, ps_samples=None, ps_freq=None, gain_step=None,
+             HFV_ch='A', V_MONITOR_ch='B', HF_LIM_BW_ch='C', HF_FULL_BW_ch='D', collect_internal=True,
+             save_wfm=False, pretrig=0, posttrig=0, autosmoothimate=False):
+    """
 
-    Pulse a waveform with teo, measure on picoscope, and return data
+    Parameters
+    ----------
+    wfm: Waveform to apply, or the name of the waveform already loaded in Teo.
+    ps_samples: Number of samples to get form Picoscope.
+    gain_step: Gain step of Teo.
+    HFV_ch
+    V_MONITOR_ch
+    HF_LIM_BW_ch
+    HF_FULL_BW_ch
 
-    smartrange 1 autoranges the monitor channel
-    smartrange 2 tries some other fancy shit to autorange the current measurement channel
 
-    autosplit will split the waveforms into n chunks
+    Returns
+    -------
 
-    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
-
-    by default we sample for exactly the length of the waveform,
-    use "pretrig" and "posttrig" to sample before and after the waveform
-    units are fraction of one pulse duration
-
-    TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
-    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
-          because that can take a lot of time, should include a switch for it
-    '''
+    """
 
     teo = instruments.TeoSystem()
     ps = instruments.Picoscope()
 
-    # decide what sample rate to use
-    teo_freq = 500e6
-    if fs is None:
-        if duration is None:
-            fs = teo_freq
-        else:
-            fs = nsamples / duration
 
     if type(wfm) is str:
         wfm_name = wfm
-        if wfm_name in teo.waveforms:
-            wfm = teo.waveforms[wfm_name][0]
-        else:
-            wfm = teo.download_wfm(wfm_name)[0]
-        if duration is not None:
-            raise Exception("You can't pass 'duration' when using a saved waveform")
-        duration = (len(wfm)-1)/teo_freq
+        wfm = teo.download_wfm(wfm_name)
     else:
-        wfm_name = None
-        if not type(wfm) == np.ndarray:
-            wfm = np.array(wfm)
-        if duration is not None:
-            wfm = teo.interp_wfm(wfm, duration)
-        else:
-            duration = (len(wfm) - 1) / teo_freq
+        wfm_name = teo.upload_wfm(wfm)
 
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
-        # Smart range the monitor channel
-        # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
-        # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
-        # offset/gain of the teo monitor output!
-        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
+    wfm_len = len(wfm)
 
-    teo_nsamples = len(wfm)
+    duration = wfm_len/teo.freq
+
+    if not (bool(ps_samples) ^ bool(ps_freq)):
+        raise Exception('Must pass either fs or nsamples, and not both')
+    if ps_freq is None:
+        ps_freq = ps_samples / duration
+
+    if gain_step is None:
+        gain_step = 0
+
+    teo.HF_mode()
+    teo.gain(gain_step)
+
+    ps_channels = [HFV_ch, V_MONITOR_ch, HF_LIM_BW_ch, HF_FULL_BW_ch]
+    ps_channels = [ch.upper() for ch in ps_channels if ch is not None]
+
+    debug_txt = f'''
+    wfm_len = {wfm_len}
+    teo_freq = {teo.freq}
+    duration = {duration}
+    ps_freq = {ps_freq}
+    ps_samples = {ps_samples}
+    gain_step = {gain_step}
+    ps_channels = {ps_channels}
+    '''
+    log.debug(debug_txt)
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
-    sampling_factor = (n + pretrig + posttrig)
 
-    # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
-    # in clock cycles units.
-    # Actually, each channel has its own delay, V_MONITOR is 4 ns, HF_LIMITED_BW is 13 ns, and HF_FULL_BW is 9 ns
-    pico_clock_freq = 1e9
-    delay_sec = 4e-9
-    delay = int(pico_clock_freq * delay_sec)
+    sampling_factor = (1+ pretrig + posttrig)
 
-    # Set picoscope to capture
-    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
-    actual_pico_freq = ps.capture(ch=channels,
-                                  freq=fs,
-                                  duration=duration * sampling_factor,
-                                  pretrig=pretrig / sampling_factor,
-                                  delay=delay)
-
-    pico_nsamples = int(duration * actual_pico_freq)
-
-    log.debug(f"Teo frequency: 500.0 MHz\n"
-              f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
-              f"Teo number of samples: {teo_nsamples}\n"
-              f"Picoscope number of samples: {pico_nsamples}")
-
-
-    # This makes me feel good, but I don't think it's really necessary
-    time.sleep(.05)
-    if termination:
-        # Account for terminating resistance
-        # e.g. multiply applied voltages by 2 for 50 ohm termination
-        wfm *= (50 + termination) / termination
-
-    # Send a pulse
-
-    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
-    teo.output_wfm(wfm, n=n)
-
-    trainduration = n * duration
-    time.sleep(n * duration * 1.05)
-    #ps.waitReady()
-    log.debug('Getting data from picoscope.')
-    # Get the picoscope data
-    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
-    chdata = ps.get_data(channels, raw=False)
-    log.debug('Got data from picoscope.')
-    # Convert to IV data (keeps channel data)
-    ivdata = ivtools.settings.pico_to_iv(chdata)
-
-    ivdata['nshots'] = n
-
-    if savewfm:
-        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
-        # You will need to interpolate it, however..
-        # Or can we read it off the rigol??
-        ivdata['Vwfm'] = wfm
+    actual_ps_freq = ps.capture(ch=ps_channels, freq=ps_freq, duration=duration * sampling_factor, nsamples=None,
+                                trigsource='TriggerAux', triglevel=0.5, timeout_ms=5000, direction='Rising',
+                                pretrig=pretrig / sampling_factor, delay=0)
+    time.sleep(0.1)
+    teo.output_wfm(wfm_name)
+    ps_data = ps.get_data(ch=ps_channels, raw=False)
+    data = ivtools.settings.pico_to_iv(ps_data)
 
     if autosmoothimate:
         # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
         # if you do that, the data still gets written in its raw form, which is preferable usually
         # Below, we irreversibly drop data.
-        nsamples_shot = ivdata['nsamples_capture'] / n
+        nsamples_shot = data['nsamples_capture']
         # Smooth by 0.3% of a shot
         window = max(int(nsamples_shot * 0.003), 1)
         # End up with about 1000 data points per shot
@@ -332,24 +282,49 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
-        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+        data = ivtools.analyze.smoothimate(data, window=window, factor=factor, columns=None)
 
-    if autosplit and (n > 1):
-        log.debug('Splitting data into individual pulses')
-        if splitbylevel is None:
-            nsamples = duration * actual_pico_freq
-            if 'downsampling' in ivdata:
-                # Not exactly correct but I hope it's close enough
-                nsamples /= ivdata['downsampling']
-            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
-        elif splitbylevel is not None:
-            # splitbylevel can split loops even if they are not the same length
-            # Could take more time though?
-            # This is not a genius way to determine to split at + or - dV/dt
-            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
-            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+    if collect_internal:
+        teo_data = teo.get_data(raw=False)
 
-    return ivdata
+        if autosmoothimate:
+            # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
+            # if you do that, the data still gets written in its raw form, which is preferable usually
+            # Below, we irreversibly drop data.
+            nsamples_shot = wfm_len
+            # Smooth by 0.3% of a shot
+            window = max(int(nsamples_shot * 0.003), 1)
+            # End up with about 1000 data points per shot
+            # This will be bad if you send in a single shot waveform with multiple cycles
+            # In that case, you shouldn't be using autosmoothimate or autosplit
+            # TODO: make a separate function for IV trains?
+            if autosmoothimate is True:
+                # yes I meant IS true..
+                npts = 1000
+            else:
+                # Can pass the number of data points you would like to end up with
+                npts = autosmoothimate
+            factor = max(int(nsamples_shot / npts), 1)
+            log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
+            teo_data = ivtools.analyze.smoothimate(teo_data, window=window, factor=factor, columns=None)
+
+        data['V_int'] = teo_data['V']
+        data['I_int'] = teo_data['I']
+        data['t_int'] = teo_data['t']
+        data['gain_step'] = teo_data['gain_step']
+        if 'calibration' not in data.keys():
+            data['calibration'] = dict()
+        data['calibration']['V_int'] = teo_data['calibration']['V']
+        data['calibration']['I_int'] = teo_data['calibration']['I']
+
+
+
+
+    if save_wfm:
+        data['Vwfm'] = wfm
+
+    return data
+
 
 def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
               duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
@@ -1464,7 +1439,7 @@ def femto_log_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dtype=np.float32):
+def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for TEO HF output channels
@@ -1487,39 +1462,54 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
     if 'units' not in dataout:
         dataout['units'] = {}
 
-    #if HFV and (HFV in datain):
-    #    dataout['HFV'] = datain[HFV]
+    dataout['calibration'] = {}
+
+    if HFV and (HFV in datain):
+        dataout['HFV'] = datain[HFV]
+        dataout['units']['HFV'] = 'V (HFV)'
+        dataout['calibration']['HFV'] = None
 
     if V_MONITOR and (V_MONITOR in datain):
-        dataout['units']['V'] = 'V'
+        dataout['units']['V'] = 'V (V_MONITOR)'
         if teo.calibration is not None:
-            Vdata = np.polyval(teo.calibration.loc[gainstep, 'V_MONITOR'], datain[V_MONITOR])
+            cal = teo.calibration.loc[gainstep, 'V_MONITOR']
+            Vdata = np.polyval(cal, datain[V_MONITOR])
+            dataout['calibration']['V'] = cal
         else:
             Vdata = datain[V_MONITOR]
+            dataout['calibration']['V'] = None
         if datain['COUPLINGS'][V_MONITOR] == 'DC':
             Vdata /= 2
         dataout['V'] = Vdata
 
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
-        dataout['units']['I'] = 'I'
+        dataout['units']['I'] = 'A (HF_LIMITED_BW)'
         if teo.calibration is not None:
-            Idata = np.polyval(teo.calibration.loc[gainstep, 'HF_LIMITED_BW'], datain[HF_LIMITED_BW])
+            cal = teo.calibration.loc[gainstep, 'HF_LIMITED_BW']
+            Idata = np.polyval(cal, datain[HF_LIMITED_BW])
+            dataout['calibration']['I'] = cal
         else:
             Idata = datain[V_MONITOR]
+            dataout['calibration']['I'] = None
         if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
             Idata /= 2
         dataout['I'] = Idata
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
-        dataout['units']['I2'] = 'I2'
+        dataout['units']['I2'] = 'A (HF_FULL_BW)'
         if teo.calibration is not None:
+            cal = teo.calibration.loc[gainstep, 'HF_FULL_BW']
             I2data = np.polyval(teo.calibration.loc[gainstep, 'HF_FULL_BW'], datain[HF_FULL_BW])
+            dataout['calibration']['I2'] = cal
         else:
             I2data = datain[HF_FULL_BW]
+            dataout['calibration']['I2'] = None
         if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
             I2data /= 2
         dataout['I2'] = I2data
+
+
 
     # TODO if only one of HF_LIMITED or HF_FULL is used, call the signal I, and indicate somehow where it came from
     # TODO Store calibration slope and intercept used

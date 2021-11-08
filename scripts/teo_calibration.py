@@ -50,8 +50,8 @@ Connections:
 Teo 'HFV' -> Picoscope 'A' -> Resistor 'Input'  (Signal divider)
 Resistor 'Output' -> Teo 'HFI'
 Teo 'V_MONITOR' -> Picoscope 'B'
-Teo 'HF_FULL_BW' -> Picoscope 'C'
-Teo 'HF_LIMITED_BW' -> Picoscope 'D'
+Teo 'HF_LIMITED_BW' -> Picoscope 'C'
+Teo 'HF_FULL_BW' -> Picoscope 'D'
 Teo 'TRIG1' -> Picoscope 'Aux Trigger'
 Teo 'SW1' switch in internal mode (Gray position)
 Teo 'J4' and 'J5' Jumpers in internal mode (Both closer to the center of the board)
@@ -59,8 +59,8 @@ Teo 'J4' and 'J5' Jumpers in internal mode (Both closer to the center of the boa
 
 ### Parameters ###
 save_folder = "X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\calibration"
-V = 10        # Amplitude of the triangle pulse, positive and negative
-SR = 10_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
+V = 1       # Amplitude of the triangle pulse, positive and negative
+SR = 100_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
                 # and 100_000 about a minute.
 R = 47_000    # Resistor used to measure (47_000Ω is the optimus)
 check = True  # If True: the existing calibration will be used so you can check it, otherwise it will
@@ -87,8 +87,8 @@ def pico_to_iv(datain, dtype=np.float32):
     # Make I, V arrays and store the parameters used to make them
     HFV_channel = 'A'
     V_monitor_channel = 'B'
-    HF_full_channel = 'C'
-    HF_limited_channel = 'D'
+    HF_limited_channel = 'C'
+    HF_full_channel = 'D'
 
     gain_step = teo.gain()
 
@@ -264,19 +264,19 @@ for s in teo_gain_steps[::-1]:
 
     # Setting Picoscope ranges #
 
-    max_D = max_HF_LIMITED_BW * 2 ** (4 - limited_step)
-    if max_D > 5:
-        ps.coupling.d = 'DC'
-    else:
-        ps.coupling.d = 'DC50'
-    ps.range.d = max_D
-
-    max_C = max_HF_FULL_BW * (101 / 90) ** (31 - full_step)  # 101 / 90 = 1.12222222...
+    max_C = max_HF_LIMITED_BW * 2 ** (4 - limited_step)
     if max_C > 5:
         ps.coupling.c = 'DC'
     else:
         ps.coupling.c = 'DC50'
     ps.range.c = max_C
+
+    max_D = max_HF_FULL_BW * (101 / 90) ** (31 - full_step)  # 101 / 90 = 1.12222222...
+    if max_D > 5:
+        ps.coupling.d = 'DC'
+    else:
+        ps.coupling.d = 'DC50'
+    ps.range.d = max_D
 
     d = measure(s)
 
