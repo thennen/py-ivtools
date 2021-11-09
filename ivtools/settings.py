@@ -145,10 +145,13 @@ if hostname in ('pciwe46', 'iwe21705'):
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
-elif hostname == 'pciwe38':
+elif hostname in ('pciwe38', 'iwe21407'):
     # Moritz computer
     datafolder = r'C:\Messdaten'
-    inst_connections = {}
+    inst_connections =  [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),
+    ('ttx', instruments.TektronixDPO73304D ,'GPIB0::1::INSTR'),
+    ('pg5', instruments.PG5 ,'ASRL3::INSTR'),
+    ('pg100', instruments.PG100 ,'ASRL3::INSTR')]
 
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'

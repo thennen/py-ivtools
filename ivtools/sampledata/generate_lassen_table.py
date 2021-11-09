@@ -315,11 +315,12 @@ die_coords['die_y'] -= wafer_center_y
 
 
 # Confirm understanding of coordinate system
-#for k,(x,y) in ff_dict.items():
-#    plt.text(x, y, str(k))
-#gca().invert_yaxis()
-#plt.xlim(420509.15167326666, 2845363.331419379)
-#plt.ylim(5250417.760709418, 2545051.5173949297)
+if 0:
+    for k,(x,y) in ff_dict.items():
+        plt.text(x, y, str(k))
+    gca().invert_yaxis()
+    plt.xlim(420509.15167326666, 2845363.331419379)
+    plt.ylim(5250417.760709418, 2545051.5173949297)
 
 # These are the x,y coordinates of the modules relative to some place on the die
 # In totally different coordinate system and units from ff_dict
@@ -382,13 +383,6 @@ mod_dict = {'001':  [11506.599999999999, 4000.0],
           '033':  [8267.3499999999985, 4000.0],
           '034':  [0.0, 6000.0]}
 
-# Confirm understanding of coordinate system
-#plt.figure()
-#for k,(x,y) in ff_dict.items():
-#    plt.text(x, y, str(k))
-#gca().invert_yaxis()
-#plt.xlim(-16647.01316746185, 141452.12947821213)
-#plt.ylim(20458.35845360716, -82514.06000031461)
 
 module_coords = pd.DataFrame.from_dict(mod_dict, orient='index').reset_index()
 module_coords.columns = ['module', 'module_x', 'module_y']
@@ -400,7 +394,7 @@ module_coords['module_num'] = module_coords['module'].apply(lambda s: int(s[:3])
 # Typed these in by hand!!!
 # TODO: don't read from excel file, put the information here
 # This has information about which dies are on which 2x2 coupon
-die_info = pd.read_excel(r'Lassen.xlsx', sheetname='coupon_die')
+die_info = pd.read_excel(r'Lassen.xlsx', sheet_name='coupon_die')
 # Join with die location data
 die_info.index = die_info.die
 # Messed up the relative die definition due to ridiculous y axis flip
@@ -408,38 +402,35 @@ die_info.index = die_info.die
 die_info = die_info.join(die_coords)
 #die_info.to_pickle('die_locations.pickle')
 
-'''
-# Make a plot to check for mistakes
-ucolors = ('#4D4D4D',
-           '#5DA5DA',
-           '#FAA43A',
-           '#60BD68',
-           '#F17CB0',
-           '#B2912F',
-           '#B276B2',
-           '#DECF3F',
-           '#F15854')
-from itertools import cycle
-ccycle = cycle(ucolors)
-gp = lassen.groupby('coupon')
-colors = gp.apply(lambda x: next(ccycle))
-figure()
-for index, row in lassen.iterrows():
-    plt.annotate(row.die, (row.die_x, row.die_y), color=colors[row.coupon])
-xlim((min([p[0] for p in ffcoords.values()]), max([p[0] for p in ffcoords.values()])))
-ylim((min([p[1] for p in ffcoords.values()]), max([p[1] for p in ffcoords.values()])))
-'''
+if 0: # Make a plot to check for mistakes
+    ucolors = ('#4D4D4D',
+               '#5DA5DA',
+               '#FAA43A',
+               '#60BD68',
+               '#F17CB0',
+               '#B2912F',
+               '#B276B2',
+               '#DECF3F',
+               '#F15854')
+    from itertools import cycle
+    ccycle = cycle(ucolors)
+    gp = die_info.groupby('coupon')
+    colors = gp.apply(lambda x: next(ccycle))
+    plt.figure()
+    for index, row in die_info.iterrows():
+        plt.annotate(row.die, (row.die_x, row.die_y), color=colors[row.coupon])
+    plt.xlim(-1.12171e+05, 1.23951e+05);plt.ylim(-9.79176e+04, 1.05473e+05)
 
 # TODO: don't read from excel file, put the information here
 # This one just has a layout for each module type
-module_info = pd.read_excel('Lassen.xlsx', sheetname='module_info')
+module_info = pd.read_excel('Lassen.xlsx', sheet_name='module_info')
 # Merging with the module coords will give a column for every device on every module
 module_info = pd.merge(module_info, module_coords, on='module_num')
 
 # Finally, merging with the die information will give a column for every single device on the wafer
 die_info['key'] = 1
 module_info['key'] = 1
-wafer_info = pd.merge(die_info, module_info, on='key').drop('key', axis=1)
+wafer_info = pd.merge(die_info, module_info, on='key').drop(columns='key', axis=1)
 
 wafer_info['device_y'] = (wafer_info['device_row'] - 1) * 160
 
@@ -470,25 +461,32 @@ for k,v in typedict.items():
 # I really just want the individual device locations on the wafer
 wafer_info['wX'] = wafer_info['die_x'] + wafer_info['module_x']
 wafer_info['wY'] = wafer_info['die_y'] + wafer_info['module_y'] + wafer_info['device_y']
-wafer_info = wafer_info.drop(['die_x', 'die_y', 'module_x', 'module_y', 'device_y'], 1)
+wafer_info = wafer_info.drop(columns=['die_x', 'die_y', 'module_x', 'module_y', 'device_y'], axis=1)
 
 # TODO: subtract an offset from x and y locations
 
-wafer_info.to_pickle('all_lassen_device_info.pkl')
-wafer_info.to_excel('all_lassen_device_info.xlsx', index=False)
+if 0:
+    plt.figure()
+    for k,g in wafer_info.groupby('die'):
+        plt.text(g.wX.mean(), g.wY.mean(), g.die_rel.iloc[0])
+    gca().invert_yaxis()
+    plt.xlim(-9.99821e+04, 1.14881e+05)
+    plt.ylim(1.11446e+05, -9.96227e+04)
 
-#plt.figure()
-#for k,g in wafer_info.groupby('die'):
-#    plt.text(g.wX.mean(), g.wY.mean(), g.die_rel.iloc[0])
-#gca().invert_yaxis()
-#plt.xlim(596525.212505817, 2655013.0632123053)
-#plt.ylim(4946825.3228602875, 2835648.7748716054)
-
-# Useful to have coupon info
-coupon_info = wafer_info[wafer_info.coupon == 40].drop(['die', 'coupon'], 1)
+# Useful to have coupon info, without the die specific information
+coupon_info = wafer_info[wafer_info.coupon == 40].drop(columns=['die', 'coupon'], axis=1)
 # Make all coordinates referenced to bottom left device mod 002, device 1
 home = coupon_info[(coupon_info['module'] == '002') & (coupon_info['device'] == 1) & (coupon_info['die_rel'] == 3)].iloc[0]
 coupon_info['wX'] -= home.wX
 coupon_info['wY'] -= home.wY
+
+coupon_info = coupon_info.rename(columns={'wX':'cX', 'wY':'cY'})
+# cX and cY are useful even if the die number is known, put it in main dataframe as well
+wafer_info = wafer_info.merge(coupon_info[['die_rel', 'module', 'device', 'cX', 'cY']], on=['die_rel', 'module', 'device'])
+
+
+wafer_info.to_pickle('all_lassen_device_info.pkl')
+wafer_info.to_excel('all_lassen_device_info.xlsx', index=False)
+
 coupon_info.to_pickle('lassen_coupon_info.pkl')
-coupon_info.to_excel('lassen_coupon_info.xlsx')
+coupon_info.to_excel('lassen_coupon_info.xlsx', index=False)
