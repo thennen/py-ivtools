@@ -39,21 +39,12 @@ Author: Tyler Hennen (tyler@hennen.us)
 '''
 # Some of these imports are just to make sure the interactive user has access to them
 # Not necessarily because they are used in this script!
-import numpy
-import numpy as np
-import matplotlib
-import matplotlib as mpl
-from matplotlib import pyplot
-from matplotlib import pyplot as plt
-from functools import wraps, partial
-import os
-import sys
-import time
+from functools import partial
+
 import pandas as pd
+
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
-from datetime import datetime
-from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -61,8 +52,6 @@ import pyvisa as visa
 
 import ivtools
 import importlib
-from importlib import reload
-from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -81,7 +70,6 @@ from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
-from ivtools.instruments import *
 import logging
 
 magic = get_ipython().magic
@@ -223,6 +211,16 @@ teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
+
+teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
+                      [1, partial(ivplot.plotiv, x='t', y='V')],
+                      [2, partial(ivplot.plotiv, x='t', y='I')],
+                      [3, partial(ivplot.plotiv, x='t', y='I2')]]
+
+teo_plotters_debug_int = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
+                          [1, partial(ivplot.plotiv, x='t', y='V_int')],
+                          [2, partial(ivplot.plotiv, x='t', y='I')],
+                          [3, partial(ivplot.plotiv, x='t', y='I_int')]]
 
 # What the plots should do by default
 if not iplots.plotters:
@@ -378,14 +376,32 @@ def setup_digipot():
     iplots.plotters = pico_plotters
 
 def setup_picoteo():
-    ps.coupling.b = 'DC50'
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC'
     ps.coupling.c = 'DC50'
     ps.coupling.d = 'DC50'
+    ps.range.a = 5
     ps.range.b = 0.2
     ps.range.c = 0.2
     ps.range.d = 0.2
     settings.pico_to_iv = TEO_HFext_to_iv
     iplots.plotters = teo_plotters
+
+def setup_picoteo_debug(int=True):
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC'
+    ps.coupling.c = 'DC50'
+    ps.coupling.d = 'DC50'
+    ps.range.a = 5
+    ps.range.b = 0.2
+    ps.range.c = 0.5
+    ps.range.d = 0.2
+    settings.pico_to_iv = TEO_HFext_to_iv
+    if int:
+        iplots.plotters = teo_plotters_debug_int
+    else:
+        iplots.plotters = teo_plotters_debug
+
 
 ################################################################
 # 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀

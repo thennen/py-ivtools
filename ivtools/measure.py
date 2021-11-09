@@ -1478,8 +1478,6 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
         else:
             Vdata = datain[V_MONITOR]
             dataout['calibration']['V'] = None
-        if datain['COUPLINGS'][V_MONITOR] == 'DC':
-            Vdata /= 2
         dataout['V'] = Vdata
 
 
@@ -1492,8 +1490,6 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
         else:
             Idata = datain[V_MONITOR]
             dataout['calibration']['I'] = None
-        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
-            Idata /= 2
         dataout['I'] = Idata
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
@@ -1505,8 +1501,6 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
         else:
             I2data = datain[HF_FULL_BW]
             dataout['calibration']['I2'] = None
-        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
-            I2data /= 2
         dataout['I2'] = I2data
 
 

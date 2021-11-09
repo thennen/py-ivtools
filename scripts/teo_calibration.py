@@ -59,11 +59,11 @@ Teo 'J4' and 'J5' Jumpers in internal mode (Both closer to the center of the boa
 
 ### Parameters ###
 save_folder = "X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\calibration"
-V = 1       # Amplitude of the triangle pulse, positive and negative
-SR = 100_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
+V = 9       # Amplitude of the triangle pulse, positive and negative
+SR = 10_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
                 # and 100_000 about a minute.
 R = 47_000    # Resistor used to measure (47_000Ω is the optimus)
-check = True  # If True: the existing calibration will be used so you can check it, otherwise it will
+check = False  # If True: the existing calibration will be used so you can check it, otherwise it will
                 # perform an actual calibration
 nplc = 10     # Number of power line cycles to use on low frequency mode
 digipot = False  # Set it true if the resistor is sampled through a digipot
@@ -105,14 +105,9 @@ def pico_to_iv(datain, dtype=np.float32):
     if HFV_channel in datain:
         V = datain[HFV_channel]
         dataout['HFV'] = V  # Subtract voltage on output?  Don't know what it is necessarily.
-        if datain['COUPLINGS'][HFV_channel] == 'DC50':  # Don't let this happen
-            raise Exception("If you are using a signal divider in channel {HFV_channel} and you set 'DC50' only half "
-                            "of the current will go to digipot")
         dataout['units']['HFV'] = 'V'
     if V_monitor_channel in datain:
         V = datain[V_monitor_channel]
-        if datain['COUPLINGS'][V_monitor_channel] == 'DC50':
-            V *= 2
         if teo.calibration is not None:
             V = np.polyval(teo.calibration.loc[gain_step, 'V_MONITOR'], V)
         dataout['V_MONITOR'] = V
@@ -151,14 +146,13 @@ ps_channels = ['A', 'B', 'C', 'D']
 ps.offset = dict(A=0, B=0, C=0, D=0)
 ps.atten = dict(A=1, B=1, C=1, D=1)
 
-ps.coupling.a = 'DC'  # If DC50 half of the voltage is going to Pisoscope and half to Resistor, due to the signal
-# divider
-ps.coupling.b = 'DC50'
+ps.coupling.a = 'DC'
+ps.coupling.b = 'DC'
 ps.coupling.c = 'DC50'
 ps.coupling.d = 'DC50'
 
-ps.range.a = V
-ps.range.b = V/10
+ps.range.a = V * 1.1
+ps.range.b = V * 1.1 / 10
 ps.range.c = 1
 ps.range.d = 1
 
@@ -240,10 +234,6 @@ else:
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S_%f')[:-3]
     info_txt = f"Timestamp: {timestamp}\n" + info_txt
 
-if max_V_MONITOR > 5:
-    ps.coupling.b = 'DC'
-else:
-    ps.coupling.b = 'DC50'
 ps.range.b = max_V_MONITOR
 
 log.info('\n'+info_txt)
@@ -265,17 +255,9 @@ for s in teo_gain_steps[::-1]:
     # Setting Picoscope ranges #
 
     max_C = max_HF_LIMITED_BW * 2 ** (4 - limited_step)
-    if max_C > 5:
-        ps.coupling.c = 'DC'
-    else:
-        ps.coupling.c = 'DC50'
     ps.range.c = max_C
 
     max_D = max_HF_FULL_BW * (101 / 90) ** (31 - full_step)  # 101 / 90 = 1.12222222...
-    if max_D > 5:
-        ps.coupling.d = 'DC'
-    else:
-        ps.coupling.d = 'DC50'
     ps.range.d = max_D
 
     d = measure(s)

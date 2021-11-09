@@ -138,6 +138,10 @@ if hostname in ('pciwe46', 'iwe21705'):
             'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
             'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
         }
+        inst_connections = [('ps', instruments.Picoscope),
+                            ('teo', instruments.TeoSystem),
+                            ('dp', instruments.WichmannDigipot),
+                            ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
