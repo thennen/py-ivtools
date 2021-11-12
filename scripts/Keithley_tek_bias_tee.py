@@ -390,7 +390,6 @@ def vcm_measurement(samplename,
 padname,
 v1,
 v2,
-pulse_generator = pg5,
 step = 0.01,
 step2 = 0.01,
 V_read = 0.2,
@@ -474,15 +473,15 @@ cc_step = 25e-6):
 
             ### Applying pulse and reading scope data #############################################################
             if pg5_measurement:
-                pulse_generator.set_pulse_width(pulse_width)
+                sympuls.set_pulse_width(pulse_width)
             if not automatic_measurement:
                 input('Connect the RF probes and press enter')
                 plt.pause(0.5)
             else:
-                plt.pause(0.1)
+                plt.pause(1)
                 
             if pg5_measurement:
-                pulse_generator.trigger()
+                sympuls.trigger()
             else:
                 print('Apply pulse')
             plt.pause(0.1)
@@ -492,7 +491,7 @@ cc_step = 25e-6):
                 plt.pause(0.1)
                 status = ttx.triggerstate()
             plt.pause(0.5)
-            scope_list.append(ttx.get_curve(3))
+            scope_list.append(ttx.get_curve(1))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
 
@@ -1000,7 +999,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                 b_no = Button(ax_no, 'No')
                 b_no.on_clicked(threshold_invisible)
                 root.wait_variable(waitVar)
-                if filename is not '':
+                if filename != '':
                     figure_handle.tight_layout()
                     figure_handle.savefig(filename + '.png', dpi =600)
                     plt.rcParams['pdf.fonttype'] = 'truetype'

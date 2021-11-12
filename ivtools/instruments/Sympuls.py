@@ -3,12 +3,12 @@ log = logging.getLogger('instruments')
 import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 
-class PG100(object):
+class Sympuls(object):
     def __init__(self, addr='ASRL3::INSTR'):
         try:
             self.connect(addr)
         except:
-            log.error('PG5 connection failed at {}'.format(addr))
+            log.error('Sympuls connection failed at {}'.format(addr))
 
     def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
