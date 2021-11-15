@@ -12,6 +12,7 @@ import signal
 import time
 from fractions import Fraction
 from math import gcd
+from numbers import Number
 
 import numpy as np
 import pandas as pd
@@ -24,7 +25,7 @@ import ivtools.settings
 log = logging.getLogger('measure')
 
 
-########### Picoscope - Rigol AWG testing #############
+########### Picoscope + Rigol AWG testing #############
 
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
                               ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
@@ -191,307 +192,48 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     return ivdata
 
-def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
-            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
-            savewfm=False, pretrig=0, posttrig=0):
-    '''
-    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
-
-    Pulse a waveform with teo, measure on picoscope, and return data
-
-    smartrange 1 autoranges the monitor channel
-    smartrange 2 tries some other fancy shit to autorange the current measurement channel
-
-    autosplit will split the waveforms into n chunks
-
-    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
-
-    by default we sample for exactly the length of the waveform,
-    use "pretrig" and "posttrig" to sample before and after the waveform
-    units are fraction of one pulse duration
-
-    TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
-    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
-          because that can take a lot of time, should include a switch for it
-    '''
-
-    teo = instruments.TeoSystem()
-    ps = instruments.Picoscope()
-
-    # decide what sample rate to use
-    teo_freq = 500e6
-    if fs is None:
-        if duration is None:
-            fs = teo_freq
-        else:
-            fs = nsamples / duration
-
-    if type(wfm) is str:
-        wfm_name = wfm
-        if wfm_name in teo.waveforms:
-            wfm = teo.waveforms[wfm_name][0]
-        else:
-            wfm = teo.download_wfm(wfm_name)[0]
-        if duration is not None:
-            raise Exception("You can't pass 'duration' when using a saved waveform")
-        duration = (len(wfm)-1)/teo_freq
-    else:
-        wfm_name = None
-        if not type(wfm) == np.ndarray:
-            wfm = np.array(wfm)
-        if duration is not None:
-            wfm = teo.interp_wfm(wfm, duration)
-        else:
-            duration = (len(wfm) - 1) / teo_freq
-
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
-        # Smart range the monitor channel
-        # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
-        # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
-        # offset/gain of the teo monitor output!
-        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
-
-    teo_nsamples = len(wfm)
-
-    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
-    sampling_factor = (n + pretrig + posttrig)
-
-    # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
-    # in clock cycles units.
-    # Actually, each channel has its own delay, V_MONITOR is 4 ns, HF_LIMITED_BW is 13 ns, and HF_FULL_BW is 9 ns
-    pico_clock_freq = 1e9
-    delay_sec = 4e-9
-    delay = int(pico_clock_freq * delay_sec)
-
-    # Set picoscope to capture
-    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
-    actual_pico_freq = ps.capture(ch=channels,
-                                  freq=fs,
-                                  duration=duration * sampling_factor,
-                                  pretrig=pretrig / sampling_factor,
-                                  delay=delay)
-
-    pico_nsamples = int(duration * actual_pico_freq)
-
-    log.debug(f"Teo frequency: 500.0 MHz\n"
-              f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
-              f"Teo number of samples: {teo_nsamples}\n"
-              f"Picoscope number of samples: {pico_nsamples}")
-
-
-    # This makes me feel good, but I don't think it's really necessary
-    time.sleep(.05)
-    if termination:
-        # Account for terminating resistance
-        # e.g. multiply applied voltages by 2 for 50 ohm termination
-        wfm *= (50 + termination) / termination
-
-    # Send a pulse
-
-    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
-    teo.output_wfm(wfm, n=n)
-
-    trainduration = n * duration
-    time.sleep(n * duration * 1.05)
-    #ps.waitReady()
-    log.debug('Getting data from picoscope.')
-    # Get the picoscope data
-    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
-    chdata = ps.get_data(channels, raw=False)
-    log.debug('Got data from picoscope.')
-    # Convert to IV data (keeps channel data)
-    ivdata = ivtools.settings.pico_to_iv(chdata)
-
-    ivdata['nshots'] = n
-
-    if savewfm:
-        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
-        # You will need to interpolate it, however..
-        # Or can we read it off the rigol??
-        ivdata['Vwfm'] = wfm
-
-    if autosmoothimate:
-        # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
-        # if you do that, the data still gets written in its raw form, which is preferable usually
-        # Below, we irreversibly drop data.
-        nsamples_shot = ivdata['nsamples_capture'] / n
-        # Smooth by 0.3% of a shot
-        window = max(int(nsamples_shot * 0.003), 1)
-        # End up with about 1000 data points per shot
-        # This will be bad if you send in a single shot waveform with multiple cycles
-        # In that case, you shouldn't be using autosmoothimate or autosplit
-        # TODO: make a separate function for IV trains?
-        if autosmoothimate is True:
-            # yes I meant IS true..
-            npts = 1000
-        else:
-            # Can pass the number of data points you would like to end up with
-            npts = autosmoothimate
-        factor = max(int(nsamples_shot / npts), 1)
-        log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
-        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
-
-    if autosplit and (n > 1):
-        log.debug('Splitting data into individual pulses')
-        if splitbylevel is None:
-            nsamples = duration * actual_pico_freq
-            if 'downsampling' in ivdata:
-                # Not exactly correct but I hope it's close enough
-                nsamples /= ivdata['downsampling']
-            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
-        elif splitbylevel is not None:
-            # splitbylevel can split loops even if they are not the same length
-            # Could take more time though?
-            # This is not a genius way to determine to split at + or - dV/dt
-            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
-            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
-
-    return ivdata
-
-def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
+def digipotiv(V1, V2, R1=0, R2=0,
               duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
               savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
-    '''
-    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with different series resistance during SET and RESET.
 
-    @param V_set: Voltage to applied during SET, it can be a list of values or None if you only want to do RESET.
+    '''
+    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with triangle sweeps and different
+    series resistance values e.g. during SET and RESET.
+
+    just a slightly more convenient way to write a for-loop
+    TODO: wrap picoiv automatically and add arguments to it
+
+    @param V_set: Voltage to applied during SET, it can be a list of values or 0 if you only want to do RESET.
     If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
     @param V_reset: Same as V_set.
     @param R_set: Series Resistance during SET, it can be a list of values.
     @param R_reset: Series Resistance during RESET, it can be a list of values.
 
-    picoiv params:
-
-    @param duration: Duration of a single sweep [seconds].
-    @param fs:
-    @param nsamples:
-    @param smartrange: 1 or 2:
-    1 autoranges the monitor channel.
-    2 tries some other fancy code :) to autorange the current measurement channel.
-    @param termination: Account for terminating resistance, e.g. multiply applied voltages by 2 for 50 ohm termination.
-    @param autosmoothimate: Creates a smooth and decimated version of the data. Raw form is saved anyway.
-    @param savewfm: Save the programmed waveform.
-    @param pretrig: By default we sample for exactly the length of the waveform,use "pretrig" to sample before
-    the waveform.
-    @param posttrig: By default we sample for exactly the length of the waveform,use "posttrig" to sample after
-    the waveform.
-    @param interpwfm: Rigol will interpolate the wfm so it doesn't need to have a lot of points.
-
-    @return: data measured in a list of dicts.
+    everything else goes to picoiv
     '''
-
     ps = instruments.Picoscope()
     dp = instruments.WichmannDigipot()
 
-    # I wanted to do the parameters very flexible, so now I have to handle every possible case.
-    # If there are more than one set or reset voltage, metadata is save as the string of the list, since lists are
-    # not allowed in the databe
+    V1, V2, R1, R2 = arg_broadcast(V1, V2, R1, R2)
 
-    num_types = [int, float, np.float16, np.float32, np.float64]
-    list_types = [list, np.ndarray, np.array]
-
-    if type(V_set) in num_types:
-        if type(V_reset) in num_types:
-            V_set = [V_set]
-            V_reset = [V_reset]
-        elif type(V_reset) in list_types:
-            V_set = list(np.repeat(V_set, len(V_reset)))
-            V_reset = list(V_reset)
-        elif V_reset is None:
-            V_set = [V_set]
-            V_reset = [V_reset]
-        else:
-            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
-
-    elif type(V_set) in list_types:
-        V_set = list(V_set)
-        if type(V_reset) in num_types:
-            V_reset = list(np.repeat(V_reset, len(V_set)))
-        elif type(V_reset) in list_types:
-            V_reset = list(V_reset)
-            if len(V_set) != len(V_reset):
-                raise Exception(f"V_set has length {len(V_set)} and V_reset {len(V_reset)}")
-        elif V_reset is None:
-            V_reset = list(np.repeat(V_reset, len(V_set)))
-        else:
-            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
-
-    elif V_set is None:
-        if type(V_reset) in num_types:
-            V_set = [V_set]
-            V_reset = [V_reset]
-        if type(V_reset) in list_types:
-            V_set = list(np.repeat(V_set, len(V_reset)))
-            V_reset = list(V_reset)
-        elif V_reset is None:
-            raise Exception(f'V_set and V_reset are both None')
-        else:
-            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
-    else:
-        raise Exception(f'No settings for V_set with type {type(V_set)}')
-
-    nloops = len(V_set)
-
-    if type(R_set) in num_types:
-        if nloops == 1:
-            R_set = [R_set]
-        elif nloops > 1:
-            R_set = list(np.repeat(R_set, nloops))
-    elif type(R_set) in list_types:
-        if len(R_set) != nloops:
-            raise Exception("R_set length doesn't match with voltages lengths")
-    else:
-        raise Exception(f'No settings for R_set with type {type(R_set)}')
-
-    if type(R_reset) in num_types:
-        if nloops == 1:
-            R_reset = [R_reset]
-        elif nloops > 1:
-            R_reset = list(np.repeat(R_reset, nloops))
-    elif type(R_reset) in list_types:
-        if len(R_reset) != nloops:
-            raise Exception("R_reset length doesn't match with voltages lengths")
-    else:
-        raise Exception(f'No settings for R_reset with type {type(R_reset)}')
-
-
-    # Setting instruments up
-    ivtools.settings.pico_to_iv = digipot_to_iv
-    ps.coupling.b = 'DC50'
-    ps.coupling.c = 'DC50'
-    ps.range = {'A': 5, 'B': 5, 'C': 0.05, 'D': 1}
-    ps.offset = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
-
-    # Measuring
     sweeps = []
-    for vs, vr, rs, rr in zip(V_set, V_reset, R_set, R_reset):
-
-        if vs is not None:
-            wfm_set = tri(0, vs, 100)
-            dp.set_R(rs)
+    for v1, v2, r1, r2 in zip(V1, V2, R1, R2):
+        if v1 != 0:
+            wfm_set = tri(0, v1)
+            dp.set_R(r1)
             d_set = picoiv(wfm=wfm_set, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
                            termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
                            savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
             sweeps.append(d_set)
-        if vr is not None:
-            wfm_reset = tri(0, -vr, 100)
-            dp.set_R(rr)
+        if v2 != 0:
+            wfm_reset = tri(0, -v2)
+            dp.set_R(r2)
             d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
                              termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
                              savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
             sweeps.append(d_reset)
 
-    # Saving data
-    data = sweeps[0]
-    for s in sweeps[1:]:
-        for k, v in s.items():
-            if type(v) in [np.ndarray, list, pd.core.series.Series]:
-                data[k] = np.append(data[k], v)
-
-    return data
+    return sweeps
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -711,6 +453,172 @@ def _rate_duration(v1, v2, rate=None, duration=None):
         duration = 2 * (v1 - v2) / rate
 
     return rate, duration
+
+
+########### Picoscope + Teo testing ###################
+
+def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
+            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
+            savewfm=False, pretrig=0, posttrig=0):
+    '''
+    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
+
+    Pulse a waveform with teo, measure on picoscope, and return data
+
+    smartrange 1 autoranges the monitor channel
+    smartrange 2 tries some other fancy shit to autorange the current measurement channel
+
+    autosplit will split the waveforms into n chunks
+
+    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
+
+    by default we sample for exactly the length of the waveform,
+    use "pretrig" and "posttrig" to sample before and after the waveform
+    units are fraction of one pulse duration
+
+    TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
+    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
+          because that can take a lot of time, should include a switch for it
+    '''
+
+    teo = instruments.TeoSystem()
+    ps = instruments.Picoscope()
+
+    # decide what sample rate to use
+    teo_freq = 500e6
+    if fs is None:
+        if duration is None:
+            fs = teo_freq
+        else:
+            fs = nsamples / duration
+
+    if type(wfm) is str:
+        wfm_name = wfm
+        if wfm_name in teo.waveforms:
+            wfm = teo.waveforms[wfm_name][0]
+        else:
+            wfm = teo.download_wfm(wfm_name)[0]
+        if duration is not None:
+            raise Exception("You can't pass 'duration' when using a saved waveform")
+        duration = (len(wfm)-1)/teo_freq
+    else:
+        wfm_name = None
+        if not type(wfm) == np.ndarray:
+            wfm = np.array(wfm)
+        if duration is not None:
+            wfm = teo.interp_wfm(wfm, duration)
+        else:
+            duration = (len(wfm) - 1) / teo_freq
+
+    if smartrange == 2:
+        # Smart range for the compliance circuit
+        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
+    elif smartrange:
+        # Smart range the monitor channel
+        # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
+        # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
+        # offset/gain of the teo monitor output!
+        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
+
+    teo_nsamples = len(wfm)
+
+    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
+    sampling_factor = (n + pretrig + posttrig)
+
+    # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
+    # in clock cycles units.
+    # Actually, each channel has its own delay, V_MONITOR is 4 ns, HF_LIMITED_BW is 13 ns, and HF_FULL_BW is 9 ns
+    pico_clock_freq = 1e9
+    delay_sec = 4e-9
+    delay = int(pico_clock_freq * delay_sec)
+
+    # Set picoscope to capture
+    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+    actual_pico_freq = ps.capture(ch=channels,
+                                  freq=fs,
+                                  duration=duration * sampling_factor,
+                                  pretrig=pretrig / sampling_factor,
+                                  delay=delay)
+
+    pico_nsamples = int(duration * actual_pico_freq)
+
+    log.debug(f"Teo frequency: 500.0 MHz\n"
+              f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
+              f"Teo number of samples: {teo_nsamples}\n"
+              f"Picoscope number of samples: {pico_nsamples}")
+
+
+    # This makes me feel good, but I don't think it's really necessary
+    time.sleep(.05)
+    if termination:
+        # Account for terminating resistance
+        # e.g. multiply applied voltages by 2 for 50 ohm termination
+        wfm *= (50 + termination) / termination
+
+    # Send a pulse
+
+    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    teo.output_wfm(wfm, n=n)
+
+    trainduration = n * duration
+    time.sleep(n * duration * 1.05)
+    #ps.waitReady()
+    log.debug('Getting data from picoscope.')
+    # Get the picoscope data
+    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
+    chdata = ps.get_data(channels, raw=False)
+    log.debug('Got data from picoscope.')
+    # Convert to IV data (keeps channel data)
+    ivdata = ivtools.settings.pico_to_iv(chdata)
+
+    ivdata['nshots'] = n
+
+    if savewfm:
+        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
+        # You will need to interpolate it, however..
+        # Or can we read it off the rigol??
+        ivdata['Vwfm'] = wfm
+
+    if autosmoothimate:
+        # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
+        # if you do that, the data still gets written in its raw form, which is preferable usually
+        # Below, we irreversibly drop data.
+        nsamples_shot = ivdata['nsamples_capture'] / n
+        # Smooth by 0.3% of a shot
+        window = max(int(nsamples_shot * 0.003), 1)
+        # End up with about 1000 data points per shot
+        # This will be bad if you send in a single shot waveform with multiple cycles
+        # In that case, you shouldn't be using autosmoothimate or autosplit
+        # TODO: make a separate function for IV trains?
+        if autosmoothimate is True:
+            # yes I meant IS true..
+            npts = 1000
+        else:
+            # Can pass the number of data points you would like to end up with
+            npts = autosmoothimate
+        factor = max(int(nsamples_shot / npts), 1)
+        log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
+        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+
+    if autosplit and (n > 1):
+        log.debug('Splitting data into individual pulses')
+        if splitbylevel is None:
+            nsamples = duration * actual_pico_freq
+            if 'downsampling' in ivdata:
+                # Not exactly correct but I hope it's close enough
+                nsamples /= ivdata['downsampling']
+            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
+        elif splitbylevel is not None:
+            # splitbylevel can split loops even if they are not the same length
+            # Could take more time though?
+            # This is not a genius way to determine to split at + or - dV/dt
+            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
+            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+
+    return ivdata
+
+
+########### Rehan amplifier ##########################
 
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     import ivtools.plot as plot
@@ -1710,6 +1618,24 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
 
 ############# Misc ##############################
 
+def arg_broadcast(*args):
+    '''
+    When you have a function that takes multiple list-like arguments of equal length
+    it is fairly common to want to broadcast all the arguments to the same length
+
+    e.g.
+    arg_broadcast(2, [3,4,5], ...) = [2,2,2], [3,4,5], ...
+
+    will also tile:
+    arg_broadcast(1, [2,3], [4,5,6,7]) = [1,1,1,1], [2,3,2,3], [4,5,6,7]
+
+    outputs are numpy arrays even if inputs are not.  should be fine.
+    '''
+    length = lambda x: 1 if isinstance(x, Number) else len(x)
+    lengths = list(map(length, args))
+    N = max(lengths)
+    return [np.tile(arg, int(N/l)+1)[:N] for arg, l in zip(args, lengths)]
+
 def beep(freq=500, ms=300):
     import winsound
     winsound.Beep(freq, ms)
@@ -1794,46 +1720,3 @@ class controlled_interrupt():
     def breakpoint(self):
         if self.interruptable:
             raise KeyboardInterrupt
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

@@ -1841,13 +1841,6 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
             # Remove the oldest loop
             del ax.lines[0:3]
 
-def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
-    # Send command to create video with ffmpeg
-    # TODO: have it recognize the file prefix
-    # Don't know difference between -framerate and -r options, but it
-    # seems both need to be set to the desired fps.  Even the order matters.  Don't change it.
-
-    os.system(cmd)
 
 def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
     ''' Send command to create video with ffmpeg
