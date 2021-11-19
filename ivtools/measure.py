@@ -1,8 +1,10 @@
 """
 Functions for measuring IV data
+
+This contains code that is used to coordinate control and data collection from setups involving multiple instruments
+
+Also utilities that are just generally useful for doing measurements
 """
-import datetime
-import json
 import logging
 import os
 import pickle
@@ -10,6 +12,7 @@ import signal
 import time
 from fractions import Fraction
 from math import gcd
+from numbers import Number
 
 import numpy as np
 import pandas as pd
@@ -22,7 +25,7 @@ import ivtools.settings
 log = logging.getLogger('measure')
 
 
-########### Picoscope - Rigol AWG testing #############
+########### Picoscope + Rigol AWG testing #############
 
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
                               ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
@@ -170,9 +173,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             npts = autosmoothimate
         factor = max(int(nsamples_shot / npts), 1)
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
-        # TODO: What if we want to retain a copy of the non-smoothed data?
-        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
-        # Maybe only smoothimate I and V?
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
     if autosplit and (n > 1):
@@ -192,298 +192,48 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     return ivdata
 
-
-def picoteo(wfm, duration=None, n=1, smartrange=None, autosplit=True,
-            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
-            savewfm=False, pretrig=0, posttrig=0):
-    '''
-    Pulse a waveform, measure on picoscope, and return data
-
-    smartrange 1 autoranges the monitor channel
-    smartrange 2 tries some other fancy shit to autorange the current measurement channel
-
-    autosplit will split the waveforms into n chunks
-
-    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
-
-    by default we sample for exactly the length of the waveform,
-    use "pretrig" and "posttrig" to sample before and after the waveform
-    units are fraction of one pulse duration
-
-    '''
-
-    teo = instruments.TeoSystem()
-    ps = instruments.Picoscope()
-
-    teo_freq = 500e6
-
-    if type(wfm) is str:
-        wfm_name = wfm
-        wfm = teo.download_wfm(wfm_name)[0]
-        if duration is not None:
-            raise Exception("You can't pass 'duration' when using a saved waveform")
-        duration = (len(wfm)-1)/teo_freq
-    else:
-        wfm_name = None
-        if not type(wfm) == np.ndarray:
-            wfm = np.array(wfm)
-        if duration is not None:
-            wfm = teo.interp_wfm(wfm, duration)
-        else:
-            duration = (len(wfm) - 1) / teo_freq
-
-    pico_fs = teo_freq
-
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
-        # Smart range the monitor channel
-        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
-
-    teo_nsamples = len(wfm)
-
-    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
-
-    sampling_factor = (n + pretrig + posttrig)
-
-    # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
-    # in clock cycles units.
-    # Actually, each channel has its own delay, V_MONITOR is 4 ns, HF_LIMITED_BW is 13 ns, and HF_FULL_BW is 9 ns
-    pico_clock_freq = 1e9
-    delay_sec = 4e-9
-    delay = int(pico_clock_freq * delay_sec)
-
-    # Set picoscope to capture
-    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
-    actual_pico_freq = ps.capture(ch=channels,
-                                  freq=pico_fs,
-                                  duration=duration * sampling_factor,
-                                  pretrig=pretrig / sampling_factor,
-                                  delay=delay)
-
-    pico_nsamples = int(duration * actual_pico_freq)
-
-    log.debug(f"Teo frequency: 500.0 MHz\n"
-              f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
-              f"Teo number of samples: {teo_nsamples}\n"
-              f"Picoscope number of samples: {pico_nsamples}")
-
-
-    # This makes me feel good, but I don't think it's really necessary
-    time.sleep(.05)
-    if termination:
-        # Account for terminating resistance
-        # e.g. multiply applied voltages by 2 for 50 ohm termination
-        wfm *= (50 + termination) / termination
-
-    # Send a pulse
-
-    teo.output_wfm(wfm, n=n)
-
-    trainduration = n * duration
-    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
-    time.sleep(n * duration * 1.05)
-    #ps.waitReady()
-    log.debug('Getting data from picoscope.')
-    # Get the picoscope data
-    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
-    chdata = ps.get_data(channels, raw=False)
-    log.debug('Got data from picoscope.')
-    # Convert to IV data (keeps channel data)
-    ivdata = ivtools.settings.pico_to_iv(chdata)
-
-    ivdata['nshots'] = n
-
-    if savewfm:
-        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
-        # You will need to interpolate it, however..
-        # Or can we read it off the rigol??
-        ivdata['Vwfm'] = wfm
-
-    if autosmoothimate:
-        # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
-        # if you do that, the data still gets written in its raw form, which is preferable usually
-        # Below, we irreversibly drop data.
-        nsamples_shot = ivdata['nsamples_capture'] / n
-        # Smooth by 0.3% of a shot
-        window = max(int(nsamples_shot * 0.003), 1)
-        # End up with about 1000 data points per shot
-        # This will be bad if you send in a single shot waveform with multiple cycles
-        # In that case, you shouldn't be using autosmoothimate or autosplit
-        # TODO: make a separate function for IV trains?
-        if autosmoothimate is True:
-            # yes I meant IS true..
-            npts = 1000
-        else:
-            # Can pass the number of data points you would like to end up with
-            npts = autosmoothimate
-        factor = max(int(nsamples_shot / npts), 1)
-        log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
-        # TODO: What if we want to retain a copy of the non-smoothed data?
-        # It's just sometimes ugly to plot, doesn't always mean that I don't want to save it
-        # Maybe only smoothimate I and V?
-        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
-
-    if autosplit and (n > 1):
-        log.debug('Splitting data into individual pulses')
-        if splitbylevel is None:
-            nsamples = duration * actual_pico_freq
-            if 'downsampling' in ivdata:
-                # Not exactly correct but I hope it's close enough
-                nsamples /= ivdata['downsampling']
-            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
-        elif splitbylevel is not None:
-            # splitbylevel can split loops even if they are not the same length
-            # Could take more time though?
-            # This is not a genius way to determine to split at + or - dV/dt
-            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
-            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
-
-    return ivdata
-
-
-def digipotiv(V_set=None, V_reset=None, R_set=0, R_reset=0,
+def digipotiv(V1, V2, R1=0, R2=0,
               duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
               savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
-    '''
-    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with different series resistance during SET and RESET.
 
-    @param V_set: Voltage to applied during SET, it can be a list of values or None if you only want to do RESET.
+    '''
+    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with triangle sweeps and different
+    series resistance values e.g. during SET and RESET.
+
+    just a slightly more convenient way to write a for-loop
+    TODO: wrap picoiv automatically and add arguments to it
+
+    @param V_set: Voltage to applied during SET, it can be a list of values or 0 if you only want to do RESET.
     If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
     @param V_reset: Same as V_set.
     @param R_set: Series Resistance during SET, it can be a list of values.
     @param R_reset: Series Resistance during RESET, it can be a list of values.
 
-    picoiv params:
-
-    @param duration: Duration of a single sweep [seconds].
-    @param fs:
-    @param nsamples:
-    @param smartrange: 1 or 2:
-    1 autoranges the monitor channel.
-    2 tries some other fancy code :) to autorange the current measurement channel.
-    @param termination: Account for terminating resistance, e.g. multiply applied voltages by 2 for 50 ohm termination.
-    @param autosmoothimate: Creates a smooth and decimated version of the data. Raw form is saved anyway.
-    @param savewfm: Save the programmed waveform.
-    @param pretrig: By default we sample for exactly the length of the waveform,use "pretrig" to sample before
-    the waveform.
-    @param posttrig: By default we sample for exactly the length of the waveform,use "posttrig" to sample after
-    the waveform.
-    @param interpwfm: Rigol will interpolate the wfm so it doesn't need to have a lot of points.
-
-    @return: data measured in a list of dicts.
+    everything else goes to picoiv
     '''
-
     ps = instruments.Picoscope()
     dp = instruments.WichmannDigipot()
 
-    # I wanted to do the parameters very flexible, so now I have to handle every possible case.
-    # If there are more than one set or reset voltage, metadata is save as the string of the list, since lists are
-    # not allowed in the databe
+    V1, V2, R1, R2 = arg_broadcast(V1, V2, R1, R2)
 
-    num_types = [int, float, np.float16, np.float32, np.float64]
-    list_types = [list, np.ndarray, np.array]
-
-    if type(V_set) in num_types:
-        if type(V_reset) in num_types:
-            V_set = [V_set]
-            V_reset = [V_reset]
-        elif type(V_reset) in list_types:
-            V_set = list(np.repeat(V_set, len(V_reset)))
-            V_reset = list(V_reset)
-        elif V_reset is None:
-            V_set = [V_set]
-            V_reset = [V_reset]
-        else:
-            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
-
-    elif type(V_set) in list_types:
-        V_set = list(V_set)
-        if type(V_reset) in num_types:
-            V_reset = list(np.repeat(V_reset, len(V_set)))
-        elif type(V_reset) in list_types:
-            V_reset = list(V_reset)
-            if len(V_set) != len(V_reset):
-                raise Exception(f"V_set has length {len(V_set)} and V_reset {len(V_reset)}")
-        elif V_reset is None:
-            V_reset = list(np.repeat(V_reset, len(V_set)))
-        else:
-            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
-
-    elif V_set is None:
-        if type(V_reset) in num_types:
-            V_set = [V_set]
-            V_reset = [V_reset]
-        if type(V_reset) in list_types:
-            V_set = list(np.repeat(V_set, len(V_reset)))
-            V_reset = list(V_reset)
-        elif V_reset is None:
-            raise Exception(f'V_set and V_reset are both None')
-        else:
-            raise Exception(f'No settings for V_reset with type {type(V_reset)}')
-    else:
-        raise Exception(f'No settings for V_set with type {type(V_set)}')
-
-    nloops = len(V_set)
-
-    if type(R_set) in num_types:
-        if nloops == 1:
-            R_set = [R_set]
-        elif nloops > 1:
-            R_set = list(np.repeat(R_set, nloops))
-    elif type(R_set) in list_types:
-        if len(R_set) != nloops:
-            raise Exception("R_set length doesn't match with voltages lengths")
-    else:
-        raise Exception(f'No settings for R_set with type {type(R_set)}')
-
-    if type(R_reset) in num_types:
-        if nloops == 1:
-            R_reset = [R_reset]
-        elif nloops > 1:
-            R_reset = list(np.repeat(R_reset, nloops))
-    elif type(R_reset) in list_types:
-        if len(R_reset) != nloops:
-            raise Exception("R_reset length doesn't match with voltages lengths")
-    else:
-        raise Exception(f'No settings for R_reset with type {type(R_reset)}')
-
-
-    # Setting instruments up
-    ivtools.settings.pico_to_iv = digipot_to_iv
-    ps.coupling.b = 'DC50'
-    ps.coupling.c = 'DC50'
-    ps.range = {'A': 5, 'B': 5, 'C': 0.05, 'D': 1}
-    ps.offset = {'A': 0, 'B': 0, 'C': 0, 'D': 0}
-
-    # Measuring
     sweeps = []
-    for vs, vr, rs, rr in zip(V_set, V_reset, R_set, R_reset):
-
-        if vs is not None:
-            wfm_set = tri(0, vs, 100)
-            dp.set_R(rs)
+    for v1, v2, r1, r2 in zip(V1, V2, R1, R2):
+        if v1 != 0:
+            wfm_set = tri(0, v1)
+            dp.set_R(r1)
             d_set = picoiv(wfm=wfm_set, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
                            termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
                            savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
             sweeps.append(d_set)
-        if vr is not None:
-            wfm_reset = tri(0, -vr, 100)
-            dp.set_R(rr)
+        if v2 != 0:
+            wfm_reset = tri(0, -v2)
+            dp.set_R(r2)
             d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
                              termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
                              savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
             sweeps.append(d_reset)
 
-    # Saving data
-    data = sweeps[0]
-    for s in sweeps[1:]:
-        for k, v in s.items():
-            if type(v) in [np.ndarray, list, pd.core.series.Series]:
-                data[k] = np.append(data[k], v)
-
-    return data
+    return sweeps
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -703,6 +453,172 @@ def _rate_duration(v1, v2, rate=None, duration=None):
         duration = 2 * (v1 - v2) / rate
 
     return rate, duration
+
+
+########### Picoscope + Teo testing ###################
+
+def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
+            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
+            savewfm=False, pretrig=0, posttrig=0):
+    '''
+    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
+
+    Pulse a waveform with teo, measure on picoscope, and return data
+
+    smartrange 1 autoranges the monitor channel
+    smartrange 2 tries some other fancy shit to autorange the current measurement channel
+
+    autosplit will split the waveforms into n chunks
+
+    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
+
+    by default we sample for exactly the length of the waveform,
+    use "pretrig" and "posttrig" to sample before and after the waveform
+    units are fraction of one pulse duration
+
+    TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
+    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
+          because that can take a lot of time, should include a switch for it
+    '''
+
+    teo = instruments.TeoSystem()
+    ps = instruments.Picoscope()
+
+    # decide what sample rate to use
+    teo_freq = 500e6
+    if fs is None:
+        if duration is None:
+            fs = teo_freq
+        else:
+            fs = nsamples / duration
+
+    if type(wfm) is str:
+        wfm_name = wfm
+        if wfm_name in teo.waveforms:
+            wfm = teo.waveforms[wfm_name][0]
+        else:
+            wfm = teo.download_wfm(wfm_name)[0]
+        if duration is not None:
+            raise Exception("You can't pass 'duration' when using a saved waveform")
+        duration = (len(wfm)-1)/teo_freq
+    else:
+        wfm_name = None
+        if not type(wfm) == np.ndarray:
+            wfm = np.array(wfm)
+        if duration is not None:
+            wfm = teo.interp_wfm(wfm, duration)
+        else:
+            duration = (len(wfm) - 1) / teo_freq
+
+    if smartrange == 2:
+        # Smart range for the compliance circuit
+        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
+    elif smartrange:
+        # Smart range the monitor channel
+        # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
+        # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
+        # offset/gain of the teo monitor output!
+        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
+
+    teo_nsamples = len(wfm)
+
+    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
+    sampling_factor = (n + pretrig + posttrig)
+
+    # There is a delay of some ns on the triggering, so that has to passed to ps.capture, but it is passed
+    # in clock cycles units.
+    # Actually, each channel has its own delay, V_MONITOR is 4 ns, HF_LIMITED_BW is 13 ns, and HF_FULL_BW is 9 ns
+    pico_clock_freq = 1e9
+    delay_sec = 4e-9
+    delay = int(pico_clock_freq * delay_sec)
+
+    # Set picoscope to capture
+    # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+    actual_pico_freq = ps.capture(ch=channels,
+                                  freq=fs,
+                                  duration=duration * sampling_factor,
+                                  pretrig=pretrig / sampling_factor,
+                                  delay=delay)
+
+    pico_nsamples = int(duration * actual_pico_freq)
+
+    log.debug(f"Teo frequency: 500.0 MHz\n"
+              f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
+              f"Teo number of samples: {teo_nsamples}\n"
+              f"Picoscope number of samples: {pico_nsamples}")
+
+
+    # This makes me feel good, but I don't think it's really necessary
+    time.sleep(.05)
+    if termination:
+        # Account for terminating resistance
+        # e.g. multiply applied voltages by 2 for 50 ohm termination
+        wfm *= (50 + termination) / termination
+
+    # Send a pulse
+
+    log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
+    teo.output_wfm(wfm, n=n)
+
+    trainduration = n * duration
+    time.sleep(n * duration * 1.05)
+    #ps.waitReady()
+    log.debug('Getting data from picoscope.')
+    # Get the picoscope data
+    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
+    chdata = ps.get_data(channels, raw=False)
+    log.debug('Got data from picoscope.')
+    # Convert to IV data (keeps channel data)
+    ivdata = ivtools.settings.pico_to_iv(chdata)
+
+    ivdata['nshots'] = n
+
+    if savewfm:
+        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
+        # You will need to interpolate it, however..
+        # Or can we read it off the rigol??
+        ivdata['Vwfm'] = wfm
+
+    if autosmoothimate:
+        # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
+        # if you do that, the data still gets written in its raw form, which is preferable usually
+        # Below, we irreversibly drop data.
+        nsamples_shot = ivdata['nsamples_capture'] / n
+        # Smooth by 0.3% of a shot
+        window = max(int(nsamples_shot * 0.003), 1)
+        # End up with about 1000 data points per shot
+        # This will be bad if you send in a single shot waveform with multiple cycles
+        # In that case, you shouldn't be using autosmoothimate or autosplit
+        # TODO: make a separate function for IV trains?
+        if autosmoothimate is True:
+            # yes I meant IS true..
+            npts = 1000
+        else:
+            # Can pass the number of data points you would like to end up with
+            npts = autosmoothimate
+        factor = max(int(nsamples_shot / npts), 1)
+        log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
+        ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+
+    if autosplit and (n > 1):
+        log.debug('Splitting data into individual pulses')
+        if splitbylevel is None:
+            nsamples = duration * actual_pico_freq
+            if 'downsampling' in ivdata:
+                # Not exactly correct but I hope it's close enough
+                nsamples /= ivdata['downsampling']
+            ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
+        elif splitbylevel is not None:
+            # splitbylevel can split loops even if they are not the same length
+            # Could take more time though?
+            # This is not a genius way to determine to split at + or - dV/dt
+            increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
+            ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+
+    return ivdata
+
+
+########### Rehan amplifier ##########################
 
 def measure_dc_gain(Vin=1, ch='C', R=10e3):
     import ivtools.plot as plot
@@ -1467,13 +1383,6 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
     teo = instruments.TeoSystem()
     gainstep = teo.gain()
 
-    if os.path.isfile(ivtools.settings.teo_calibration_file):
-        with open(ivtools.settings.teo_calibration_file, 'r') as tc:
-            calibration = json.load(tc)
-    else:
-        log.warning('Calibration file not found!')
-        calibration = None
-
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
@@ -1491,8 +1400,8 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
 
     if V_MONITOR and (V_MONITOR in datain):
         dataout['units']['V'] = 'V'
-        if calibration:
-            Vdata = np.polyval(calibration['V_MONITOR'], datain[V_MONITOR])
+        if teo.calibration is not None:
+            Vdata = np.polyval(teo.calibration.loc[gainstep, 'V_MONITOR'], datain[V_MONITOR])
         else:
             Vdata = datain[V_MONITOR]
         if datain['COUPLINGS'][V_MONITOR] == 'DC':
@@ -1502,8 +1411,8 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
         dataout['units']['I'] = 'I'
-        if calibration:
-            Idata = np.polyval(calibration['HF_LIMITED_BW'][gainstep % 4], datain[HF_LIMITED_BW])
+        if teo.calibration is not None:
+            Idata = np.polyval(teo.calibration.loc[gainstep, 'HF_LIMITED_BW'], datain[HF_LIMITED_BW])
         else:
             Idata = datain[V_MONITOR]
         if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
@@ -1512,8 +1421,8 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
         dataout['units']['I2'] = 'I2'
-        if calibration:
-            I2data = np.polyval(calibration['HF_FULL_BW'][gainstep], datain[HF_FULL_BW])
+        if teo.calibration is not None:
+            I2data = np.polyval(teo.calibration.loc[gainstep, 'HF_FULL_BW'], datain[HF_FULL_BW])
         else:
             I2data = datain[HF_FULL_BW]
         if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
@@ -1585,14 +1494,17 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', Vd_gain=0.5,
         V = datain[monitor_channel]
         dataout['V'] = V # Subtract voltage on output?  Don't know what it is necessarily.
         dataout['units']['V'] = 'V'
-    if Vd_channel in datain:
-        Vd = datain[Vd_channel]/Vd_gain
-        dataout['Vd'] = Vd
-        dataout['units']['Vd'] = 'V'
     if I_channel in datain:
         I = datain[I_channel] * gain
         dataout['I'] = I
         dataout['units']['I'] = 'A'
+    if Vd_channel in datain:
+        Vd = datain[Vd_channel]/Vd_gain
+        if I_channel in datain: # subtract voltage across 50 ohm to ground
+            dataout['Vd'] = Vd - dataout['I']
+        else:
+            dataout['Vd'] = Vd
+        dataout['units']['Vd'] = 'V'
 
     dataout['Igain'] = gain
 
@@ -1706,6 +1618,24 @@ def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1)
 
 ############# Misc ##############################
 
+def arg_broadcast(*args):
+    '''
+    When you have a function that takes multiple list-like arguments of equal length
+    it is fairly common to want to broadcast all the arguments to the same length
+
+    e.g.
+    arg_broadcast(2, [3,4,5], ...) = [2,2,2], [3,4,5], ...
+
+    will also tile:
+    arg_broadcast(1, [2,3], [4,5,6,7]) = [1,1,1,1], [2,3,2,3], [4,5,6,7]
+
+    outputs are numpy arrays even if inputs are not.  should be fine.
+    '''
+    length = lambda x: 1 if isinstance(x, Number) else len(x)
+    lengths = list(map(length, args))
+    N = max(lengths)
+    return [np.tile(arg, int(N/l)+1)[:N] for arg, l in zip(args, lengths)]
+
 def beep(freq=500, ms=300):
     import winsound
     winsound.Beep(freq, ms)
@@ -1790,546 +1720,3 @@ class controlled_interrupt():
     def breakpoint(self):
         if self.interruptable:
             raise KeyboardInterrupt
-
-
-########### Teo calibration #####################
-
-def teo_calibration(Rload, plot=False):
-    '''
-    Calibration of Teo voltages, using picoscope measurement
-    sets DC levels to the output (HFV), which goes through a known load resistor, into HFI
-    '''
-    #TODO: many resistors calibration to calibrate all amplifiers in its whole range
-
-    ############### Setup ###############
-
-    teo = instruments.TeoSystem()
-    ps = instruments.Picoscope()
-
-    teo.calibration = None
-    teo.HF_mode()
-    teo.LF_voltage(0)
-
-    input("Picoscope connections:\n"
-          " Channel A to HFV\n"
-          " Channel B to Vmonitor\n"
-          " Channel C to HF LIMITED BW\n"
-          " Channel D to HF FULL BW\n"
-          "Press Enter when connections are done.")
-
-
-    ############### Measurements ###############
-
-    # Signal may saturate, we could
-    # A. apply voltages so that saturation doesn't happen
-    # B. prune the saturated data points out afterward
-    # I choose method B
-
-    # HF_FULL_BW output saturates at about +800 mV, -700 mV
-    # HF_LIMITED_BW output saturates at about 1.8V
-    # HFI_INT is the HF_LIMITED_BW signal internally sampled, but it saturates some lower voltage
-
-    # At step 0 (highest gain), the HF FULL and HF LIMITED gains are roughly equal
-    # ~1V / 400uA, or 2.500 V/A (with J29)
-    # HF FULL BW possible step settings 0-31, each step corresponds to 1dB (1.122×)
-    # HF LIMITED BW possible step settings 0-3, each step corresponds to 6dB (2×)
-
-    # Voltage gain of the monitor is roughly 1/20
-
-    nVprog = 100
-    V_max = 9
-    # Vprog contains the voltages to be outputed, the values closer to zero are more dense.
-    Vprog_p = np.geomspace(1, V_max + 1, nVprog // 2) - 1
-    Vprog_n = [-v for v in Vprog_p[::-1][0:-1]]
-    Vprog = np.append(Vprog_n, Vprog_p)
-    nVprog = len(Vprog)
-
-
-    pscoupling = dict(A='DC', B='DC50', C='DC50', D='DC50')
-    psranges = dict(A=10, B=5, C=5, D=5)
-    psoffset = dict(A=0, B=0, C=0, D=0)
-    psatten = dict(A=1, B=1, C=1, D=1)
-    pico_nsamples = 1000
-    pico_dur = 5e-3
-
-    steps = list(range(32))
-
-    raw_data = []
-
-    times = []
-    last_print = None
-
-    for s in steps:
-        t = time.time()
-        teo.gain(s)
-        raw_data.append([])
-        for v in Vprog:
-            teo.LF_voltage(v)
-            # To avoid logging 100 of "Actual picoscope sample freq..."
-            logging.getLogger('instruments').setLevel(31)  # Only ERRORS or high
-            d1 = ps.measure(ch=['A', 'B', 'C', 'D'], freq=None, duration=pico_dur,
-                                nsamples=pico_nsamples,
-                                trigsource='TriggerAux', triglevel=0.1, timeout_ms=1,
-                                pretrig=0.0,
-                                chrange=psranges, choffset={'A': 0, 'B': 0, 'C': 0, 'D': 0},
-                                chcoupling=pscoupling, chatten=None,
-                                raw=False, dtype=np.float32, plot=False, ax=None)
-            teo.output_wfm(v * np.ones(10000))
-            d2 = teo.get_data(raw=True)
-            logging.getLogger('instruments').setLevel(1)  # Back to normal
-
-            # smash data together
-            data = {**d1, **d2}
-            # put the metadata into the result
-            data['Vprog'] = v
-            data['step'] = s
-            raw_data[s].append(data)
-
-        t = time.time() - t
-        times.append(t)
-        remaining = np.mean(times) * (32 - s)
-        remaining_mins = int(remaining / 60)
-        remaining_secs = int(remaining - remaining_mins * 60)
-        if last_print is None or last_print-remaining > 30:
-            last_print = remaining
-            log.info(f"Estimated time: {remaining_mins} minutes {remaining_secs} seconds.")
-
-    teo.LF_voltage(0)
-
-    ############### Preparing data ###############
-
-    # Data comming from picoscope need to be averaged
-    avg_ch = []
-    for s in steps:
-        avg_ch.append([])
-        for v in range(nVprog):
-            data = {
-                'A': np.mean(raw_data[s][v]['A']),
-                'B': np.mean(raw_data[s][v]['B']),
-                'C': np.mean(raw_data[s][v]['C']),
-                'D': np.mean(raw_data[s][v]['D'])
-            }
-            avg_ch[s].append(data)
-
-    # Now I form a dictionary with all the measurements organize in a easy way.
-    # Data repeated over steps will be averaged
-
-    # 'HFV':           1  sequence of voltages. Data on avg_ch[s][v]['A']
-    # 'V_MONITOR':     1  sequence of voltages. Data on avg_ch[s][v]['B']
-    # 'HF_LIMITED_BW': 4  sequence of voltages. Data on avg_ch[s][v]['C']
-    # 'HF_FULL_BW':    32 sequence of voltages. Data on avg_ch[s][v]['D']
-    # 'HFV_INT':       1  sequence of voltages. Data on raw_data[s][v]['HFV']
-    # 'HFI_INT'        4  sequence of voltages. Data on raw_data[s][v]['HFI']
-
-    data = dict(Vprog=list(Vprog))
-    # I'm turning types into float so they are json serializable in case I want to save all the data
-    # Data with 1 sequence of values average on all the 32 squences
-    data['HFV'] = [float(np.mean([avg_ch[s][v]['A'] for s in steps])) for v in range(nVprog)]
-    data['V_MONITOR'] = [float(np.mean([avg_ch[s][v]['B'] for s in steps])) for v in range(nVprog)]
-    data['HFV_INT'] = [float(np.mean([raw_data[s][v]['HFV'] for s in steps])) for v in range(nVprog)]
-
-    # Data with 4 sequences of values average on 8 squences separated by 4
-    data['HF_LIMITED_BW'] = [[float(np.mean([avg_ch[s][v]['C'] for s in np.array(steps[::4])+i]))for v in range(nVprog)]
-                             for i in range(4)]
-    data['HFI_INT'] = [[float(np.mean([raw_data[s][v]['HFI'] for s in np.array(steps[::4])+i])) for v in range(nVprog)]
-                             for i in range(4)]
-
-    # Data with 32 sequences of values don't avarage, just reorganize.
-    data['HF_FULL_BW'] = [[float(np.mean(raw_data[s][v]['D'])) for v in range(nVprog)] for s in steps]
-
-    ############### Fitting data ###############
-    ## Substituting saturated values with nan
-    HF_FULL_BW_sat = .7
-    HF_LIMITED_BW_sat = 1.8
-    HFI_INT_sat = 15.2  # unknown unit (not volts)
-
-    data2fit = data.copy()
-
-
-    data2fit['HF_FULL_BW'] = [[i if abs(i) < HF_FULL_BW_sat else np.nan for i in data['HF_FULL_BW'][s]]
-                          for s in steps]
-    data2fit['HF_LIMITED_BW'] = [[i if abs(i) < HF_LIMITED_BW_sat else np.nan for i in data['HF_LIMITED_BW'][s]]
-                          for s in range(4)]
-    data2fit['HFI_INT'] = [[i if abs(i) < HFI_INT_sat * 2**s else np.nan for i in data['HFI_INT'][s]]
-                          for s in range(4)]
-
-    def nanpolyfit(x, y, n):
-        '''
-        fits ignoring nan
-        @param x:
-        @param y:
-        @param n: polynomial order
-        @return: list of parameters, in decreasing order of exponent
-        '''
-        x = np.array(x)
-        y = np.array(y)
-        mask = ~np.isnan(x) & ~np.isnan(y)
-        fit_params = list(np.polyfit(x[mask], y[mask], n))
-        return fit_params
-
-    I_expected = Vprog / Rload
-
-    # We need to calibrate the following functions
-    # HFV --> Vprog (just for our information)
-    # V_MONITOR --> HFV (already calibrated)
-    # HFV_INT --> HFV (already calibrated)
-    # HF_LIMITED_BW --> HFV/Rload (already calibrated)
-    # HFI_INT --> HFV/Rload (already calibrated)
-    # HF_FULL_BW --> HFV/Rload (already calibrated)
-
-    fit_data = {}
-    # HFV --> Vprog
-    fit_data['HFV'] = nanpolyfit(Vprog, data2fit['HFV'], 1)
-
-    HFV_cal = data['HFV']/fit_data['HFV'][0] - fit_data['HFV'][1]/fit_data['HFV'][0]
-    I_expected = HFV_cal / Rload
-
-    # V_MONITOR --> HFV_cal
-    fit_data['V_MONITOR'] = nanpolyfit(HFV_cal, data2fit['V_MONITOR'], 1)
-    # HFV_INT --> HFV (already calibrated?)
-    fit_data['HFV_INT'] = nanpolyfit(HFV_cal, data2fit['HFV_INT'], 1)
-
-    # HF_LIMITED_BW --> I_expected
-    # HFI_INT --> I_expected
-    fit_data['HF_LIMITED_BW'] = []
-    fit_data['HFI_INT'] = []
-    for s in range(4):
-        fit_data['HF_LIMITED_BW'].append(nanpolyfit(I_expected, data2fit['HF_LIMITED_BW'][s], 1))
-        fit_data['HFI_INT'].append(nanpolyfit(I_expected, data2fit['HFI_INT'][s], 1))
-
-    # HF_FULL_BW --> I_expected
-    fit_data['HF_FULL_BW'] = []
-    for s in steps:
-        fit_data['HF_FULL_BW'].append(nanpolyfit(I_expected, data2fit['HF_FULL_BW'][s], 1))
-
-    # In order to make easy the application of the calibration, I'll do (a' = 1/a) and (b' = -b/a)
-    # So then one can only multiply the measuremnt to a' and add b' to calibrate
-    cal_output = dict(cal_date=datetime.datetime.now().strftime('%Y-%m-%d_%H%M%S'), cal_Rload=Rload)
-    for k, v in fit_data.items():
-        if len(v) > 2:
-            cal_output[k] = []
-            for d in v:
-                cal_output[k].append([1/d[0], -d[1]/d[0]])
-        elif len(v) == 2:
-            cal_output[k] = [1/v[0], -v[1]/v[0]]
-
-    # Write calibration to disk
-    cal_file = ivtools.settings.teo_calibration_file
-    os.makedirs(os.path.split(cal_file)[0], exist_ok=True)
-    with open(cal_file, 'w') as outfile:
-        json.dump(cal_output, outfile)
-
-    if plot:
-        teo_calibration_plot(cal_output, data)
-
-    return cal_output, data
-
-
-    # Apply calibration to voltage applied
-    ## HFV = a*Vprog + b
-    ## HFV = Vdesired
-    ## Vprog = Vdesired/a - b/a <--- This is the voltage we have to program to have HFV=Vdesired
-
-    # Apply calibration to voltage monitors:
-    ## V_MONITOR = a*HFV + b
-    ## V_out = HFV
-    ## V_out = V_MONITOR/a - b/a
-
-    # Apply calibration to current measured
-    ## HFI = a*I_expected + b
-    ## I_out = I_expected
-    ## I_out = HFI/a - b/a
-
-
-def teo_calibration_plot(cal, data, save_path=None, focus='before'):
-    '''
-    plot results of teo_calibration
-    @param cal: calibration file
-    @param data: data file
-    @param save_path: path to save plots and files
-    @param focus: plots will adjust to before of after calibration line
-    @return: None
-    '''
-
-    Rload = cal['cal_Rload']
-    Vprog = data['Vprog']
-    I_expected = [v / Rload for v in Vprog]
-    if save_path is not None:
-        os.makedirs(save_path, exist_ok=True)
-
-    # HFV
-    plt.figure()
-    plt.title(f'HFV Calibration')
-    plt.xlabel('Desired voltage (V)')
-    plt.ylabel('Measured voltage (V)')
-    x = Vprog
-    y = data['HFV']
-    plt.plot(x, x, label='Target', linewidth=2)
-    plt.plot(x, y, label='Before calibration', marker='.')
-    y = np.polyval(cal['HFV'], data['HFV'])
-    plt.plot(x, y, label='After calibration', marker='.')
-    plt.legend()
-    if focus == 'after':
-        plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
-    if save_path is not None:
-        plt.savefig(os.path.join(save_path, 'HFV.png'))
-    plt.show()
-
-    # V_MONITOR
-    plt.figure()
-    plt.title(f'V_MONITOR Calibration')
-    plt.xlabel('Voltage at HFV (V)')
-    plt.ylabel('Voltage at V_monitor (V)')
-    x = data['HFV']
-    y = data['V_MONITOR']
-    plt.plot(x, x, label='Target', linewidth=2)
-    plt.plot(x, y, label='Before calibration', marker='.')
-    y = np.polyval(cal['V_MONITOR'], data['V_MONITOR'])
-    plt.plot(x, y, label='After calibration', marker='.')
-    plt.legend()
-    if focus == 'after':
-        plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
-    if save_path is not None:
-        plt.savefig(os.path.join(save_path, 'V_MONITOR.png'))
-    plt.show()
-
-    # HF_FULL_BW
-    for s in range(32):
-        plt.figure()
-        plt.title(f'HF_FULL_BW calibration at gain step = {s}')
-        plt.xlabel('Expected current (A)')
-        plt.ylabel('Current at HF_FULL_BW (A)')
-        x = I_expected
-        y = data['HF_FULL_BW'][s]
-        plt.plot(x, x, label='Target', linewidth=2)
-        plt.plot(x, y, label=f'Before calibration', marker='.')
-        y = np.polyval(cal['HF_FULL_BW'][s], data['HF_FULL_BW'][s])
-        plt.plot(x, y, label=f'After calibration', marker='.')
-        plt.legend()
-        if focus == 'after':
-            plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
-        if save_path is not None:
-            plt.savefig(os.path.join(save_path, f'HF_FULL_BW_{s}.png'))
-        plt.show()
-
-    # HF_LIMITED_BW
-    for s in range(4):
-        plt.figure()
-        plt.title(f'HF_LIMITED_BW calibration at gain step = {s}')
-        plt.xlabel('Expected current (A)')
-        plt.ylabel('Current at HF_LIMITED_BW (A)')
-        x = I_expected
-        y = data['HF_LIMITED_BW'][s]
-        plt.plot(x, x, label='Target', linewidth=2)
-        plt.plot(x, y, label=f'Before calibration', marker='.')
-        y = np.polyval(cal['HF_LIMITED_BW'][s], data['HF_LIMITED_BW'][s])
-        plt.plot(x, y, label=f'After calibration', marker='.')
-        plt.legend()
-        if focus == 'after':
-            plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
-        if save_path is not None:
-            plt.savefig(os.path.join(save_path, f'HF_LIMITED_BW_{s}.png'))
-        plt.show()
-
-    # HFV_INT
-    plt.figure()
-    plt.title(f'HFV_INT Calibration')
-    plt.xlabel('Voltage at HFV (V)')
-    plt.ylabel('Voltage at V_monitor (V)')
-    x = data['HFV']
-    y = data['HFV_INT']
-    plt.plot(x, x, label='Target', linewidth=2)
-    plt.plot(x, y, label='Before calibration', marker='.')
-    y = np.polyval(cal['HFV_INT'], data['HFV_INT'])
-    plt.plot(x, y, label='After calibration', marker='.')
-    plt.legend()
-    if focus == 'after':
-        plt.ylim(min([min(x), min(y)]) * 1.1, max([max(x), max(y)]) * 1.1)
-    if save_path is not None:
-        plt.savefig(os.path.join(save_path, f'HFV_INT.png'))
-    plt.show()
-
-    # HFI_INT
-    for s in range(4):
-        plt.figure()
-        plt.title(f' HFI_INT calibration at gain step = {s}')
-        plt.xlabel('Expected current (A)')
-        plt.ylabel('Current at HF_LIMITED_BW (A)')
-        x = I_expected
-        y = data['HFI_INT'][s]
-        plt.plot(x, x, label='Target', linewidth=2)
-        plt.plot(x, y, label=f'Before calibration', marker='.')
-        y = np.polyval(cal['HFI_INT'][s], data['HFI_INT'][s])
-        plt.plot(x, y, label=f'After calibration', marker='.')
-        plt.legend()
-        if focus == 'after':
-            plt.ylim(min([min(x), min(y)])*1.1, max([max(x), max(y)])*1.1)
-        if save_path is not None:
-            plt.savefig(os.path.join(save_path, f'HFI_INT_{s}.png'))
-        plt.show()
-
-    if save_path is not None:
-        with open(os.path.join(save_path, 'cal.json'), 'w') as outfile:
-            json.dump(cal, outfile)
-        with open(os.path.join(save_path, 'data.json'), 'w') as outfile:
-            json.dump(data, outfile)
-
-
-def teo_cal_check(R_real, teo_gain, save_path=None):
-    teo = instruments.TeoSystem()
-    dp = instruments.WichmannDigipot()
-    dp.set_R(0)
-    teo.HF_mode()
-    teo.LF_voltage(0)
-    teo.gain(teo_gain)
-
-    if save_path is not None:
-        os.makedirs(save_path, exist_ok=True)
-
-    fig, ax = plt.subplots(2, 2, figsize=(11, 9))
-    ax[0][0].set_ylabel('Current (A)')
-    ax[0][0].set_xlabel('Voltage (V)')
-    ax[0][1].set_ylabel('Measured current - fitted (A)')
-    ax[0][1].set_xlabel('Voltage (V)')
-    ax[1][0].set_ylabel('Current (A)')
-    ax[1][0].set_xlabel('Time (seconds)')
-    ax[1][1].set_ylabel('Voltage (V)')
-    ax[1][1].set_xlabel('Time (seconds)')
-
-    print('You have 5 seconds to position the window as you like')
-    plt.pause(5)
-
-    def clean_plots():
-        ax[0][0].cla()
-        ax[0][1].cla()
-        ax[1][0].cla()
-        ax[1][1].cla()
-
-        ax[0][0].set_ylabel('Current (A)')
-        ax[0][0].set_xlabel('Voltage (V)')
-        ax[0][1].set_ylabel('Measured current - fitted (A)')
-        ax[0][1].set_xlabel('Voltage (V)')
-        ax[1][0].set_ylabel('Current (A)')
-        ax[1][0].set_xlabel('Time (seconds)')
-        ax[1][1].set_ylabel('Voltage (V)')
-        ax[1][1].set_xlabel('Time (seconds)')
-
-    R_meas = []
-    data = []
-
-    v = 1
-
-    for R in R_real:
-        input(f'Contact {R} ohms resistor press enter')
-        ok = False
-        while not ok:
-            # Data collection
-            wfm = teo.sine(amp=v, freq=1e5)
-            teo.output_wfm(wfm)
-            d = teo.get_data(raw=True)
-
-            # Data treatment
-            clean_plots()
-
-            V = d['V']
-            I = d['I']
-            t = d['t']
-
-            ax[0][0].plot(V, I, color='lavender')
-            ax[1][0].plot(t, I, color='lavender')
-            ax[1][1].plot(t, V, color='lavender')
-
-            s = 100
-
-            Vs = ivtools.analyze.smooth(V, s)
-            Is = ivtools.analyze.smooth(I, s)
-            ts = ivtools.analyze.smooth(t, s)
-
-            ax[0][0].plot(Vs, Is, color='blue')
-            ax[1][0].plot(ts, Is, color='blue')
-            ax[1][1].plot(ts, Vs, color='blue')
-
-            fit = np.polyfit(V, I, 1)
-
-            ax[0][0].plot(V, np.polyval(fit, V), color='red')
-
-            I_diff = I - np.polyval(fit, V)
-            Is_diff = Is - np.polyval(fit, Vs)
-            ax[0][1].plot(V, I_diff, color='lavender')
-            ax[0][1].plot(Vs, Is_diff, color='blue')
-            ax[0][1].axhline(0, color='red')
-
-            R_m = 1 / fit[0]
-
-            ax[0][0].set_title(f"R_real = {int(R)} ohms")
-            ax[0][1].set_title(f"R_meas = {int(R_m)} ohms")
-
-            plt.show()
-            plt.pause(0.1)
-
-            ipt = input('Write a number to repeat the measurement with tat value,'
-                        'or press enter to continue with next:\n')
-
-            if ipt == '':
-                ok = True
-                R_meas.append(R_m)
-                data.append(d)
-                if save_path is not None:
-                    plt.savefig(os.path.join(save_path, f'{R}.png'))
-            else:
-                ok = False
-                v = float(ipt)
-
-    plt.clf()
-
-    diff = [(m - r) / r * 100 for m, r in zip(R_meas, R_real)]
-
-    plt.semilogx(R_real, diff, color='blue', marker='.')
-    plt.semilogx(R_real, np.ones(len(diff)) * 0, color='red', label='Target')
-    plt.xlabel('labeled resistance (ohm)')
-    plt.ylabel('error in measured (%)')
-    R_cal = teo.calibration['cal_Rload']
-    plt.vlines(R_cal, min(diff), max(diff), color='green', label='Resistance used for calibration')
-    plt.legend()
-
-    if save_path is not None:
-        plt.savefig(os.path.join(save_path, f'error.png'))
-        pd.DataFrame(data).to_pickle(os.path.join(save_path, 'data.s'))
-
-    return data
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

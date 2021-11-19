@@ -925,7 +925,7 @@ def plot_cumulative_dist(data, ax=None, **kwargs):
         fig, ax = plt.subplots()
     ax.plot(np.sort(data), np.arange(len(data))/len(data), **kwargs)
 
-def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
+def plot_ivt(d, phaseshift=14, fig=None, V='V', I='I', **kwargs):
     ''' A not-so-refined subplot of current and voltage vs time'''
     if fig is None:
         fig, ax1 = plt.subplots()
@@ -939,8 +939,8 @@ def plot_ivt(d, phaseshift=14, fig=None, **kwargs):
             ax2 = ax1.twinx()
     if 't' not in d:
         d['t'] = ivtools.analyze.maketimearray(d)
-    ax1.plot(d['t'], d['V'], c='blue', label='V')
-    ax2.plot(d['t'] - phaseshift* 1e-9, d['I'], c='green', label='I')
+    ax1.plot(d['t'], d[V], c='blue', label='V')
+    ax2.plot(d['t'] - phaseshift* 1e-9, d[I], c='green', label='I')
     ax2.set_ylabel('Current [A]', color='green')
     ax1.set_ylabel('Applied Voltage [V]', color='blue')
     ax1.set_xlabel('Time [s]')
@@ -1031,6 +1031,7 @@ class InteractiveFigs(object):
             # Put a list of functions here to pass the data through before plotting (e.g. smoothing)
             self.preprocessing = [sweep_decimator, ivtools.analyze.autosmoothimate]
             self.processed_data = None
+            self.maxlines = None
 
     def createfig(self, n):
         '''
@@ -1101,6 +1102,7 @@ class InteractiveFigs(object):
             mypause(0.05)
 
     def set_maxlines(self, maxlines=None):
+        self.maxlines = maxlines
         for ax in self.axs:
             if maxlines is None:
                 ax.lines = list(ax.lines)
@@ -1165,6 +1167,8 @@ class InteractiveFigs(object):
                 ylabel = ax.get_ylabel()
                 title = ax.get_title()
                 ax.cla()
+                # That cla turns the lines back into a list ..
+                self.set_maxlines(self.maxlines)
                 ax.set_ylabel(ylabel)
                 ax.set_xlabel(xlabel)
                 ax.set_title(title)
@@ -1256,7 +1260,7 @@ def ivplotter(data, ax=None, maxloops=100, **kwargs):
         data = data[::loopstep]
     ax.yaxis.set_major_formatter(mpl.ticker.EngFormatter())
     #ax.plot(data['V'], data['I'], **kwargs)
-    plotiv(data, ax=ax, maxsamples=5000, **kwargs)
+    plotiv(data, ax=ax, **kwargs)
 
 def R_vs_cycle_plotter(data, ax=None, **kwargs):
     if ax is None:
@@ -1379,7 +1383,7 @@ def vtplotter(data, ax=None, maxloops=100, **kwargs):
         loopstep = int(nloops / 99)
         data = data[::loopstep]
 
-    plotiv(data, x='t', y='V', ax=ax, maxsamples=5000, **kwargs)
+    plotiv(data, x='t', y='V', ax=ax, **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Voltage [V]', color=color)
     ax.set_ylabel('Voltage [V]')
@@ -1403,7 +1407,7 @@ def itplotter(data, ax=None, maxloops=100, **kwargs):
         loopstep = int(nloops / 99)
         data = data[::loopstep]
 
-    plotiv(data, x='t', y='I', ax=ax, maxsamples=5000, **kwargs)
+    plotiv(data, x='t', y='I', ax=ax, **kwargs)
     #color = ax.lines[-1].get_color()
     #ax.set_ylabel('Current [μA]', color=color)
     ax.set_ylabel('Current [A]')
@@ -1837,13 +1841,6 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
             # Remove the oldest loop
             del ax.lines[0:3]
 
-def frames_to_mp4(directory, fps=10, prefix='Loop', outname='out'):
-    # Send command to create video with ffmpeg
-    # TODO: have it recognize the file prefix
-    # Don't know difference between -framerate and -r options, but it
-    # seems both need to be set to the desired fps.  Even the order matters.  Don't change it.
-
-    os.system(cmd)
 
 def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
     ''' Send command to create video with ffmpeg

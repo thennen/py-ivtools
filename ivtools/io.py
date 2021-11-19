@@ -5,6 +5,7 @@ import re
 import subprocess
 import sys
 import time
+import shutil
 from datetime import datetime
 
 import numpy as np
@@ -34,8 +35,17 @@ pjoin = os.path.join
 splitext = os.path.splitext
 psplit = os.path.split
 
+# py-ivtools git repo
 # Directory above the one containing this file
-gitdir = psplit(psplit(__file__)[0])[0]
+repoDir = psplit(psplit(__file__)[0])[0]
+
+# Find the git executable.  Should be on the path.
+gitexe = shutil.which('git')
+if gitexe is None:
+    maybegit = 'C:\\Program Files\\Git\\cmd\\git.EXE'
+    if os.path.isfile(maybegit):
+        gitexe = maybegit
+
 
 db_path = settings.db_path
 
@@ -107,13 +117,17 @@ class MetaHandler(object):
             yield k, v
 
     def __getitem__(self, key):
-        return self.meta[key]
+        return self.asdict()[key]
 
     def __setitem__(self, key, value):
-        self.meta[key] = value
+        # Set a key:value to the static part of the meta data
+        self.static[key] = value
 
     def __delitem__(self, key):
-        self.meta[key].__delitem__
+        if key in self.meta:
+            del self.meta[key]
+        if key in self.static:
+            del self.static[key]
 
     def select(self, i):
         # select the ith row of the metadataframe
@@ -221,7 +235,7 @@ class MetaHandler(object):
         devices014 = [4, 5, 6, 7, 8, 9]
         meta_df = meta_df[~((meta_df.module_num == 1) & ~meta_df.device.isin(devices001))]
         meta_df = meta_df[~((meta_df.module_num == 14) & ~meta_df.device.isin(devices014))]
-        meta_df = meta_df.dropna(1, 'all')
+        meta_df = meta_df.dropna(axis=1, how='all')
         # Sort values so that they are in the same order as you would probe them
         # Which is a strange order, since the mask is a disaster
         sortby = [k for k in ('dep_code', 'sample_number', 'die_rel', 'wX', 'wY') if k in meta_df.columns]
@@ -294,7 +308,7 @@ class MetaHandler(object):
         for key, values in kwargs.items():
             meta_df = meta_df[meta_df[key].isin(values)]
         #### Filter devices to be measured #####
-        meta_df = meta_df.dropna(1, 'all')
+        meta_df = meta_df.dropna(axis=1, how='all')
 
         # Sort top to bottom, left to right
         meta_df['icol'] = meta_df.col.apply(columns.index)
@@ -345,7 +359,7 @@ class MetaHandler(object):
                 irow %= len(rows)
                 icol %= len(col)
                 log.warning('Went over edge of coupon -- wrapping around')
-                return
+                #return
             newcol = columns[icol]
             newrow = rows[irow]
             w = np.where((self.df.col == newcol) & (self.df.row == newrow))[0]
@@ -356,11 +370,15 @@ class MetaHandler(object):
                 log.warning('skipping a device that is not loaded into memory')
         self.select(i)
 
+
         # Highlight keys that have changed
+        isnan = lambda x: isinstance(x, float) and np.isnan(x)
         hlkeys = []
         for key in self.meta.keys():
             if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
-                hlkeys.append(key)
+                # don't count nan → nan as a changed value even though nan ≠ nan ..
+                if not (isnan(self.meta[key]) and isnan(lastmeta[key])):
+                    hlkeys.append(key)
         log.info('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
@@ -379,10 +397,13 @@ class MetaHandler(object):
             self.select(meta_i)
 
         # Highlight keys that have changed
+        isnan = lambda x: isinstance(x, float) and np.isnan(x)
         hlkeys = []
         for key in self.meta.keys():
             if key not in lastmeta.keys() or self.meta[key] != lastmeta[key]:
-                hlkeys.append(key)
+                # don't count nan → nan as a changed value even though nan ≠ nan ..
+                if not (isnan(self.meta[key]) and isnan(lastmeta[key])):
+                    hlkeys.append(key)
         log.info('You have selected this device (index {}):'.format(self.i))
         # Print some information about the device
         self.print(hlkeys=hlkeys)
@@ -520,6 +541,9 @@ class MetaHandler(object):
             db_create_table(db_conn, table_name, metadata)
         db_commit(db_conn)
 
+
+
+###### Database stuff ######
 
 def db_create_table(db_conn, table_name, data):
     '''
@@ -708,7 +732,7 @@ def db_load(db_path=db_path, table_name='meta'):
 
     :param db_path: Path of the database
     :param table_name: name of the table
-    :return: dataframe
+    :return: Table of the database as a pandas.DataFrame.
     '''
     db_conn = sqlite3.connect(db_path)
     query = db_conn.execute(f"SELECT * From {table_name}")
@@ -835,60 +859,25 @@ def db_commit(db_conn):
     db_conn.close()
 
 
-def validvarname(varStr):
-    # Make valid variable name from string
-    sub_ = re.sub('\W|^(?=\d)', '_', varStr)
-    sub_strip = sub_.strip('_')
-    if sub_strip[0].isdigit():
-        # Can't start with a digit
-        sub_strip = 'm_' + sub_strip
-    return sub_strip
+load_metadb = db_load
 
-
-def valid_filename(s):
-    s = str(s).strip().replace(' ', '_')
-    return re.sub(r'(?u)[^-\w.]', '', s)
-
-
-def hash_array(arr):
-    import hashlib
-    return hashlib.md5(arr).hexdigest()
-    # There is also this?
-    # hash(arr.tostring())
-
-
-def timestamp(date=True, time=True, ms=True, us=False):
-    now = datetime.now()
-    datestr = now.strftime('%Y-%m-%d')
-    timestr = now.strftime('%H%M%S')
-    msstr = now.strftime('%f')[:-3]
-    usstr = now.strftime('%f')[-3:]
-    parts = []
-    if date:
-        parts.append(datestr)
-    if time:
-        parts.append(timestr)
-    if ms:
-        parts.append(msstr)
-    if us:
-        parts[-1] += usstr
-
-    return '_'.join(parts)
-
+###### Git ######
 
 def getGitRevision():
-    rev = subprocess.getoutput(f'cd \"{gitdir}\" & git rev-parse --short HEAD')
-    # return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
-    if 'not recognized' in rev:
-        # git not installed probably
+    if gitexe is None:
+        log.error('Cannot find git executable. Put git.exe on your path.')
         return 'Dunno'
-    else:
-        return rev
+    rev = subprocess.getoutput(f'cd \"{repoDir}\" & "{gitexe}" rev-parse --short HEAD')
+    # return subprocess.check_output(['git', 'rev-parse', '--short', 'HEAD']).decode().strip()
+    return rev
 
 
 def getGitStatus():
     # attempt to parse the git status
-    status = subprocess.check_output(['git', 'status', '--porcelain'], cwd=gitdir).decode().strip()
+    if gitexe is None:
+        log.error('Cannot find git executable. Put git.exe on your path.')
+        return
+    status = subprocess.check_output([gitexe, 'status', '--porcelain'], cwd=repoDir).decode().strip()
     status = [l.strip().split(' ', maxsplit=1) for l in status.split('\n')]
     # I like dict of lists better
     output = {}
@@ -903,8 +892,11 @@ def getGitStatus():
 
 
 def gitCommit(message='AUTOCOMMIT'):
+    if gitexe is None:
+        log.error('Cannot find git executable. Put git.exe on your path.')
+        return
     # I think it will give an error if there is nothing to commit..
-    output = subprocess.check_output(['git', 'commit', '-a', f'-m {message}'], cwd=gitdir).decode()
+    output = subprocess.check_output([gitexe, 'commit', '-a', f'-m {message}'], cwd=repoDir).decode()
     return output
 
 
@@ -957,6 +949,272 @@ def log_ipy(start=True, logfilepath=None):
         sys.stdout = sys.stdstdout
 
 
+###### File/variable naming ######
+
+def validvarname(varStr):
+    # Make valid variable name from string
+    sub_ = re.sub('\W|^(?=\d)', '_', varStr)
+    sub_strip = sub_.strip('_')
+    if sub_strip[0].isdigit():
+        # Can't start with a digit
+        sub_strip = 'm_' + sub_strip
+    return sub_strip
+
+
+def valid_filename(s):
+    s = str(s).strip().replace(' ', '_')
+    return re.sub(r'(?u)[^-\w.]', '', s)
+
+
+def hash_array(arr):
+    import hashlib
+    # There is also this?
+    # hash(arr.tostring())
+    return hashlib.md5(arr).hexdigest()
+
+
+def timestamp(date=True, time=True, ms=True, us=False):
+    now = datetime.now()
+    datestr = now.strftime('%Y-%m-%d')
+    timestr = now.strftime('%H%M%S')
+    msstr = now.strftime('%f')[:-3]
+    usstr = now.strftime('%f')[-3:]
+    parts = []
+    if date:
+        parts.append(datestr)
+    if time:
+        parts.append(timestr)
+    if ms:
+        parts.append(msstr)
+    if us:
+        parts[-1] += usstr
+
+    return '_'.join(parts)
+
+
+def insert_file_num(filepath, number, width=3):
+    return '_{{:0{}}}'.format(width).format(number).join(os.path.splitext(filepath))
+
+
+###### File finding / File system utilities ######
+
+def glob(pattern='*', directory='.', subdirs=False, exclude=None):
+    pattern = pattern.join('**')
+    if subdirs:
+        fpaths = []
+        for root, folders, files in os.walk(directory):
+            fpaths.extend([os.path.join(root, f) for f in files])
+    else:
+        fpaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+
+    # filter by filename only, but keep absolute path
+    def condition(fpath):
+        filename = os.path.split(fpath)[-1]
+        # Should it be excluded
+        if exclude is not None:
+            if fnmatch.fnmatch(filename, exclude.join('**')):
+                return False
+        # Does it match
+        return fnmatch.fnmatch(filename, pattern)
+
+    filtfpaths = [fp for fp in fpaths if condition(fp)]
+    abspaths = [os.path.abspath(fp) for fp in filtfpaths]
+    return abspaths
+
+
+def multiglob(names, *patterns):
+    ''' filter list of names with potentially multiple glob patterns '''
+    # TODO make it like glob(), so it searches for files
+    filtered = []
+    for patt in patterns:
+        filter = '*' + patt + '*'
+        filtered.extend(fnmatch.filter(names, filter))
+    return filtered
+
+
+def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subdirs=False):
+    '''
+    Return filepaths of recently created files
+    specify n to limit search to the last n files created
+    '''
+    now = time.time()
+    if subdirs:
+        filepaths = []
+        for root, folders, files in os.walk(directory):
+            filepaths.extend([os.path.join(root, f) for f in files])
+    else:
+        filepaths = [os.path.join(directory, f) for f in os.listdir(directory)]
+    if pattern is not None:
+        pattern = pattern.join('**')
+        filepaths = fnmatch.filter(filepaths, pattern)
+    ctimes = [os.path.getctime(fp) for fp in filepaths]
+    # Sort by ctime
+    order = np.argsort(ctimes)
+    ctimes = [ctimes[i] for i in order]
+    filepaths = [filepaths[i] for i in order]
+    if n is not None:
+        filepaths = filepaths[-n:]
+        ctimes = ctimes[-n:]
+    if seconds is not None:
+        filepaths = [fp for fp, ct in zip(filepaths, ctimes) if now - ct < seconds]
+    if maxlen is not None:
+        filepaths = filepaths[:maxlen]
+    return [os.path.abspath(fp) for fp in filepaths]
+
+
+def set_readonly(filepath):
+    from stat import S_IREAD, S_IRGRP, S_IROTH
+    os.chmod(filepath, S_IREAD | S_IRGRP | S_IROTH)
+
+
+def makefolder(*args):
+    ''' Make a folder if it doesn't already exist. All args go to os.path.join '''
+    subfolder = os.path.join(*args)
+    if not os.path.isdir(subfolder):
+        log.info('Making folder: {}'.format(subfolder))
+        os.makedirs(subfolder)
+    else:
+        log.info('Folder already exists: {}'.format(subfolder))
+
+
+def psplitall(path):
+    # get all parts of the filepath why the heck isn't this in os.path?
+    allparts = []
+    while 1:
+        parts = os.path.split(path)
+        if parts[0] == path:  # sentinel for absolute paths
+            allparts.insert(0, parts[0])
+            break
+        elif parts[1] == path:  # sentinel for relative paths
+            allparts.insert(0, parts[1])
+            break
+        else:
+            path = parts[0]
+            allparts.insert(0, parts[1])
+    return allparts
+
+
+###### IV data IO to and from different formats ######
+
+def read_pandas(filepaths, concat=True, dropcols=None):
+    '''
+    Load in any number of pickled dataframes and/or series
+    return concatenated dataframe
+    e.g.
+    read_pandas(glob('2019-02*.s'))
+    read_pandas(recentf(n=3))
+
+    # TODO I ran short on time, so dropcols is not implemented if you pass a single filepath
+    '''
+    if type(filepaths) is str:
+        # Single series or df
+        return pd.read_pickle(filepaths)
+    else:
+        N = len(filepaths)
+        # Should be a list of filepaths
+        pdlist = []
+        # Try to get pandas to read the files, but don't give up if some fail
+        for i,f in enumerate(filepaths):
+            try:
+                # pdlist may have some combination of Series and DataFrames.  Series should be rows
+                pdobject = pd.read_pickle(f)
+            except KeyboardInterrupt:
+                print('KeyboardInterrupt. Returning whatever was loaded so far.')
+                break
+            except:
+                log.error('Failed to interpret {} as a pickle!'.format(f))
+                continue
+
+            if type(pdobject) is pd.DataFrame:
+                if dropcols is not None:
+                    realdropcols = [dc for dc in dropcols if dc in pdobject]
+                    pdobject = pdobject.drop(realdropcols, 1)
+                if 'filepath' not in pdobject:
+                    pdobject['filepath'] = [f] * len(pdobject)
+                pdlist.append(pdobject)
+            elif type(pdobject) is pd.Series:
+                if dropcols is not None:
+                    realdropcols = [dc for dc in dropcols if dc in pdobject]
+                    pdobject = pdobject.drop(realdropcols)
+                if 'filepath' not in pdobject:
+                    pdobject['filepath'] = f
+                # Took me a while to figure out how to convert series into single row dataframe
+                pdlist.append(pd.DataFrame.from_records([pdobject]))
+                # This resets all the datatypes to object !!
+                # pdlist.append(pd.DataFrame(pdobject).transpose())
+            else:
+                log.warning('Do not know wtf this file is:')
+            log.info(f'{i+1}/{N} Loaded {f}.')
+        if concat:
+            return pd.concat(pdlist).reset_index()
+        else:
+            return pdlist
+
+
+# to not break old scripts
+read_pandas_files = read_pandas
+
+def write_pandas_pickle(data, filepath=None, drop=None):
+    ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
+    if filepath is None:
+        filepath = timestamp()
+
+    filedir = os.path.split(filepath)[0]
+    if (filedir != '') and not os.path.isdir(filedir):
+        os.makedirs(filedir)
+
+    # give it a standard type-dependent extension if one isn't specified
+    filename, ext = os.path.splitext(filepath)
+    if not ext:
+        ext = pandas_pickle_extension(data)
+        filepath += ext
+
+    dtype = type(data)
+    if dtype in (dict, pd.Series):
+        if dtype == dict:
+            #log.info('Converting data to pd.Series for storage.')
+            data = pd.Series(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                log.info('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop)
+    elif dtype in (list, pd.DataFrame):
+        if dtype == list:
+            #log.info('Converting data to pd.DataFrame for storage.')
+            data = pd.DataFrame(data)
+        if drop is not None:
+            todrop = [c for c in drop if c in data]
+            if any(todrop):
+                log.info('Dropping data keys: {}'.format(todrop))
+                data = data.drop(todrop, 1)
+    data.to_pickle(filepath)
+    set_readonly(filepath)
+    size = os.path.getsize(filepath)
+    if size > 2**30:
+        size = f'{size/2**30:.2f} GB'
+    elif size > 2**20:
+        size = f'{size/2**20:.2f} MB'
+    elif size > 2**10:
+        size = f'{size/2**10:.2f} KB'
+    else:
+        size = f'{size:.2f} B'
+    abspath = os.path.abspath(filepath)
+    log.info(f'Wrote {abspath}\n{size}')
+    return abspath
+
+
+def pandas_pickle_extension(data):
+    # defines how we name the extension of dataframes and series
+    dtype = type(data)
+    if dtype in (dict, pd.Series):
+        return '.s'
+    elif dtype in (list, pd.DataFrame):
+        return '.df'
+    else:
+        return ''
+
+
 def read_txt(filepath, **kwargs):
     '''
     Function to read IV data from text files, trying to accomodate all the ridiculous formats I have encountered at IWEII.
@@ -971,10 +1229,10 @@ def read_txt(filepath, **kwargs):
     # ...
 
     # Here is a dict which constructs a mapping between various column names I have seen and a standard column name
-    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]', 'I1', 'Current'],
-                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]', 'V1', 'Voltage'],
+    colnamemap = {'I': ['Current Probe (A)', 'Current [A]', 'Current[A]', 'I1'],
+                  'V': ['Voltage Source (V)', 'Voltage [V]', 'Voltage[V]', 'V1'],
                   'T': ['Temperature  (K)', 'Temperature', 'Temperature [K]'],
-                  't': ['time', 'Time [S]', 't[s]', 'Time'],
+                  't': ['time', 'Time [S]', 't[s]'],
                   'Vmeasured': ['Voltage Probe (V)']}
 
     # Default arguments for readcsv
@@ -1053,7 +1311,7 @@ def read_txt(filepath, **kwargs):
     # Note that the unit names are simply assumed here -- no attempt to read the units from the file
     units = {'I': 'A', 'V': 'V', 't': 's', 'T': 'K'}
 
-    dataout = {k: df[k].to_numpy() for k in df.columns}
+    dataout = {k: df[k].as_matrix() for k in df.columns}
     dataout['mtime'] = os.path.getmtime(filepath)
     dataout['units'] = {k: v for k, v in units.items() if k in dataout.keys()}
     dataout['longnames'] = {k: v for k, v in longnames.items() if k in dataout.keys()}
@@ -1090,189 +1348,6 @@ def read_txts(filepaths, sort=True, **kwargs):
     return pd.DataFrame(datalist)
 
 
-def glob(pattern='*', directory='.', subdirs=False, exclude=None):
-    pattern = pattern.join('**')
-    if subdirs:
-        fpaths = []
-        for root, folders, files in os.walk(directory):
-            fpaths.extend([os.path.join(root, f) for f in files])
-    else:
-        fpaths = [os.path.join(directory, f) for f in os.listdir(directory)]
-
-    # filter by filename only, but keep absolute path
-    def condition(fpath):
-        filename = os.path.split(fpath)[-1]
-        # Should it be excluded
-        if exclude is not None:
-            if fnmatch.fnmatch(filename, exclude.join('**')):
-                return False
-        # Does it match
-        return fnmatch.fnmatch(filename, pattern)
-
-    filtfpaths = [fp for fp in fpaths if condition(fp)]
-    abspaths = [os.path.abspath(fp) for fp in filtfpaths]
-    return abspaths
-
-
-def multiglob(names, *patterns):
-    ''' filter list of names with potentially multiple glob patterns '''
-    # TODO make it like glob(), so it searches for files
-    filtered = []
-    for patt in patterns:
-        filter = '*' + patt + '*'
-        filtered.extend(fnmatch.filter(names, filter))
-    return filtered
-
-
-def read_pandas(filepaths, concat=True, dropcols=None):
-    '''
-    Load in any number of pickled dataframes and/or series
-    return concatenated dataframe
-    e.g.
-    read_pandas(glob('2019-02*.s'))
-    read_pandas(recentf(n=3))
-
-    # TODO I ran short on time, so dropcols is not implemented if you pass a single filepath
-    '''
-    if type(filepaths) is str:
-        # Single series or df
-        return pd.read_pickle(filepaths)
-    else:
-        N = len(filepaths)
-        # Should be a list of filepaths
-        pdlist = []
-        # Try to get pandas to read the files, but don't give up if some fail
-        for i,f in enumerate(filepaths):
-            try:
-                # pdlist may have some combination of Series and DataFrames.  Series should be rows
-                pdobject = pd.read_pickle(f)
-            except KeyboardInterrupt:
-                print('KeyboardInterrupt. Returning whatever was loaded so far.')
-                break
-            except:
-                log.error('Failed to interpret {} as a pickle!'.format(f))
-                continue
-
-            if type(pdobject) is pd.DataFrame:
-                if dropcols is not None:
-                    realdropcols = [dc for dc in dropcols if dc in pdobject]
-                    pdobject = pdobject.drop(realdropcols, 1)
-                if 'filepath' not in pdobject:
-                    pdobject['filepath'] = [f] * len(pdobject)
-                pdlist.append(pdobject)
-            elif type(pdobject) is pd.Series:
-                if dropcols is not None:
-                    realdropcols = [dc for dc in dropcols if dc in pdobject]
-                    pdobject = pdobject.drop(realdropcols)
-                if 'filepath' not in pdobject:
-                    pdobject['filepath'] = f
-                # Took me a while to figure out how to convert series into single row dataframe
-                pdlist.append(pd.DataFrame.from_records([pdobject]))
-                # This resets all the datatypes to object !!
-                # pdlist.append(pd.DataFrame(pdobject).transpose())
-            else:
-                log.warning('Do not know wtf this file is:')
-            log.info(f'{i+1}/{N} Loaded {f}.')
-        if concat:
-            return pd.concat(pdlist).reset_index()
-        else:
-            return pdlist
-
-
-# to not break old scripts
-read_pandas_files = read_pandas
-
-
-def recentf(directory='.', n=None, seconds=None, maxlen=None, pattern=None, subdirs=False):
-    '''
-    Return filepaths of recently created files
-    specify n to limit search to the last n files created
-    '''
-    now = time.time()
-    if subdirs:
-        filepaths = []
-        for root, folders, files in os.walk(directory):
-            filepaths.extend([os.path.join(root, f) for f in files])
-    else:
-        filepaths = [os.path.join(directory, f) for f in os.listdir(directory)]
-    if pattern is not None:
-        pattern = pattern.join('**')
-        filepaths = fnmatch.filter(filepaths, pattern)
-    ctimes = [os.path.getctime(fp) for fp in filepaths]
-    # Sort by ctime
-    order = np.argsort(ctimes)
-    ctimes = [ctimes[i] for i in order]
-    filepaths = [filepaths[i] for i in order]
-    if n is not None:
-        filepaths = filepaths[-n:]
-        ctimes = ctimes[-n:]
-    if seconds is not None:
-        filepaths = [fp for fp, ct in zip(filepaths, ctimes) if now - ct < seconds]
-    if maxlen is not None:
-        filepaths = filepaths[:maxlen]
-    return [os.path.abspath(fp) for fp in filepaths]
-
-
-def write_pandas_pickle(data, filepath=None, drop=None):
-    ''' Write a dict, list of dicts, Series, or DataFrame to pickle. '''
-    if filepath is None:
-        filepath = timestamp()
-
-    filedir = os.path.split(filepath)[0]
-    if (filedir != '') and not os.path.isdir(filedir):
-        os.makedirs(filedir)
-
-    # give it a standard type-dependent extension if one isn't specified
-    filename, ext = os.path.splitext(filepath)
-    if not ext:
-        ext = pandas_pickle_extension(data)
-        filepath += ext
-
-    dtype = type(data)
-    if dtype in (dict, pd.Series):
-        if dtype == dict:
-            #log.info('Converting data to pd.Series for storage.')
-            data = pd.Series(data)
-        if drop is not None:
-            todrop = [c for c in drop if c in data]
-            if any(todrop):
-                log.info('Dropping data keys: {}'.format(todrop))
-                data = data.drop(todrop)
-    elif dtype in (list, pd.DataFrame):
-        if dtype == list:
-            #log.info('Converting data to pd.DataFrame for storage.')
-            data = pd.DataFrame(data)
-        if drop is not None:
-            todrop = [c for c in drop if c in data]
-            if any(todrop):
-                log.info('Dropping data keys: {}'.format(todrop))
-                data = data.drop(todrop, 1)
-    data.to_pickle(filepath)
-    set_readonly(filepath)
-    size = os.path.getsize(filepath)
-    if size > 2**30:
-        size = f'{size/2**30:.2f} GB'
-    elif size > 2**20:
-        size = f'{size/2**20:.2f} MB'
-    elif size > 2**10:
-        size = f'{size/2**10:.2f} KB'
-    else:
-        size = f'{size:.2f} B'
-    abspath = os.path.abspath(filepath)
-    log.info(f'Wrote {abspath}\n{size}')
-    return abspath
-
-def pandas_pickle_extension(data):
-    # defines how we name the extension of dataframes and series
-    dtype = type(data)
-    if dtype in (dict, pd.Series):
-        return '.s'
-    elif dtype in (list, pd.DataFrame):
-        return '.df'
-    else:
-        return ''
-
-
 def write_matlab(data, filepath, varname=None, compress=True):
     # Write dict, list of dict, series, or dataframe to matlab format for the neanderthals
     # Haven't figured out what sucks less to work with in matlab
@@ -1299,14 +1374,14 @@ def write_matlab(data, filepath, varname=None, compress=True):
 def read_matlab(filepath):
     # Read matlab file into dataframe or series
     '''
-   These functions solve the problem of not properly recovering python dictionaries
-   from mat files. It calls the function _check_keys to cure all entries
-   which are still mat-objects
+    These functions solve the problem of not properly recovering python dictionaries
+    from mat files. It calls the function _check_keys to cure all entries
+    which are still mat-objects
 
-   Stolen from
-   https://stackoverflow.com/questions/7008608/scipy-io-loadmat-nested-structures-i-e-dictionaries
-   Tyler's edit only recurses into level 0 np.arrays
-   '''
+    Stolen from
+    https://stackoverflow.com/questions/7008608/scipy-io-loadmat-nested-structures-i-e-dictionaries
+    Tyler's edit only recurses into level 0 np.arrays
+    '''
 
     def _check_keys(d):
         '''
@@ -1377,6 +1452,8 @@ def read_matlab(filepath):
 
 def write_csv(data, filepath, columns=None, overwrite=False):
     # For true dinosaurs
+    # TODO: Don't write hundreds of thousands of files
+    # TODO: Don't write a 10 GB text file
     if type(data) in (dict, pd.Series):
         if hasattr(filepath, '__call__'):
             filepath = filepath(data)
@@ -1416,8 +1493,6 @@ def write_csv(data, filepath, columns=None, overwrite=False):
             else:
                 fn = insert_file_num(filepath, i, 3)
                 write_csv(d, filepath=fn, columns=columns, overwrite=overwrite)
-        # TODO: Don't write thousands of files
-        # TODO: Don't write a 10 GB text file
 
 
 def write_csv_multi(data, filepath, columns=None, overwrite=False):
@@ -1432,10 +1507,6 @@ def write_csv_multi(data, filepath, columns=None, overwrite=False):
         write_csv(data, filepath, columns=None, overwrite=False)
     elif type(data) is list:
         pass
-
-
-def insert_file_num(filepath, number, width=3):
-    return '_{{:0{}}}'.format(width).format(number).join(os.path.splitext(filepath))
 
 
 def write_meta_csv(data, filepath):
@@ -1458,16 +1529,31 @@ def write_meta_csv(data, filepath):
     s.drop(arrays).to_csv(filepath, sep='\t', encoding='utf-8')
 
 
-def write_sql(data, db):
-    ''' Append some data to sql table.  Didn't actually write the function yet.'''
-    con = 'wtf'
-    data.to_sql(db, con, if_exists='append')
-    # TODO: figure out what to do if data has columns that aren't already in the database.
+###### other things
 
-
-def set_readonly(filepath):
-    from stat import S_IREAD, S_IRGRP, S_IROTH
-    os.chmod(filepath, S_IREAD | S_IRGRP | S_IROTH)
+def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
+    ''' For when you accidentally write a file with the wrong sample information attached '''
+    filedir, filename = os.path.split(filepath)
+    filename, extension = os.path.splitext(filename)
+    datain = pd.read_pickle(filepath)
+    if type(datain) == pd.Series:
+        datain[newmeta.index] = newmeta
+        s = datain
+    if type(datain) == pd.DataFrame:
+        datain[newmeta.index] = pd.DataFrame([newmeta] * len(datain)).reset_index(drop=True)
+        s = datain.iloc[0]
+    # Retain time information in filename
+    newfilename = filename[:21]
+    if filenamekeys is not None:
+        for fnkey in filenamekeys:
+            if fnkey in s.index:
+                newfilename += '_{}'.format(s[fnkey])
+    newpath = os.path.join(filedir, newfilename + extension)
+    log.info('writing new file {}'.format(newpath))
+    datain.to_pickle(newpath)
+    if deleteold:
+        log.info('deleting old file {}'.format(filepath))
+        os.remove(filepath)
 
 
 def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, groupby=None,
@@ -1540,31 +1626,6 @@ def plot_datafiles(datadir, maxloops=500, smoothpercent=0, overwrite=False, grou
     plt.close(fig)
 
 
-def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
-    ''' For when you accidentally write a file with the wrong sample information attached '''
-    filedir, filename = os.path.split(filepath)
-    filename, extension = os.path.splitext(filename)
-    datain = pd.read_pickle(filepath)
-    if type(datain) == pd.Series:
-        datain[newmeta.index] = newmeta
-        s = datain
-    if type(datain) == pd.DataFrame:
-        datain[newmeta.index] = pd.DataFrame([newmeta] * len(datain)).reset_index(drop=True)
-        s = datain.iloc[0]
-    # Retain time information in filename
-    newfilename = filename[:21]
-    if filenamekeys is not None:
-        for fnkey in filenamekeys:
-            if fnkey in s.index:
-                newfilename += '_{}'.format(s[fnkey])
-    newpath = os.path.join(filedir, newfilename + extension)
-    log.info('writing new file {}'.format(newpath))
-    datain.to_pickle(newpath)
-    if deleteold:
-        log.info('deleting old file {}'.format(filepath))
-        os.remove(filepath)
-
-
 def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False):
     # write the current figure to disk
     # Can also write a pickle of the figure
@@ -1581,33 +1642,6 @@ def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False
             with open(plotfp + '.plt', 'wb') as f:
                 pickle.dump(plt.gcf(), f)
             log.info('Wrote {}.plt'.format(plotfp))
-
-
-def makefolder(*args):
-    ''' Make a folder if it doesn't already exist. All args go to os.path.join'''
-    subfolder = os.path.join(*args)
-    if not os.path.isdir(subfolder):
-        log.info('Making folder: {}'.format(subfolder))
-        os.makedirs(subfolder)
-    else:
-        log.info('Folder already exists: {}'.format(subfolder))
-
-
-def psplitall(path):
-    # get all parts of the filepath why the heck isn't this in os.path?
-    allparts = []
-    while 1:
-        parts = os.path.split(path)
-        if parts[0] == path:  # sentinel for absolute paths
-            allparts.insert(0, parts[0])
-            break
-        elif parts[1] == path:  # sentinel for relative paths
-            allparts.insert(0, parts[1])
-            break
-        else:
-            path = parts[0]
-            allparts.insert(0, parts[1])
-    return allparts
 
 
 def update_depsheet():
