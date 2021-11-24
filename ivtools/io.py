@@ -52,10 +52,12 @@ db_path = settings.db_path
 
 class MetaHandler(object):
     '''
-    Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
+    Stores, indexes, and prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files, with interactive use in mind.
 
-    Can generate filenames
+    savedata method writes data along with the selected metadata to disk and makes a database entry
+
+    Can generate filenames with timestamps and keys from the metadata
 
     df attribute holds the list of metadata as a list-of-dicts or pandas dataframe
     meta holds the currently selected row of metadata
@@ -64,12 +66,13 @@ class MetaHandler(object):
 
     __repr__ will print the concatenated meta and static
 
-    you can set/get items directly on the MetaHandler instance instead of on its meta attribute
+    you can set/get items directly on the MetaHandler instance instead of on its static attribute
+    eg meta = MetaHandler(); meta['key'] = value
 
     Attach the currently selected meta data and the static meta data with the attach() function
 
     MetaHandler is Borg.  Its state lives in an separate module.
-    This is so if io module is reloaded, a new Metahandler instance keeps the metadata state
+    This is so if the io module is reloaded, a new Metahandler instance keeps the metadata state
     '''
 
     def __init__(self, clear_state=False):
@@ -491,7 +494,7 @@ class MetaHandler(object):
 
     def savedata(self, data, folder_path=None, database_path=None, table_name='meta', drop=None):
         '''
-        Save data to disk and write a row of metadata to an sqlite3 database
+        Save data + selected metadata to disk and write a row of metadata to an sqlite3 database
 
         :param data: Row of data to be add to the database.
         :param folder_path: Folder where all data will be saved. If None, data will be saved in Desktop.
