@@ -59,11 +59,11 @@ Teo 'J4' and 'J5' Jumpers in internal mode (Both closer to the center of the boa
 
 ### Parameters ###
 save_folder = "X:\emrl\Pool\Bulletin\Handbücher.Docs\TS_Memory_Tester\calibration"
-V = 9       # Amplitude of the triangle pulse, positive and negative
+V = 1       # Amplitude of the triangle pulse, positive and negative
 SR = 10_000  # Sweep rate of the waveform. Lower sweep rates make more precise calibrations. 1000 takes about 20 mins
                 # and 100_000 about a minute.
 R = 47_000    # Resistor used to measure (47_000Ω is the optimus)
-check = False  # If True: the existing calibration will be used so you can check it, otherwise it will
+check = True  # If True: the existing calibration will be used so you can check it, otherwise it will
                 # perform an actual calibration
 nplc = 10     # Number of power line cycles to use on low frequency mode
 digipot = False  # Set it true if the resistor is sampled through a digipot

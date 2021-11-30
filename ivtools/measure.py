@@ -1465,20 +1465,24 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
     dataout['calibration'] = {}
 
     if HFV and (HFV in datain):
-        dataout['HFV'] = datain[HFV]
-        dataout['units']['HFV'] = 'V (HFV)'
+        dataout['V'] = datain[HFV]
+        dataout['units']['V'] = 'V'
         dataout['calibration']['HFV'] = None
 
     if V_MONITOR and (V_MONITOR in datain):
-        dataout['units']['V'] = 'V (V_MONITOR)'
+        if 'V' in dataout.keys():
+            label = 'V_MONITOR'
+        else:
+            label = 'V'
+        dataout['units'][label] = 'V'
         if teo.calibration is not None:
             cal = teo.calibration.loc[gainstep, 'V_MONITOR']
             Vdata = np.polyval(cal, datain[V_MONITOR])
-            dataout['calibration']['V'] = cal
+            dataout['calibration'][label] = cal
         else:
             Vdata = datain[V_MONITOR]
-            dataout['calibration']['V'] = None
-        dataout['V'] = Vdata
+            dataout['calibration'][label] = None
+        dataout[label] = Vdata
 
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
@@ -1493,15 +1497,19 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
         dataout['I'] = Idata
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
-        dataout['units']['I2'] = 'A (HF_FULL_BW)'
+        if 'I' in dataout.keys():
+            label = 'I2'
+        else:
+            label = 'I'
+        dataout['units'][label] = 'A'
         if teo.calibration is not None:
             cal = teo.calibration.loc[gainstep, 'HF_FULL_BW']
             I2data = np.polyval(teo.calibration.loc[gainstep, 'HF_FULL_BW'], datain[HF_FULL_BW])
-            dataout['calibration']['I2'] = cal
+            dataout['calibration'][label] = cal
         else:
             I2data = datain[HF_FULL_BW]
-            dataout['calibration']['I2'] = None
-        dataout['I2'] = I2data
+            dataout['calibration'][label] = None
+        dataout[label] = I2data
 
 
 

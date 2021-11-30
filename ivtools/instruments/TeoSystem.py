@@ -941,7 +941,7 @@ class TeoSystem(object):
         not tested
         '''
 
-        self.LF_mode(external=False)
+        self.LF_mode(external=True)
 
         Vidle = self.LF_voltage()
 
