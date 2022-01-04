@@ -449,9 +449,9 @@ cc_step = 25e-6):
             iplots.updateline(data)
             ### Setting up scope  ################################################################################
 
-            ttx.inputstate(3, False)
+            ttx.inputstate(3, True)
             ttx.inputstate(2, False)
-            ttx.inputstate(1, True)
+            ttx.inputstate(1, False)
             ttx.inputstate(4, False)
 
             ttx.scale(3, scale)
@@ -468,7 +468,7 @@ cc_step = 25e-6):
 
             plt.pause(0.1)
 
-            ttx.arm(source = 1, level = trigger_level, edge = edge)
+            ttx.arm(source = 3, level = trigger_level, edge = edge)
 
 
             ### Applying pulse and reading scope data #############################################################
@@ -491,7 +491,7 @@ cc_step = 25e-6):
                 plt.pause(0.1)
                 status = ttx.triggerstate()
             plt.pause(0.5)
-            scope_list.append(ttx.get_curve(1))
+            scope_list.append(ttx.get_curve(3))
             data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
             iplots.updateline(data)
 
@@ -520,11 +520,11 @@ cc_step = 25e-6):
                     dates_dict = defaultdict(list)
                     vlist1 = tri(v1 = v1, v2 = 0, step = step)
                     vlist2 = tri(v1 = 0, v2 = v2, step = step2)
-                    k.iv(vlist1, measure_range = range_sweep, Ilimit = limitI) 
+                    k.iv(vlist1, measure_range = range_sweep, i_limit = limitI) 
                     while not k.done():
                         plt.pause(0.1)
                     sweep_data = k.get_data()
-                    k.iv(vlist2, measure_range = range_sweep2, Ilimit = limitI2) 
+                    k.iv(vlist2, measure_range = range_sweep2, i_limit = limitI2) 
                     while not k.done():
                         plt.pause(0.1)
                     data_2nd_sweep = k.get_data()
