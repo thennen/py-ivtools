@@ -19,9 +19,10 @@ class Sympuls(object):
         self.read = self.conn.read
         self.read_raw = self.conn.read_raw
         self.close = self.conn.close
+        self.conn.write_termination ='\n'
 
     def idn(self):
-        idn = self.ask('*IDN?')
+        idn = self.query('*IDN?')
         self.read()   # read necessary to avoid empty line issue
         return idn.replace('\n', '')
 
