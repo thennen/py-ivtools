@@ -93,12 +93,13 @@ class TeoSystem(object):
           1. on first initialization (Dispatch('TSX_HMan'))
           2. if you disconnect USB and plug it back in
 
-
-    TODO: takes very long to connect when memory is full
     '''
 
     def __init__(self):
 
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
 
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
@@ -109,57 +110,6 @@ class TeoSystem(object):
         HFV output goes to the negative rail!
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         '''
-
-        # BORG needed to avoid loading all memory from TEO to Python everytime you call teo = instruments.TeoSystem()
-        # and to keep the gain value
-        statename = self.__class__.__name__
-        if statename not in ivtools.instrument_states:
-            ivtools.instrument_states[statename] = {}
-            self.__dict__ = ivtools.instrument_states[statename]
-            self.connect()
-        else:
-            self.__dict__ = ivtools.instrument_states[statename]
-            if not self.connected():
-                self.connect()
-
-    ################################################################################
-
-    def connected(self):
-        try:
-            MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
-        except:
-            return False
-        if MemTester is None:
-            return False
-        else:
-            return True
-
-    def idn(self):
-        # Get and print some information from the board
-        DevName = self.base.DeviceID.GetDeviceName()
-        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
-        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
-        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
-        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
-
-    def kill_TSX(self):
-        # /F tells taskkill we aren't Fing around here
-        os.system("taskkill /F /im TSX_HardwareManager.exe")
-        os.system("taskkill /F /im TSX_DM.exe")
-
-    def restart_TSX(self):
-        self.kill_TSX()
-        self.__init__()
-
-    def close(self):
-        self.base.DeviceControl.StopDevice()
-        self.kill_TSX()
-
-    def connect(self):
-
-        class dotdict(dict):
-            __getattr__ = dict.__getitem__
-            __setattr__ = dict.__setitem__
 
         self.base = TeoBase()
 
@@ -210,8 +160,9 @@ class TeoSystem(object):
         # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
         # TODO: somehow prevent this from taking too much memory
         #       should always reflect the state of the teo board
-        # self.waveforms = {}
-        self.waveforms = self.download_all_wfms()
+        self.waveforms = {}
+        # self.waveforms = self.download_all_wfms()  # Downloading the whole memory on every connection can slow
+        # thing a lot
         # Store the name of the last played waveform
         self.last_waveform = None
         self.last_gain = None
@@ -219,6 +170,40 @@ class TeoSystem(object):
 
         log.info('TEO connection successful: ' + self.constants.idn)
 
+    ################################################################################
+
+    def connected(self):
+        if not hasattr(self, 'conn'):
+            self.conn = False
+        elif self.conn is True:
+            MemTester = self.base.HMan.GetSystem('MEMORY_TESTER')
+            if MemTester is None:
+                self.conn = False
+            else:
+                self.conn = True
+
+        return self.conn
+
+    def idn(self):
+        # Get and print some information from the board
+        DevName = self.base.DeviceID.GetDeviceName()
+        DevRevMajor = self.base.DeviceID.GetDeviceMajorRevision()
+        DevRevMinor = self.base.DeviceID.GetDeviceMinorRevision()
+        DevSN = self.base.DeviceID.GetDeviceSerialNumber()
+        return f'TEO: Name={DevName} SN={DevSN} Rev={DevRevMajor}.{DevRevMinor}'
+
+    def kill_TSX(self):
+        # /F tells taskkill we aren't Fing around here
+        os.system("taskkill /F /im TSX_HardwareManager.exe")
+        os.system("taskkill /F /im TSX_DM.exe")
+
+    def restart_TSX(self):
+        self.kill_TSX()
+        self.__init__()
+
+    def close(self):
+        self.base.DeviceControl.StopDevice()
+        self.kill_TSX()
 
 
     ##################################### HF mode #############################################
@@ -460,13 +445,6 @@ class TeoSystem(object):
             raise Exception(f'{gain} is not a possible LBW gain.')
 
 
-    def current_range(self, I_max):
-        pass
-        # Saturation values at s=0
-        HFI_INT_sat = 32e-6  # A  (x2 s)
-
-
-
     def _pad_wfms(self, varray, trig1, trig2):
         '''
         Make sure the number of samples in the waveform is compatible with the system
@@ -535,8 +513,6 @@ class TeoSystem(object):
         TODO: is there a limit to the NUMBER of waveforms that can be stored?
 
         TODO: is there a limit on the length of a waveforms name?
-
-        TODO: apply calibration? Right now applied voltages are around 10% smaller than programmed
         '''
         n = len(varray)
 
@@ -708,6 +684,9 @@ class TeoSystem(object):
         if self.last_waveform in self.waveforms:
             # Refer to the waveform dict stored in the instance
             prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
+        elif self.last_waveform in self.get_wfm_names():
+            prog_wfm, trig1, trig2 = self.download_wfm(self.last_waveform)
+            self.waveforms[self.last_waveform] = (prog_wfm, trig1, trig2)
         else:
             log.debug('Waveform data was missing from TeoSystem instance')
             # Try to read it from TSX_DM.exe
