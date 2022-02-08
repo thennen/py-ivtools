@@ -457,28 +457,36 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 
 ########### Picoscope + Teo testing ###################
 
-def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
-            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
-            savewfm=False, pretrig=0, posttrig=0):
+def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, autosplit=False,
+            HFV_ch=None, V_MONITOR_ch='B', HF_LIM_ch='C', HF_FUL_ch='D',
+            splitbylevel=None, termination=None, autosmoothimate=False,
+            savewfm=False, save_teo_int=True, pretrig=0, posttrig=0):
     '''
-    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
+    Pulse a waveform with teo, measure on picoscope and teo, and return data
 
-    Pulse a waveform with teo, measure on picoscope, and return data
+    Parameters:
+        wfm: Array of voltage values to be applied. Or the name of a waveform loaded in Teo.
+        n: TODO: n is not working properly due to the extra 0V part at the end of the waveform by teo
+        duration: Duration of the wfm. If None, wfm values will be applied at Teo frequency: 500 MHz.
+        fs: Picoscope sample frequency
+        nsamples: Picoscope number of samples (alternative to fs)
+        smartrange: =1 autoranges the monitor channel. =2 tries some other fancy shit to autorange the current
+            measurement channel
+        autosplit: NOT WORKING UNTIL N WORKS
+        HFV_ch: Picoscope channel used to monitor teo HFV
+        V_MONITOR_ch: Picoscope channel used to monitor teo V_MONITOR
+        HF_LIM_ch: Picoscope channel used to monitor teo HF_LIMITED_BW
+        HF_FUL_ch: Picoscope channel used to monitor teo HF_FULL_BW
+        splitbylevel: no idea
+        termination: termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
+        autosmoothimate: Automatically smooth and decimate
+        savewfm: save original waveform
+        save_teo_int: save Teo internal measurements
+        pretrig: sample before the waveform. Units are fraction of one pulse duration
+        posttrig: sample after the waveform. Units are fraction of one pulse duration
 
-    smartrange 1 autoranges the monitor channel
-    smartrange 2 tries some other fancy shit to autorange the current measurement channel
-
-    autosplit will split the waveforms into n chunks
-
-    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
-
-    by default we sample for exactly the length of the waveform,
-    use "pretrig" and "posttrig" to sample before and after the waveform
-    units are fraction of one pulse duration
 
     TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
-    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
-          because that can take a lot of time, should include a switch for it
     '''
 
     teo = instruments.TeoSystem()
@@ -486,11 +494,6 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
 
     # decide what sample rate to use
     teo_freq = 500e6
-    if fs is None:
-        if duration is None:
-            fs = teo_freq
-        else:
-            fs = nsamples / duration
 
     if type(wfm) is str:
         wfm_name = wfm
@@ -510,6 +513,15 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
         else:
             duration = (len(wfm) - 1) / teo_freq
 
+    if (bool(fs) * bool(nsamples)):
+        raise Exception('Can not pass fs and nsamples, only one of them')
+
+    if fs is None:
+        if nsamples is None:
+            fs = teo_freq
+        else:
+            fs = nsamples / duration
+
     if smartrange == 2:
         # Smart range for the compliance circuit
         smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
@@ -519,6 +531,10 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
         # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
         # offset/gain of the teo monitor output!
         smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
+    channels = [HFV_ch, V_MONITOR_ch, HF_LIM_ch, HF_FUL_ch]
+    channels = [ch for ch in channels if ch is not None]
+    log.info(channels)
+
 
     teo_nsamples = len(wfm)
 
@@ -556,7 +572,7 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
         wfm *= (50 + termination) / termination
 
     # Send a pulse
-
+    trainduration = duration * sampling_factor
     log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     teo.output_wfm(wfm, n=n)
 
@@ -599,6 +615,18 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
         factor = max(int(nsamples_shot / npts), 1)
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+
+    if save_teo_int:
+        teo_data = teo.get_data()
+        ivdata['V_teo'] = teo_data['V']
+        ivdata['I_teo'] = teo_data['I']
+        ivdata['t_teo'] = teo_data['t']
+        ivdata['wfm_teo'] = teo_data['Vwfm']
+        ivdata['idn_teo'] = teo_data['idn']
+        ivdata['sample_rate_teo'] = teo_data['sample_rate']
+        ivdata['gain_step_teo'] = teo_data['gain_step']
+        ivdata['calibration_teo'] = teo_data['calibration']
+        ivdata['units'] = dict(V_teo='V', I_teo='A', t_teo='s', wfm_teo='V')
 
     if autosplit and (n > 1):
         log.debug('Splitting data into individual pulses')
@@ -1372,7 +1400,7 @@ def femto_log_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dtype=np.float32):
+def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for TEO HF output channels
@@ -1395,8 +1423,9 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
     if 'units' not in dataout:
         dataout['units'] = {}
 
-    #if HFV and (HFV in datain):
-    #    dataout['HFV'] = datain[HFV]
+    if HFV and (HFV in datain):
+        dataout['units']['HFV'] = 'V'
+        dataout['HFV'] = datain[HFV]
 
     if V_MONITOR and (V_MONITOR in datain):
         dataout['units']['V'] = 'V'
@@ -1404,8 +1433,6 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
             Vdata = np.polyval(teo.calibration.loc[gainstep, 'V_MONITOR'], datain[V_MONITOR])
         else:
             Vdata = datain[V_MONITOR]
-        if datain['COUPLINGS'][V_MONITOR] == 'DC':
-            Vdata /= 2
         dataout['V'] = Vdata
 
 
@@ -1415,8 +1442,6 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
             Idata = np.polyval(teo.calibration.loc[gainstep, 'HF_LIMITED_BW'], datain[HF_LIMITED_BW])
         else:
             Idata = datain[V_MONITOR]
-        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
-            Idata /= 2
         dataout['I'] = Idata
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
@@ -1425,8 +1450,6 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
             I2data = np.polyval(teo.calibration.loc[gainstep, 'HF_FULL_BW'], datain[HF_FULL_BW])
         else:
             I2data = datain[HF_FULL_BW]
-        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
-            I2data /= 2
         dataout['I2'] = I2data
 
     # TODO if only one of HF_LIMITED or HF_FULL is used, call the signal I, and indicate somehow where it came from

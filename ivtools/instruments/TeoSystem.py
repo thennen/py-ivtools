@@ -10,7 +10,7 @@ import shutil
 import numpy as np
 import pandas as pd
 
-import ivtools.settings  # for calibration file path
+import ivtools  # for calibration file path
 
 log = logging.getLogger('instruments')
 
@@ -97,13 +97,16 @@ class TeoSystem(object):
 
     def __init__(self):
 
-        class dotdict(dict):
-            __getattr__ = dict.__getitem__
-            __setattr__ = dict.__setitem__
 
         '''
         This will do software/hardware initialization and set HFV output voltage to zero
         requires TEO software package and drivers to be installed on the PC
+
+        Reasons for TeoSystem to be BORG
+        - Download waveforms from TeoSystem on can take too long, so it' s annoying to download them at every
+        connection.
+        - Gain step is set to 0 at every connection.
+        - Some variables like 'last_wfm' are lost.
 
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         Make sure there is no DUT connected when you initialize!
@@ -111,66 +114,81 @@ class TeoSystem(object):
         !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
         '''
 
-        self.base = TeoBase()
+        statename = self.__class__.__name__
+        if statename not in ivtools.instrument_states:
+            ivtools.instrument_states[statename] = {}
+        self.__dict__ = ivtools.instrument_states[statename]
 
-        self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
-
-        # Assign properties that do not change, like max/min values
-        # so that we don't keep polling the instrument for fixed values
-
-        self.constants = dotdict()
-        self.constants.idn = self.idn()
-        self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
-        self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
-        # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
-        # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
-        # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
-        # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
-        self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
-
-        if os.path.isfile(ivtools.settings.teo_calibration_file):
-            self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
-        else:
-            log.warning('Calibration file not found!')
-            self.calibration = None
-
-        # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
-        self.J29 = True
-
-        # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
-
-        # set the power line frequency for averaging over integer cycles
-        self.PLF = 50
-
-        self.freq = 500e6  # Teo frequency
-
-        ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
-        # it appears to be fine to call it multiple times;
-        # everything still works, and I didn't see any disturbances on the HFV output
-        # TODO: what state do we exactly start up in the first time this is called?
-        # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
-        # So I think it starts in some undefined mode
-        # subsequent calls seem to stay in whatever mode it was in before,
-        # even if we lost the python-TSX_DM connection for some reason
-        self.base.DeviceControl.StartDevice()
-        # This command sets the idle level for HF mode
-        self.base.LF_Voltage.SetValue(0)
-        # self.HF_mode()
-
-        # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
-        # TODO: somehow prevent this from taking too much memory
-        #       should always reflect the state of the teo board
-        self.waveforms = {}
-        # self.waveforms = self.download_all_wfms()  # Downloading the whole memory on every connection can slow
-        # thing a lot
-        # Store the name of the last played waveform
-        self.last_waveform = None
-        self.last_gain = None
-        self.last_nshots = None
-
-        log.info('TEO connection successful: ' + self.constants.idn)
+        if not self.connected():
+            self.connect()
 
     ################################################################################
+
+    def connect(self):
+        class dotdict(dict):
+            __getattr__ = dict.__getitem__
+            __setattr__ = dict.__setitem__
+
+        self.base = TeoBase()
+
+        if self.conn:
+
+            self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
+
+            # Assign properties that do not change, like max/min values
+            # so that we don't keep polling the instrument for fixed values
+
+            self.constants = dotdict()
+            self.constants.idn = self.idn()
+            self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
+            self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
+            # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
+            # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
+            # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
+            # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
+            self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
+
+            if os.path.isfile(ivtools.settings.teo_calibration_file):
+                self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
+            else:
+                log.warning('Calibration file not found!')
+                self.calibration = None
+
+            # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
+            self.J29 = True
+
+            # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
+
+            # set the power line frequency for averaging over integer cycles
+            self.PLF = 50
+
+            self.freq = 500e6  # Teo frequency
+
+            ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
+            # it appears to be fine to call it multiple times;
+            # everything still works, and I didn't see any disturbances on the HFV output
+            # TODO: what state do we exactly start up in the first time this is called?
+            # seems the HF mode LED is on, but I don't see the internal pulses on HFV,
+            # So I think it starts in some undefined mode
+            # subsequent calls seem to stay in whatever mode it was in before,
+            # even if we lost the python-TSX_DM connection for some reason
+            self.base.DeviceControl.StartDevice()
+            # This command sets the idle level for HF mode
+            self.base.LF_Voltage.SetValue(0)
+            # self.HF_mode()
+
+            # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
+            # TODO: somehow prevent this from taking too much memory
+            #       should always reflect the state of the teo board
+            self.waveforms = {}
+            # self.waveforms = self.download_all_wfms()  # Downloading the whole memory on every connection can slow
+            # thing a lot
+            # Store the name of the last played waveform
+            self.last_waveform = None
+            self.last_gain = None
+            self.last_nshots = None
+
+            log.info('TEO connection successful: ' + self.constants.idn)
 
     def connected(self):
         if not hasattr(self, 'conn'):
@@ -445,6 +463,8 @@ class TeoSystem(object):
             raise Exception(f'{gain} is not a possible LBW gain.')
 
 
+
+
     def _pad_wfms(self, varray, trig1, trig2):
         '''
         Make sure the number of samples in the waveform is compatible with the system
@@ -685,12 +705,11 @@ class TeoSystem(object):
             # Refer to the waveform dict stored in the instance
             prog_wfm, trig1, trig2 = self.waveforms[self.last_waveform]
         elif self.last_waveform in self.get_wfm_names():
+            log.debug('Waveform data was missing from TeoSystem instance. It will be downloaded from device memory.')
             prog_wfm, trig1, trig2 = self.download_wfm(self.last_waveform)
             self.waveforms[self.last_waveform] = (prog_wfm, trig1, trig2)
         else:
-            log.debug('Waveform data was missing from TeoSystem instance')
-            # Try to read it from TSX_DM.exe
-            prog_wfm, trig1, trig2 = self.download_wfm(self.last_waveform)
+            log.debug('Waveform data was missing from TeoSystem instance and from device memory.')
 
         nshots = self.last_nshots
 

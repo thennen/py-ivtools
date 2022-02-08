@@ -218,9 +218,9 @@ teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
                       [3, partial(ivplot.plotiv, x='t', y='I2')]]
 
 teo_plotters_debug_int = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
-                          [1, partial(ivplot.plotiv, x='t', y='V_int')],
+                          [1, partial(ivplot.plotiv, x='t_teo', y='V_teo')],
                           [2, partial(ivplot.plotiv, x='t', y='I')],
-                          [3, partial(ivplot.plotiv, x='t', y='I_int')]]
+                          [3, partial(ivplot.plotiv, x='t_teo', y='I_teo')]]
 
 # What the plots should do by default
 if not iplots.plotters:
@@ -380,28 +380,12 @@ def setup_picoteo():
     ps.coupling.b = 'DC'
     ps.coupling.c = 'DC50'
     ps.coupling.d = 'DC50'
-    ps.range.a = 5
-    ps.range.b = 0.2
+    ps.range.a = 10
+    ps.range.b = 1
     ps.range.c = 0.2
     ps.range.d = 0.2
     settings.pico_to_iv = TEO_HFext_to_iv
     iplots.plotters = teo_plotters
-
-def setup_picoteo_debug(int=True):
-    ps.coupling.a = 'DC'
-    ps.coupling.b = 'DC'
-    ps.coupling.c = 'DC50'
-    ps.coupling.d = 'DC50'
-    ps.range.a = 5
-    ps.range.b = 0.2
-    ps.range.c = 0.5
-    ps.range.d = 0.2
-    settings.pico_to_iv = TEO_HFext_to_iv
-    if int:
-        iplots.plotters = teo_plotters_debug_int
-    else:
-        iplots.plotters = teo_plotters_debug
-
 
 ################################################################
 # 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀
@@ -460,6 +444,9 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             nointerrupt.stop()
         measure.beep()
         return data
+
+    measfunc_interactive.__signature__ = inspect.signature(measfunc)
+
     return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
