@@ -131,7 +131,7 @@ class TeoSystem(object):
 
         self.base = TeoBase()
 
-        if self.conn:
+        if self.base.conn:
 
             self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
 
@@ -187,6 +187,8 @@ class TeoSystem(object):
             self.last_waveform = None
             self.last_gain = None
             self.last_nshots = None
+
+            self.conn = True
 
             log.info('TEO connection successful: ' + self.constants.idn)
 

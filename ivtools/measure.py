@@ -503,15 +503,19 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
             wfm = teo.download_wfm(wfm_name)[0]
         if duration is not None:
             raise Exception("You can't pass 'duration' when using a saved waveform")
-        duration = (len(wfm)-1)/teo_freq
+        lenw = len(wfm)
+        duration = (lenw-1)/teo_freq
     else:
         wfm_name = None
         if not type(wfm) == np.ndarray:
             wfm = np.array(wfm)
+        lenw = len(wfm)
         if duration is not None:
             wfm = teo.interp_wfm(wfm, duration)
+            lenw = len(wfm)
         else:
-            duration = (len(wfm) - 1) / teo_freq
+            duration = (lenw - 1) / teo_freq
+
 
     if (bool(fs) * bool(nsamples)):
         raise Exception('Can not pass fs and nsamples, only one of them')
@@ -535,8 +539,9 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
     channels = [ch for ch in channels if ch is not None]
     log.info(channels)
 
-
-    teo_nsamples = len(wfm)
+    chunksize = 2 ** 11
+    npad = chunksize - (lenw % chunksize)
+    pad_duration = (npad - 1) / fs
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
     sampling_factor = (n + pretrig + posttrig)
@@ -552,7 +557,7 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_pico_freq = ps.capture(ch=channels,
                                   freq=fs,
-                                  duration=duration * sampling_factor,
+                                  duration=(duration+pad_duration) * sampling_factor,
                                   pretrig=pretrig / sampling_factor,
                                   delay=delay)
 
@@ -560,7 +565,7 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
 
     log.debug(f"Teo frequency: 500.0 MHz\n"
               f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
-              f"Teo number of samples: {teo_nsamples}\n"
+              f"Teo number of samples: {lenw}\n"
               f"Picoscope number of samples: {pico_nsamples}")
 
 
@@ -572,12 +577,11 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
         wfm *= (50 + termination) / termination
 
     # Send a pulse
-    trainduration = duration * sampling_factor
+    trainduration = (duration+pad_duration) * sampling_factor
     log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     teo.output_wfm(wfm, n=n)
 
-    trainduration = n * duration
-    time.sleep(n * duration * 1.05)
+    time.sleep(trainduration * 1.05)
     #ps.waitReady()
     log.debug('Getting data from picoscope.')
     # Get the picoscope data
