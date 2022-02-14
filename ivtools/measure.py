@@ -466,7 +466,7 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
 
     Parameters:
         wfm: Array of voltage values to be applied. Or the name of a waveform loaded in Teo.
-        n: TODO: n is not working properly due to the extra 0V part at the end of the waveform by teo
+        n: Number of repetitions of the waveform
         duration: Duration of the wfm. If None, wfm values will be applied at Teo frequency: 500 MHz.
         fs: Picoscope sample frequency
         nsamples: Picoscope number of samples (alternative to fs)

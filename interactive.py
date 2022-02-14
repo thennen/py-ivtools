@@ -217,11 +217,6 @@ teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
                       [2, partial(ivplot.plotiv, x='t', y='I')],
                       [3, partial(ivplot.plotiv, x='t', y='I2')]]
 
-teo_plotters_debug_int = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
-                          [1, partial(ivplot.plotiv, x='t_teo', y='V_teo')],
-                          [2, partial(ivplot.plotiv, x='t', y='I')],
-                          [3, partial(ivplot.plotiv, x='t_teo', y='I_teo')]]
-
 # What the plots should do by default
 if not iplots.plotters:
     if ps:
@@ -375,7 +370,7 @@ def setup_digipot():
     settings.pico_to_iv = digipot_to_iv
     iplots.plotters = pico_plotters
 
-def setup_picoteo():
+def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC'
     ps.coupling.c = 'DC50'
@@ -384,14 +379,15 @@ def setup_picoteo():
     ps.range.b = 1
     ps.range.c = 0.2
     ps.range.d = 0.2
-    settings.pico_to_iv = TEO_HFext_to_iv
+    settings.pico_to_iv = lambda datain: TEO_HFext_to_iv(datain=datain, HFV=HFV, V_MONITOR=V_MONITOR,
+                                                    HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW)
     iplots.plotters = teo_plotters
 
 ################################################################
 # 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀
 ################################################################
 
-# Wrap any fuctions that you want to automatically make plots/write to disk with this:
+# Wrap any functions that you want to automatically make plots/write to disk with this:
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow

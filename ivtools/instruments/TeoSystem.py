@@ -413,6 +413,7 @@ class TeoSystem(object):
 
         self.base.HF_Gain.SetStep(step)
 
+
     def gain_LBW(self, gain=None):
         '''
         Set the low BW gain with minimal effect on the high BW gain.
@@ -465,6 +466,76 @@ class TeoSystem(object):
             raise Exception(f'{gain} is not a possible LBW gain.')
 
 
+    def Irange(self, I=None, LBW=True, HBW=True, INT=False):
+        '''
+        Selects the apropiate gain step depending on what channels are being used:
+        LBW (Low Band Width): HF_LIMITED_BW
+        HBW (High Band Width): HF_FULL_BW
+        INT: Internal Scope
+
+        If I is None, the current gain step is returned.
+        '''
+
+        # Saturation levels at gain step 0
+        lbw_sat0 = 0.0035  # A
+        hbw_sat0 = 0.0016  # A
+        int_sat0 = 0.0003  # A
+        # Range increase per step
+        hbw_multiplier = 1.122
+        lbw_multiplier = 2
+        # Number of steps
+        hbw_nsteps = 32
+        lbw_nsteps = 4
+
+        if I is not None:
+            # Checking if currents are too high for each channel. If they are, the channel will be ignored for the step
+            # calculation.
+            if HBW and I > hbw_sat0 * hbw_multiplier**(hbw_nsteps-1):
+                log.warning("Current is too high for HF_FULL_BW")
+                HBW = False
+            if LBW and I > lbw_sat0 * lbw_multiplier**(lbw_nsteps-1):
+                log.warning("Current is too high for HF_LIMITED_BW")
+                LBW = False
+            if INT and I > int_sat0 * lbw_multiplier**(lbw_nsteps-1):
+                log.warning("Current is too high for Internal Scope")
+                INT = False
+
+            # Since Internal Scope and HF_LIMITED_BW use the same amp, and Internal Scope has lower ranges, this one has
+            # the preference.
+            if INT:
+                lbw_sat00 = int_sat0
+            else:
+                lbw_sat00 = lbw_sat0
+
+            # If LBW is used, this range is calculated first, letting HBW with (32/4-1) = 7 possibilities.
+            if LBW:
+                for ls in range(lbw_nsteps):
+                    if I < (lbw_sat00 * lbw_multiplier ** ls):
+                        break
+
+                for gain_step in [ls + lbw_nsteps * i for i in range(hbw_nsteps//lbw_nsteps - 1)]:
+                    if I < (hbw_sat0*hbw_multiplier**gain_step):
+                        break
+            elif HBW:
+                for gain_step in range(hbw_nsteps):
+                    if I < (hbw_sat0 * hbw_multiplier ** gain_step):
+                        break
+            else:
+                gain_step = 31
+
+            self.gain(gain_step)
+        else:
+            gain_step = self.gain()
+
+        lbw_range = lbw_sat0 * lbw_multiplier**(gain_step%4)
+        int_range = int_sat0 * lbw_multiplier**(gain_step%4)
+        hbw_range = hbw_sat0 * hbw_multiplier**gain_step
+
+        log.info(f"HF_LIMITED_BW range: {lbw_range}A\n"
+                 f"HF_FULL_BW range: {hbw_range}A\n"
+                 f"Internal Scope range: {int_range}A")
+
+        return gain_step
 
 
     def _pad_wfms(self, varray, trig1, trig2):
