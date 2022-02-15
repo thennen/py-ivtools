@@ -129,23 +129,41 @@ class TeoSystem(object):
             __getattr__ = dict.__getitem__
             __setattr__ = dict.__setitem__
 
+        self.constants = dotdict()
+
+        self.J29 = True  # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
+        self.PLF = 50  # set the power line frequency for averaging over integer cycles
+        self.freq = 500e6  # Teo frequency
+        self.lbw_Vsat0 = 3.6    # V  # Saturation level for HF_LIMITED_BW
+        self.hbw_Vsat0 = 1.55   # V  # Saturation level for HF_FULL_BW
+        self.int_Vsat0 = 0.016  # V  # Saturation level for internal scope
+
+        # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
+        # TODO: somehow prevent this from taking too much memory
+        #       should always reflect the state of the teo board
+        self.waveforms = {}  # Store the waveforms used so we they are always in memory.
+        # could happen that there are waveforms in Teo memory and not here, but is better to get them when you really
+        # need them, synchronizing the whole memory can take minutes.
+        self.last_waveform = None  # Store the name of the last played waveform
+        self.last_gain = None
+        self.last_nshots = None
+
+        if os.path.isfile(ivtools.settings.teo_calibration_file):
+            self.calibration = pd.read_pickle(ivtools.settings.teo_calibration_file)
+        else:
+            log.warning('Calibration file not found!')
+            self.calibration = None
+
         self.base = TeoBase()
 
         if self.base.conn:
-
             self.memoryleft = self.base.AWG_WaveformManager.GetFreeMemory()
 
             # Assign properties that do not change, like max/min values
             # so that we don't keep polling the instrument for fixed values
-
-            self.constants = dotdict()
             self.constants.idn = self.idn()
             self.constants.maxLFVoltage = self.base.LF_Voltage.GetMaxValue()
             self.constants.minLFVoltage = self.base.LF_Voltage.GetMinValue()
-            # self.constants.max_HFgain = HF_Gain.GetMaxValue() # 10
-            # self.constants.min_HFgain = HF_Gain.GetMinValue() # -8
-            # self.constants.max_LFgain = LF_Measurement.LF_Gain.GetMaxValue() # 0?
-            # self.constants.min_LFgain = LF_Measurement.LF_Gain.GetMinValue() # also 0?
             self.constants.AWG_memory = self.base.AWG_WaveformManager.GetTotalMemory()
 
             if os.path.isfile(ivtools.settings.teo_calibration_file):
@@ -153,16 +171,6 @@ class TeoSystem(object):
             else:
                 log.warning('Calibration file not found!')
                 self.calibration = None
-
-            # if you have the J29 jumper, HFI impedance is 50 ohm, otherwise 100 ohm
-            self.J29 = True
-
-            # TODO: Do we need a setting for the LF internal/external jumpers? Probably not.
-
-            # set the power line frequency for averaging over integer cycles
-            self.PLF = 50
-
-            self.freq = 500e6  # Teo frequency
 
             ## Teo says this powers up round board, but the LEDS are already on by the time we call it.
             # it appears to be fine to call it multiple times;
@@ -175,22 +183,16 @@ class TeoSystem(object):
             self.base.DeviceControl.StartDevice()
             # This command sets the idle level for HF mode
             self.base.LF_Voltage.SetValue(0)
-            # self.HF_mode()
-
-            # Store the same waveform/trigger data that gets uploaded to the board/TSX_DM process
-            # TODO: somehow prevent this from taking too much memory
-            #       should always reflect the state of the teo board
-            self.waveforms = {}
-            # self.waveforms = self.download_all_wfms()  # Downloading the whole memory on every connection can slow
-            # thing a lot
-            # Store the name of the last played waveform
-            self.last_waveform = None
-            self.last_gain = None
-            self.last_nshots = None
 
             self.conn = True
-
             log.info('TEO connection successful: ' + self.constants.idn)
+        else:
+            self.memoryleft = None
+            self.constants.idn = None
+            self.constants.maxLFVoltage = None
+            self.constants.minLFVoltage = None
+            self.constants.AWG_memory = None
+            self.conn = False
 
     def connected(self):
         if not hasattr(self, 'conn'):
@@ -466,9 +468,9 @@ class TeoSystem(object):
             raise Exception(f'{gain} is not a possible LBW gain.')
 
 
-    def Irange(self, I=None, LBW=True, HBW=True, INT=False):
+    def Irange(self, I=None, LBW=True, HBW=True, INT=False, ext_coupling=50):
         '''
-        Selects the apropiate gain step depending on what channels are being used:
+        Selects the appropriate gain step depending on what channels are being used:
         LBW (Low Band Width): HF_LIMITED_BW
         HBW (High Band Width): HF_FULL_BW
         INT: Internal Scope
@@ -476,13 +478,20 @@ class TeoSystem(object):
         If I is None, the current gain step is returned.
         '''
 
-        # Saturation levels at gain step 0
-        lbw_sat0 = 0.0035  # A
-        hbw_sat0 = 0.0016  # A
-        int_sat0 = 0.0003  # A
+        # External saturation levels at scope
+        output_imp = 50
+        lbw_Vsat0 = self.lbw_Vsat0 * ext_coupling / (ext_coupling + output_imp)
+        hbw_Vsat0 = self.hbw_Vsat0 * ext_coupling / (ext_coupling + output_imp)
+
+        # Current saturation levels
+        lbw_Isat0 = self.apply_calibration(lbw_Vsat0, 'HF_LIMITED_BW', 0)  # A
+        hbw_Isat0 = self.apply_calibration(hbw_Vsat0, 'HF_FULL_BW', 0)  # A
+        int_Isat0 = self.int_Vsat0/50 if self.J29 else int_Vsat0/100  # A
+
         # Range increase per step
         hbw_multiplier = 1.122
         lbw_multiplier = 2
+
         # Number of steps
         hbw_nsteps = 32
         lbw_nsteps = 4
@@ -490,35 +499,36 @@ class TeoSystem(object):
         if I is not None:
             # Checking if currents are too high for each channel. If they are, the channel will be ignored for the step
             # calculation.
-            if HBW and I > hbw_sat0 * hbw_multiplier**(hbw_nsteps-1):
-                log.warning("Current is too high for HF_FULL_BW")
+            if HBW and I > hbw_Isat0 * hbw_multiplier**(hbw_nsteps-1):
+                log.warning("Current is too high for HF_FULL_BW. Ignoring this channel.")
                 HBW = False
-            if LBW and I > lbw_sat0 * lbw_multiplier**(lbw_nsteps-1):
-                log.warning("Current is too high for HF_LIMITED_BW")
+            if LBW and I > lbw_Isat0 * lbw_multiplier**(lbw_nsteps-1):
+                log.warning("Current is too high for HF_LIMITED_BW. Ignoring this channel.")
                 LBW = False
-            if INT and I > int_sat0 * lbw_multiplier**(lbw_nsteps-1):
-                log.warning("Current is too high for Internal Scope")
+            if INT and I > int_Isat0 * lbw_multiplier**(lbw_nsteps-1):
+                log.warning("Current is too high for Internal Scope. Ignoring this channel.")
                 INT = False
 
             # Since Internal Scope and HF_LIMITED_BW use the same amp, and Internal Scope has lower ranges, this one has
             # the preference.
-            if INT:
-                lbw_sat00 = int_sat0
-            else:
-                lbw_sat00 = lbw_sat0
+            lbw_Isat00 = int_Isat0 if INT else lbw_Isat0
 
             # If LBW is used, this range is calculated first, letting HBW with (32/4-1) = 7 possibilities.
             if LBW:
+                # Looking for the LBW range
                 for ls in range(lbw_nsteps):
-                    if I < (lbw_sat00 * lbw_multiplier ** ls):
+                    if I < (lbw_Isat00 * lbw_multiplier ** ls):
                         break
 
-                for gain_step in [ls + lbw_nsteps * i for i in range(hbw_nsteps//lbw_nsteps - 1)]:
-                    if I < (hbw_sat0*hbw_multiplier**gain_step):
+                # Looking for the HBW range maintaining the LBW range
+                HBW_possible_steps = [ls + lbw_nsteps * i for i in range(hbw_nsteps // lbw_nsteps - 1)]
+                for gain_step in HBW_possible_steps:
+                    if I < (hbw_Isat0*hbw_multiplier**gain_step):
                         break
             elif HBW:
+                # Looking for the HBW range ignoring LBW range
                 for gain_step in range(hbw_nsteps):
-                    if I < (hbw_sat0 * hbw_multiplier ** gain_step):
+                    if I < (hbw_Isat0 * hbw_multiplier ** gain_step):
                         break
             else:
                 gain_step = 31
@@ -527,15 +537,35 @@ class TeoSystem(object):
         else:
             gain_step = self.gain()
 
-        lbw_range = lbw_sat0 * lbw_multiplier**(gain_step%4)
-        int_range = int_sat0 * lbw_multiplier**(gain_step%4)
-        hbw_range = hbw_sat0 * hbw_multiplier**gain_step
+        lbw_range = lbw_Isat0 * lbw_multiplier**(gain_step%4)
+        int_range = int_Isat0 * lbw_multiplier**(gain_step%4)
+        hbw_range = hbw_Isat0 * hbw_multiplier**gain_step
 
         log.info(f"HF_LIMITED_BW range: {lbw_range}A\n"
                  f"HF_FULL_BW range: {hbw_range}A\n"
                  f"Internal Scope range: {int_range}A")
 
         return gain_step
+
+
+    def apply_calibration(self, datain, channel, gain_step, reverse=False):
+
+        channel = channel.upper()
+        if channel not in ['HFI_INT', 'HFV', 'HFV_INT', 'HF_FULL_BW', 'HF_LIMITED_BW', 'V_MONITOR', 'LFV']:
+            raise Exception(f"There is no channel '{channel}'. Possible channels are 'HFI_INT', 'HFV', 'HFV_INT',"
+                            f"'HF_FULL_BW', 'HF_LIMITED_BW', 'V_MONITOR', 'LFV'.")
+
+        if gain_step < 0 or gain_step > 31:
+            raise Exception(f"There is no gain step {gain_step}, they only go from 0 to 31.")
+
+        if self.calibration is not None:
+            a, b = self.calibration.loc[gain_step][channel]
+            a, b = (a/2, b) if not self.J29 else (a, b)
+            a, b = (1/a, -b/a) if reverse else (a, b)
+            return np.polyval((a, b), datain)
+        else:
+            log.warning("There is not a calibration loaded.")
+            return datain
 
 
     def _pad_wfms(self, varray, trig1, trig2):
