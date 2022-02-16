@@ -590,6 +590,7 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
     log.debug('Got data from picoscope.')
     # Convert to IV data (keeps channel data)
     ivdata = ivtools.settings.pico_to_iv(chdata)
+    print(ivdata['units'])
 
     ivdata['nshots'] = n
 
@@ -629,8 +630,20 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
         ivdata['idn_teo'] = teo_data['idn']
         ivdata['sample_rate_teo'] = teo_data['sample_rate']
         ivdata['gain_step_teo'] = teo_data['gain_step']
-        ivdata['calibration_teo'] = teo_data['calibration']
-        ivdata['units'] = dict(V_teo='V', I_teo='A', t_teo='s', wfm_teo='V')
+        if 'units' not in ivdata:
+            ivdata['units'] = {}
+            print('Hi')
+        print(ivdata['units'])
+        ivdata['units']['V_teo'] = teo_data['units']['V']
+        ivdata['units']['I_teo'] = teo_data['units']['I']
+        ivdata['units']['t_teo'] = teo_data['units']['t']
+        ivdata['units']['wfm_teo'] = teo_data['units']['Vwfm']
+        print(ivdata['units'])
+        if 'calibration_teo' not in ivdata:
+            ivdata['calibration_teo'] = {}
+        ivdata['calibration_teo']['V_teo'] = teo_data['calibration']['V']
+        ivdata['calibration_teo']['I_teo'] = teo_data['calibration']['I']
+
 
     if autosplit and (n > 1):
         log.debug('Splitting data into individual pulses')
@@ -1413,7 +1426,7 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
     # TODO: How can we know what gain setting was used??
     #       For now we will just ask Teo what the current state is..
     teo = instruments.TeoSystem()
-    gainstep = teo.gain()
+    gain_step = teo.gain()
 
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
@@ -1427,37 +1440,33 @@ def TEO_HFext_to_iv(datain, HFV='A', V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_B
     if 'units' not in dataout:
         dataout['units'] = {}
 
+    if 'calibration_teo' not in dataout:
+        dataout['calibration_teo'] = {}
+
     if HFV and (HFV in datain):
         dataout['units']['HFV'] = 'V'
         dataout['HFV'] = datain[HFV]
 
     if V_MONITOR and (V_MONITOR in datain):
         dataout['units']['V'] = 'V'
-        if teo.calibration is not None:
-            Vdata = np.polyval(teo.calibration.loc[gainstep, 'V_MONITOR'], datain[V_MONITOR])
-        else:
-            Vdata = datain[V_MONITOR]
+        Vdata, Vcal = teo.apply_calibration(datain[V_MONITOR], 'V_MONITOR', gain_step)
         dataout['V'] = Vdata
+        dataout['calibration_teo']['V'] = Vcal
 
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
-        dataout['units']['I'] = 'I'
-        if teo.calibration is not None:
-            Idata = np.polyval(teo.calibration.loc[gainstep, 'HF_LIMITED_BW'], datain[HF_LIMITED_BW])
-        else:
-            Idata = datain[V_MONITOR]
+        dataout['units']['I'] = 'A'
+        Idata, Ical = teo.apply_calibration(datain[HF_LIMITED_BW], 'HF_LIMITED_BW', gain_step)
         dataout['I'] = Idata
+        dataout['calibration_teo']['I'] = Ical
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
-        dataout['units']['I2'] = 'I2'
-        if teo.calibration is not None:
-            I2data = np.polyval(teo.calibration.loc[gainstep, 'HF_FULL_BW'], datain[HF_FULL_BW])
-        else:
-            I2data = datain[HF_FULL_BW]
+        dataout['units']['I2'] = 'A'
+        I2data, I2cal = teo.apply_calibration(datain[HF_FULL_BW], 'HF_FULL_BW', gain_step)
         dataout['I2'] = I2data
+        dataout['calibration_teo']['I2'] = I2cal
 
     # TODO if only one of HF_LIMITED or HF_FULL is used, call the signal I, and indicate somehow where it came from
-    # TODO Store calibration slope and intercept used
 
     return dataout
 

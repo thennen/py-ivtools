@@ -484,9 +484,9 @@ class TeoSystem(object):
         hbw_Vsat0 = self.hbw_Vsat0 * ext_coupling / (ext_coupling + output_imp)
 
         # Current saturation levels
-        lbw_Isat0 = self.apply_calibration(lbw_Vsat0, 'HF_LIMITED_BW', 0)  # A
-        hbw_Isat0 = self.apply_calibration(hbw_Vsat0, 'HF_FULL_BW', 0)  # A
-        int_Isat0 = self.int_Vsat0/50 if self.J29 else int_Vsat0/100  # A
+        lbw_Isat0, cal = self.apply_calibration(lbw_Vsat0, 'HF_LIMITED_BW', 0)  # A
+        hbw_Isat0, cal = self.apply_calibration(hbw_Vsat0, 'HF_FULL_BW', 0)  # A
+        int_Isat0 = self.int_Vsat0/50 if self.J29 else self.int_Vsat0/100  # A
 
         # Range increase per step
         hbw_multiplier = 1.122
@@ -551,21 +551,21 @@ class TeoSystem(object):
     def apply_calibration(self, datain, channel, gain_step, reverse=False):
 
         channel = channel.upper()
-        if channel not in ['HFI_INT', 'HFV', 'HFV_INT', 'HF_FULL_BW', 'HF_LIMITED_BW', 'V_MONITOR', 'LFV']:
+        if channel not in ['HFI_INT', 'HFV', 'HFV_INT', 'HF_FULL_BW', 'HF_LIMITED_BW', 'V_MONITOR', 'LFV', 'LFI']:
             raise Exception(f"There is no channel '{channel}'. Possible channels are 'HFI_INT', 'HFV', 'HFV_INT',"
-                            f"'HF_FULL_BW', 'HF_LIMITED_BW', 'V_MONITOR', 'LFV'.")
+                            f"'HF_FULL_BW', 'HF_LIMITED_BW', 'V_MONITOR', 'LFV', 'LFI'.")
 
         if gain_step < 0 or gain_step > 31:
             raise Exception(f"There is no gain step {gain_step}, they only go from 0 to 31.")
 
         if self.calibration is not None:
             a, b = self.calibration.loc[gain_step][channel]
-            a, b = (a/2, b) if not self.J29 else (a, b)
+            a, b = (a/2,b/2) if not self.J29 and channel in ['HFI_INT', 'HF_FULL_BW', 'HF_LIMITED_BW', 'LFI'] else (a,b)
             a, b = (1/a, -b/a) if reverse else (a, b)
-            return np.polyval((a, b), datain)
+            return np.polyval((a, b), datain), (a, b)
         else:
             log.warning("There is not a calibration loaded.")
-            return datain
+            return datain, (None, None)
 
 
     def _pad_wfms(self, varray, trig1, trig2):
@@ -783,21 +783,8 @@ class TeoSystem(object):
             gain_step = self.gain()
 
         # Conversion to current if calibration is available
-        if self.calibration is not None:
-            # Teo divides by gain internally before we get the HFI values,
-            # so this is just a fine-tuning of the calibration
-
-            I_cal_line = self.calibration.loc[gain_step, 'HFI_INT']
-            I = np.polyval(I_cal_line, HFI)
-            V_cal_line = self.calibration.loc[gain_step, 'HFV_INT']
-            V = np.polyval(V_cal_line, HFV)
-        else:
-            # no calibration..
-            I = HFI
-            V = HFV
-            I_cal_line = None
-            V_cal_line = None
-
+        I, I_cal_line = self.apply_calibration(HFI, 'HFI_INT', gain_step)
+        V, V_cal_line = self.apply_calibration(HFV, 'HFV_INT', gain_step)
 
         sample_rate = wf00.GetWaveformSamplingRate() # Always 500 MHz
 
@@ -873,6 +860,7 @@ class TeoSystem(object):
                    sample_rate=sample_rate,
                    gain_step=gain_step,
                    nshots=self.last_nshots,
+                   units=dict(V='V', I='A', t='s', Vwfm='V'),
                    calibration=dict(V=V_cal_line, I=I_cal_line))
         if raw:
             out['HFV'] = HFV
