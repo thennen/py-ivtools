@@ -390,7 +390,6 @@ def vcm_measurement(samplename,
 padname,
 v1,
 v2,
-pulse_generator = pg5,
 step = 0.01,
 step2 = 0.01,
 V_read = 0.2,
@@ -450,9 +449,9 @@ cc_step = 25e-6):
             iplots.updateline(data)
             ### Setting up scope  ################################################################################
 
-            ttx.inputstate(3, False)
+            ttx.inputstate(3, True)
             ttx.inputstate(2, False)
-            ttx.inputstate(1, True)
+            ttx.inputstate(1, False)
             ttx.inputstate(4, False)
 
             ttx.scale(3, scale)
@@ -469,20 +468,20 @@ cc_step = 25e-6):
 
             plt.pause(0.1)
 
-            ttx.arm(source = 1, level = trigger_level, edge = edge)
+            ttx.arm(source = 3, level = trigger_level, edge = edge)
 
 
             ### Applying pulse and reading scope data #############################################################
             if pg5_measurement:
-                pulse_generator.set_pulse_width(pulse_width)
+                sympuls.set_pulse_width(pulse_width)
             if not automatic_measurement:
                 input('Connect the RF probes and press enter')
                 plt.pause(0.5)
             else:
-                plt.pause(0.1)
+                plt.pause(1)
                 
             if pg5_measurement:
-                pulse_generator.trigger()
+                sympuls.trigger()
             else:
                 print('Apply pulse')
             plt.pause(0.1)
@@ -521,11 +520,11 @@ cc_step = 25e-6):
                     dates_dict = defaultdict(list)
                     vlist1 = tri(v1 = v1, v2 = 0, step = step)
                     vlist2 = tri(v1 = 0, v2 = v2, step = step2)
-                    k.iv(vlist1, measure_range = range_sweep, Ilimit = limitI) 
+                    k.iv(vlist1, measure_range = range_sweep, i_limit = limitI) 
                     while not k.done():
                         plt.pause(0.1)
                     sweep_data = k.get_data()
-                    k.iv(vlist2, measure_range = range_sweep2, Ilimit = limitI2) 
+                    k.iv(vlist2, measure_range = range_sweep2, i_limit = limitI2) 
                     while not k.done():
                         plt.pause(0.1)
                     data_2nd_sweep = k.get_data()
@@ -1000,7 +999,7 @@ def eval_pcm_r_measurement(data, manual_evaluation = False, t_cap = np.nan, v_ca
                 b_no = Button(ax_no, 'No')
                 b_no.on_clicked(threshold_invisible)
                 root.wait_variable(waitVar)
-                if filename is not '':
+                if filename != '':
                     figure_handle.tight_layout()
                     figure_handle.savefig(filename + '.png', dpi =600)
                     plt.rcParams['pdf.fonttype'] = 'truetype'
