@@ -478,14 +478,9 @@ class TeoSystem(object):
         If I is None, the current gain step is returned.
         '''
 
-        # External saturation levels at scope
-        output_imp = 50
-        lbw_Vsat0 = self.lbw_Vsat0 * ext_coupling / (ext_coupling + output_imp)
-        hbw_Vsat0 = self.hbw_Vsat0 * ext_coupling / (ext_coupling + output_imp)
-
         # Current saturation levels
-        lbw_Isat0, cal = self.apply_calibration(lbw_Vsat0, 'HF_LIMITED_BW', 0)  # A
-        hbw_Isat0, cal = self.apply_calibration(hbw_Vsat0, 'HF_FULL_BW', 0)  # A
+        lbw_Isat0, cal = self.apply_calibration(self.lbw_Vsat0, 'HF_LIMITED_BW', 0)  # A
+        hbw_Isat0, cal = self.apply_calibration(self.hbw_Vsat0, 'HF_FULL_BW', 0)  # A
         int_Isat0 = self.int_Vsat0/50 if self.J29 else self.int_Vsat0/100  # A
 
         # Range increase per step
