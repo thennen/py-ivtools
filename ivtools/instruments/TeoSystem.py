@@ -985,6 +985,10 @@ class TeoBase(object):
             if os.path.isdir(gen_py):
                 log.error('Deleting gen_py directory. Try again.')
                 shutil.rmtree(gen_py)
+                # Try again
+                HMan = Dispatch('TSX_HMan')
+            else:
+                raise e
             return
 
         # Asks the program for a device called MEMORY_TESTER
