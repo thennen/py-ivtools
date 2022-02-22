@@ -752,6 +752,24 @@ class Keithley2600(object):
         ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.source.output', state)
 
+    def capacitance_mode(self, state=None, ch='A'):
+        '''
+        Select the capacitance mode:
+        Each Series 2600B source-measure unit (SMU) can drive up to 50 μF of a capacitance in
+        high-capacitance mode. In order to accomplish this, the speed of the Series 2600B SMU is reduced.
+        Source settling times increase when high-capacitance mode is enabled.
+        '''
+        ch = self._convert_to_ch(ch)
+        if state is not None:
+            if state == 'high':
+                return self._set_or_query(f'smu{ch}.source.highc', f'smu{ch}.ENABLE')
+            elif state == 'normal':
+                return self._set_or_query(f'smu{ch}.source.highc', f'smu{ch}.DISABLE')
+            else:
+                raise Exception(f"State options are 'normal' or 'high' but not '{state}'")
+        else:
+            return self._set_or_query(f'smu{ch}.source.highc', None)
+
     def trigger_source_limit(self, source_param, limit=None, ch='A'):
         '''
         Set the sweep source limit for current.
