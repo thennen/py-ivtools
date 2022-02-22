@@ -2,7 +2,8 @@ import logging
 log = logging.getLogger('instruments')
 import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
-
+import time
+import scipy
 class Sympuls(object):
     def __init__(self, addr='ASRL3::INSTR'):
         try:
@@ -57,3 +58,28 @@ class Sympuls(object):
     def trigger(self):
         '''Executes a pulse'''
         self.write(':INIT')
+        #self.Trig_Man =  self.write(':TRIG:SOUR MANUAL')
+    def trigger_control(self, Trig_Type):
+        '''Type of Trigger, Manual or IMM (Intern)'''
+        if Trig_Type == 'IMM':
+             IMM = self.write(':TRIG:SOUR IMM')
+             Trig_Type = IMM
+             return Trig_Type
+        else:
+             Manual = self.write(':TRIG:SOUR MANUAL')
+             Trig_Type = Manual
+             return Trig_Type
+
+    def Apply_Burst(self, pulse_width, period, Number_of_pulses):
+        '''Apply Burst of Pulses for specific Pulse width, Period and Number of Pulses'''
+        self.set_pulse_width(pulse_width)
+        self.set_period(period)
+        time_executed = (Number_of_pulses ) *period
+        print('Excecutaion TIme',time_executed)
+        self.write(':TRIG:SOUR IMM')
+        time.sleep(time_executed)
+        self.write(':TRIG:SOUR MANUAL')
+
+
+
+
