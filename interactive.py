@@ -202,7 +202,7 @@ pico_plotters = [[0, ivplot.ivplotter],
                  [3, partial(ivplot.vdeviceplotter, R=R_series)]]
 # For keithley
 kargs = {'marker':'.'}
-keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
+keithley_plotters = [[0, ivplot.ivplotter],
                      [1, partial(ivplot.itplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
@@ -379,8 +379,8 @@ def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
     ps.range.b = 1
     ps.range.c = 0.2
     ps.range.d = 0.2
-    settings.pico_to_iv = lambda datain: TEO_HFext_to_iv(datain=datain, HFV=HFV, V_MONITOR=V_MONITOR,
-                                                    HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW)
+    settings.pico_to_iv = partial(TEO_HFext_to_iv, HFV=HFV, V_MONITOR=V_MONITOR,
+                                  HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW)
     iplots.plotters = teo_plotters
 
 ################################################################
