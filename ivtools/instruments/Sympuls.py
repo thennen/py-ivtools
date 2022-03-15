@@ -59,7 +59,7 @@ class Sympuls(object):
         '''Executes a pulse'''
         self.write(':INIT')
         #self.Trig_Man =  self.write(':TRIG:SOUR MANUAL')
-    def trigger_control(self, Trig_Type):
+    def trigger_manual(self, Trig_Type):
         '''Type of Trigger, Manual or IMM (Intern)'''
         if Trig_Type == 'IMM':
              IMM = self.write(':TRIG:SOUR IMM')
@@ -79,6 +79,21 @@ class Sympuls(object):
         self.write(':TRIG:SOUR IMM')
         time.sleep(time_executed)
         self.write(':TRIG:SOUR MANUAL')
+
+    def Apply_Burst_time(self, pulse_width, period, Number_of_pulses, wait_for_sequence = False):
+        '''Apply Burst of Pulses for specific Pulse width, Period and Number of Pulses'''
+        self.set_pulse_width(pulse_width)
+        self.set_period(period)
+        time_executed = (Number_of_pulses ) *period
+    #    if wait_for_sequence:
+        print('Excecutaion TIme',time_executed)
+        self.write(':TRIG:SOUR IMM')
+        if wait_for_sequence:
+            time.sleep(time_executed)
+            return time_executed
+
+
+
 
 
 
