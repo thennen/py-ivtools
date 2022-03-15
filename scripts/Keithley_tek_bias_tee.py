@@ -195,20 +195,22 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
-def pcm_measurement(samplename,
+def test_measurement_single(samplename,
 padname,
 amplitude = np.nan,
 bits = np.nan,
 sourceVA = -0.2,
-points = 250, 
+points = 250,
 interval = 0.1,
 trigger = 0.1,
 two_channel = False,
 rangeI = 0,
 nplc = 1,
 pulse_width = 50e-12,
-attenuation =np.nan,
+attenuation =0,
+pg5_measurement = True,
 polarity = 1,
+recordlength = 250,
 answer_position = -2.5,
 pulse_postition = -4,
 answer_scale = 0.12,
@@ -229,27 +231,132 @@ continious = False):
     data['padname'] = padname
     data['samplename'] = samplename
     data['attenuation'] = attenuation
-    iplots.show()    
+    data['recordlength'] = recordlength
+    data['pulse_width'] = pulse_width
 
-    k.set_channel_state(channel = 'A', state = True)
-    k.set_channel_voltage(channel = 'A', voltage = sourceVA)
+
+    iplots.show()    
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val= sourceVA, source_func='v', ch='A')
+    plt.pause(1)
+    k._it_lua(sourceVA = sourceVA , sourceVB = 0, points = points, interval = interval, rangeI = rangeI , limitI = 1, nplc = nplc)
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)    
+    ttx.inputstate(4, False)
+    ttx.scale(3, answer_scale)
+    ttx.position(3, answer_position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
+    trigger = trigger*polarity
+    sympuls.set_pulse_width(pulse_width)
+    
+    # if pg5_measurement:
+    #     sympuls.set_pulse_width(pulse_width)
+    #     plt.pause(1)
+    #     sympuls.trigger()
+    
+    while not k.done():
+        ttx.arm(source = 3, level = trigger, edge = 'r') 
+        plt.pause(0.1)
+
+        if pg5_measurement and continious:
+            sympuls.trigger()
+            print('trigger')
+            plt.pause(0.4)
+        data.update(k.get_data())
+        if ttx.triggerstate():
+            plt.pause(0.1)
+        else:
+            number_of_events +=1
+            data_scope2 = ttx.get_curve(3)
+            time_array = data['t']
+            data['t_scope'].append(data_scope2['t_ttx'])
+            data['v_answer'].append(data_scope2['V_ttx'])
+            '''Moritz: last current data point measured after last trigger event so the entry one before
+             will be used as time reference (-2 instead of -1, which is the last entry)'''
+            data['t_event'].append(time_array[len(time_array)-2])
+            print(time_array[len(time_array)-2])
+        iplots.updateline(data)
+    data.update(k.get_data())
+    iplots.updateline(data)
+#    k.set_channel_state('A', False)
+#    k.set_channel_state('B', False)
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+    ttx.disarm()
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
+    io.write_pandas_pickle(meta.attach(data), filepath)
+    print(len(data))
+    return data    
+
+def test_measurement(samplename,
+padname,
+amplitude = np.nan,
+bits = np.nan,
+sourceVA = -0.2,
+points = 250,
+interval = 0.1,
+trigger = 0.1,
+two_channel = False,
+rangeI = 0,
+nplc = 1,
+pulse_width = 50e-12,
+attenuation =0,
+pg5_measurement = True,
+polarity = 1,
+recordlength = 250,
+answer_position = -2.5,
+pulse_postition = -4,
+answer_scale = 0.12,
+pulse_scale = 0.12,
+continious = False):
+    '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
+    Pulses applied during this measurement are also recorded. '''
+    setup_pcm_plots()
+
+    number_of_events =0
+    data = {}
+    data['t_scope'] = []
+    data['v_pulse'] = []
+    data['v_answer'] = []
+    data['t_event'] = []
+    data['amplitude'] = amplitude
+    data['bits'] = bits
+    data['padname'] = padname
+    data['samplename'] = samplename
+    data['attenuation'] = attenuation
+    data['recordlength'] = recordlength
+
+    iplots.show()    
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val= sourceVA, source_func='v', ch='A')
+ #   k.set_channel_state(channel = 'A', state = True)
+ #   k.set_channel_voltage(channel = 'A', voltage = sourceVA)
 
     plt.pause(1)
+    k._it_lua(sourceVA = sourceVA , sourceVB = 0, points = points, interval = interval, rangeI = rangeI , limitI = 1, nplc = nplc)
 
-    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = nplc, reset_keithley = False)
+#    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = nplc, reset_keithley = False)
 
     ttx.inputstate(1, False)
-    ttx.inputstate(2, True)
-    ttx.inputstate(3, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)
     if two_channel:
         ttx.inputstate(4, True)
         ttx.scale(4, pulse_scale)
         ttx.position(4, -pulse_position*polarity)
     else:
-        ttx.inputstate(4, False)
-    ttx.scale(2, answer_scale)
-    ttx.position(2, -answer_position*polarity)
-    ttx.change_samplerate_and_recordlength(100e9, 5000)
+        ttx.inputstate(3, True)
+    ttx.scale(3, answer_scale)
+    ttx.position(3, answer_position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
 
 
 
@@ -258,17 +365,23 @@ continious = False):
     if two_channel:
         ttx.arm(source = 4, level = trigger, edge = 'e')
     else:
-        ttx.arm(source = 2, level = trigger, edge = 'e')
-    
-    if pg5:
-        pg5.set_pulse_width(pulse_width)
+        ttx.arm(source = 3, level = trigger, edge = 'r')
+
+    if pg5_measurement:
+#    if pg5:
+#        pg5.set_pulse_width(pulse_width)
+        sympuls.set_pulse_width(pulse_width)
         plt.pause(1)
-        pg5.trigger()
+#        pg5.trigger()
+        sympuls.trigger()
     
     while not k.done():
         
-        if pg5 and continious:
-            pg5.trigger()
+#        if pg5 and continious:
+        if pg5_measurement and continious:
+#            pg5.trigger()
+
+            sympuls.trigger()
 
         data.update(k.get_data())
 
@@ -279,7 +392,7 @@ continious = False):
             if two_channel:
                 data_scope1 = ttx.get_curve(4)
 
-            data_scope2 = ttx.get_curve(2)
+            data_scope2 = ttx.get_curve(3)
             
             time_array = data['t']
             data['t_scope'].append(data_scope2['t_ttx'])
@@ -293,14 +406,166 @@ continious = False):
             if two_channel:
                 ttx.arm(source = 4, level = trigger, edge = 'e')
             else:
-                ttx.arm(source = 2, level = trigger, edge = 'e')
+                ttx.arm(source = 3, level = trigger, edge = 'e')
 
         iplots.updateline(data)
 
     data.update(k.get_data())
     iplots.updateline(data)
-    k.set_channel_state('A', False)
-    k.set_channel_state('B', False)
+#    k.set_channel_state('A', False)
+#    k.set_channel_state('B', False)
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+    ttx.disarm()
+    
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    return data
+
+
+def abrupt_measurement(samplename,
+padname,
+amplitude = np.nan,
+bits = np.nan,
+sourceVA = -0.2,
+points = 250,
+Number_of_pulses = 4,
+period = 0,
+interval = 0.1,
+trigger = 0.1,
+two_channel = False,
+rangeI = 0,
+nplc = 1,
+pulse_width = 50e-12,
+attenuation =0,
+pg5_measurement = True,
+polarity = 1,
+recordlength = 250,
+answer_position = -2.5,
+pulse_postition = -4,
+answer_scale = 0.12,
+pulse_scale = 0.12,
+continious = False):
+    '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
+    Pulses applied during this measurement are also recorded. '''
+    setup_pcm_plots()
+
+    number_of_events =0
+    data = {}
+    data['t_scope'] = []
+    data['v_pulse'] = []
+    data['v_answer'] = []
+    data['t_event'] = []
+    data['amplitude'] = amplitude
+    data['bits'] = bits
+    data['padname'] = padname
+    data['samplename'] = samplename
+    data['attenuation'] = attenuation
+    data['recordlength'] = recordlength
+    data['Number_of_pulses'] = Number_of_pulses
+
+    iplots.show()    
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val= sourceVA, source_func='v', ch='A')
+ #   k.set_channel_state(channel = 'A', state = True)
+ #   k.set_channel_voltage(channel = 'A', voltage = sourceVA)
+
+    plt.pause(1)
+    k._it_lua(sourceVA = sourceVA , sourceVB = 0, points = points, interval = interval, rangeI = rangeI , limitI = 1, nplc = nplc)
+
+#    k.it(sourceVA = sourceVA, sourceVB = 0, points = points, interval = interval, rangeI = rangeI, limitI = 1, nplc = nplc, reset_keithley = False)
+
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)
+    if two_channel:
+        ttx.inputstate(4, True)
+        ttx.scale(4, pulse_scale)
+        ttx.position(4, -pulse_position*polarity)
+    else:
+        ttx.inputstate(3, True)
+    ttx.scale(3, answer_scale)
+    ttx.position(3, answer_position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
+
+
+
+
+    trigger = trigger*polarity
+    if two_channel:
+        ttx.arm(source = 4, level = trigger, edge = 'e')
+    else:
+        ttx.arm(source = 3, level = trigger, edge = 'r')
+
+    if pg5_measurement:
+#    if pg5:
+#        pg5.set_pulse_width(pulse_width)
+##        sympuls.set_pulse_width(pulse_width)
+##        plt.pause(1)
+#        pg5.trigger()
+ #       sympuls.set_pulse_width(pulse_width)
+ #      sympuls.set_period(period)
+ #       time_executed = (Number_of_pulses ) *period
+ #       print('Excecutaion TIme',time_executed)
+#        sympuls.write(':TRIG:SOUR IMM')
+#        t = 0
+#        sympuls.write(':TRIG:SOUR MANUAL')
+        sympuls.Apply_Burst(pulse_width, period, Number_of_pulses)
+
+##        sympuls.trigger()
+
+    while not k.done() and t :
+        
+#        if pg5 and continious:
+        if pg5_measurement and continious:
+#            pg5.trigger()
+            sympuls.Apply_Burst_time(pulse_width, period, Number_of_pulses)
+            ttx.arm(source = 3, level = trigger, edge = 'r')
+
+#            sympuls.trigger()
+
+
+        data.update(k.get_data())
+
+        if ttx.triggerstate():
+            plt.pause(0.1)
+        else:
+            number_of_events +=1
+            if two_channel:
+                data_scope1 = ttx.get_curve(4)
+
+            data_scope2 = ttx.get_curve(3)
+            
+            time_array = data['t']
+            data['t_scope'].append(data_scope2['t_ttx'])
+            if two_channel:
+                data['v_pulse'].append(data_scope1['V_ttx'])
+            data['v_answer'].append(data_scope2['V_ttx'])
+            '''Moritz: last current data point measured after last trigger event so the entry one before
+             will be used as time reference (-2 instead of -1, which is the last entry)'''
+            data['t_event'].append(time_array[len(time_array)-2])
+            print(time_array[len(time_array)-2])
+            if two_channel:
+                ttx.arm(source = 4, level = trigger, edge = 'e')
+            else:
+                ttx.arm(source = 3, level = trigger, edge = 'e')
+
+        iplots.updateline(data)
+
+    data.update(k.get_data())
+    iplots.updateline(data)
+#    k.set_channel_state('A', False)
+#    k.set_channel_state('B', False)
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
     ttx.disarm()
     
     datafolder = os.path.join('C:\Messdaten', samplename, padname)
