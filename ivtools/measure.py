@@ -1600,9 +1600,9 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
 
     return wfm
 
-def square(vpulse, duty=.5, length=2**14, startval=0, endval=0, startendratio=1):
+def square(vpulse, duty=.5, length=2**12, startval=0, endval=0, startendratio=1):
     '''
-    Calculate a square pulse waveform.
+    A single square pulse waveform.
     '''
     ontime = int(duty * length)
     remainingtime = length - ontime

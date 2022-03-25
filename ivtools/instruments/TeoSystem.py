@@ -5,6 +5,7 @@ import os
 import time
 from inspect import signature
 from numbers import Number
+import shutil
 
 import numpy as np
 import pandas as pd
@@ -976,6 +977,14 @@ class TeoBase(object):
             #raise type(e)(str(e) +
             #              ' TEO software not installed?').with_traceback(sys.exc_info()[2])
             log.error('Teo software not installed?')
+            return
+        except AttributeError as e:
+            print(e)
+            # probably dumb error that requires you to delete this directory
+            gen_py = os.path.expandvars('%userprofile%\\AppData\\Local\\Temp\\gen_py')
+            if os.path.isdir(gen_py):
+                log.error('Deleting gen_py directory. Try again.')
+                shutil.rmtree(gen_py)
             return
 
         # Asks the program for a device called MEMORY_TESTER
