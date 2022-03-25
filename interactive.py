@@ -481,7 +481,7 @@ if ts: # temperature stage is connected
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
         ivplot.mybreakablepause(delay)
-        meta.static['T'] = ts.get_temperature()
+        meta.static['T'] = ts.read_temperature()
 
 if teo:
     # HF mode
