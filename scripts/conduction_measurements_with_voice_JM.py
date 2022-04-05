@@ -51,7 +51,7 @@ def autorange(Vmin, Vmax, npts=2, Irange0 = 1e-10):
 def measure_device(Vmin, Vmax, npts, Ilimit, temp):
     wfm = tri(Vmin, Vmax, n=npts)
     
-    set_temperature(temp, delay=60)
+    set_temperature(temp, delay=10)
     tts("Set temperature " + str(temp) + " C")
     # Best range might depend on temperature
     Irange = autorange(Vmin, Vmax)
