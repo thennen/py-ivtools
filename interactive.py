@@ -39,12 +39,22 @@ Author: Tyler Hennen (tyler@hennen.us)
 '''
 # Some of these imports are just to make sure the interactive user has access to them
 # Not necessarily because they are used in this script!
-from functools import partial
-
+import numpy
+import numpy as np
+import matplotlib
+import matplotlib as mpl
+from matplotlib import pyplot
+from matplotlib import pyplot as plt
+from functools import wraps, partial
+import os
+import sys
+import time
 import pandas as pd
 
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
+from datetime import datetime
+from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -52,6 +62,8 @@ import pyvisa as visa
 
 import ivtools
 import importlib
+from importlib import reload
+from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -70,6 +82,7 @@ from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
+from ivtools.instruments import *
 import logging
 
 magic = get_ipython().magic
@@ -202,7 +215,7 @@ pico_plotters = [[0, ivplot.ivplotter],
                  [3, partial(ivplot.vdeviceplotter, R=R_series)]]
 # For keithley
 kargs = {'marker':'.'}
-keithley_plotters = [[0, ivplot.ivplotter],
+keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
                      [1, partial(ivplot.itplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
