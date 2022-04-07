@@ -629,6 +629,10 @@ class Keithley2600(object):
         '''
         Set the SMU to a fixed range large enough to measure the assigned value.
 
+        Possible ranges:
+        I: 100pA, 1nA, 10nA, 100nA, 1μΑ, 10μΑ, 100μΑ, 1mA, 10mA, 100mA, 1A, 1.5A
+        V : 0.2V, 2V, 20V, 200V
+
         :param meas_func: Type of measure: current (i), or voltage (v).
         :param m_range: Range to be set. In amperes or volts.
         :param ch: Channel to be configured.
@@ -649,7 +653,7 @@ class Keithley2600(object):
             if is_auto:
                 return 'auto'
             else:
-                return self._set_or_query(f'smu{ch}.measure.range{meas_func}', m_range)
+                return self._set_or_query(f'smu{ch}.measure.range{meas_func}', None)
         else:
             return self._set_or_query(f'smu{ch}.measure.range{meas_func}', m_range)
 
@@ -747,6 +751,24 @@ class Keithley2600(object):
         '''
         ch = self._convert_to_ch(ch)
         return self._set_or_query(f'smu{ch}.source.output', state)
+
+    def capacitance_mode(self, state=None, ch='A'):
+        '''
+        Select the capacitance mode:
+        Each Series 2600B source-measure unit (SMU) can drive up to 50 μF of a capacitance in
+        high-capacitance mode. In order to accomplish this, the speed of the Series 2600B SMU is reduced.
+        Source settling times increase when high-capacitance mode is enabled.
+        '''
+        ch = self._convert_to_ch(ch)
+        if state is not None:
+            if state == 'high':
+                return self._set_or_query(f'smu{ch}.source.highc', f'smu{ch}.ENABLE')
+            elif state == 'normal':
+                return self._set_or_query(f'smu{ch}.source.highc', f'smu{ch}.DISABLE')
+            else:
+                raise Exception(f"State options are 'normal' or 'high' but not '{state}'")
+        else:
+            return self._set_or_query(f'smu{ch}.source.highc', None)
 
     def trigger_source_limit(self, source_param, limit=None, ch='A'):
         '''

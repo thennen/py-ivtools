@@ -131,13 +131,17 @@ if hostname in ('pciwe46', 'iwe21705'):
         db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
         logging_file = os.path.join(munoz, 'ivtools_logging.log')
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+            'instruments': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'io':          {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'plots':       {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'analyze':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'measure':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'interactive': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True}
         }
+        inst_connections = [('ps', instruments.Picoscope),
+                            ('k', instruments.Keithley2600),
+                            ('dp', instruments.WichmannDigipot),
+                            ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
@@ -176,12 +180,12 @@ elif username == 'alexgar':
     db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
     logging_file = os.path.join(munoz, 'ivtools_logging.log')
     logging_prints = {
-        'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+        'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
     }
 
 else:

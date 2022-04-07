@@ -39,21 +39,12 @@ Author: Tyler Hennen (tyler@hennen.us)
 '''
 # Some of these imports are just to make sure the interactive user has access to them
 # Not necessarily because they are used in this script!
-import numpy
-import numpy as np
-import matplotlib
-import matplotlib as mpl
-from matplotlib import pyplot
-from matplotlib import pyplot as plt
-from functools import wraps, partial
-import os
-import sys
-import time
+from functools import partial
+
 import pandas as pd
+
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
-from datetime import datetime
-from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
@@ -61,8 +52,6 @@ import pyvisa as visa
 
 import ivtools
 import importlib
-from importlib import reload
-from ivtools import settings
 from ivtools import analyze
 from ivtools import plot as ivplot
 from ivtools import instruments
@@ -81,7 +70,6 @@ from ivtools.measure import *
 from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
-from ivtools.instruments import *
 import logging
 
 magic = get_ipython().magic
@@ -214,7 +202,7 @@ pico_plotters = [[0, ivplot.ivplotter],
                  [3, partial(ivplot.vdeviceplotter, R=R_series)]]
 # For keithley
 kargs = {'marker':'.'}
-keithley_plotters = [[0, partial(ivplot.vdeviceplotter, R=R_series, **kargs)],
+keithley_plotters = [[0, ivplot.ivplotter],
                      [1, partial(ivplot.itplotter, **kargs)],
                      [2, partial(ivplot.VoverIplotter, **kargs)],
                      [3, partial(ivplot.vtplotter, **kargs)]]
@@ -223,6 +211,11 @@ teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
+
+teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
+                      [1, partial(ivplot.plotiv, x='t', y='V')],
+                      [2, partial(ivplot.plotiv, x='t', y='I')],
+                      [3, partial(ivplot.plotiv, x='t', y='I2')]]
 
 # What the plots should do by default
 if not iplots.plotters:
@@ -377,21 +370,24 @@ def setup_digipot():
     settings.pico_to_iv = digipot_to_iv
     iplots.plotters = pico_plotters
 
-def setup_picoteo():
-    ps.coupling.b = 'DC50'
+def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC'
     ps.coupling.c = 'DC50'
     ps.coupling.d = 'DC50'
-    ps.range.b = 0.2
+    ps.range.a = 10
+    ps.range.b = 1
     ps.range.c = 0.2
     ps.range.d = 0.2
-    settings.pico_to_iv = TEO_HFext_to_iv
+    settings.pico_to_iv = partial(TEO_HFext_to_iv, HFV=HFV, V_MONITOR=V_MONITOR,
+                                  HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW)
     iplots.plotters = teo_plotters
 
 ################################################################
 # 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀
 ################################################################
 
-# Wrap any fuctions that you want to automatically make plots/write to disk with this:
+# Wrap any functions that you want to automatically make plots/write to disk with this:
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
@@ -444,6 +440,9 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             nointerrupt.stop()
         measure.beep()
         return data
+
+    measfunc_interactive.__signature__ = inspect.signature(measfunc)
+
     return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
