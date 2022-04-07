@@ -1153,9 +1153,10 @@ class TeoBase(object):
         try:
             result = CastTo(to, name)
         except Exception as E:
+            log.error(E)
             log.error(f'Teo software connection failed! CastTo({name}, {to})')
-        if result is None:
-            log.error(f'Teo software connection failed! CastTo({name}, {to})')
+            result = None
+
         return result
 
     @staticmethod
