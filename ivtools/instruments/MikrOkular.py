@@ -38,7 +38,7 @@ class MikrOkular:
     openedCams = []
     
     ###
-    def __init__(self, camId = 0):
+    def __init__(self, camId = 0, settings = None, res = "high"):
         self.camId = camId
         if camId in self.openedCams:
             # This seems to prevent anything freezing, but can't continue
@@ -51,6 +51,10 @@ class MikrOkular:
             raise Exception("Could not connect to MikrOkular camera!")
         self.openedCams.append(camId)
         
+        if not settings == None:
+            self.setAllProperties(settings)
+            
+        self.setResolution(res)
     
     # This doesn't do what one thinks a destructor does, which is also
     # what it should do
@@ -135,6 +139,10 @@ class MikrOkular:
     def getImg(self, gray = False):
         if not self.camera.isOpened():
             raise Exception("Connection to camera was closed!")
+        
+        # Seems like camera has one frame in buffer that is not current image
+        # this should clear it
+        succ = self.camera.read()
         
         # Colors are (blue, green, red) apparently
         succ, frame = self.camera.read()

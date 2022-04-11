@@ -123,7 +123,15 @@ if hostname in ('pciwe46', 'iwe21705'):
         for di in logging_prints.values(): di['all'] = True # print everything
 
     elif username == 'mohr':
-        inst_connections.append(('teo', instruments.TeoSystem))
+        #inst_connections.append(('teo', instruments.TeoSystem))
+        camSettings = {'brightness': 0.70,
+                       'contrast': 0.5,
+                       'hue': 0.5,
+                       'saturation': 0.50,
+                       'gamma': 0.5,
+                       'sharpness': 1.0,
+                       'exposure': 1.0}
+        inst_connections.append(('cam', instruments.MikrOkular, 0, camSettings))
 
     elif username == 'munoz':
         munoz = 'D:/munoz/'

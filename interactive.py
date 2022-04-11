@@ -171,7 +171,7 @@ else:
 # to work properly and reuse existing inst_connections
 for varname, inst_class, *args in inst_connections:
     if len(args) > 0:
-        if args[0].startswith('USB') or args[0].startswith('GPIB'):
+        if type(args[0])==str and (args[0].startswith('USB') or args[0].startswith('GPIB')):
             # don't bother trying to connect to it if it's not in visa_resources
             if args[0] not in visa_resources:
                 # TODO: I think there are multiple valid formats for visa addresses.
@@ -395,7 +395,7 @@ def setup_picoteo():
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
-def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None):
+def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None, capImg = True):
     ''' Activates auto data plotting and saving for wrapped measurement functions '''
     @wraps(measfunc)
     def measfunc_interactive(*args, **kwargs):
@@ -437,11 +437,16 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = newgetdatafunc()
                 data = meta.attach(data)
                 iplots.newline(data)
+                
+        if capImg:
+            frame = cam.getImg()
+            data.update({"CameraImage": frame})
         if autosave:
             # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
+        
         measure.beep()
         return data
     return measfunc_interactive
@@ -486,3 +491,9 @@ if ts: # temperature stage is connected
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measureHF)
+
+# Microscope camera connected
+if cam:
+    def saveImg():
+        path = os.path.join(datafolder, subfolder, meta.timestamp()+".png")
+        cam.saveImg(path)
