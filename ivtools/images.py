@@ -12,20 +12,32 @@ def mat2jpg(mat, scale = 1, quality = 95):
         mat = cv.resize(mat, (width, height))
     # TODO: Warn if scale > 1 ?
     
-    # TODO: Quality is jpg image quality, is between 0 and 100, inclusive, higher is better
+    # Quality is jpg image quality, it's between 0 and 100,
+    # both values inclusive, higher is better
+    # 95 is opencv default
+    quality = round(quality)
+    if quality not in range(0, 101):
+        raise Exception("Quality must be between 0 and 100 (inclusive)!")
+
     
     
     # This returns a vector of bytes, which seems to be the compressed image
     # and also contains information on its format
     # So far no documentation was found that the quality flag and the value are
     # to be a list, this is by analogy to the C++ example
-    succ, jpg = cv.imencode(".jpg", mat, [cv.IMWRITE_JPEG_QUALITY, 50])
+    succ, jpg = cv.imencode(".jpg", mat, [cv.IMWRITE_JPEG_QUALITY, quality])
+    
+    if not succ:
+        raise Exception("Failed to encode image!")
     
     return jpg
 
 def jpg2mat(jpg):
-    # This apparently doesn't have a success return value
-    # No idea what the -1 does
-    mat = cv.imdecode(jpg, -1)
+    # This apparently doesn't have a success return value,
+    # if not succesfull mat is empty
+    mat = cv.imdecode(jpg, cv.IMREAD_UNCHANGED)
+    
+    if mat is None:
+        raise Exception("Could not decode image!")
     
     return mat

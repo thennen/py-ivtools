@@ -68,6 +68,7 @@ from ivtools import plot as ivplot
 from ivtools import instruments
 from ivtools import io
 from ivtools import measure
+from ivtools import images
 # Reload all the modules in case they changed
 # every module EXCEPT settings
 importlib.reload(ivtools.analyze)
@@ -75,6 +76,7 @@ importlib.reload(ivtools.plot)
 importlib.reload(ivtools.instruments)
 importlib.reload(ivtools.io)
 importlib.reload(ivtools.measure)
+importlib.reload(ivtools.images)
 # Dump everything into interactive namespace for convenience
 # TODO: run test for overlapping names first (already written, in tests folder)
 from ivtools.measure import *
@@ -82,6 +84,7 @@ from ivtools.analyze import *
 from ivtools.plot import *
 from ivtools.io import *
 from ivtools.instruments import *
+from ivtools.images import *
 import logging
 
 magic = get_ipython().magic
@@ -395,7 +398,7 @@ def setup_picoteo():
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
-def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None, capImg = True):
+def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None, capImg = settings.savePicWithMeas):
     ''' Activates auto data plotting and saving for wrapped measurement functions '''
     @wraps(measfunc)
     def measfunc_interactive(*args, **kwargs):
@@ -440,6 +443,8 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 
         if capImg:
             frame = cam.getImg()
+            # TODO: put the defaults into settings
+            frame = mat2jpg(frame, scale = 0.5, quality = 50)
             data.update({"CameraImage": frame})
         if autosave:
             # print(data)

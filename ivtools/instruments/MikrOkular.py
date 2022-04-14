@@ -35,21 +35,26 @@ class MikrOkular:
     # deleting object, everything is fine
     
     # track open connections to contain freezing issues
-    openedCams = []
+    openedCams = {}
     
     ###
     def __init__(self, camId = 0, settings = None, res = "high"):
         self.camId = camId
+        
+        # Check if a connection to this camera is already open, this happens
+        # if it wasn't closed properly. Then return that instead of attempting
+        # to open a new one.
         if camId in self.openedCams:
-            # This seems to prevent anything freezing, but can't continue
-            # afterwards
-            raise Exception("Connection to this camera was not closed properly!")
-        self.camera = cv.VideoCapture(camId, cv.CAP_DSHOW) # DSHOW
+            self.camera =  MikrOkular.openedCams[camId]
+        else:
+            self.camera = cv.VideoCapture(camId, cv.CAP_DSHOW) # TODO: DSHOW
+            
         if not self.camera.isOpened():
             # This fails if the CamLabLite software is open
             # or camera is not plugged in
             raise Exception("Could not connect to MikrOkular camera!")
-        self.openedCams.append(camId)
+
+        MikrOkular.openedCams.update({camId: self.camera})
         
         if not settings == None:
             self.setAllProperties(settings)
@@ -63,7 +68,7 @@ class MikrOkular:
     
     def close(self):
         self.camera.release()
-        self.openedCams.remove(self.camId)
+        del MikrOkular.openedCams[self.camId]
     
     ### Functionality for getting images out of the camera ###
    
