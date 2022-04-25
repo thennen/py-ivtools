@@ -1314,7 +1314,7 @@ def read_txt(filepath, **kwargs):
     # Note that the unit names are simply assumed here -- no attempt to read the units from the file
     units = {'I': 'A', 'V': 'V', 't': 's', 'T': 'K'}
 
-    dataout = {k: df[k].as_matrix() for k in df.columns}
+    dataout = {k: df[k].values for k in df.columns}
     dataout['mtime'] = os.path.getmtime(filepath)
     dataout['units'] = {k: v for k, v in units.items() if k in dataout.keys()}
     dataout['longnames'] = {k: v for k, v in longnames.items() if k in dataout.keys()}
