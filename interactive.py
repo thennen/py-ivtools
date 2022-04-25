@@ -275,7 +275,7 @@ if firstrun:
     #iplots.plotters = keithley_plotters
 
 # noinspection SpellCheckingInspection
-def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=settings.drop_cols):
+def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
@@ -295,6 +295,10 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
         folder_path = datadir()
     if database_path is None:
         database_path = db_path
+
+    if drop is None:
+        drop = settings.drop_cols
+
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
 def savefig(name=None, fig=None, **kwargs):
@@ -404,7 +408,7 @@ def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
-def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None, capImg = settings.savePicWithMeas):
+def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None):
     ''' Activates auto data plotting and saving for wrapped measurement functions '''
     @wraps(measfunc)
     def measfunc_interactive(*args, **kwargs):
@@ -449,7 +453,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 iplots.newline(data)
 
         # Capture microscope camera image and store in the metadata after every measurement
-        if capImg:
+        if settings.savePicWithMeas:
             frame = cam.getImg()
             frame = mat2jpg(frame,
                             scale = settings.camCompression["scale"],
