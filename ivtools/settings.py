@@ -91,6 +91,17 @@ db_path = os.path.join(pyivtools_dir, 'metadata.db')
 # Shared logging file
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
+# Settings for MikrOkular camera
+savePicWithMeas = False
+camSettings = {'brightness': 0.70,
+                       'contrast': 0.5,
+                       'hue': 0.5,
+                       'saturation': 0.50,
+                       'gamma': 0.5,
+                       'sharpness': 1.0,
+                       'exposure': 1.0}
+camCompression = {"scale" : 0.5,
+                  "quality" : 50}
 
 ######################################################################################
 # 𝗛𝗼𝘀𝘁𝗻𝗮𝗺𝗲 𝗮𝗻𝗱 𝘂𝘀𝗲𝗿 𝘀𝗽𝗲𝗰𝗶𝗳𝗶𝗰 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
@@ -123,7 +134,9 @@ if hostname in ('pciwe46', 'iwe21705'):
         for di in logging_prints.values(): di['all'] = True # print everything
 
     elif username == 'mohr':
-        inst_connections.append(('teo', instruments.TeoSystem))
+        #inst_connections.append(('teo', instruments.TeoSystem))
+        savePicWithMeas = True
+        inst_connections.append(('cam', instruments.MikrOkular, 0, camSettings))
 
     elif username == 'munoz':
         munoz = 'D:/munoz/'

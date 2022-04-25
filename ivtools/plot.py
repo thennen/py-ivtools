@@ -1000,8 +1000,9 @@ class InteractiveFigs(object):
             plt.close(fig)
 
             # Get working area
-            from win32api import GetMonitorInfo, MonitorFromPoint
-            monitor_info = GetMonitorInfo(MonitorFromPoint((0,0)))
+            from win32api import GetMonitorInfo, MonitorFromPoint, EnumDisplayMonitors
+            monitor_info = GetMonitorInfo(EnumDisplayMonitors()[-1][0])
+            #monitor_info = GetMonitorInfo(MonitorFromPoint((2000,0))) # Used to be (0,0) for left monitor
             x0, y0, x1, y1 = monitor_info['Work']
             xpixels = x1 - x0
             ypixels = y1 - y0
