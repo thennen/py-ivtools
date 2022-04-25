@@ -1471,7 +1471,9 @@ def unnest(df, nested=None):
 def nest(flatdf, groupby=None, cols=None):
     '''
     takes a standard flat df and produces a new df containing nested arrays of values
-    each group turns into a row of data
+
+    each group turns into a row of data in the output dataframe
+
     anything whose value changes within the groups gets nested
     '''
     def nester(g):
@@ -1491,7 +1493,7 @@ def nest(flatdf, groupby=None, cols=None):
 
     if groupby is not None:
         grps = flatdf.groupby(groupby)
-        return grps.apply(nester)
+        return pd.DataFrame([nester(g) for k,g in grps])
     else:
         return nester(flatdf)
 
