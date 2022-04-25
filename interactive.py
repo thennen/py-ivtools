@@ -155,7 +155,7 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
-instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','et','ttx','daq','dp','ts')
+instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','et','ttx','daq','dp','ts','cam')
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
@@ -412,6 +412,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             # Protect the following code from keyboard interrupt until after the data is saved
             nointerrupt = measure.controlled_interrupt()
             nointerrupt.start()
+
         if getdatafunc is None:
             # There is no separate function to get data
             # Assume that the measurement function returns the data
@@ -446,20 +447,21 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = newgetdatafunc()
                 data = meta.attach(data)
                 iplots.newline(data)
-        
-        # Capture microscope camera image with every measurement
+
+        # Capture microscope camera image and store in the metadata after every measurement
         if capImg:
             frame = cam.getImg()
             frame = mat2jpg(frame,
                             scale = settings.camCompression["scale"],
                             quality = settings.camCompression["quality"])
-            data.update({"cameraImage": frame})
+            meta.meta.update({"cameraImage": frame})
+
         if autosave:
             # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
-        
+
         measure.beep()
         return data
 
