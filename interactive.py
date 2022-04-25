@@ -453,12 +453,16 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 iplots.newline(data)
 
         # Capture microscope camera image and store in the metadata after every measurement
-        if cam and settings.savePicWithMeas:
-            frame = cam.getImg()
-            frame = mat2jpg(frame,
-                            scale = settings.camCompression["scale"],
-                            quality = settings.camCompression["quality"])
-            meta.meta.update({"cameraImage": frame})
+        if settings.savePicWithMeas:
+            if cam:
+                frame = cam.getImg()
+                frame = mat2jpg(frame,
+                                scale = settings.camCompression["scale"],
+                                quality = settings.camCompression["quality"])
+                log.info('Updating camera image in metadata')
+                meta.meta.update({"cameraImage": frame})
+            else:
+                log.warning('No camera connected!')
 
         if autosave:
             # print(data)
