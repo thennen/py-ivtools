@@ -34,8 +34,6 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 
 # TODO: why did I put these in all caps?
 ### Settings for compliance circuit
-COMPLIANCE_CURRENT = 0
-INPUT_OFFSET = 0
 COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'instruments', 'calibration', 'compliance_calibration.pkl')
 CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 
@@ -124,6 +122,7 @@ if hostname in ('pciwe46', 'iwe21705'):
                         #('daq', instruments.USB2708HS),
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),
+                        ('cam', instruments.MikrOkular, 0, camSettings),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
@@ -136,7 +135,6 @@ if hostname in ('pciwe46', 'iwe21705'):
     elif username == 'mohr':
         #inst_connections.append(('teo', instruments.TeoSystem))
         savePicWithMeas = True
-        inst_connections.append(('cam', instruments.MikrOkular, 0, camSettings))
 
     elif username == 'munoz':
         munoz = 'D:/munoz/'

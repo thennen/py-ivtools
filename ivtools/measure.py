@@ -175,10 +175,7 @@ def picoiv_new(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, au
     if fs is None:
         fs = nsamples / duration
 
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
+    if smartrange:
         # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
 
@@ -224,10 +221,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     if fs is None:
         fs = nsamples / duration
 
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
+    if smartrange:
         # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
 
@@ -502,29 +496,6 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
         ps.range[monitor_channel] = arange
         ps.offset[monitor_channel] = aoffs
 
-    if 'B' in ch:
-        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
-        # Center the measurement range on zero current
-        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
-        # channelb should never go below zero, except for potentially op amp overshoot
-        # I have seen it reach -0.1V
-        CC = ivtools.settings.COMPLIANCE_CURRENT
-        polarity = np.sign(ivtools.settings.CCIRCUIT_GAIN)
-        if R is None:
-            # Hypothetical resistance method
-            # Signal should never go below 0V (compliance)
-            b_min = 0
-            b_resistance = max(abs(v1), abs(v2)) / CC / 1.1
-            # Compliance current sets the voltage offset at zero input.
-            # Add 10% to be safe.
-            b_max = polarity * (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
-        else:
-            # R was passed, assume device has constant resistance with this value
-            b_min = (CC - max(v1, v2) / R) * 2e3
-            b_max = (CC- min(v1, v2) / R) * 2e3
-        brange, boffs = ps.best_range((b_min, b_max))
-        ps.range['B'] = brange
-        ps.offset['B'] = boffs
 
 def raw_to_V(datain, dtype=np.float32):
     '''
@@ -771,10 +742,7 @@ def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, au
         else:
             fs = nsamples / duration
 
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
+    if smartrange:
         # Smart range the monitor channel
         # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
         # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
@@ -968,166 +936,6 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 # Voltage dividers
 # (Compliance control voltage)      DAC0 - 12kohm - 12kohm
 # (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
-
-def set_compliance_old(cc_value):
-    '''
-    Use two analog outputs to set the compliance current and compensate input offset.
-    Right now we use static lookup tables for compliance and compensation values.
-    '''
-    daq = instruments.USB2708HS()
-    if cc_value > 1e-3:
-        raise Exception('Compliance value out of range! Max 1 mA.')
-    fn = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
-    abspath = os.path.abspath(fn)
-    if os.path.isfile(abspath):
-        print('Reading calibration from file {abspath}'.format())
-    else:
-        raise Exception('No compliance calibration.  Run calibrate_compliance().')
-    with open(fn, 'rb') as f:
-        cc = pickle.load(f)
-    DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
-    DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
-    print('Setting compliance to {} A'.format(cc_value))
-    daq.analog_out(0, dacval=DAC0)
-    daq.analog_out(1, volts=DAC1)
-    ivtools.settings.COMPLIANCE_CURRENT = cc_value
-    ivtools.settings.INPUT_OFFSET = 0
-
-def calibrate_compliance_old(iterations=3, startfromfile=True, ndacvals=40):
-    '''
-    Set and measure some compliance values throughout the range, and save a calibration look up table
-    Need picoscope channel B connected to circuit output
-    and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
-    This takes a minute..
-    '''
-
-    ps = instruments.Picoscope()
-    daq = instruments.USB2708HS()
-    # Measure compliance currents and input offsets with static Vb
-
-    fig1, ax1 = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    ccurrent_list = []
-    offsets_list = []
-    dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
-
-    fn = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
-    abspath = os.path.abspath(fn)
-    fdir = os.path.split(abspath)[0]
-    if not os.path.isdir(fdir):
-        os.makedirs(fdir)
-    if startfromfile and not os.path.isfile(fn):
-        print(f'No calibration file exists at {abspath}')
-        startfromfile = False
-
-    for it in range(iterations):
-        ccurrent = []
-        offsets = []
-        if len(offsets_list) == 0:
-            if startfromfile:
-                print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-                with open(fn, 'rb') as f:
-                    cc = pickle.load(f)
-                compensations = np.interp(dacvals, cc['dacvals'], cc['compensationV'])
-            else:
-                # Start with constant compensation
-                compensations = .55 /0.088 * np.ones(len(dacvals))
-        else:
-            compensations -= np.array(offsets_list[-1]) / .085
-        for v,cv in zip(dacvals, compensations):
-            daq.analog_out(1, volts=cv)
-            daq.analog_out(0, v)
-            plot.mypause(.1)
-            #plt.pause(.1)
-            cc, offs = measure_compliance()
-            ccurrent.append(cc)
-            offsets.append(offs)
-        ccurrent_list.append(ccurrent)
-        offsets_list.append(offsets)
-        ax1.plot(dacvals, np.array(ccurrent) * 1e6, '.-')
-        ax1.set_xlabel('DAC0 value')
-        ax1.set_ylabel('Compliance Current [$\mu$A]')
-        ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
-        ax2.set_xlabel('DAC0 value')
-        ax2.set_ylabel('Input offset')
-        ax2.legend()
-        plot.mypause(.1)
-        #plt.pause(.1)
-    output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
-              'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
-
-    with open(fn, 'wb') as f:
-        pickle.dump(output, f)
-    print('Wrote calibration to ' + fn)
-
-    return compensations
-
-def plot_compliance_calibration_old():
-    fn = 'compliance_calibration.pkl'
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-    with open(fn, 'rb') as f:
-        cc = pickle.load(f)
-    ccurrent = 1e6 * np.array(cc['ccurrent'])
-    dacvals = cc['dacvals']
-    compensationV = cc['compensationV']
-    fig, ax = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    ax.plot(dacvals, ccurrent, '.-')
-    ax.set_xlabel('DAC0 value')
-    ax.set_ylabel('Compliance Current [$\mu$A]')
-    ax2.plot(dacvals, compensationV, '.-')
-    ax2.set_xlabel('DAC0 value')
-    ax2.set_ylabel('Compensation V (DAC1)')
-    plt.tight_layout()
-    return cc
-
-def measure_compliance_old():
-    '''
-    Our circuit does not yet compensate the output for different current compliance levels
-    Right now current compliance is set by a physical knob, not by the computer.  This will change.
-    The current way to measure compliance approximately is by measuring the output at zero volts input,
-    because in this case, the entire compliance current flows across the output resistor.
-
-    There is a second complication because the input is not always at zero volts, because it is not compensated fully.
-    This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
-    '''
-    import ivtools.plot as plot
-    gain = ivtools.settings.CCIRCUIT_GAIN
-    rigol = instruments.RigolDG5000()
-    ps = instruments.Picoscope()
-    # Put AWG in hi-Z mode (output channel off)
-    # Then current at compliance circuit input has to be ~zero
-    # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
-    ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol.output(False)
-    plot.mypause(.1)
-    #plt.pause(.1)
-    # Immediately capture some samples on channels A and B
-    # Use these channel settings for the capture -- does not modify global settings
-    # TODO pick the channel settings better or make it complain when the signal is out of range
-    picosettings = {'chrange': {'A':.2, 'B':2},
-                    'choffset': {'A':0, 'B':np.sign(gain)*-2},
-                    'chatten': {'A':1, 'B':1},
-                    'chcoupling': {'A':'DC', 'B':'DC'}}
-    ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
-    picodata = ps.get_data(['A', 'B'])
-    #plot_channels(picodata)
-    Amean = np.mean(picodata['A'])
-    Bmean = np.mean(picodata['B'])
-
-    # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
-    ivtools.settings.INPUT_OFFSET = Amean
-    print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
-
-    # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
-
-    # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
-    #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
-    ccurrent =  Bmean / (gain)
-    ivtools.settings.COMPLIANCE_CURRENT = ccurrent
-    print('Measured compliance current: {} A'.format(ccurrent))
-
-    return (ccurrent, Amean)
 
 
 ########### New compliance circuit ###################
@@ -1485,41 +1293,6 @@ def digipot_calibrate(plot=True):
 
 
 ########### Conversion from picoscope channel data to IV data ###################
-
-def ccircuit_to_iv_old(datain, dtype=np.float32):
-    '''
-    Convert picoscope channel data to IV dict
-    For the early version of compliance circuit, which needs manual compensation
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
-
-    dataout = datain
-    CC = ivtools.settings.COMPLIANCE_CURRENT
-    IO = ivtools.settings.INPUT_OFFSET
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-    A = datain['A']
-    B = datain['B']
-    #C = datain['C']
-    gain = ivtools.settings.CCIRCUIT_GAIN
-    dataout['V'] = dtype(A - IO)
-    #dataout['V_formula'] = 'CHA - IO'
-    dataout['INPUT_OFFSET'] = IO
-    #dataout['I'] = 1e3 * (B - C) / R
-    # Current circuit has 0V output in compliance, and positive output under compliance
-    # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    # TODO: Figure out if/why this works
-    dataout['I'] = dtype(-B / gain + CC)
-    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    dataout['units'] = {'V':'V', 'I':'A'}
-    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
-    # parameters for conversion
-    #dataout['Rout_conv'] = R
-    dataout['CC'] = CC
-    dataout['gain'] = gain
-    return dataout
 
 def ccircuit_to_iv(datain, dtype=np.float32):
     '''

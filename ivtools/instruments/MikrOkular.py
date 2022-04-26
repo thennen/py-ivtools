@@ -74,7 +74,7 @@ class MikrOkular:
         # if it wasn't closed properly. Then return that instead of attempting
         # to open a new one.
         if camId in self.openedCams:
-            self.camera =  MikrOkular.openedCams[camId]
+            self.camera = MikrOkular.openedCams[camId]
         else:
             self.camera = cv.VideoCapture(camId, cv.CAP_DSHOW)
             # There seem to be different backends/drivers available

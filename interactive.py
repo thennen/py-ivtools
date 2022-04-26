@@ -170,6 +170,7 @@ else:
 # Connect to all the instruments
 # VISA instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
+if inst_connections: log.info('\nAutoconnecting to instruments...')
 for varname, inst_class, *args in inst_connections:
     if len(args) > 0:
         if type(args[0])==str and (args[0].startswith('USB') or args[0].startswith('GPIB')):
@@ -179,7 +180,10 @@ for varname, inst_class, *args in inst_connections:
                 # How to equate them?
                 # https://pyvisa.readthedocs.io/en/stable/names.html
                 continue
-    globalvars[varname] = inst_class(*args)
+    try:
+        globalvars[varname] = inst_class(*args)
+    except Exception as x:
+        log.error(f'Autoconnection to {inst_class.__name__} failed: {x}')
 
 #######################################
 #𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
