@@ -261,8 +261,8 @@ continious = False):
 
         if pg5_measurement and continious:
             sympuls.trigger()
-            print('trigger')
-            plt.pause(0.4)
+            print('trigger'+str(trigger))
+            plt.pause(0.2)
         data.update(k.get_data())
         if ttx.triggerstate():
             plt.pause(0.1)
@@ -288,10 +288,10 @@ continious = False):
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
+    filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
     while os.path.isfile(filepath + '.s'):
         i +=1
-        filepath = os.path.join(datafolder, subfolder, 'pcm_measurement_'+str(i))
+        filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
     io.write_pandas_pickle(meta.attach(data), filepath)
     print(len(data))
     return data    
@@ -688,6 +688,7 @@ cc_step = 25e-6):
     data['padname'] = padname
     data['samplename'] = samplename
 
+
     hrs_list = []
     lrs_list = []
     sweep_list = []
@@ -723,7 +724,7 @@ cc_step = 25e-6):
             ttx.position(3, position)
 
 
-            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength=250)
+            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength= recordlength)
             if pulse_width < 100e-12:
                 ttx.trigger_position(40)
             elif pulse_width < 150e-12:
@@ -879,11 +880,11 @@ cc_step = 25e-6):
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(i))
+    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(attenuation)) + 'dB_'+str(i))
     file_link = Path(filepath + '.df')
     while file_link.is_file():
         i +=1
-        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(i))
+        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(attenuation)) + 'dB_'+str(i))
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
