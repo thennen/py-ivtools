@@ -1390,9 +1390,9 @@ def read_matlab(filepath):
 
     def _check_keys(d):
         '''
-      checks if entries in dictionary are mat-objects. If yes
-      todict is called to change them to nested dictionaries
-      '''
+        checks if entries in dictionary are mat-objects. If yes
+        todict is called to change them to nested dictionaries
+        '''
         for key in d:
             if isinstance(d[key], spio.matlab.mio5_params.mat_struct):
                 d[key] = _todict(d[key])
@@ -1402,8 +1402,8 @@ def read_matlab(filepath):
 
     def _todict(matobj):
         '''
-      A recursive function which constructs from matobjects nested dictionaries
-      '''
+        A recursive function which constructs from matobjects nested dictionaries
+        '''
         d = {}
         for strg in matobj._fieldnames:
             elem = matobj.__dict__[strg]
@@ -1418,10 +1418,10 @@ def read_matlab(filepath):
 
     def _tolist(ndarray):
         '''
-      A recursive function which constructs lists from cellarrays
-      (which are loaded as numpy ndarrays), recursing into the elements
-      if they contain matobjects.
-      '''
+        A recursive function which constructs lists from cellarrays
+        (which are loaded as numpy ndarrays), recursing into the elements
+        if they contain matobjects.
+        '''
         elem_list = []
         for sub_elem in ndarray:
             if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):

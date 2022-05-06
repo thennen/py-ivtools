@@ -559,9 +559,18 @@ def smoothimate(data, window=10, factor=1, passes=1, columns=None):
             # Convert back to original data type (like float32)
             dataout[c] = dtype(ar)
     add_missing_keys(data, dataout)
-    dataout['downsampling'] = factor
-    dataout['smoothing'] = window
-    dataout['smoothimate_passes'] = passes
+
+    # Keep a record of what was done with the data
+    # even in the case data passed through smoothimate already
+    if 'downsampling' not in dataout: dataout['downsampling'] = 1
+    if 'smoothing' not in dataout: dataout['smoothing'] = 0
+    if 'smoothimate_passes' not in dataout: dataout['smoothimate_passes'] = 0
+    dataout['downsampling'] *= factor**passes
+    # Not obvious what several passes through the function should do to this?
+    # I'll keep the average. Probably a different kind of average makes more sense.
+    past_passes = dataout['smoothimate_passes']
+    dataout['smoothing'] = int(dataout['smoothing'] * past_passes / (past_passes + passes) + passes * window / (past_passes + passes))
+    dataout['smoothimate_passes'] += passes
     return dataout
 
 
@@ -569,6 +578,10 @@ def smoothimate(data, window=10, factor=1, passes=1, columns=None):
 def autosmoothimate(data, percent=.3, npts=1000):
     '''
     Smooth with automatic parameters that are, for example, good for plotting
+
+    percent is the percent of the total data length to use as a smoothing window
+
+    npts are how many data points you want to come out
     '''
     columns = find_data_arrays(data)
     nsamples = len(data[columns[0]])
