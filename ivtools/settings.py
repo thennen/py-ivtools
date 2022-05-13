@@ -90,14 +90,15 @@ db_path = os.path.join(pyivtools_dir, 'metadata.db')
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
 # Settings for MikrOkular camera
+# Set new light to low intensity for good images
 savePicWithMeas = False
-camSettings = {'brightness': 0.70,
+camSettings = {'brightness': 0.9,
                'contrast': 0.5,
                'hue': 0.5,
-               'saturation': 0.50,
+               'saturation': 0.6,
                'gamma': 0.5,
                'sharpness': 1.0,
-               'exposure': 1.0}
+               'exposure': 0.33}
 camCompression = {"scale" : 0.5,
                   "quality" : 50}
 
