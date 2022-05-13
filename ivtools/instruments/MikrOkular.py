@@ -176,7 +176,7 @@ class MikrOkular:
             raise Exception("Connection to camera was closed!")
 
         def makePropTrack(name):
-            init = int(100*self.getProperty(name))
+            init = int(100*round(self.getProperty(name), 2))
             cv.createTrackbar(name, "Controls", init, 100, lambda x: self.setProperty(name, x/100))
 
         def makeExpTrack():
