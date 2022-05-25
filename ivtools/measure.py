@@ -1580,6 +1580,7 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
     # 1. actually has n points?
     # 2. has constant datapoint spacing?
     # 3. contains the extrema?
+    # 4. hits all the same values on the up and down sweep?
 
     # For IV sweeps I would say containing the extrema is important,
     # In order to make sure the waveform actually contains 0, v1 and v2, we need to allow
