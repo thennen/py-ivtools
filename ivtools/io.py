@@ -138,7 +138,7 @@ class MetaHandler(object):
         # select the ith row of the metadataframe
         self.i = i
         if type(self.df) == pd.DataFrame:
-            self.meta = self.df.iloc[self.i]
+            self.meta = dict(self.df.iloc[self.i])
         else:
             self.meta = self.df[self.i]
 

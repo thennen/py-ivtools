@@ -2,7 +2,7 @@ import winsound
 
 
 ###
-meta.load_lassen(dep_code='Ente', sample_number=[5], module=['001G'], die_rel=1)
+meta.load_lassen(dep_code='Ente', sample_number=[1], module=['001'], die_rel=1, device=2)
 #meta.static['polarity'] = 'HFV_right'
 #meta.static['Keithley_connection'] = 'LFI_ground'
 
@@ -12,17 +12,13 @@ Vmin = -Vmax
 npts = 60
 Ilimit = 300e-6
 
-temps = [20, 30, 40, 50, 60, 70]
+temps = [20] #, 30, 40, 50, 60, 70, 80]
 
 ### Setup - don't use TEO for now
 #setup_picoteo()
 setup_keithley()
 #teo.LF_mode()
 meta.i = -1
-
-
-#ts.set_temperature(temp)
-#tts("Set temperature " + str(temp) + " C")
 
 ### Some functions
 
@@ -49,7 +45,8 @@ def autorange(Vmin, Vmax, npts=2, Irange0 = 1e-10):
 
 # Stuff to be done on each device
 def measure_device(Vmin, Vmax, npts, Ilimit, temp):
-    wfm = tri(Vmin, Vmax, n=npts)
+    #wfm = tri(Vmin, Vmax, n=npts)
+    wfm = tri(Vmin, Vmax, step=0.05)
     
     set_temperature(temp, delay=10)
     tts("Set temperature " + str(temp) + " C")
