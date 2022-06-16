@@ -1330,6 +1330,43 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
+def ccircuit_to_iv_split(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    For the newer version of compliance circuit, which compensates itself and amplifies the needle voltage
+    chA should monitor the applied voltage
+    chB (optional) should be the needle voltage
+    chC should be the amplified current
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    C = datain['C']
+    D = datain['D']
+    #C = datain['C']
+    gain = ivtools.settings.CCIRCUIT_GAIN
+    dataout['V'] = dtype(A)
+    #dataout['V_formula'] = 'CHA - IO'
+    #dataout['I'] = 1e3 * (B - C) / R
+    if 'B' in datain:
+        B = datain['B']
+        dataout['Vneedle'] = dtype(B)
+        dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
+    dataout['I']=dtype(2*C/gain) 
+    dataout['I_low']=dtype(2*D/gain)
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    units = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A', 'I_low':'A'}
+    dataout['units'] = {k:v for k,v in units.items() if k in dataout}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
+    # parameters for conversion
+    #dataout['Rout_conv'] = R
+    dataout['gain'] = gain
+    return dataout
 
 def ccircuit_yellow_to_iv(datain, dtype=np.float32):
     '''
