@@ -3,3 +3,4 @@ logging.log
 *.pyc
 /Pipe_inOutFifo
 /Pipe_inOut
+__pycache__/
