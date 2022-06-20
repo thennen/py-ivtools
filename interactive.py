@@ -50,6 +50,7 @@ import os
 import sys
 import time
 import pandas as pd
+
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
 from datetime import datetime
@@ -154,7 +155,7 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
-instrument_varnames = ('ps','rigol','rigol2','k','teo','pg5', 'pg100','et','ttx','daq','dp','ts')
+instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','et','ttx','daq','dp','ts','cam')
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
@@ -169,16 +170,20 @@ else:
 # Connect to all the instruments
 # VISA instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
+if inst_connections: log.info('\nAutoconnecting to instruments...')
 for varname, inst_class, *args in inst_connections:
     if len(args) > 0:
-        if args[0].startswith('USB') or args[0].startswith('GPIB'):
+        if type(args[0])==str and (args[0].startswith('USB') or args[0].startswith('GPIB')):
             # don't bother trying to connect to it if it's not in visa_resources
             if args[0] not in visa_resources:
                 # TODO: I think there are multiple valid formats for visa addresses.
                 # How to equate them?
                 # https://pyvisa.readthedocs.io/en/stable/names.html
                 continue
-    globalvars[varname] = inst_class(*args)
+    try:
+        globalvars[varname] = inst_class(*args)
+    except Exception as x:
+        log.error(f'Autoconnection to {inst_class.__name__} failed: {x}')
 
 #######################################
 #𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
@@ -223,6 +228,11 @@ teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is
                 [1, ivplot.itplotter],
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
+
+teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
+                      [1, partial(ivplot.plotiv, x='t', y='V')],
+                      [2, partial(ivplot.plotiv, x='t', y='I')],
+                      [3, partial(ivplot.plotiv, x='t', y='I2')]]
 
 # What the plots should do by default
 if not iplots.plotters:
@@ -269,7 +279,7 @@ if firstrun:
     #iplots.plotters = keithley_plotters
 
 # noinspection SpellCheckingInspection
-def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=settings.drop_cols):
+def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
@@ -289,6 +299,10 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
         folder_path = datadir()
     if database_path is None:
         database_path = db_path
+
+    if drop is None:
+        drop = settings.drop_cols
+
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
 def savefig(name=None, fig=None, **kwargs):
@@ -377,21 +391,24 @@ def setup_digipot():
     settings.pico_to_iv = digipot_to_iv
     iplots.plotters = pico_plotters
 
-def setup_picoteo():
-    ps.coupling.b = 'DC50'
+def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC'
     ps.coupling.c = 'DC50'
     ps.coupling.d = 'DC50'
-    ps.range.b = 0.2
+    ps.range.a = 10
+    ps.range.b = 1
     ps.range.c = 0.2
     ps.range.d = 0.2
-    settings.pico_to_iv = TEO_HFext_to_iv
+    settings.pico_to_iv = partial(TEO_HFext_to_iv, HFV=HFV, V_MONITOR=V_MONITOR,
+                                  HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW)
     iplots.plotters = teo_plotters
 
 ################################################################
 # 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀
 ################################################################
 
-# Wrap any fuctions that you want to automatically make plots/write to disk with this:
+# Wrap any functions that you want to automatically make plots/write to disk with this:
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
 #      or pass a list of functions as getdatafunc, then smash the results together somehow
@@ -403,6 +420,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             # Protect the following code from keyboard interrupt until after the data is saved
             nointerrupt = measure.controlled_interrupt()
             nointerrupt.start()
+
         if getdatafunc is None:
             # There is no separate function to get data
             # Assume that the measurement function returns the data
@@ -437,13 +455,30 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = newgetdatafunc()
                 data = meta.attach(data)
                 iplots.newline(data)
+
+        # Capture microscope camera image and store in the metadata after every measurement
+        if settings.savePicWithMeas:
+            if cam:
+                frame = cam.getImg()
+                frame = mat2jpg(frame,
+                                scale = settings.camCompression["scale"],
+                                quality = settings.camCompression["quality"])
+                log.info('Updating camera image in metadata')
+                meta.meta.update({"cameraImage": frame})
+            else:
+                log.warning('No camera connected!')
+
         if autosave:
             # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
+
         measure.beep()
         return data
+
+    measfunc_interactive.__signature__ = inspect.signature(measfunc)
+
     return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
@@ -481,8 +516,14 @@ if ts: # temperature stage is connected
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
         ivplot.mybreakablepause(delay)
-        meta.static['T'] = ts.get_temperature()
+        meta.static['T'] = ts.read_temperature()
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measureHF)
+
+# Microscope camera connected
+if cam:
+    def saveImg():
+        path = os.path.join(datafolder, subfolder, meta.timestamp()+".png")
+        cam.saveImg(path)

@@ -34,8 +34,6 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 
 # TODO: why did I put these in all caps?
 ### Settings for compliance circuit
-COMPLIANCE_CURRENT = 0
-INPUT_OFFSET = 0
 COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'instruments', 'calibration', 'compliance_calibration.pkl')
 CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 
@@ -91,6 +89,17 @@ db_path = os.path.join(pyivtools_dir, 'metadata.db')
 # Shared logging file
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
+# Settings for MikrOkular camera
+savePicWithMeas = False
+camSettings = {'brightness': 0.70,
+               'contrast': 0.5,
+               'hue': 0.5,
+               'saturation': 0.50,
+               'gamma': 0.5,
+               'sharpness': 1.0,
+               'exposure': 1.0}
+camCompression = {"scale" : 0.5,
+                  "quality" : 50}
 
 ######################################################################################
 # 𝗛𝗼𝘀𝘁𝗻𝗮𝗺𝗲 𝗮𝗻𝗱 𝘂𝘀𝗲𝗿 𝘀𝗽𝗲𝗰𝗶𝗳𝗶𝗰 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
@@ -113,6 +122,7 @@ if hostname in ('pciwe46', 'iwe21705'):
                         #('daq', instruments.USB2708HS),
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),
+                        ('cam', instruments.MikrOkular, 0, camSettings),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
@@ -123,7 +133,8 @@ if hostname in ('pciwe46', 'iwe21705'):
         for di in logging_prints.values(): di['all'] = True # print everything
 
     elif username == 'mohr':
-        inst_connections.append(('teo', instruments.TeoSystem))
+        #inst_connections.append(('teo', instruments.TeoSystem))
+        savePicWithMeas = True
 
     elif username == 'munoz':
         munoz = 'D:/munoz/'
@@ -131,13 +142,17 @@ if hostname in ('pciwe46', 'iwe21705'):
         db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
         logging_file = os.path.join(munoz, 'ivtools_logging.log')
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+            'instruments': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'io':          {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'plots':       {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'analyze':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'measure':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'interactive': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True}
         }
+        inst_connections = [('ps', instruments.Picoscope),
+                            ('k', instruments.Keithley2600),
+                            ('dp', instruments.WichmannDigipot),
+                            ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
@@ -146,8 +161,8 @@ elif hostname in ('pciwe38', 'iwe21407'):
     datafolder = r'C:\Messdaten'
     inst_connections =  [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),
     ('ttx', instruments.TektronixDPO73304D ,'GPIB0::1::INSTR'),
-    ('pg5', instruments.PG5 ,'ASRL3::INSTR'),
-    ('pg100', instruments.PG100 ,'ASRL3::INSTR')]
+    ('sympuls', instruments.Sympuls ,'ASRL3::INSTR')]
+   # ('pg100', instruments.PG100 ,'ASRL3::INSTR')]
 
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'
@@ -176,12 +191,12 @@ elif username == 'alexgar':
     db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
     logging_file = os.path.join(munoz, 'ivtools_logging.log')
     logging_prints = {
-        'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+        'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
     }
 
 else:

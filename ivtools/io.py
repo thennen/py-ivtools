@@ -28,6 +28,8 @@ from scipy.io import savemat
 import sqlite3
 import logging
 
+from pathlib import Path
+
 
 log = logging.getLogger('io')
 
@@ -52,10 +54,12 @@ db_path = settings.db_path
 
 class MetaHandler(object):
     '''
-    Stores, cycles through, prints meta data (stored in dicts, or pd.Series)
+    Stores, indexes, and prints meta data (stored in dicts, or pd.Series)
     for attaching sample information to data files, with interactive use in mind.
 
-    Can generate filenames
+    savedata method writes data along with the selected metadata to disk and makes a database entry
+
+    Can generate filenames with timestamps and keys from the metadata
 
     df attribute holds the list of metadata as a list-of-dicts or pandas dataframe
     meta holds the currently selected row of metadata
@@ -64,12 +68,13 @@ class MetaHandler(object):
 
     __repr__ will print the concatenated meta and static
 
-    you can set/get items directly on the MetaHandler instance instead of on its meta attribute
+    you can set/get items directly on the MetaHandler instance instead of on its static attribute
+    eg meta = MetaHandler(); meta['key'] = value
 
     Attach the currently selected meta data and the static meta data with the attach() function
 
     MetaHandler is Borg.  Its state lives in an separate module.
-    This is so if io module is reloaded, a new Metahandler instance keeps the metadata state
+    This is so if the io module is reloaded, a new Metahandler instance keeps the metadata state
     '''
 
     def __init__(self, clear_state=False):
@@ -491,7 +496,7 @@ class MetaHandler(object):
 
     def savedata(self, data, folder_path=None, database_path=None, table_name='meta', drop=None):
         '''
-        Save data to disk and write a row of metadata to an sqlite3 database
+        Save data + selected metadata to disk and write a row of metadata to an sqlite3 database
 
         :param data: Row of data to be add to the database.
         :param folder_path: Folder where all data will be saved. If None, data will be saved in Desktop.
@@ -1311,7 +1316,7 @@ def read_txt(filepath, **kwargs):
     # Note that the unit names are simply assumed here -- no attempt to read the units from the file
     units = {'I': 'A', 'V': 'V', 't': 's', 'T': 'K'}
 
-    dataout = {k: df[k].as_matrix() for k in df.columns}
+    dataout = {k: df[k].values for k in df.columns}
     dataout['mtime'] = os.path.getmtime(filepath)
     dataout['units'] = {k: v for k, v in units.items() if k in dataout.keys()}
     dataout['longnames'] = {k: v for k, v in longnames.items() if k in dataout.keys()}
@@ -1385,9 +1390,9 @@ def read_matlab(filepath):
 
     def _check_keys(d):
         '''
-      checks if entries in dictionary are mat-objects. If yes
-      todict is called to change them to nested dictionaries
-      '''
+        checks if entries in dictionary are mat-objects. If yes
+        todict is called to change them to nested dictionaries
+        '''
         for key in d:
             if isinstance(d[key], spio.matlab.mio5_params.mat_struct):
                 d[key] = _todict(d[key])
@@ -1397,8 +1402,8 @@ def read_matlab(filepath):
 
     def _todict(matobj):
         '''
-      A recursive function which constructs from matobjects nested dictionaries
-      '''
+        A recursive function which constructs from matobjects nested dictionaries
+        '''
         d = {}
         for strg in matobj._fieldnames:
             elem = matobj.__dict__[strg]
@@ -1413,10 +1418,10 @@ def read_matlab(filepath):
 
     def _tolist(ndarray):
         '''
-      A recursive function which constructs lists from cellarrays
-      (which are loaded as numpy ndarrays), recursing into the elements
-      if they contain matobjects.
-      '''
+        A recursive function which constructs lists from cellarrays
+        (which are loaded as numpy ndarrays), recursing into the elements
+        if they contain matobjects.
+        '''
         elem_list = []
         for sub_elem in ndarray:
             if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):
@@ -1651,3 +1656,139 @@ def update_depsheet():
     sourcefile = r'X:\emrl\Pool\Projekte\HGST-CERAM\CeRAM_Depositions.xlsx'
     log.info(f'copy {sourcefile} {localfile}')
     return subprocess.getoutput(f'copy {sourcefile} {localfile}')
+
+
+
+
+
+##############################################
+### Functions for processing camera images ###
+##############################################
+
+# TODO: Maybe don't call this jpg if we don't now if this works with loaded jpgs?
+
+def mat2jpg(mat, scale=1, quality=95):
+    """
+
+    Converts matrix of color values to jpg formatted byte vector.
+
+    Parameters
+    ----------
+    mat : ndarray
+        2D/3D matrix with byte (unit8) values.
+    scale : TYPE, optional
+        DESCRIPTION. The default is 1.
+    quality : TYPE, optional
+        DESCRIPTION. The default is 95.
+
+    Returns
+    -------
+    jpg : ndarray
+        Vector with byte values, formatted as jpg.
+
+    """
+    import cv2 as cv
+    if scale != 1:
+        height = int(mat.shape[0] * scale)
+        width = int(mat.shape[1] * scale)
+
+        mat = cv.resize(mat, (width, height))
+    # TODO: Warn if scale > 1 ?
+
+    # Quality is jpg image quality, it's between 0 and 100,
+    # both values inclusive, higher is better
+    # 95 is opencv default
+    quality = round(quality)
+    if quality not in range(0, 101):
+        raise Exception("Quality must be between 0 and 100 (inclusive)!")
+
+    # This returns a vector of bytes, which seems to be the compressed image
+    # and also contains information on its format
+    # So far no documentation was found that the quality flag and the value are
+    # to be a list, this is by analogy to the C++ example
+    succ, jpg = cv.imencode(".jpg", mat, [cv.IMWRITE_JPEG_QUALITY, quality])
+
+    if not succ:
+        raise Exception("Failed to encode image!")
+
+    return jpg
+
+def jpg2mat(jpg):
+    """
+    Converts jpg formatted data to matrix of color values.
+
+    Parameters
+    ----------
+    jpg : ndarray
+        Vector with byte values, formatted as jpg.
+
+    Returns
+    -------
+    mat : ndarray
+        2D/3D matrix with byte (unit8) values.
+
+    """
+    import cv2 as cv
+    # This apparently doesn't have a success return value,
+    # if not succesfull mat is empty
+    mat = cv.imdecode(jpg, cv.IMREAD_UNCHANGED)
+
+    if mat is None:
+        raise Exception("Could not decode image!")
+
+    return mat
+
+def extractJpg(files=None, throw=False, name="cameraImage"):
+    """
+    Extracts the stored camera image from a measurement file and save it to disc.
+
+    Parameters
+    ----------
+    files : str,[str], optional
+        Path(es) to the datafiles. If None, all files in the current folder
+        are processed. The default is None.
+    throw : bool, optional
+        Should there be an exception if no image is found in a file?
+        Otherwise these are silently ignored. The default is False.
+    name : str, optional
+        The index of the image in the datafile. The default is "CameraImage".
+
+    Returns
+    -------
+    None.
+
+    """
+    if type(files) == str:
+        d = pd.read_pickle(files)
+        try:
+            jpg = d[name]
+        except:
+            if throw:
+                raise Exception("Could not extract image for " +
+                      d["file_timestamp"] + "!")
+
+            return
+
+        p = Path(files)
+        with open(p.with_suffix(".jpg"), "wb") as w:
+                w.write(jpg)
+    else:
+        if files is None:
+            files = [f for f in os.listdir(".") if f.endswith(".s")]
+
+        for f in files:
+            d = pd.read_pickle(f)
+            try:
+                jpg = d[name]
+            except:
+                if throw:
+                    raise Exception("Could not extract image for " +
+                          d["file_timestamp"] + "!")
+
+                continue
+
+            p = Path(f)
+
+            # So the thing encoded by opencv is apparently really a valid jpg!
+            with open(p.with_suffix(".jpg"), "wb") as w:
+                w.write(jpg)
