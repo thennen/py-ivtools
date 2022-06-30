@@ -10,15 +10,17 @@
 // determined buffer sizes using the provided calculator
 // because the strings are copied for parsing, these mainly determine the required space
 
+// Assistant configuration: SAMD21, Deserialize, String
 // used: {"jsonrpc": "2.0", "method": "getIlluminance", "id": 1000000, "params": {"unit": "metercandle"}}
 // to calculate the request string, this should contain the longest parameter/unit names and a big id (the id might not matter though)
 // recommended value: 192, double that for good measure: 384
 
 StaticJsonDocument<384> requestDoc;
 
-// TODO
-// used: {"jsonrpc": "2.0", "error": {"code": -32601, "method": "Method doesn't exist!"}, "id": 1000000}
-StaticJsonDocument<2000> responseDoc;
+// Assistant configuration: SAMD21, Serialize, Stream
+// used: {"jsonrpc":"2.0","result":{"temperature":{"value":21.25961494,"unit":"C"},"humidity":{"value":57.87795258,"unit":"percent"},"pressure":{"value":991.3789063,"unit":"mbar"},"illuminance":{"value":63.22580719,"unit":"lux"}},"id":1000000}
+// recommended value: 384, double that for good measure: 768
+StaticJsonDocument<768> responseDoc;
 
 ///////////////////////////////////////////////////////////////////////
 ///// Functions to be called remotely to return measurement data. /////
@@ -111,43 +113,49 @@ void loop() {
   
   if(Serial.available()){
 
-    // Get a request json object from serial, newline terminated
-    // and extract data
+    //// Get a request json object from serial, newline terminated
+    //// and extract data
     String request = Serial.readStringUntil('\n');
     
-    deserializeJson(requestDoc, request);
+    DeserializationError err = deserializeJson(requestDoc, request);
 
-    String reqJsonrpc = requestDoc["jsonrpc"];
-    String reqMethod = requestDoc["method"];
-    int reqId = requestDoc["id"];
-
-
-
-    // Get requested sensor data
-    
-    // The requestDoc["params"]["unit"] | "C" syntax specifies a default, because params are optional in json-rpc
-    // but arduinoJSON defaults to an empty string if the object is not there
-    
     struct measData result;
     struct allData bigResult;
 
+    String reqJsonrpc;
+    String reqMethod;
+    int reqId;
 
-    // TODO: handle errors properly in this
     String error = "";
+    if(err){
+      error = "invalid";
+    } else {
+      reqJsonrpc = requestDoc["jsonrpc"].as<String>();
+      reqMethod = requestDoc["method"].as<String>();
+      reqId = requestDoc["id"].as<int>();
+  
+      //// Get requested sensor data  
+ 
+      // The requestDoc["params"]["unit"] | "C" syntax specifies a default, because params are optional in json-rpc
+      // but arduinoJSON defaults to an empty string if the object is not there
+      
+      if(reqMethod == "getTemperature") result = getTemperature(requestDoc["params"]["unit"] | "C");
+      else if(reqMethod == "getHumidity") result = getHumidity();
+      else if(reqMethod == "getPressure") result = getPressure(requestDoc["params"]["unit"] | "mbar");
+      else if(reqMethod == "getIlluminance") result = getIlluminance(requestDoc["params"]["unit"] | "lux");
+      else if(reqMethod == "getAll") bigResult = getAll(requestDoc["params"]["units"][0] | "C",
+                                                        requestDoc["params"]["units"][1]| "mbar",
+                                                        requestDoc["params"]["units"][2]| "lux");
+      else error = "method";
+    }
     
-    if(reqMethod == "getTemperature") result = getTemperature(requestDoc["params"]["unit"] | "C");
-    else if(reqMethod == "getHumidity") result = getHumidity();
-    else if(reqMethod == "getPressure") result = getPressure(requestDoc["params"]["unit"] | "mbar");
-    else if(reqMethod == "getIlluminance") result = getIlluminance(requestDoc["params"]["unit"] | "lux");
-    else if(reqMethod == "getAll") bigResult = getAll(requestDoc["params"]["units"][0],
-                                                      requestDoc["params"]["units"][1],
-                                                      requestDoc["params"]["units"][2]);
-    else error = "method";
-
-    // Build response
+    //// Build response
     responseDoc.clear();
     responseDoc["jsonrpc"] = "2.0";
-    if(error == "method"){
+    if(error == "invalid"){
+      responseDoc["error"]["code"] = -32600;
+      responseDoc["error"]["message"] = "Invalid JSON!";
+    } else if(error == "method"){
       responseDoc["error"]["code"] = -32601;
       responseDoc["error"]["message"] = "Method doesn't exist!";
     } else if(result.value == -1){
@@ -170,7 +178,7 @@ void loop() {
     }
     responseDoc["id"] = reqId;
     
-    // Send response, also newline terminated
+    //// Send response, also newline terminated
     serializeJson(responseDoc, Serial);
     Serial.print("\n");
   }
