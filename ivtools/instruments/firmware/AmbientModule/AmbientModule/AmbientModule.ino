@@ -60,6 +60,7 @@ struct measData getPressure(String unit = "mbar"){
   if(unit == "mbar") pre = ENV.readPressure(MILLIBAR);
   else if(unit == "kpa") pre = ENV.readPressure(KILOPASCAL);
   else if(unit == "psi") pre = ENV.readPressure(PSI);
+  else pre = -1;
   
   struct measData ret = {pre, unit};
   return ret;
@@ -158,7 +159,7 @@ void loop() {
     } else if(error == "method"){
       responseDoc["error"]["code"] = -32601;
       responseDoc["error"]["message"] = "Method doesn't exist!";
-    } else if(result.value == -1){
+    } else if(result.value == -1 || bigResult.temp.value == -1 || bigResult.pre.value == -1 || bigResult.ill.value == -1){
       responseDoc["error"]["code"] = -32602;
       responseDoc["error"]["message"] = "Wrong parameters!";
     } else {
