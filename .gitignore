@@ -3,4 +3,3 @@ logging.log
 *.pyc
 /Pipe_inOutFifo
 /Pipe_inOut
-/C270_experiments.py
