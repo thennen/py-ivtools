@@ -101,6 +101,8 @@ camSettings = {'brightness': 0.70,
 camCompression = {"scale" : 0.5,
                   "quality" : 50}
 
+saveAmbient = False
+
 ######################################################################################
 # 𝗛𝗼𝘀𝘁𝗻𝗮𝗺𝗲 𝗮𝗻𝗱 𝘂𝘀𝗲𝗿 𝘀𝗽𝗲𝗰𝗶𝗳𝗶𝗰 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
 # 𝗠𝗮𝘆 𝗼𝘃𝗲𝗿𝗿𝗶𝗱𝗲 𝘁𝗵𝗲 𝗮𝗯𝗼𝘃𝗲 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
@@ -123,6 +125,7 @@ if hostname in ('pciwe46', 'iwe21705'):
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),
                         ('cam', instruments.MikrOkular, 0, camSettings),
+                        ('a', instruments.AmbientModule, "COM15"),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
@@ -135,6 +138,7 @@ if hostname in ('pciwe46', 'iwe21705'):
     elif username == 'mohr':
         #inst_connections.append(('teo', instruments.TeoSystem))
         savePicWithMeas = True
+        saveAmbient = True
 
     elif username == 'munoz':
         munoz = 'D:/munoz/'
