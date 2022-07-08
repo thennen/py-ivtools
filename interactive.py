@@ -155,7 +155,7 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
-instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','et','ttx','daq','dp','ts','cam')
+instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','et','ttx','daq','dp','ts','cam', 'a')
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
@@ -463,10 +463,19 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 frame = mat2jpg(frame,
                                 scale = settings.camCompression["scale"],
                                 quality = settings.camCompression["quality"])
-                log.info('Updating camera image in metadata')
+                log.info('Updating camera image in metadata.')
                 meta.meta.update({"cameraImage": frame})
             else:
                 log.warning('No camera connected!')
+        
+        # Store ambient sensor data with measurement
+        if settings.saveAmbient:
+            if a:
+                ambient = a.getAll()
+                log.info('Updating ambient sensor data in metadata.')
+                meta.meta.update({"ambientData": ambient})
+            else:
+                log.warning('No ambient sensor connected!')
 
         if autosave:
             # print(data)
