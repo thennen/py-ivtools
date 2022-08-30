@@ -1925,6 +1925,9 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
         logxmin, logxmax = np.log10(xmin), np.log10(xmax)
         xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
 
+    if R < 0:
+        xp = xp[::-1]
+
     # Load lines aren't lines on log scale, so plot many points
     x = np.linspace(xmin, xmax, 500)
     # Plot one at a time so you can just label one (for legend)
@@ -1932,7 +1935,8 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     for xi,yi in zip(xp, yp):
         ax.plot(x, yi - slope * (x - xi), **plotargs)
     # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(metric_prefix(R)))
+    #ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(metric_prefix(R)))
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpl.ticker.EngFormatter()(R)))
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)

@@ -740,7 +740,11 @@ def db_load(db_path=db_path, table_name='meta'):
     :return: Table of the database as a pandas.DataFrame.
     '''
     db_conn = sqlite3.connect(db_path)
-    query = db_conn.execute(f"SELECT * From {table_name}")
+    try:
+        query = db_conn.execute(f"SELECT * From {table_name}")
+    except Exception as e:
+        db_conn.close()
+        raise(e)
     col_names_encoded = [column[0] for column in query.description]
     df = pd.DataFrame.from_records(data=query.fetchall(), columns=col_names_encoded)
     col_names = db_decode(col_names_encoded)

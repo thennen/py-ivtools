@@ -612,7 +612,7 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
     dataout = {}
     for ik in interpkeys:
         if reverse:
-            interpolator = interp1d(data[column[::-1]], data[ik][::-1], axis=0, bounds_error=False, fill_value=fill_value)
+            interpolator = interp1d(data[column][::-1], data[ik][::-1], axis=0, bounds_error=False, fill_value=fill_value)
             #dataout[ik] = np.interp(interpvalues, data[column][::-1], data[ik][::-1], left=left, right=right)
         else:
             interpolator = interp1d(data[column], data[ik], axis=0, bounds_error=False, fill_value=fill_value)
@@ -630,6 +630,53 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
     add_missing_keys(data, dataout)
 
     return dataout
+
+
+def interp_rows(data, interpvals, column='I', reverse=False, fill_value='extrapolate'):
+    '''
+    TODO: Name??
+    data should be a dataframe, not necessarily adapted for list of dict yet.
+    interpolates all numbers and nested arrays to the specified values of "column"
+    Here column is a normal, non-nested array, and should be monotonic
+    the only thing that is reliably monotonic is time, otherwise be careful
+
+    anything out of range will be ignored
+
+    TODO: possible to combine with interpiv?? probably not, since it is an ivfunc and this can't be because it interpolates the rows
+    '''
+    # scalars and other non-arrays are metadata that will just pass through
+    # TODO: should check for the same shape[0]
+    ignore = []
+    #interpkeys = [k for k,v in data.items() if type(v) == np.ndarray]
+    representative = iloc(data, 0)
+    types = [type(v) for k,v in representative.items()]
+    interpkeys = [k for k,v in representative.items() if isinstance(v, np.ndarray) or isinstance(v, Number)]
+    interpkeys = [ik for ik in interpkeys if ik != column and ik not in ignore]
+
+    #if isinstance(interpvals, Number):
+        #interpvals = [interpvals]
+
+    interpvals = np.array(interpvals)
+    interpvals = interpvals[(np.min(data[column]) <= interpvals) & (interpvals <= np.max(data[column]))]
+
+    dataout = []
+    # Not the more efficient order to loop through
+    # should do dataout = [{}] * len(interpvals)
+    for interpval in interpvals:
+        d = {}
+        for ik in interpkeys:
+            if reverse:
+                interpolator = interp1d(data[column][::-1], np.stack(data[ik][::-1]), axis=0, bounds_error=False, fill_value=fill_value)
+            else:
+                interpolator = interp1d(data[column], np.stack(data[ik]), axis=0, bounds_error=False, fill_value=fill_value)
+
+            d[ik] = interpolator(interpval)
+
+        d[column] = interpval
+        #add_missing_keys(data, d)
+        dataout.append(d)
+    #return pd.Series(dataout)
+    return pd.DataFrame(dataout)
 
 
 @ivfunc
@@ -958,7 +1005,7 @@ def splitiv(data, nloops=None, nsamples=None, indices=None, dupe_endpts=True):
 
 #####
 
-def concativ(data, columns=None):
+def concativ(data, dedupe_endpoints=False, columns=None):
     ''' Inverse of splitiv.  Can only be called on multiple loops.  Keeps only keys from 0th loop.'''
     if columns is None:
         columns = find_data_arrays(data)
@@ -966,11 +1013,17 @@ def concativ(data, columns=None):
     out = {}
     for k in columns:
         if type(data) is pd.DataFrame:
-            out[k] = np.concatenate(list(data[k]))
+            coldata = list(data[k])
         elif type(data) is list:
-            out[k] = np.concatenate([d[k] for d in data])
+            coldata = [d[k] for d in data]
         else:
             raise Exception('pass a list of dicts or a dataframe')
+
+        if dedupe_endpoints:
+                out[k] = np.concatenate([l[:-1] for l in coldata[:-1]] + [coldata[-1]])
+        else:
+                out[k] = np.concatenate(coldata)
+
     # Put in the metadata from the first row only -- don't know how else to combine metadata
     firstrow = iloc(data, 0)
     add_missing_keys(firstrow, out)
@@ -1065,6 +1118,7 @@ def sortvalues(data, column='V', ascending=True):
     add_missing_keys(data, dataout)
     return dataout
 
+sortiv = sortvalues
 
 @ivfunc
 def reversearrays(data, columns=None):

@@ -10,7 +10,9 @@ visa_rm = visa.visa_rm # stored here by __init__
 class RigolDG5000(object):
     '''
     This instrument is really a pain in the ass.  Good example of a job not well done by Rigol.
-    But we spent a lot of time learning its quirks and are kind of stuck with it.
+    In addition to the terrible RF design (output resistance is not 50 Ω), the programming is extremely flaky and many of the datasheet specs are false.
+
+    But we spent a lot of time learning its quirks and are kind of stuck with it for now.
 
     Do not send anything to the Rigol that differs in any way from what it expects,
     or it will just hang forever and need to be manually restarted along with the entire python kernel.
