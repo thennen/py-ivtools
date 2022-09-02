@@ -941,7 +941,7 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
 ########### New compliance circuit ###################
 # self-biasing compliance circuit version that uses AWG for current control
 
-def calibrate_compliance_with_keithley(Rload=1000):
+def calibrate_compliance_with_keithley(Rload=1000, kch='A'):
     '''
     Use keithley to calibrate current compliance levels
     Attach keithley channel A to input of compliance circuit through a resistor (Rload)
@@ -973,9 +973,9 @@ def calibrate_compliance_with_keithley(Rload=1000):
     data = []
     for v in vlist:
         rigol.DC(v, 2)
-        d = k.iv(tri(Vmin, Vmax, n=100))
+        d = k.iv(tri(Vmin, Vmax, n=100), ch=kch)
         k.waitready()
-        d = k.get_data()
+        d = k.get_data(ch=kch)
         data.append(d)
     data = pd.DataFrame(data)
 
