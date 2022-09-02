@@ -2,7 +2,17 @@
 This is a script that uses the ivtools library to provide a command-based user interface
 for interactive IV measurements, for when you want a human in the feedback loop.
 
-This file should be run (and rerun) using
+Here, we value brevity of commands that need to be typed into the console, and
+the ability to modify arbitrary parts of the codebase without disrupting the
+interactive measurement process.
+
+This script is designed to be rerun, and all of the code will be updated, with
+everything but the measurement settings and the program state overwritten.
+Therefore you can modify any part of the code/library while making measurements
+without ever leaving the running program or closing/opening instrument connections.
+The need to restart the kernel should therefore be rare.
+
+The file should be run (and rerun) using
 %run -i interactive.py [folder name]
 in ipython (Jupyter qtconsole).
 
@@ -17,12 +27,6 @@ Short version of what it does:
 ⋅ Provides interactive versions of measurement functions that automatically plot and save data
 ⋅ Defines short bindings to certain function calls for interactive convenience (called without ())
 
-
-This script is designed to be rerun, and all of the code will be updated,
-everything but the measurement settings/program state overwritten.
-Therefore you can modify any part of the code/library while making measurements
-and without ever leaving the running program or closing instrument connections.
-The need to restart the kernel should therefore be rare.
 
 
 IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
@@ -155,7 +159,7 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
-instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','et','ttx','daq','dp','ts','cam')
+instrument_varnames = ('ps','rigol','rigol2','keith','teo','sympuls','et','ttx','daq','dp','ts','cam')
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
@@ -239,7 +243,7 @@ if not iplots.plotters:
     if ps:
         iplots.plotters = pico_plotters
         log.info('Setting up default plots for picoscope')
-    elif k:
+    elif keith:
         iplots.plotters = keithley_plotters
         log.info('Setting up default plots for keithley')
     elif teo:
@@ -495,14 +499,14 @@ def set_compliance(cc_value):
 if ps:
     ps.print_settings()
 
-if k and k.connected(): # Keithley is connected
+if keith and keith.connected(): # Keithley is connected
     live = True
-    if '2636A' in k.idn():
+    if '2636A' in keith.idn():
         # This POS doesn't support live plotting
         live = False
-    kiv_lua = interactive_wrapper(k._iv_lua, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
-    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
-    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kiv_lua = interactive_wrapper(keith._iv_lua, keith.get_data, donefunc=keith.done, live=live, autosave=True, shared_kws=['ch'])
+    kiv = interactive_wrapper(keith.iv, keith.get_data, donefunc=keith.done, live=live, autosave=True, shared_kws=['ch'])
+    kvi = interactive_wrapper(keith.vi, keith.get_data, donefunc=keith.done, live=live, autosave=True)
 
 if dp: # digipot is connected
     # TODO: monkeypatch dp.set_R instead?
