@@ -474,8 +474,8 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
         
         # Store ambient sensor data with measurement
         if settings.saveAmbient:
-            if a:
-                ambient = a.getAll()
+            if amb:
+                ambient = amb.getAll()
                 log.info('Updating ambient sensor data in metadata.')
                 meta.meta.update({"ambientData": ambient})
             else:

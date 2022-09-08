@@ -12,6 +12,9 @@ class AmbientModule:
         Illuminance: lux, footcandle, metercandle
     """
     
+    # Keep track of open connections and reuse
+    openedConn = {}
+    
     def __init__(self, com = "COM15"):
         """
         Connects to the ambient module.
@@ -26,16 +29,23 @@ class AmbientModule:
         None.
 
         """
-        self.conn = serial.Serial()
-        self.conn.port = com;
-        self.conn.baudrate = 9600;
-        self.conn.timeout = 2;
         
-        try:
-            self.conn.open()
-        except:
-            raise Exception("Could not connect to ambient module, " +
-                            "is a connection already open?")
+        if com in self.openedConn:
+            self.conn = self.openedConn[com]
+        else:
+        
+            self.conn = serial.Serial()
+            self.conn.port = com;
+            self.conn.baudrate = 9600;
+            self.conn.timeout = 2;
+            
+            try:
+                self.conn.open()
+            except:
+                raise Exception("Could not connect to ambient module, " +
+                                "is a connection already open?")
+            
+            self.openedConn.update({com: self.conn})
         
     def close(self):
         """

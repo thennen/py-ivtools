@@ -125,7 +125,7 @@ if hostname in ('pciwe46', 'iwe21705'):
                         ('ts', instruments.EugenTempStage),
                         ('dp', instruments.WichmannDigipot),
                         ('cam', instruments.MikrOkular, 0, camSettings),
-                        ('a', instruments.AmbientModule, "COM15"),
+                        ('amb', instruments.AmbientModule, "COM15"),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
                         # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
                         ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
