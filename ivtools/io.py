@@ -1653,6 +1653,71 @@ def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False
             log.info('Wrote {}.plt'.format(plotfp))
 
 
+def tile_figs(pattern='*_loops.png', out_fn='grid.png', folder='.', scale=.5, aspect=16/9, crop=True, pad=0, rect=False, keeplabels=True):
+    '''
+    for when you have too many subplots that would bring matplotlib to its knees
+    this stitches pngs together to make a giant grid
+
+    pngs are tiled from the top to bottom, left to right, in the order of the sorted filenames
+
+    hopefully they are all the same size and have the same axis ranges.
+    if not, all hell will probably break loose
+    '''
+    pngfiles = [fp for fp in glob(pattern, folder)]
+    n = len(pngfiles)
+    # get close to the right aspect ratio
+    W = int(np.sqrt(n*aspect)) # number of plots in width direction
+    H = int(np.ceil(n / W))    # number of plots in height direction
+    # extra = W*H - n
+    if rect:
+        H -= 1 # skip the last row to make a nice tidy rectangle
+        n = W*H
+        pngfiles = pngfiles[:n]
+
+    pngs = [Image.open(fn) for fn in pngfiles]
+
+    # all pngs should have the same size/axis frame as this representative
+    rep = pngs[0]
+
+    if crop:
+        #crop_pngs = [png.crop([91, 15, 615, 428]) for png in pngs]
+        # Try to find the axis frames automatically -- should be easy
+        pixsum = np.sum(np.array(rep)[:,:,:3], -1)
+        framethresh = 200 # mean of the sum of the RGB channels
+        wframe = np.where(np.mean(pixsum, 0) < framethresh)[0]
+        hframe = np.where(np.mean(pixsum, 1) < framethresh)[0]
+        area = [wframe[0], hframe[0], wframe[1]+1, hframe[1]+1]
+        if keeplabels:
+            # don't cut labels if plot is on left or bottom
+            crop_pngs = []
+            for i,png in enumerate(pngs):
+                area2 = area.copy()
+                if i % W == 0: area2[0] = 0
+                if i // W == H - 1:  area2[3] = rep.height
+                crop_pngs.append(png.crop(area2))
+        else:
+            crop_pngs = [png.crop(area) for png in pngs]
+    else:
+        crop_pngs = pngs
+
+    crop_resize_pngs = [im.resize([int(s*scale) for s in im.size]) for im in crop_pngs]
+
+    grid_width = sum(im.width for im in crop_resize_pngs[:W]) + pad*(W-1)
+    grid_height = sum(im.height for im in crop_resize_pngs[::W]) + pad*(H-1)
+    grid = Image.new('RGB', (grid_width, grid_height), color=(255,255,255))
+
+    x = 0
+    y = 0
+    for i,p in enumerate(crop_resize_pngs):
+        grid.paste(p, (x, y))
+        if (i+1) % W == 0:
+            y += p.height + pad
+            x = 0
+        else:
+            x += p.width + pad
+
+    grid.save(os.path.join(folder, out_fn))
+
 def update_depsheet():
     # Try to get the new deposition sheet
     moduledir = os.path.split(__file__)[0]
