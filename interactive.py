@@ -373,13 +373,18 @@ s = autocaller(savedata)
 # 𝗖𝗼𝗺𝗺𝗼𝗻 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
 ###########################################
 
-def setup_ccircuit():
+def setup_ccircuit(split=False):
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
+    ps.coupling.d = 'DC50'
     ps.range.b = 2
     ps.range.c = 2
-    settings.pico_to_iv = ccircuit_to_iv
+    ps.range.d = .5
+    if split:
+        settings.pico_to_iv = ccircuit_to_iv_split
+    else:
+        settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
 
 def setup_keithley():
