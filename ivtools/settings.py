@@ -126,9 +126,9 @@ if hostname in ('pciwe46', 'iwe21705'):
                         ('dp', instruments.WichmannDigipot),
                         ('cam', instruments.MikrOkular, 0, camSettings),
                         ('amb', instruments.AmbientModule, "COM15"),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                        ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
+                        # ('keith', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
+                        # ('keith', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
+                        ('keith', instruments.Keithley2600)]  # Keithley can be located automatically now
 
     if username == 'hennen':
         autocommit = True
