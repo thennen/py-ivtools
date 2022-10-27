@@ -828,7 +828,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     colors = dict(A='Blue', B='Red', C='Green', D='Gold')
     channels = ['A', 'B', 'C', 'D']
     # Remove the previous range indicators
-    ax.collections = []
+    ax.collections.clear()
 
     def iterdata():
         if type(chdata) in (dict, pd.Series):
