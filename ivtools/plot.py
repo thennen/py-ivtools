@@ -38,7 +38,8 @@ def arrowpath(x, y, ax=None, **kwargs):
     for k,v in kwargs.items():
         if k in kws:
             qkwargs[k] = v
-    ax.quiver(x[:-1], y[:-1], x[1:]-x[:-1], y[1:]-y[:-1], **qkwargs)
+    quiv = ax.quiver(x[:-1], y[:-1], x[1:]-x[:-1], y[1:]-y[:-1], **qkwargs)
+    return quiv
 
 def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidth=2, ax=None, **kwargs):
     '''
@@ -83,6 +84,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidt
 
     ax.add_collection(lc)
     ax.autoscale()
+    return lc
 
 def plot_multicolor_speed(x, y, t=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     '''
