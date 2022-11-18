@@ -1196,8 +1196,12 @@ def hybrid_IV(Imax=500e-6, Vmin=-3, dur=1e-3):
 
 def digipot_test(plot=True):
     '''
-    This rapidly makes sure everything is working properly
-    Short the needles, use channel A as the input waveform monitor, chC as the current and chB as node voltage
+    This rapidly makes sure everything is working properly with the digipot board, since it lacks built-in diagnostics
+
+    Put Rigol ch1 into the digipot input,
+    split rigol into pico chA for monitoring
+    connect digipot voltage output into pico chB
+    monitor digipot output current on rigol chC
     '''
     # Use these settings but don't change the state of picoscope
     coupling = dict(A='DC', B='DC50', C='DC50')
@@ -1248,7 +1252,7 @@ def digipot_test(plot=True):
             # Or
             ax.plot(d['V'], d['V']/d['I'], label=w)
             color = ax.lines[-1].get_color()
-            ax.plot([-5,5], [Rnom, Rnom], label=w, linestyle='--', alpha=.2, color=color)
+            ax.plot([-5,5], [Rnom+50, Rnom+50], label=w, linestyle='--', alpha=.2, color=color)
             plt.pause(.1)
             plt.xlim(-3, 3)
             plt.ylim(40, 60000)
