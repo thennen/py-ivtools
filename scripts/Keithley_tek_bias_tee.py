@@ -230,6 +230,19 @@ def test_measurement_single(
     data['padname'] = padname
     data['samplename'] = samplename
 
+    data['V_read'] = V_read
+    data['points'] = points 
+    data['interval'] = interval
+    data['range_read'] = range_read 
+    data['limit_read'] = limit_read
+    data['nplc'] = nplc
+    data['trigger_level'] = trigger_level
+    data['polarity'] = polarity
+    data['position'] = position
+    data['scale'] = scale
+    data['pg5_measurement'] = pg5_measurement
+    data['continuous'] = continuous
+
     data['t_scope'] = []
     data['v_pulse'] = []
     data['v_answer'] = []
