@@ -1043,7 +1043,8 @@ class InteractiveFigs(object):
         '''
         fig, ax = plt.subplots()
         fig.set_tight_layout(True)
-        fig.canvas.set_window_title('Interactive Plot {}'.format(n))
+        window_title = f'Interactive Plot {n}'
+        fig.canvas.manager.set_window_title(window_title)
         if len(self.figs) <= n:
             self.figs.extend([None] * (n - len(self.figs) + 1))
         if len(self.axs) <= n:
@@ -1106,11 +1107,13 @@ class InteractiveFigs(object):
 
     def set_maxlines(self, maxlines=None):
         self.maxlines = maxlines
-        for ax in self.axs:
-            if maxlines is None:
-                ax.lines = list(ax.lines)
-            else:
-                ax.lines = deque(ax.lines, maxlen=maxlines)
+        return
+        # Matplotlib update broke this, not sure how to re-implement
+        #for ax in self.axs:
+        #    if maxlines is None:
+        #        ax.lines = list(ax.lines)
+        #    else:
+        #        ax.lines = deque(ax.lines, maxlen=maxlines)
 
     @staticmethod
     def get_func_name(func):
@@ -1987,29 +1990,33 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
 
 
 ### Other kinds of plotting utilities
-def metric_prefix(x):
+def metric_prefix(x, format='.1f'):
     '''
-    returns a string representation of x using metrix prefix (μ, m, k, M)
+    returns a string representation of x using metrix prefix (μ, m, k, M, ...)
     should be equivalent to mpl.ticker.EngFormatter()(x)
     '''
-    #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
-    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
-    if abs(x) < min(values):
-        return '{:n}'.format(x)
+    prefix = ['Q', 'R', 'Y', 'Z', 'E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ',
+              'n', 'p', 'f', 'a', 'z', 'y', 'r', 'q']
+    values = 10.**(np.arange(30, -31, -3))
     for v, p in zip(values, prefix):
         if abs(x) >= v:
-            return '{:n} {}'.format(x/v, p)
+            break
+    return f'{x/v:{format}} {p}'
 
-def metric_prefix_longname(x, decimals=1):
-    longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
-    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
-    if abs(x) < min(values):
-        return '{:n}'.format(x)
+
+def metric_prefix_longname(x, format='.1f'):
+    '''
+    basically for text-to-speech
+    '''
+    longnames = ['quetta', 'rona', 'yotta', 'exa', 'peta', 'tera', 'giga',
+                 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto',
+                 'atto', 'zepto', 'yocto', 'ronto', 'quecto']
+    values = 10.**(np.arange(30, -31, -3))
     for v, p in zip(values, longnames):
         if abs(x) >= v:
-            return f'{x/v:.{decimals}f} {p}'
+            break
+    return f'{x/v:{format}} {p}'
+
 
 def engformatter(axis='y', ax=None):
     ''' puts the metric prefix on the tick labels '''
@@ -2025,7 +2032,7 @@ def engformatter(axis='y', ax=None):
 def scale_axis_labels(scale=6, axis='y', ax=None):
     '''
     Scale the axis labels by factors of 10 without having to scale the data itself
-    attempts to insert the metric prefix into the axis label
+    attempts to insert the metric prefix into the axis label (assuming the units are in square brackets)
     don't attempt to apply it twice, it will mess up your axis label
     '''
     if ax is None:

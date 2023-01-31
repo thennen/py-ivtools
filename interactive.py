@@ -20,7 +20,7 @@ Short version of what it does:
 ⋅ Puts all the functions from every ivtools module into the global namespace
 ⋅ Notifies user of the git status and can optionally auto-commit changes
 ⋅ Automatically connects to instruments as specified in the settings.py file
-⋅ Uses a powerful metadata management system (meta) that is connected to a local database
+⋅ Uses a powerful (but minimalist) metadata management system (meta) that is connected to a local database
 ⋅ Creates a ISO8601 dated directory for storing data.
 ⋅ Logging of text input and output to the data directory, as well as other logging functionality
 ⋅ Opens a set of tiled figures (iplots) that know how to plot data and can be cleared etc from the console
