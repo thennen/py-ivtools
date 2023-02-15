@@ -89,7 +89,7 @@ from ivtools.io import *
 from ivtools.instruments import *
 import logging
 
-magic = get_ipython().magic
+magic = get_ipython().run_line_magic
 
 # Define this on the first run only
 try:
@@ -104,7 +104,7 @@ if firstrun:
     # Don't run this more than once, or all the existing plots will get de-registered from the
     # matplotlib state machine or whatever and nothing will update anymore
     # TODO find out whether it has been called already
-    magic('matplotlib')
+    magic('matplotlib', 'qt')
     # Preview of the logging colors
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
