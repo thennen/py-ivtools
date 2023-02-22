@@ -54,7 +54,7 @@ class Keithley2600(object):
                 # for now, if it is in resource_manager and replies to a ping, it's a Keithley
                 up = ping(ip)
                 if up:
-                    log.debug(f'{ip} is up. Is it Keithley?')
+                    log.debug(f'{ip} is up.')
                     addr = ipr
                     break
         elif re.match(valid_ip_re, addr):
@@ -78,6 +78,10 @@ class Keithley2600(object):
         except Exception as E:
             log.error('Keithley connection failed at {}'.format(addr))
             log.error(E)
+            # Alejandro looked into this for a while and couldn't find a solution other than cycling the power
+            # Cannot catch directly because visa.VisaIOError(visa.errors.VI_ERROR_ALLOC) does not inherit from BaseException..
+            if hasattr(E, 'error_code') and E.error_code == visa.errors.VI_ERROR_ALLOC:
+                log.error('This is a known bug that occurs after you connect too many times without properly closing the session. Cycle the Keithley power and try again!')
 
     def connect(self, addr='TCPIP::192.168.11.11::inst0::INSTR'):
         if not self.connected():

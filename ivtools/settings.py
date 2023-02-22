@@ -15,7 +15,9 @@ import os
 import socket
 from importlib import reload
 
-import ivtools.instruments as instruments
+# Problem with this is that the settings.py version of instruments doesn't get reloaded
+#import ivtools.instruments as instruments
+
 # circular import?
 import ivtools.measure
 
@@ -117,18 +119,19 @@ if hostname in ('pciwe46', 'iwe21705'):
     datafolder = r'D:\data\{}'.format(username)
     db_path = 'D:\metadata.db'
 
-    inst_connections = [('ps', instruments.Picoscope),
-                        ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                        ('rigol2', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
-                        #('teo', instruments.TeoSystem),
-                        #('daq', instruments.USB2708HS),
-                        ('ts', instruments.EugenTempStage),
-                        ('dp', instruments.WichmannDigipot),
-                        ('cam', instruments.MikrOkular, 0, camSettings),
-                        ('amb', instruments.AmbientModule, "COM15"),
-                        # ('keith', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('keith', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                        ('keith', instruments.Keithley2600)]  # Keithley can be located automatically now
+    # tuple(variablename, classname, *[arguments to pass to the class init (such as address)])
+    inst_connections = [('ps', 'Picoscope'),
+                        ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                        ('rigol2', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
+                        #('teo', 'TeoSystem'),
+                        #('daq', 'USB2708HS'),
+                        ('ts', 'EugenTempStage'),
+                        ('dp', 'WichmannDigipot'),
+                        ('cam', 'MikrOkular', 0, camSettings),
+                        ('amb', 'AmbientModule', "COM15"),
+                        # ('keith', 'Keithley2600', 'TCPIP::192.168.11.11::inst0::INSTR'),
+                        # ('keith', 'Keithley2600', 'TCPIP::192.168.11.12::inst0::INSTR'),
+                        ('keith', 'Keithley2600')]  # Keithley can be located automatically now
 
     if username == 'hennen':
         autocommit = True
@@ -136,7 +139,7 @@ if hostname in ('pciwe46', 'iwe21705'):
         for di in logging_prints.values(): di['all'] = True # print everything
 
     elif username == 'mohr':
-        #inst_connections.append(('teo', instruments.TeoSystem))
+        #inst_connections.append(('teo', 'TeoSystem'))
         savePicWithMeas = True
         saveAmbient = True
 
@@ -153,24 +156,24 @@ if hostname in ('pciwe46', 'iwe21705'):
             'measure':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
             'interactive': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True}
         }
-        inst_connections = [('ps', instruments.Picoscope),
-                            ('k', instruments.Keithley2600),
-                            ('dp', instruments.WichmannDigipot),
-                            ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
+        inst_connections = [('ps', 'Picoscope'),
+                            ('k', 'Keithley2600'),
+                            ('dp', 'WichmannDigipot'),
+                            ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
 elif hostname in ('pciwe38', 'iwe21407'):
     # Moritz computer
     datafolder = r'C:\Messdaten'
-    inst_connections =  [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),
-    ('ttx', instruments.TektronixDPO73304D ,'GPIB0::1::INSTR'),
-    ('sympuls', instruments.Sympuls ,'ASRL3::INSTR')]
-   # ('pg100', instruments.PG100 ,'ASRL3::INSTR')]
+    inst_connections =  [('k', 'Keithley2600', 'GPIB0::27::INSTR'),
+    ('ttx', 'TektronixDPO73304D' ,'GPIB0::1::INSTR'),
+    ('sympuls', 'Sympuls' ,'ASRL3::INSTR')]
+   # ('pg100', 'PG100' ,'ASRL3::INSTR')]
 
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'
-    inst_connections = [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),]
+    inst_connections = [('k', 'Keithley2600', 'GPIB0::27::INSTR'),]
 
 elif hostname == 'pciwe34':
     # Mark II
@@ -180,14 +183,14 @@ elif hostname == 'pciwe34':
     # Therefore I will use the operating system drive..
     # datafolder = r'G:\Messdaten\hennen'
     datafolder = r'C:\Messdaten\hennen'
-    inst_connections = [('et', instruments.Eurotherm2408),
-                        ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
+    inst_connections = [('et', 'Eurotherm2408'),
+                        ('k', 'Keithley2600', 'GPIB0::27::INSTR')]
 
 elif hostname == 'CHMP2':
     datafolder = r'C:\data'
-    inst_connections = [('ps', instruments.Picoscope),
-                        ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
-                        ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
+    inst_connections = [('ps', 'Picoscope'),
+                        ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
+                        ('p', 'UF2000Prober', 'GPIB0::5::INSTR')]
 
 elif username == 'alexgar':
     munoz = '/Users/alexgar/sciebo/munoz/'

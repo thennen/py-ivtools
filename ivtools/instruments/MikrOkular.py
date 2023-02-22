@@ -87,7 +87,7 @@ class MikrOkular:
 
         MikrOkular.openedCams.update({camId: self.camera})
 
-        if not settings == None:
+        if settings is not None:
             self.setAllProperties(settings)
 
         # TODO: For consistency, this should have a default like settings

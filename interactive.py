@@ -35,8 +35,8 @@ IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib
 TODO: In Spyder, ipython logging file isn't created, find out why
 TODO: fix the %matplotlib thing
 TODO: GUI for displaying and changing channel settings, other status information?
-TODO define reload_settings, def reset_state
-IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
+TODO: define reload_settings, def reset_state
+IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)?
 IDEA: buy a wireless keypad and make it index the metadata, start a measurement, etc
 
 Author: Tyler Hennen (tyler@hennen.us)
@@ -159,6 +159,7 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
+# Does not strictly need to be kept up to date, just convenient
 instrument_varnames = ('ps','rigol','rigol2','keith','teo','sympuls','et','ttx','daq','dp','ts','cam', 'amb')
 globalvars = globals()
 for v in instrument_varnames:
@@ -175,19 +176,36 @@ else:
 # VISA instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
 if inst_connections: log.info('\nAutoconnecting to instruments...')
-for varname, inst_class, *args in inst_connections:
+for varname, inst_classname, *args in inst_connections:
     if len(args) > 0:
         if type(args[0])==str and (args[0].startswith('USB') or args[0].startswith('GPIB')):
             # don't bother trying to connect to it if it's not in visa_resources
             if args[0] not in visa_resources:
-                # TODO: I think there are multiple valid formats for visa addresses.
+                # TODO: There are multiple valid formats for visa addresses.
                 # How to equate them?
                 # https://pyvisa.readthedocs.io/en/stable/names.html
-                continue
+                #log.warning(f'{args[0]} not listed in visa resources. Skipping connection attempt')
+                #continue
+                log.warning(f'{args[0]} not listed in visa resources. Trying to connect anyway.')
+
+
+    if not hasattr(instruments, inst_classname):
+        log.error(f'Could not find an instrument class named {inst_classname}')
+        continue
+
     try:
-        globalvars[varname] = inst_class(*args)
+        globalvars[varname] = getattr(instruments, inst_classname)(*args)
+        success = True # actually maybe...
     except Exception as x:
-        log.error(f'Autoconnection to {inst_class.__name__} failed: {x}')
+        # In case the instrument class doesn't fail gracefully, we still want to proceed with this script
+        log.error(f'Instantiating {inst_classname} with args {args} raised an exception:\n{x}')
+        success = False
+
+    if success:
+        argstring = ', '.join(format(a) for a in args)
+        log.info(f'{varname} = {inst_classname}({argstring})')
+
+log.info('')
 
 #######################################
 # 𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
@@ -240,6 +258,7 @@ teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
 
 # What the plots should do by default
 if not iplots.plotters:
+    log.info('')
     if ps:
         iplots.plotters = pico_plotters
         log.info('Setting up default plots for picoscope')
@@ -367,6 +386,7 @@ add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
 s = autocaller(savedata)
+cdd = autocaller(cd_data)
 
 
 ###########################################
@@ -510,9 +530,11 @@ def set_compliance(cc_value):
     measure.set_compliance(cc_value)
 
 ####  Stuff that gets defined only if a given instrument is present and connected
+log.info('')
 
 if ps:
     ps.print_settings()
+    log.info('')
 
 if keith and keith.connected(): # Keithley is connected
     live = True

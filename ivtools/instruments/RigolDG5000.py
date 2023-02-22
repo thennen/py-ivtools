@@ -33,7 +33,7 @@ class RigolDG5000(object):
         # Turn off screen saver.  It sends a premature pulse on SYNC output if on.
         # This will make the scope trigger early and miss part or all of the pulse.  Really dumb.
         self.screensaver(False)
-        # Store here the last waveform that was programmed, so that we can skip uploading it if it
+        # Store the last waveform that was programmed, so that we can skip uploading if it
         # hasn't changed
         self.volatilewfm = []
 
@@ -49,7 +49,6 @@ class RigolDG5000(object):
             if 'DG5' in resource:
                 return resource
         return 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'
-
 
     def connect(self, addr):
         try:
@@ -77,7 +76,22 @@ class RigolDG5000(object):
         # Sets or returns the current setting
         if setting is None:
             if self.verbose: log.info(cmd + '?')
-            reply = self.query(cmd + '?').strip()
+
+            try:
+                reply = self.query(cmd + '?').strip()
+            except Exception as E:
+                # This error might be related to having a different __pycache__ directory unexpectedly added to your path?
+                # I think you can safely eat the first error and just try again
+                # VI_ERROR_INP_PROT_VIOL (-1073807305): Device reported an input protocol error during transfer.
+                # ...\Anaconda3\Lib\site-packages\__pycache__
+                # Cannot directly catch the exception because it does not inherit from BaseException
+                if hasattr(E, 'error_code') and E.error_code == visa.errors.VI_ERROR_INP_PROT_VIOL:
+                    log.warning('VI_ERROR_INP_PROT_VIOL encountered. Simply trying again as the error seems to resolve itself.')
+                    reply = self.query(cmd + '?').strip()
+                else:
+                    raise E
+
+
             # Convert to numeric?
             replymap = {'ON': 1, 'OFF': 0}
 
@@ -620,6 +634,7 @@ class RigolDG5000(object):
         # Goes directily to the next voltage
         # UNLESS you transition from abs(value) <= 2 t abs(value) > 2
         # then it will click and briefly output zero volts
+
         self.setup_burstmode(ch=ch)
         self.amplitude(.01, ch=ch)
         # Limited to +- 9.995
