@@ -190,7 +190,7 @@ for varname, inst_class, *args in inst_connections:
         log.error(f'Autoconnection to {inst_class.__name__} failed: {x}')
 
 #######################################
-#𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
+# 𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
 #######################################
 
 # Make sure %matplotlib has been called! Or else figures will appear and then disappear.
@@ -274,7 +274,7 @@ def open_datadir():
     os.system('explorer ' + datadir())
 
 def cd_data():
-    magic('cd ' + datadir())
+    magic('cd', datadir())
 
 # set up ipython log in the data directory
 # TODO: make a copy and change location if datadir() changes
@@ -420,7 +420,8 @@ def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
 # Wrap any functions that you want to automatically make plots/write to disk with this:
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
-#      or pass a list of functions as getdatafunc, then smash the results together somehow
+#      or pass a list of functions as getdatafunc, then smash the results together somehow.
+#      Ugly interim solution: collect data from different sources inside interactive_wrapper, conditional on flags stored in settings...
 def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None):
     ''' Activates auto data plotting and saving for wrapped measurement functions '''
     @wraps(measfunc)
