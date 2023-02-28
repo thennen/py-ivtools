@@ -35,7 +35,8 @@ class RigolDG5000(object):
         self.screensaver(False)
         # Store the last waveform that was programmed, so that we can skip uploading if it
         # hasn't changed
-        self.volatilewfm = []
+        # One waveform per channel
+        self.volatilewfm = {1:[], 2:[]}
 
     @staticmethod
     def get_visa_addr():
@@ -515,7 +516,7 @@ class RigolDG5000(object):
 
         burst_state = self.burst(ch=ch)
         # Only update waveform if necessary
-        if np.any(waveform != self.volatilewfm):
+        if np.any(waveform != self.volatilewfm[ch]):
             if burst_state:
                 output_state = self.output(None, ch=ch)
                 if output_state:
@@ -527,10 +528,12 @@ class RigolDG5000(object):
                     self.output(True, ch=ch)
             else:
                 self.load_wfm_ints(waveform)
-            self.volatilewfm = waveform
+            self.volatilewfm[ch] = waveform
         else:
             # Just switch to the arbitrary waveform that is already in memory
-            self.shape('USER', ch)
+            log.info('Volatile wfm already uploaded, skipping re-upload.')
+            if self.shape(ch=ch) != 'USER':
+                self.shape('USER', ch) # makes a small sound, might take time?
         freq = 1. / duration
         self.frequency(freq, ch=ch)
         maxamp = np.max(np.abs(waveform))

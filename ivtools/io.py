@@ -909,15 +909,16 @@ def gitCommit(message='AUTOCOMMIT'):
     return output
 
 
-def log_ipy(start=True, logfilepath=None):
+def log_ipy(start=True, logfilepath=None, mode='over'):
     '''
     Append ipython and std in/out to a text file
     There are some strange bugs involved
     spyder just crashes, for example
     don't be surprised if it messes something up
     '''
-    magic = get_ipython().magic
-    magic('logstop')
+    #magic = get_ipython().magic
+    magic = get_ipython().run_line_magic
+    magic('logstop', '')
 
     # Sorry, I just don't know a better way to do this.
     # I want to store the normal standard out somewhere it's safe
@@ -929,7 +930,6 @@ def log_ipy(start=True, logfilepath=None):
 
     class Logger(object):
         ''' Something to replace stdout '''
-
         def __init__(self):
             self.terminal = sys.stdstdout
             self.log = open(logfilepath, 'a')
@@ -951,7 +951,8 @@ def log_ipy(start=True, logfilepath=None):
 
     if start:
         # logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
-        magic('logstart -o {} append'.format(logfilepath))
+        #magic('logstart -o {} append'.format(logfilepath))
+        magic('logstart', f'-o {logfilepath} {mode}')
         logger = Logger()
         sys.stdout = logger
     else:

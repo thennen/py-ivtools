@@ -166,6 +166,7 @@ def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, inter
 def picoiv_new(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
             termination=None, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
             savewfm=False, pretrig=0, posttrig=0, interpwfm=True, **kwargs):
+    ''' Alejandro's attempt to split up picoiv so that we can reuse the code while using a different AWG. Not tested yet. '''
     rigol = instruments.RigolDG5000()
 
     wfm = np.array(wfm) if not type(wfm) == np.ndarray else wfm
@@ -208,7 +209,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     use "pretrig" and "posttrig" to sample before and after the waveform
     units are fraction of one pulse duration
 
-    kwargs go nowhere
+    kwargs go nowhere..
     '''
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
@@ -231,6 +232,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+    # TODO: ps.capture has many arguments that are not accessible by a picoiv() call..  add them?
     actual_fs = ps.capture(ch=channels,
                            freq=fs,
                            duration=duration * sampling_factor,

@@ -61,8 +61,10 @@ from datetime import datetime
 from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
+import inspect
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
 import pyvisa as visa
+import ipykernel
 
 import ivtools
 import importlib
@@ -111,6 +113,9 @@ if firstrun:
         print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
     print()
     sys.stdout.flush()
+    firstrun_datestr = time.strftime('%Y-%m-%d')
+
+datestr = time.strftime('%Y-%m-%d') # '2019-08-07'
 
 log = logging.getLogger('interactive')
 
@@ -118,8 +123,6 @@ log = logging.getLogger('interactive')
 hostname = settings.hostname
 username = settings.username
 db_path = settings.db_path  # Database path
-datestr = time.strftime('%Y-%m-%d')
-#datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     log.warning('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
@@ -274,20 +277,34 @@ if not iplots.plotters:
 # 𝗠𝗮𝗸𝗲 𝗱𝗮𝘁𝗮 𝗳𝗼𝗹𝗱𝗲𝗿 𝗮𝗻𝗱 𝗱𝗲𝗳𝗶𝗻𝗲 𝗵𝗼𝘄 𝗱𝗮𝘁𝗮 𝗶𝘀 𝘀𝗮𝘃𝗲𝗱
 #################################################################################
 
-datafolder = settings.datafolder
-# Default data subfolder -- will reflect the date of the last time this script ran
+# This will be different for different PCs and different users
+# datafolder = settings.datafolder
+
+# Data subfolder timestamp will reflect the date of the first time this script ran this session
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
-subfolder = datestr
+
+if firstrun: subfolder = None
 if len(sys.argv) > 1:
     # Can give a folder name with command line argument
-    subfolder += '_' + sys.argv[1]
-log.info('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
-# TODO:
-log.info('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
-io.makefolder(datafolder, subfolder)
+    # Then no renaming will be necessary afterward
+    subfolder = sys.argv[1]
+
+def prepend_date(s):
+    if not s:
+        return firstrun_datestr
+    elif re.match('^\d{4}-\d{2}-\d{2}_', s):
+        # already has a date
+        return s
+    else:
+        return f'{firstrun_datestr}_{s}'
 
 def datadir():
-    return os.path.join(datafolder, subfolder)
+    datadir = os.path.join(settings.datafolder, prepend_date(subfolder))
+    os.makedirs(datadir, exist_ok=True)
+    return datadir
+
+log.info(f'Data to be saved in {datadir()}')
+log.info('Overwrite \'settings.datafolder\' and/or \'subfolder\' variables to change directory')
 
 def open_datadir():
     os.system('explorer ' + datadir())
@@ -295,13 +312,17 @@ def open_datadir():
 def cd_data():
     magic('cd', datadir())
 
-# set up ipython log in the data directory
+# Name the ipy log file after the ipython session
+# This is hacky and update broke it
+#kernelID = inspect.stack()[1][1].split(os.path.sep)[-2]
+# This doesn't change when the kernel is reset, even though the history is lost
+# kernelID = ipykernel.get_connection_file().split('-', 1)[1].replace('.json','')
+kernelID = get_ipython().history_manager.get_last_session_id()
+ipy_log_fp = os.path.join(datadir(), f'{firstrun_datestr}_IPython_{kernelID}.log')
+# Set up ipython log in the data directory
 # TODO: make a copy and change location if datadir() changes
-if firstrun:
-    io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
-    #iplots.plotters = keithley_plotters
+io.log_ipy(True, ipy_log_fp)
 
-# noinspection SpellCheckingInspection
 def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
@@ -566,5 +587,5 @@ if teo:
 # Microscope camera connected
 if cam:
     def saveImg():
-        path = os.path.join(datafolder, subfolder, meta.timestamp()+".png")
+        path = os.path.join(datadir(), meta.timestamp()+".png")
         cam.saveImg(path)
