@@ -293,7 +293,7 @@ def prepend_date(s):
     if not s:
         return firstrun_datestr
     elif re.match('^\d{4}-\d{2}-\d{2}_', s):
-        # already has a date
+        # already has a date, leave it alone
         return s
     else:
         return f'{firstrun_datestr}_{s}'
@@ -312,15 +312,15 @@ def open_datadir():
 def cd_data():
     magic('cd', datadir())
 
-# Name the ipy log file after the ipython session
+# Set up ipython log in the data directory
+# Name it after the ipython session
 # This is hacky and update broke it
 #kernelID = inspect.stack()[1][1].split(os.path.sep)[-2]
 # This doesn't change when the kernel is reset, even though the history is lost
 # kernelID = ipykernel.get_connection_file().split('-', 1)[1].replace('.json','')
 kernelID = get_ipython().history_manager.get_last_session_id()
 ipy_log_fp = os.path.join(datadir(), f'{firstrun_datestr}_IPython_{kernelID}.log')
-# Set up ipython log in the data directory
-# TODO: make a copy and change location if datadir() changes
+# If datadir() changes, the log file will get copied to the new directory the next time you rerun interactive.py
 io.log_ipy(True, ipy_log_fp)
 
 def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
@@ -351,13 +351,15 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
 
 def savefig(name=None, fig=None, **kwargs):
     '''
-    Save a png of the figure in the data directory
+    Save the figure as an image file in the data directory
     '''
     if fig is None:
         fig = plt.gcf()
     fn = meta.filename()
     if name:
         fn += '_' + name
+    if not os.path.splitext(name)[1]:
+        fn += '.png'
     fp = os.path.join(datadir(), fn)
     fig.savefig(fp, **kwargs)
     log.info(f'Wrote {fp}')
@@ -529,7 +531,6 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 log.warning('No ambient sensor connected!')
 
         if autosave:
-            # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
