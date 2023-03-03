@@ -295,7 +295,7 @@ def prepend_date(s):
     if not s:
         return firstrun_datestr
     elif re.match('^\d{4}-\d{2}-\d{2}_', s):
-        # already has a date
+        # already has a date, leave it alone
         return s
     else:
         return f'{firstrun_datestr}_{s}'
@@ -351,13 +351,15 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
 
 def savefig(name=None, fig=None, **kwargs):
     '''
-    Save a png of the figure in the data directory
+    Save the figure as an image file in the data directory
     '''
     if fig is None:
         fig = plt.gcf()
     fn = meta.filename()
     if name:
         fn += '_' + name
+    if not os.path.splitext(name)[1]:
+        fn += '.png'
     fp = os.path.join(datadir(), fn)
     fig.savefig(fp, **kwargs)
     log.info(f'Wrote {fp}')
@@ -529,7 +531,6 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 log.warning('No ambient sensor connected!')
 
         if autosave:
-            # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
