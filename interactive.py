@@ -91,7 +91,9 @@ from ivtools.io import *
 from ivtools.instruments import *
 import logging
 
-magic = get_ipython().run_line_magic
+ipy = get_ipython()
+magic = ipy.run_line_magic
+kernelID = ipy.history_manager.get_last_session_id()
 
 # Define this on the first run only
 try:
@@ -300,7 +302,16 @@ def prepend_date(s):
 
 def datadir():
     datadir = os.path.join(settings.datafolder, prepend_date(subfolder))
+    # might be redundant
     os.makedirs(datadir, exist_ok=True)
+    # Set up ipython log in the data directory, named after ipython session
+    ipy_log_fp = os.path.join(datadir, f'{firstrun_datestr}_IPython_{kernelID}.log')
+    # io.log_ipy(True, ipy_log_fp) tried to log stdout but it's more trouble than it's worth
+    if not ipy.logfile:
+        magic('logstart', f'-o {ipy_log_fp} over')
+    if ipy.logfile != ipy_log_fp:
+        magic('logstop', '')
+        magic('logstart', f'-o {ipy_log_fp} over')
     return datadir
 
 log.info(f'Data to be saved in {datadir()}')
@@ -311,17 +322,6 @@ def open_datadir():
 
 def cd_data():
     magic('cd', datadir())
-
-# Name the ipy log file after the ipython session
-# This is hacky and update broke it
-#kernelID = inspect.stack()[1][1].split(os.path.sep)[-2]
-# This doesn't change when the kernel is reset, even though the history is lost
-# kernelID = ipykernel.get_connection_file().split('-', 1)[1].replace('.json','')
-kernelID = get_ipython().history_manager.get_last_session_id()
-ipy_log_fp = os.path.join(datadir(), f'{firstrun_datestr}_IPython_{kernelID}.log')
-# Set up ipython log in the data directory
-# TODO: make a copy and change location if datadir() changes
-io.log_ipy(True, ipy_log_fp)
 
 def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
     """

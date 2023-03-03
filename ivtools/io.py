@@ -912,12 +912,17 @@ def gitCommit(message='AUTOCOMMIT'):
 def log_ipy(start=True, logfilepath=None, mode='over'):
     '''
     Append ipython and std in/out to a text file
+    it seems the ipython magic %logstart logs output but not stdout, so this is a naive attempt to add it
+
     There are some strange bugs involved
     spyder just crashes, for example
     don't be surprised if it messes something up
     '''
     #magic = get_ipython().magic
-    magic = get_ipython().run_line_magic
+    ipy = get_ipython()
+    magic = ipy.run_line_magic
+
+    if logfilepath == ipy.logfile: pass
     magic('logstop', '')
 
     # Sorry, I just don't know a better way to do this.
@@ -929,7 +934,7 @@ def log_ipy(start=True, logfilepath=None, mode='over'):
         sys.stdstdout = sys.stdout
 
     class Logger(object):
-        ''' Something to replace stdout '''
+        ''' Something to split stdout into both the terminal and the log file'''
         def __init__(self):
             self.terminal = sys.stdstdout
             self.log = open(logfilepath, 'a')
@@ -937,10 +942,11 @@ def log_ipy(start=True, logfilepath=None, mode='over'):
         def write(self, message):
             self.terminal.write(message)
             # Comment the lines and append them to ipython log file
+            # with open(logfilepath, 'a') as f:
             self.log.writelines(['#[Stdout]# {}\n'.format(line) for line in message.split('\n') if line != ''])
 
         def flush(self):
-            self.log.flush()
+            # self.log.flush()
             # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
             self.terminal.flush()
 
@@ -952,6 +958,8 @@ def log_ipy(start=True, logfilepath=None, mode='over'):
     if start:
         # logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
         #magic('logstart -o {} append'.format(logfilepath))
+        # over is not a good mode
+        # append is not a good mode because we will duplicate the log if the same session starts it more than once
         magic('logstart', f'-o {logfilepath} {mode}')
         logger = Logger()
         sys.stdout = logger

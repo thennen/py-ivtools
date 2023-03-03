@@ -517,7 +517,9 @@ class Picoscope(object):
         colors = dict(A='Blue', B='Red', C='Green', D='Gold')
         channels = ['A', 'B', 'C', 'D']
         # Remove any previous range indicators that might exist on the plot
-        ax.collections = []
+        # ax.collections = [] # can't do this anymore since matplotlib update
+        for coll in ax.collections:
+            coll.remove()
         for c in channels:
             if c in chdata.keys():
                 if chdata[c].dtype == np.int8:
