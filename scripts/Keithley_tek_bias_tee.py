@@ -195,59 +195,85 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
-def test_measurement_single(samplename,
-padname,
-amplitude = np.nan,
-bits = np.nan,
-sourceVA = -0.2,
-points = 250,
-interval = 0.1,
-trigger = 0.1,
-two_channel = False,
-rangeI = 0,
-nplc = 1,
-pulse_width = 50e-12,
-attenuation =0,
-pg5_measurement = True,
-polarity = 1,
-recordlength = 250,
-answer_position = -2.5,
-pulse_postition = -4,
-answer_scale = 0.12,
-pulse_scale = 0.12,
-continious = False):
+def test_measurement_single(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation =0, 
+
+    # values for keithley
+    V_read = -0.2,
+    points = 250, # there is only 10 points in vcm_measurement. Why?
+    interval = 0.1, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1,
+
+    # values for tektronix
+    trigger_level = 0.1,
+    polarity = 1,
+    recordlength = 250,
+    position = -2.5,
+    scale = 0.12,
+
+    # values for sympuls
+    pulse_width = 50e-12,
+    pg5_measurement = True,
+    continuous = False
+):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
     setup_pcm_plots()
 
     number_of_events =0
     data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    data['V_read'] = V_read
+    data['points'] = points 
+    data['interval'] = interval
+    data['range_read'] = range_read 
+    data['limit_read'] = limit_read
+    data['nplc'] = nplc
+    data['trigger_level'] = trigger_level
+    data['polarity'] = polarity
+    data['position'] = position
+    data['scale'] = scale
+    data['pg5_measurement'] = pg5_measurement
+    data['continuous'] = continuous
+
     data['t_scope'] = []
     data['v_pulse'] = []
     data['v_answer'] = []
     data['t_event'] = []
-    data['amplitude'] = amplitude
-    data['bits'] = bits
-    data['padname'] = padname
-    data['samplename'] = samplename
+    
     data['attenuation'] = attenuation
     data['recordlength'] = recordlength
     data['pulse_width'] = pulse_width
 
+    num_pulses = 0
 
     iplots.show()    
+
+    # recordlength = (pulse_width * 100e9) + 500
+    # read resistance state with keithley
     k.source_output(ch = 'A', state = True)
-    k.source_level(source_val= sourceVA, source_func='v', ch='A')
+    k.source_level(source_val= V_read, source_func='v', ch='A')
     plt.pause(1)
-    k._it_lua(sourceVA = sourceVA , sourceVB = 0, points = points, interval = interval, rangeI = rangeI , limitI = 1, nplc = nplc)
+    k._it_lua(sourceVA = V_read , sourceVB = 0, points = points, interval = interval, rangeI = range_read , limitI = limit_read, nplc = nplc)
+
+    # set up tektronix
     ttx.inputstate(1, False)
     ttx.inputstate(2, False)
     ttx.inputstate(3, True)    
     ttx.inputstate(4, False)
-    ttx.scale(3, answer_scale)
-    ttx.position(3, answer_position*polarity)
+    ttx.scale(3, scale)
+    ttx.position(3, position*polarity)
     ttx.change_samplerate_and_recordlength(100e9, recordlength)
-    trigger = trigger*polarity
+    trigger_level = trigger_level*polarity
+
+    # set up sympuls
     sympuls.set_pulse_width(pulse_width)
     
     # if pg5_measurement:
@@ -256,12 +282,13 @@ continious = False):
     #     sympuls.trigger()
     
     while not k.done():
-        ttx.arm(source = 3, level = trigger, edge = 'r') 
+        ttx.arm(source = 3, level = trigger_level, edge = 'r') 
         plt.pause(0.1)
 
-        if pg5_measurement and continious:
+        if pg5_measurement and continuous:
             sympuls.trigger()
-            print('trigger'+str(trigger))
+            num_pulses += 1
+            print('trigger'+str(trigger_level))
             plt.pause(0.2)
         data.update(k.get_data())
         if ttx.triggerstate():
@@ -294,6 +321,7 @@ continious = False):
         filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
     io.write_pandas_pickle(meta.attach(data), filepath)
     print(len(data))
+    print(f"{num_pulses=}")
     return data    
 
 def test_measurement(samplename,
@@ -316,7 +344,7 @@ answer_position = -2.5,
 pulse_postition = -4,
 answer_scale = 0.12,
 pulse_scale = 0.12,
-continious = False):
+continuous = False):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
     setup_pcm_plots()
@@ -377,8 +405,8 @@ continious = False):
     
     while not k.done():
         
-#        if pg5 and continious:
-        if pg5_measurement and continious:
+#        if pg5 and continuous:
+        if pg5_measurement and continuous:
 #            pg5.trigger()
 
             sympuls.trigger()
@@ -453,7 +481,7 @@ answer_position = -2.5,
 pulse_postition = -4,
 answer_scale = 0.12,
 pulse_scale = 0.12,
-continious = False):
+continuous = False):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
     setup_pcm_plots()
@@ -524,8 +552,8 @@ continious = False):
 
     while not k.done() and t :
         
-#        if pg5 and continious:
-        if pg5_measurement and continious:
+#        if pg5 and continuous:
+        if pg5_measurement and continuous:
 #            pg5.trigger()
             sympuls.Apply_Burst_time(pulse_width, period, Number_of_pulses)
             ttx.arm(source = 3, level = trigger, edge = 'r')
