@@ -13,6 +13,7 @@ from fractions import Fraction
 from math import gcd
 from numbers import Number
 import inspect
+from collections import defaultdict
 
 import numpy as np
 import pandas as pd
@@ -125,11 +126,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         pico_to_iv = ivtools.settings.pico_to_iv
 
     if channels is None:
-        if hasattr(pico_to_iv, 'channels'):
-            # data conversion function may specify which channels are used
-            channels = pico_to_iv.channels
-        else:
-            # This is default
+        channels = list(probe_channels(pico_to_iv))
+        if not channels:
             channels = ['A', 'C']
 
     if monitor_ch is None:
@@ -167,7 +165,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     # These are shared arguments I think pulsefunc might want us to pass through
     pulseargs = {'wfm':wfm, 'duration':duration, 'n':n}
     # I'm going to ignore that it is technically possible that the arguments are positional-only
-    for k,v in inspect.signature(pulsefunc).parameters:
+    for k,v in inspect.signature(pulsefunc).parameters.items():
         # bind by function annotation first, so we don't have to rename anything that could break compatibility
         if v.annotation in pulseargs:
             kwargs[k] = pulsearges[v.annotation]
@@ -215,7 +213,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
-    if autosplit:
+    if autosplit: # True by default
         if (splitbylevel is None) and (n > 1):
             log.debug(f'Splitting data into n={n} individual pulses')
             nsamples = duration * actual_fs
@@ -232,7 +230,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             log.debug(f'Splitting data at V={splitbylevel} V, where dV/dt {ltgt} 0')
             ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
         else:
-            log.debug('Splitting data at V={splitbylevel}')
+            # log.debug('Nothing to split')
+            pass
     elif splitbylevel:
             log.debug('splitbylevel does nothing if autosplit is False')
 
@@ -1077,24 +1076,6 @@ def digipotiv(V1, V2, R1=0, R2=0,
 
 ########### Setup-dependent conversions from picoscope channel data to IV data ###################
 
-def channels(*ch):
-    """
-    A cute way to manually indicate which channels are used by the conversion functions.
-    Stored in a function attribute, so they can be used to determine which channels to sample on.
-    The idea is that I'm too lazy to type ch=['A', 'B', 'C'] as an argument to a measurement function.
-    It should just know what to do by default if I leave ch out.
-    """
-    def decorator(func):
-        @functools.wraps(func)
-        def newfunc(*args, **kwargs):
-            func(*args, **kwargs)
-        for c in ch:
-            assert(c in ('A', 'B', 'C', 'D'))
-        newfunc.channels = ch
-        return newfunc
-    return decorator
-
-@channels('A', 'B', 'C')
 def ccircuit_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1131,7 +1112,6 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
-@channels('A', 'B', 'C', 'D')
 def ccircuit_to_iv_split(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1173,7 +1153,6 @@ def ccircuit_to_iv_split(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
-@channels('A', 'B', 'C')
 def ccircuit_yellow_to_iv(datain, dtype=np.float32):
     '''
     For the redesigned circuit that sources voltage
@@ -1214,7 +1193,6 @@ def ccircuit_yellow_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
-@channels('A', 'C')
 def rehan_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1258,7 +1236,6 @@ def rehan_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-@channels('A', 'B')
 def femto_log_to_iv(datain, dtype=np.float32):
     # Adjust output offset so that 0.1V in --> 1V out on the 2V input setting
     # Then 0.1V in --> 1.25V out on the 200mV setting
@@ -1279,7 +1256,6 @@ def femto_log_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-@channels('A', 'B', 'C', 'D')
 def TEO_HFext_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1342,7 +1318,6 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-@channels('A', 'C')
 def Rext_to_iv(datain, R=50, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1376,7 +1351,6 @@ def Rext_to_iv(datain, R=50, dtype=np.float32):
 
     return dataout
 
-@channels('A', 'B', 'C')
 def digipot_to_iv(datain, gain=1/50, Vd_gain=0.5, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1428,6 +1402,33 @@ def digipot_to_iv(datain, gain=1/50, Vd_gain=0.5, dtype=np.float32):
     dataout['Igain'] = gain
 
     return dataout
+
+def probe_channels(something_to_iv):
+    """
+    Sends in a probe to the iv conversion function to determine which channels it actually uses.
+
+    If the probe fails it might give a partial set of channels.
+
+    I use this to determine which channels to sample from on picoscope by default
+    because I'm too lazy to always remember and type channels=['A', 'B', 'C']
+    """
+    class Probe(defaultdict):
+        touched = set()
+        def __getitem__(self, x):
+            #print("ouch!")
+            self.touched.add(x)
+            return super().__getitem__(x)
+
+    a = np.array([1])
+    probe = Probe(lambda: a)
+
+    try:
+        something_to_iv(probe)
+    except:
+        log.warning("Probe failed")
+
+    channels = {'A', 'B', 'C', 'D'}
+    return probe.touched.intersection(channels)
 
 
 ############# Waveforms ###########################
