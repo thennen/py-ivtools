@@ -252,8 +252,11 @@ def test_measurement_single(
     data['recordlength'] = recordlength
     data['pulse_width'] = pulse_width
 
+    num_pulses = 0
+
     iplots.show()    
 
+    # recordlength = (pulse_width * 100e9) + 500
     # read resistance state with keithley
     k.source_output(ch = 'A', state = True)
     k.source_level(source_val= V_read, source_func='v', ch='A')
@@ -284,6 +287,7 @@ def test_measurement_single(
 
         if pg5_measurement and continuous:
             sympuls.trigger()
+            num_pulses += 1
             print('trigger'+str(trigger_level))
             plt.pause(0.2)
         data.update(k.get_data())
@@ -317,6 +321,7 @@ def test_measurement_single(
         filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
     io.write_pandas_pickle(meta.attach(data), filepath)
     print(len(data))
+    print(f"{num_pulses=}")
     return data    
 
 def test_measurement(samplename,
