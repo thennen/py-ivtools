@@ -1030,6 +1030,8 @@ def glob(pattern='*', directory='.', subdirs=False, exclude=None):
         filename = os.path.split(fpath)[-1]
         # Should it be excluded
         if exclude is not None:
+            if isinstance(exclude, str):
+                exclude = [exclude]
             for arg in exclude:
                 if fnmatch.fnmatch(filename, arg.join('**')):
                     return False
