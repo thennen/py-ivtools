@@ -1031,10 +1031,11 @@ def glob(pattern='*', directory='.', subdirs=False, exclude=None):
         # Should it be excluded
         if exclude is not None:
             if isinstance(exclude, str):
-                exclude = [exclude]
-            for arg in exclude:
-                if fnmatch.fnmatch(filename, arg.join('**')):
-                    return False
+                return not fnmatch.fnmatch(filename, exclude.join('**'))
+            else:
+                for arg in exclude:
+                    if fnmatch.fnmatch(filename, arg.join('**')):
+                        return False
         # Does it match
         return fnmatch.fnmatch(filename, pattern)
 
