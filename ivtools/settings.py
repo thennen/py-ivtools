@@ -146,8 +146,9 @@ elif hostname in ('pciwe38', 'iwe21407'):
     datafolder = r'C:\Messdaten'
     inst_connections =  [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),
     ('ttx', instruments.TektronixDPO73304D ,'GPIB0::1::INSTR'),
-    ('sympuls', instruments.Sympuls ,'ASRL3::INSTR')]
-   # ('pg100', instruments.PG100 ,'ASRL3::INSTR')]
+    ('sympuls', instruments.Sympuls ,'ASRL3::INSTR'),
+    ('SympulsPG30', instruments.SympulsPG30,'ASRL5::INSTR')]
+   # ('pg100', instruments.PG100 ,'ASRL3::IsNSTR')]
 
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'
