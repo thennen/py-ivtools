@@ -69,6 +69,7 @@ class Sympuls(object):
              Manual = self.write(':TRIG:SOUR MANUAL')
              Trig_Type = Manual
              return Trig_Type
+             
 
     def Apply_Burst(self, pulse_width, period, Number_of_pulses):
         '''Apply Burst of Pulses for specific Pulse width, Period and Number of Pulses'''
@@ -91,10 +92,3 @@ class Sympuls(object):
         if wait_for_sequence:
             time.sleep(time_executed)
             return time_executed
-
-
-
-
-
-
-
