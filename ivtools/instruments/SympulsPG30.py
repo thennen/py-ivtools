@@ -161,7 +161,9 @@ def _to_patternbytes(pattern):
         for index, byte in enumerate(list(_chunks(pattern, 4))):
             # convert each 4 digits to string with 8 binary numbers
             # as in the binary number string encoding of the pattern
-            byte = ''.join(map(_digit_to_bits, byte))
+            # we reverse the byte order because join joins the opposite
+            # direction from the way we read the number
+            byte = ''.join(map(_digit_to_bits, byte[::-1]))
             # convert 8 digits of binary number string to byte
             d[index] = int(byte, 2)
             
