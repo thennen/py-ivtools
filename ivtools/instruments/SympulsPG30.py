@@ -145,7 +145,7 @@ def _to_patternbytes(pattern):
         pattern as bytearray.
 
     """
-    wordWidth=256 # Internal word width of Data
+    wordWidth=256 # Internal word width of Data in bits (32bytes)
     
     if isinstance(pattern, bytearray):
         return pattern
@@ -301,7 +301,6 @@ class SympulsPG30(object):
         Lupattern length can be between 1...4 194 304 / divisor words'''
         # convert pattern to block data
         pattern = _to_patternbytes(pattern)
-        print(pattern)
         # check that length requirements are met
         if not len(pattern) % 32 == 0:
             raise Exception(
@@ -415,9 +414,15 @@ class SympulsPG30(object):
         ''' .format is a method to call string, {} is used to add space'''
     
     @_read_errors
-    def set_lupattern_length(self, length):
+    def set_lupattern_length(self, num_words):
         '''Define length of the long pattern (lupattern) in words.'''
-        self.write(f"source:lupattern:length {length}")
+        '''1 word = 128 digits, 1 digits = 2bits, 1 byte = 4 digits = 8 bits
+        minimum word = 1 , maximum word = 4194304'''
+        divisor = int(self.get_lupattern_divisor())
+        if num_words > 4194304 // divisor or num_words < 1:
+            raise Exception('lupattern length should be between 1 and 4194304 / divisor length')
+
+        self.write(f"source:lupattern:length {num_words}")
     
     @_read_errors
     def get_lupattern_length(self):
