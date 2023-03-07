@@ -211,6 +211,8 @@ def _digit_to_bits(digit: int) -> str:
     else:
         raise Exception(f"{digit} is not a valid digit")
             
+# TODO: for large patterns this function is not feasible, use multiprocessing
+# or find more efficient algorithm        
 def _chunks(lst, n):
     """Yield successive n-sized chunks from lst."""
     if len(lst) % n != 0:
@@ -260,6 +262,7 @@ class SympulsPG30(object):
             log.error('Sympuls connection failed at {}'.format(addr))
         self.debug = debug
         self.past_errors = ""
+        print(f"Past errors: {self.error()}")
 
     def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
@@ -275,32 +278,62 @@ class SympulsPG30(object):
     @_read_errors    
     def set_upattern(self, pattern):
         '''sets upattern of Sympuls PPG. pattern can be string of form
-        "01010000", list of form [1, -1, 0, 0] or bytearray.'''
+        "01010000", list of form [1, -1, 0, 0] or bytearray.
+        Note that upattern length is fixed to 1 word = 32 bytes'''
+        # convert pattern to block data
+        pattern = _to_patternbytes(pattern)
+        # check that length is 32 bytes
+        if not len(pattern) == 32:
+            raise Exception(
+                "Please note that upattern length is fixed to"
+                f" 1 word = 32 bytes but got {len(pattern)}bytes"
+            )
+        # transfer pattern
         _sendBlockDataCmd(
             self.conn, "source:upattern:data", 
-            _to_patternbytes(pattern)
+            pattern
         )
     
     @_read_errors    
-    def set_lupattern(self, pattern: bytearray):
-        '''sets lupattern of Sympuls PPG. pattern can be form of string
-        "01010000", form of list [1, -1, 0, 0] or bytearray.'''
+    def set_lupattern(self, pattern):
+        '''sets lupattern of Sympuls PPG. pattern can be string of form
+        "01010000", list of form [1, -1, 0, 0] or bytearray.
+        Lupattern length can be between 1...4 194 304 / divisor words'''
+        # convert pattern to block data
+        pattern = _to_patternbytes(pattern)
+        print(pattern)
+        # check that length requirements are met
+        if not len(pattern) % 32 == 0:
+            raise Exception(
+                "Please note that lupattern length must be multiple of 32"
+                " bytes i.e. an integer number of words,"
+                f" but got {len(pattern)} bytes"
+            )
+        num_words = len(pattern) // 32
+        divisor = int(self.get_lupattern_divisor())
+        if not num_words <= 4194304 // divisor:
+            raise Exception(
+                "Please not that lupattern length must not exceed"
+                " 4 194 304 / divisor words but got {num_words} >"
+                f" 4194304 / {divisor} = {4194304/divisor}"
+            )
+        # transfer pattern
         _sendBlockDataCmd(
             self.conn, "source:lupattern:data", 
-            _to_patternbytes(pattern)
+            pattern
         )
 
     @_read_errors
     def get_upattern(self)->str:
         '''queries upattern from Sympuls PPG and returns it as string.'''
         data = _queryBlockData (self.conn, ":source:upattern:data?")
-        return ' '.join(format(x, '02x') for x in data)
-
-    @_read_errors
-    def get_lupattern(self)->str:
-        '''queries lupattern from Sympuls PPG and returns it as string.'''
-        data = _queryBlockData (self.conn, ":source:upattern:data?")
-        return ' '.join(format(x, '02x') for x in data)
+        # cut off introductory bytes at the beginning and \n at the end
+        # beginning has form #(number digits of length)(length of pattern)
+        # end is \n (0x0a in utf-8)
+        data = data[4:-1]
+        # make pattern data string
+        pattern = ' '.join(format(x, '02x') for x in data)      
+        return f"{pattern=}, length={len(data)}bytes={len(data)//32}word(s)"
         
     @_read_errors
     def idn(self):
@@ -338,21 +371,24 @@ class SympulsPG30(object):
 
     @_read_errors
     def Amplitude1(self, Amp1):
-        '''Define Postive amplitude betwwen 1000mV --  2000mV for example Amplitude1('1000mV')'''
+        '''Define Postive amplitude betwwen 1000mV --  2000mV for 
+        example Amplitude1('1000mV')'''
         #self.write(':OUTput3:AMPLitude1  {}' .format(Amp1))
         self.write(':OUTput3:AMPLitude1 '+ str(Amp1))
         ''' .format is a method to call string, {} is used to add space'''
 
     @_read_errors
     def Amplitude2(self, Amp2):
-        '''Define negative amplitude betwwen 600mV -- 1200mV for example Amplitude2('1000mV')'''
+        '''Define negative amplitude betwwen 600mV -- 1200mV for example 
+        Amplitude2('1000mV')'''
         #self.write(':OUTput3:AMPLitude1  {}' .format(Amp2))
         self.write(':OUTput3:AMPLitude1 '+ str(Amp2))
         ''' .format is a method to call string, {} is used to add space'''      
 
     @_read_errors
     def Format(self, form):
-        '''Define format as an BIP or NRZ output for example Format('NRZ') and BIP for bipolar'''
+        '''Define format as an BIP or NRZ output for example Format('NRZ') 
+        and BIP for bipolar'''
         #self.write(':SOUR:FORM {}' .format(form))
         self.write(':SOUR:FORM '+ str(form))
         ''' .format is a method to call string, {} is used to add space'''
@@ -370,28 +406,51 @@ class SympulsPG30(object):
         else:
             log.info('Unknown trigger type. Make sure it is \'LUP\', \'UPAT\' or \'TEST\'')
 
-    def WordLength(self, wordlength):
-        '''1 word = 128 digits, 1 digits = 2bits, 1 byte = 4 digits = 8 bits
-        minimum word = 1 , maximum word = 4194304'''
-        if wordlength < 1 or wordlength > 4194304:
-            raise Exception('Word lenght should be between 1 and 4194304')
-        self.write(':SOUR:LUP:LENG '+str(wordlength))        
     
     @_read_errors
     def SubPattern(self, subpattern):
-        '''Define subpattern as an LUPATTERN (for FWRM) or UPATTERN (for FWRAM 120) 
+        '''Define format as an LUPATTERN (for FWRM) or UPATTERN (for FWRAM 120)
         or TESTPATTERN example Pattern('LUPATTERN')'''
         self.write(':SOUR:FUNC {}' .format(subpattern))
         ''' .format is a method to call string, {} is used to add space'''
+    
+    @_read_errors
+    def set_lupattern_length(self, length):
+        '''Define length of the long pattern (lupattern) in words.'''
+        self.write(f"source:lupattern:length {length}")
+    
+    @_read_errors
+    def get_lupattern_length(self):
+        '''Query length of the long pattern (lupattern) in words'''
+        return _query(self.conn, "source:lupattern:length?").replace("\n", "")
+    
+    @_read_errors
+    def set_lupattern_divisor(self, divisor):
+        '''Set divisor (number of patterns in lupattern storage).
+        Divisor can be 1,2,4, or 8.'''
+        self.write(f":source:lupattern:divisor {divisor}")
+    
+    @_read_errors
+    def get_lupattern_divisor(self):
+        '''Query divisor (number of patterns in lupattern storage).
+        Divisor can be 1,2,4, or 8'''
+        return _query(self.conn, "source:lupattern:divisor?").replace("\n", "")
 
     @_read_errors
     def TriggerSource(self, trig):
-        '''Define trigger as AUTO or IMMediate or EXTernal example TrigSource('IMM')'''
+        '''Define trigger as AUTO or IMMediate or EXTernal example 
+        TrigSource('IMM')'''
         self.write(':TRIG2:SOUR {}' .format(trig))
         ''' .format is a method to call string, {} is used to add space'''
 
     @_read_errors
     def Trigger(self):
-        '''When Trigger Ssource is IMM, then you can trigger manually by just Trigger()'''
+        '''When Trigger Ssource is IMM, then you can trigger manually by just 
+        Trigger()'''
         self.write(':INIT:IMM')
-        ''' .format is a method to call string, {} is used to add space'''      
+        ''' .format is a method to call string, {} is used to add space'''    
+        
+    @_read_errors 
+    def reset(self):
+        '''Reset sympuls to factory defaults.'''
+        self.write("*RST")
