@@ -283,8 +283,8 @@ class SympulsPG30(object):
     
     @_read_errors    
     def set_lupattern(self, pattern: bytearray):
-        '''sets lupattern of Sympuls PPG. pattern can be string of form
-        "01010000", list of form [1, -1, 0, 0] or bytearray.'''
+        '''sets lupattern of Sympuls PPG. pattern can be form of string
+        "01010000", form of list [1, -1, 0, 0] or bytearray.'''
         _sendBlockDataCmd(
             self.conn, "source:lupattern:data", 
             _to_patternbytes(pattern)
@@ -359,13 +359,28 @@ class SympulsPG30(object):
 
     @_read_errors
     def Pattern(self, pattern):
-        '''Define format as an LUPATTERN (for FWRM) or UPATTERN (for FWRAM 120) or TESTPATTERN example Pattern('LUPATTERN')'''
-        self.write(':SOUR:FUNC {}' .format(pattern))
-        ''' .format is a method to call string, {} is used to add space'''
+        '''Define Pattern as an LUPattern (for FWRM) or UPATtern (for FWRAM 120) 
+        or TESTPATTERN example Pattern('LUPATTERN')'''
+        if pattern == 'LU':
+            self.write(':SOUR:FUNC LUP')
+        elif pattern == 'UP':
+            self.write(':SOUR:FUNC UPAT')
+        elif pattern == 'Test':
+            self.write(':SOUR:FUNC TESTPATTERN')
+        else:
+            log.info('Unknown trigger type. Make sure it is \'LUP\', \'UPAT\' or \'TEST\'')
+
+    def WordLength(self, wordlength):
+        '''1 word = 128 digits, 1 digits = 2bits, 1 byte = 4 digits = 8 bits
+        minimum word = 1 , maximum word = 4194304'''
+        if wordlength < 1 or wordlength > 4194304:
+            raise Exception('Word lenght should be between 1 and 4194304')
+        self.write(':SOUR:LUP:LENG '+str(wordlength))        
     
     @_read_errors
     def SubPattern(self, subpattern):
-        '''Define format as an LUPATTERN (for FWRM) or UPATTERN (for FWRAM 120) or TESTPATTERN example Pattern('LUPATTERN')'''
+        '''Define subpattern as an LUPATTERN (for FWRM) or UPATTERN (for FWRAM 120) 
+        or TESTPATTERN example Pattern('LUPATTERN')'''
         self.write(':SOUR:FUNC {}' .format(subpattern))
         ''' .format is a method to call string, {} is used to add space'''
 
