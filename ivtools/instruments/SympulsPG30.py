@@ -260,11 +260,11 @@ class SympulsPG30(object):
     def __init__(self, addr='ASRL5::INSTR', debug=False):
         try:
             self.connect(addr)
+            self.debug = debug
+            self.past_errors = ""
+            print(f"Past errors: {self.error()}")
         except:
             log.error('Sympuls connection failed at {}'.format(addr))
-        self.debug = debug
-        self.past_errors = ""
-        print(f"Past errors: {self.error()}")
 
     def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
