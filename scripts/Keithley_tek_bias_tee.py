@@ -9,6 +9,7 @@ from collections import defaultdict
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
+from time import time_ns, sleep
 
 def where(*args):
     return np.where(*args)[0]
@@ -29,8 +30,8 @@ def setup_pcm_plots():
     def plot1(data, ax=None, **kwargs):
         ax.cla()
         ax.semilogy(data['t'], data['V'] / data['I'], **kwargs)
-        if data['t_event']:
-            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
+        #if data['t_event']:
+        #    ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
         ax.set_ylabel('Resistance [V/A]')
         ax.set_xlabel('Time [s]')
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -47,8 +48,8 @@ def setup_pcm_plots():
     def plot3(data, ax=None, **kwargs):
         ax.cla()
         ax.plot(data['t'], data['I'], **kwargs)
-        if data['t_event']:
-            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
+        # if data['t_event']:
+        #    ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
         ax.set_ylabel('Current [A]')
         ax.set_xlabel('Time [s]')
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -195,6 +196,173 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
+def analog_measurement(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
+
+    # values for keithley
+    V_read = 0.2,
+    points = 1e4, # there is only 10 points in vcm_measurement. Why?
+    interval = 1e-3, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1e-3,
+
+    # values for tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+
+    # values for sympuls
+    pulse_width = 10e-9,
+    pulse_spacing = 50e-3
+    # pg5_measurement = True,
+    # continuous = False
+):
+    '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
+    Pulses applied during this measurement are also recorded. '''
+    setup_pcm_plots()
+
+    number_of_events =0
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    data['V_read'] = V_read
+    data['points'] = points 
+    data['interval'] = interval
+    data['range_read'] = range_read 
+    data['limit_read'] = limit_read
+    data['nplc'] = nplc
+    data['trigger_level'] = trigger_level
+    data['polarity'] = polarity
+    data['position'] = position
+    data['scale'] = scale
+    data['pulse_spacing'] = pulse_spacing
+
+    data['t_scope'] = []
+    data['v_pulse'] = []
+    data['v_answer'] = []
+    data['t_event'] = []
+    
+    data['attenuation'] = attenuation
+    data['recordlength'] = recordlength
+    data['pulse_width'] = pulse_width
+
+    num_pulses = 0
+
+    iplots.show()    
+
+    # recordlength = (pulse_width * 100e9) + 500
+    # read resistance state with keithley
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val= V_read, source_func='v', ch='A')
+    plt.pause(1)
+    k._it_lua(sourceVA = V_read , sourceVB = 0, points = points, interval = interval, rangeI = range_read , limitI = limit_read, nplc = nplc)
+
+    # set up tektronix
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)    
+    ttx.inputstate(4, False)
+    ttx.scale(3, scale)
+    ttx.position(3, position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
+    trigger_level = trigger_level*polarity
+
+    # set up sympuls
+    sympuls.set_pulse_width(pulse_width)
+    
+    # first measurement where tektronix reads pulse
+    ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+    plt.pause(0.1)
+    sympuls.trigger()
+    data['t_event'].append(time_ns())
+    num_pulses += 1
+    print('trigger'+str(trigger_level))
+    plt.pause(0.2)
+    data.update(k.get_data())
+    if ttx.triggerstate():
+        plt.pause(0.1)
+        ttx.disarm()
+        padname+="_no_first_pulse_detected_"
+    else:
+        number_of_events +=1
+        data_scope2 = ttx.get_curve(3)
+        # time_array = data['t']
+        data['t_scope'].append(data_scope2['t_ttx'])
+        data['v_answer'].append(data_scope2['V_ttx'])
+        '''Moritz: last current data point measured after last trigger event so the entry one before
+         will be used as time reference (-2 instead of -1, which is the last entry)'''
+        # data['t_event'].append(time_array[len(time_array)-2])
+        # print(time_array[len(time_array)-2])
+    iplots.updateline(data)
+
+    # middle measurements, where keithey just reads and sympuls sends pulses
+    while not k.done():
+        sympuls.trigger()
+        data['t_event'].append(time_ns())
+        num_pulses += 1
+        print('trigger'+str(trigger_level))
+        # sleep at least 10ms between pulses
+        sleep(pulse_spacing)
+
+        # data.update(k.get_data())
+        # data['t_event'].append(time_array[len(time_array)-10])
+        # print(time_array[len(time_array)-2])
+        # iplots.updateline(data)
+
+    # last measurement where tektronix reads pulse
+    ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+    plt.pause(0.1)
+    sympuls.trigger()
+    data['t_event'].append(time_ns())
+    num_pulses += 1
+    print('trigger'+str(trigger_level))
+    plt.pause(0.2)
+    data.update(k.get_data())
+    if ttx.triggerstate():
+        plt.pause(0.1)
+        ttx.disarm()
+        padname+="_no_last_pulse_detected_"
+    else:
+        number_of_events +=1
+        data_scope2 = ttx.get_curve(3)
+        # time_array = data['t']
+        data['t_scope'].append(data_scope2['t_ttx'])
+        data['v_answer'].append(data_scope2['V_ttx'])
+        '''Moritz: last current data point measured after last trigger event so the entry one before
+         will be used as time reference (-2 instead of -1, which is the last entry)'''
+        # data['t_event'].append(time_array[len(time_array)-2])
+        # print(time_array[len(time_array)])
+    iplots.updateline(data)
+
+    # finish up measurement
+    data.update(k.get_data())
+    iplots.updateline(data)
+    #    k.set_channel_state('A', False)
+    #    k.set_channel_state('B', False)
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+    ttx.disarm()
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
+    io.write_pandas_pickle(meta.attach(data), filepath)
+    # print(len(data))
+    print(f"{num_pulses=}")
+    return data    
+
+
 def test_measurement_single(
     # values for pandas file
     samplename,
@@ -320,7 +488,7 @@ def test_measurement_single(
         i +=1
         filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
     io.write_pandas_pickle(meta.attach(data), filepath)
-    print(len(data))
+    # print(len(data))
     print(f"{num_pulses=}")
     return data    
 
