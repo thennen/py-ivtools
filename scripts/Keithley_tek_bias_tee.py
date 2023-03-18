@@ -9,7 +9,7 @@ from collections import defaultdict
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
-from time import time_ns, sleep
+from time import time_ns, sleep, localtime, strftime
 
 def where(*args):
     return np.where(*args)[0]
@@ -349,14 +349,16 @@ def analog_measurement(
     k.source_output(ch = 'A', state = False)
     k.source_output(ch = 'B', state = False)
     ttx.disarm()
-    datafolder = os.path.join('C:\Messdaten', samplename, padname)
-    subfolder = datestr
+    datafolder = os.path.join('C:\Messdaten', padname, samplename)
+    # subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
+    timestamp = strftime("%Y.%m.%d-%H:%M:%S", localtime())
+    # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
+    filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}")
     while os.path.isfile(filepath + '.s'):
         i +=1
-        filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
+        filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}")
     io.write_pandas_pickle(meta.attach(data), filepath)
     # print(len(data))
     print(f"{num_pulses=}")
