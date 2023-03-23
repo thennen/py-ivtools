@@ -964,7 +964,15 @@ class InteractiveFigs(object):
     can have several plotting functions per axis though, I think?
     '''
     # TODO: save/load configurations to disk?
-    def __init__(self, n=4, clear_state=False):
+    def __init__(self, n:'rows'=2, m:'cols'=None, clear_state=False):
+        # Use to just have one argument "n" which meant total number of plots, don't break:
+        if m is None:
+            rows = 2
+            cols = n // 2
+        else:
+            rows = n
+            cols = m
+            n = rows * cols
         statename = self.__class__.__name__
         if statename not in ivtools.class_states:
             ivtools.class_states[statename] = {}
@@ -1009,17 +1017,17 @@ class InteractiveFigs(object):
             xpixels = x1 - x0
             ypixels = y1 - y0
 
-            figheight = int(round(ypixels / 2 - yborder))
-            figwidth = int(round(figheight * 1.3))
+            figheight = int(round(ypixels / rows - yborder))
+            figwidth = int(round(min(figheight * 1.3, xpixels / cols - xborder)))
 
             self.figsize = (figwidth, figheight)
 
             # strange ordering of plots, top to bottom, right to left
             def figloc(n):
-                x = x1 - (1 + n // 2) * (figwidth + xborder)
-                y = y0 + (n % 2) * (figheight + yborder)
+                x = x1 - (1 + n // rows) * (figwidth + xborder)
+                y = y0 + (n % rows) * (figheight + yborder)
                 return int(round(x)), int(round(y))
-            self.figlocs = [figloc(i) for i in range(7)]
+            self.figlocs = [figloc(i) for i in range(n)]
 
             self.figs = []
             self.axs = []
