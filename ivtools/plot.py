@@ -1009,8 +1009,8 @@ class InteractiveFigs(object):
             xpixels = x1 - x0
             ypixels = y1 - y0
 
-            figheight = ypixels / 2 - yborder
-            figwidth = figheight * 1.3
+            figheight = int(round(ypixels / 2 - yborder))
+            figwidth = int(round(figheight * 1.3))
 
             self.figsize = (figwidth, figheight)
 
@@ -1018,7 +1018,7 @@ class InteractiveFigs(object):
             def figloc(n):
                 x = x1 - (1 + n // 2) * (figwidth + xborder)
                 y = y0 + (n % 2) * (figheight + yborder)
-                return x,y
+                return int(round(x)), int(round(y))
             self.figlocs = [figloc(i) for i in range(7)]
 
             self.figs = []

@@ -635,10 +635,11 @@ def interpiv(data, interpvalues, column='I', reverse=False, findmonotonic=False,
 def interp_rows(data, interpvals, column='I', reverse=False, fill_value='extrapolate'):
     '''
     TODO: Name??
-    data should be a dataframe, not necessarily adapted for list of dict yet.
     interpolates all numbers and nested arrays to the specified values of "column"
     Here column is a normal, non-nested array, and should be monotonic
     the only thing that is reliably monotonic is time, otherwise be careful
+
+    data should be a dataframe, not necessarily adapted for list of dict yet.
 
     anything out of range will be ignored
 
