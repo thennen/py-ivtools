@@ -830,7 +830,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     colors = dict(A='Blue', B='Red', C='Green', D='Gold')
     channels = ['A', 'B', 'C', 'D']
     # Remove the previous range indicators
-    ax.collections.clear()
+    for c in ax.collections: c.remove()
 
     def iterdata():
         if type(chdata) in (dict, pd.Series):
@@ -1150,7 +1150,7 @@ class InteractiveFigs(object):
                 ax = self.axs[axnum]
                 if any(ax.lines):
                     color = ax.lines[-1].get_color()
-                    del ax.lines[-1]
+                    ax.lines[-1].remove()
                 else:
                     color = None
                 argspec = inspect.getfullargspec(plotter)
@@ -1793,8 +1793,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             elif len(sig) == 1:
                 axfunc(ax)
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
-        del ax.lines[-1]
-        del ax.lines[-1]
+        ax.lines[-1].remove()
+        ax.lines[-1].remove()
 
 def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
     ''' Temporary name, make a movie showing iv loops as they are swept'''
@@ -1853,7 +1853,8 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
         # I hope i starts at zero, it won't if you pass a dataframe slice
         if i > persist:
             # Remove the oldest loop
-            del ax.lines[0:3]
+            for line in ax.lines[0:3]:
+                line.remove()
 
 
 def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
