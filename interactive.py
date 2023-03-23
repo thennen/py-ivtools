@@ -108,7 +108,7 @@ if firstrun:
     # Don't run this more than once, or all the existing plots will get de-registered from the
     # matplotlib state machine or whatever and nothing will update anymore
     # TODO find out whether it has been called already
-    magic('matplotlib', '') # uses qtagg backend
+    magic('matplotlib', 'qt') # uses qtagg backend
     # Preview of the logging colors
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
