@@ -1553,6 +1553,11 @@ def write_meta_csv(data, filepath):
 
 ###### other things
 
+def read_exampledata():
+    fp = os.path.join(repoDir, 'ivtools', 'sampledata', 'example_ivloops.df')
+    return read_pandas(fp)
+
+
 def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
     filedir, filename = os.path.split(filepath)
@@ -1730,6 +1735,7 @@ def tile_figs(pattern='*_loops.png', out_fn='grid.png', folder='.', scale=.5, as
             x += p.width + pad
 
     grid.save(os.path.join(folder, out_fn))
+
 
 def update_depsheet():
     # Try to get the new deposition sheet
