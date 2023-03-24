@@ -168,7 +168,8 @@ elif hostname in ('pciwe38', 'iwe21407'):
     datafolder = r'C:\Messdaten'
     inst_connections =  [('k', 'Keithley2600', 'GPIB0::27::INSTR'),
     ('ttx', 'TektronixDPO73304D' ,'GPIB0::1::INSTR'),
-    ('sympuls', 'Sympuls' ,'ASRL3::INSTR')]
+    ('sympuls', 'Sympuls' ,'ASRL3::INSTR'),
+    ('sympulsPG30', 'SympulsPG30','ASRL5::INSTR')]
    # ('pg100', 'PG100' ,'ASRL3::INSTR')]
 
 elif hostname == 'pcluebben2':
