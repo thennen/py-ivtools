@@ -7,7 +7,7 @@ the ability to modify arbitrary parts of the codebase without disrupting the
 interactive measurement process.
 
 This script is designed to be rerun, and all of the code will be updated, with
-everything but the measurement settings and the program state overwritten.
+everything except the measurement settings and the program state overwritten.
 Therefore you can modify any part of the code/library while making measurements
 without ever leaving the running program or closing/opening instrument connections.
 The need to restart the kernel should therefore be rare.
@@ -590,3 +590,7 @@ if cam:
     def saveImg():
         path = os.path.join(datadir(), meta.timestamp()+".png")
         cam.saveImg(path)
+
+
+# If you need some dummy IV loops
+dummydata = read_exampledata()
