@@ -157,7 +157,7 @@ if hostname in ('pciwe46', 'iwe21705'):
             'interactive': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True}
         }
         inst_connections = [('ps', 'Picoscope'),
-                            ('k', 'Keithley2600'),
+                            ('keith', 'Keithley2600'),
                             ('dp', 'WichmannDigipot'),
                             ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
     else:
@@ -166,7 +166,7 @@ if hostname in ('pciwe46', 'iwe21705'):
 elif hostname in ('pciwe38', 'iwe21407'):
     # Moritz computer
     datafolder = r'C:\Messdaten'
-    inst_connections =  [('k', 'Keithley2600', 'GPIB0::27::INSTR'),
+    inst_connections =  [('keith', 'Keithley2600', 'GPIB0::27::INSTR'),
     ('ttx', 'TektronixDPO73304D' ,'GPIB0::1::INSTR'),
     ('sympuls', 'Sympuls' ,'ASRL3::INSTR'),
     ('sympulsPG30', 'SympulsPG30','ASRL5::INSTR')]
@@ -174,7 +174,7 @@ elif hostname in ('pciwe38', 'iwe21407'):
 
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'
-    inst_connections = [('k', 'Keithley2600', 'GPIB0::27::INSTR'),]
+    inst_connections = [('keith', 'Keithley2600', 'GPIB0::27::INSTR'),]
 
 elif hostname == 'pciwe34':
     # Mark II
@@ -185,7 +185,7 @@ elif hostname == 'pciwe34':
     # datafolder = r'G:\Messdaten\hennen'
     datafolder = r'C:\Messdaten\hennen'
     inst_connections = [('et', 'Eurotherm2408'),
-                        ('k', 'Keithley2600', 'GPIB0::27::INSTR')]
+                        ('keith', 'Keithley2600', 'GPIB0::27::INSTR')]
 
 elif hostname == 'CHMP2':
     datafolder = r'C:\data'
