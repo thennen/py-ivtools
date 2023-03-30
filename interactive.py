@@ -358,7 +358,7 @@ def savefig(name=None, fig=None, **kwargs):
     fn = meta.filename()
     if name:
         fn += '_' + name
-    if not os.path.splitext(name)[1]:
+    if not os.path.splitext(fn)[1]:
         fn += '.png'
     fp = os.path.join(datadir(), fn)
     fig.savefig(fp, **kwargs)
