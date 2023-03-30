@@ -126,7 +126,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         pico_to_iv = ivtools.settings.pico_to_iv
 
     if channels is None:
-        channels = list(probe_channels(pico_to_iv))
+        channels = sorted(probe_channels(pico_to_iv))
         if not channels:
             channels = ['A', 'C']
 
@@ -168,7 +168,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     for k,v in inspect.signature(pulsefunc).parameters.items():
         # bind by function annotation first, so we don't have to rename anything that could break compatibility
         if v.annotation in pulseargs:
-            kwargs[k] = pulsearges[v.annotation]
+            kwargs[k] = pulseargs[v.annotation]
         elif k in pulseargs:
             kwargs[k] = pulseargs[k]
     # Send a pulse (should be accompanied by a trigger for picoscope)
