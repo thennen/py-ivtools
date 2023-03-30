@@ -131,7 +131,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
             channels = ['A', 'C']
 
     if monitor_ch is None:
-        ivtools.settings.MONITOR_PICOCHANNEL
+        monitor_ch = ivtools.settings.MONITOR_PICOCHANNEL
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
     sampling_factor = (n + pretrig + posttrig)
