@@ -196,6 +196,66 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
+def analog_measurement_series(
+    repetitions = 3,
+
+    # values for sweeps in between analog measurements
+    V_set = 1.,
+    V_reset = -1.1,
+    number_sweeps = 5,
+
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
+
+    # values for keithley
+    V_read = 0.2,
+    points = 1e4, # there is only 10 points in vcm_measurement. Why?
+    interval = 1e-3, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1e-2,
+
+    # values for tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+
+    # values for sympuls
+    pulse_width = 10e-9,
+    pulse_spacing = 50e-3
+):
+    def reset():
+        return kiv(tri(v1 = V_reset, step = 0.02), measure_range = 1e-2, i_limit = 1e-2)
+    def set():
+        return kiv(tri(v1 = V_set, step = 0.02), measure_range = 1e-3, i_limit = 3e-4)
+    def read():
+        return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
+
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    data['initial_read'] = read()
+    ...
+
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename)
+    # subfolder = datestr
+    file_exits = True
+    i=1
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
+    filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    return data
+
 def analog_measurement(
     # values for pandas file
     samplename,
@@ -208,7 +268,7 @@ def analog_measurement(
     interval = 1e-3, # is fixed to 0.1 in vcm_measurement
     range_read = 1e-3,
     limit_read = 1e-3,
-    nplc = 1e-3,
+    nplc = 1e-2,
 
     # values for tektronix
     trigger_level = 0.025,
@@ -350,16 +410,19 @@ def analog_measurement(
     k.source_output(ch = 'A', state = False)
     k.source_output(ch = 'B', state = False)
     ttx.disarm()
-    datafolder = os.path.join('C:\Messdaten', padname, samplename)
+
+    data["num_pulses"] = num_pulses
+
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename)
     # subfolder = datestr
     file_exits = True
     i=1
-    timestamp = strftime("%Y.%m.%d-%H:%M:%S", localtime())
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
     # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
-    filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}")
+    filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
     while os.path.isfile(filepath + '.s'):
         i +=1
-        filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}")
+        filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
     io.write_pandas_pickle(meta.attach(data), filepath)
     # print(len(data))
     print(f"{num_pulses=}")
