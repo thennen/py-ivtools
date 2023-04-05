@@ -360,13 +360,20 @@ def analog_measurement(
     data['initial_state'] = get_current_resistance()
     if data['initial_state'] <= 5000:
         data['initial_set'] = reset()
+
+    # create list for sets and resets
+    data['sets'] = []
+    data['resets'] = []
     
     # now in HRS we do {number_sweeps}
     for i in range(number_sweeps):
-        data[f'set_{i+1}'] = set()
-        data[f'set_{i+1}_state'] = get_current_resistance()
-        data[f'reset_{i+1}'] = reset()
-        data[f'reset_{i+1}_state'] = get_current_resistance()
+        data['sets'].append(set())
+        # data[f'set_{i+1}_state'] = get_current_resistance()
+        data['resets'].append(reset())
+        # data[f'reset_{i+1}_state'] = get_current_resistance()
+
+    # get initial HRS after sweeps
+    data['initial_HRS'] = get_current_resistance()
 
     # then do analog measurement
     setup_pcm_plots()
@@ -378,8 +385,9 @@ def analog_measurement(
     k.source_output(ch = 'A', state = True)
     k.source_level(source_val= V_read, source_func='v', ch='A')
     plt.pause(1)
+    data['t_begin_before'] = time_ns()
     k._it_lua(sourceVA = V_read , sourceVB = 0, points = points, interval = interval, rangeI = range_read , limitI = limit_read, nplc = nplc)
-    data['t_begin'] = time_ns()
+    data['t_begin_after'] = time_ns()
 
     # set up tektronix
     ttx.inputstate(1, False)
@@ -400,7 +408,7 @@ def analog_measurement(
     sympuls.trigger()
     data['t_event'].append(time_ns())
     num_pulses += 1
-    print('trigger'+str(trigger_level))
+    # print('trigger'+str(trigger_level))
     plt.pause(0.2)
     data.update(k.get_data())
     if ttx.triggerstate():
@@ -424,7 +432,7 @@ def analog_measurement(
         sympuls.trigger()
         data['t_event'].append(time_ns())
         num_pulses += 1
-        print('trigger'+str(trigger_level))
+        # print('trigger'+str(trigger_level))
         # sleep at least 10ms between pulses
         sleep(pulse_spacing)
 
@@ -439,7 +447,7 @@ def analog_measurement(
     sympuls.trigger()
     data['t_event'].append(time_ns())
     num_pulses += 1
-    print('trigger'+str(trigger_level))
+    # print('trigger'+str(trigger_level))
     plt.pause(0.2)
     data.update(k.get_data())
     if ttx.triggerstate():
