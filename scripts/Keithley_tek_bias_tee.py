@@ -385,9 +385,8 @@ def analog_measurement(
     k.source_output(ch = 'A', state = True)
     k.source_level(source_val= V_read, source_func='v', ch='A')
     plt.pause(1)
-    data['t_begin_before'] = time_ns()
     k._it_lua(sourceVA = V_read , sourceVB = 0, points = points, interval = interval, rangeI = range_read , limitI = limit_read, nplc = nplc)
-    data['t_begin_after'] = time_ns()
+    data['t_begin'] = time_ns()
 
     # set up tektronix
     ttx.inputstate(1, False)
