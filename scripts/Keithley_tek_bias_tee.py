@@ -197,17 +197,16 @@ def set_keithley_plotters():
     iplots.ax3.cla()
 
 def analog_measurement_series(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
     repetitions = 3,
 
     # values for sweeps in between analog measurements
     V_set = 1.,
     V_reset = -1.1,
     number_sweeps = 5,
-
-    # values for pandas file
-    samplename,
-    padname,
-    attenuation = 0, 
 
     # values for keithley
     V_read = 0.2,
@@ -225,28 +224,49 @@ def analog_measurement_series(
     scale = 0.04,
 
     # values for sympuls
-    pulse_width = 10e-9,
+    pulse_widths = [],
     pulse_spacing = 50e-3
 ):
-    def reset():
-        return kiv(tri(v1 = V_reset, step = 0.02), measure_range = 1e-2, i_limit = 1e-2)
-    def set():
-        return kiv(tri(v1 = V_set, step = 0.02), measure_range = 1e-3, i_limit = 3e-4)
-    def read():
-        return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
-
+    
     data = {}
     data['padname'] = padname
     data['samplename'] = samplename
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    data['timestamp'] = timestamp
 
-    data['initial_read'] = read()
-    ...
+    for pulse_width in pulse_widths:
+        for i in range(repetitions):
+            data[f'pulsewidth{pulse_width:.2e}s_{i+1}'.replace("+", "")] = analog_measurement(
+                # values for pandas file
+                samplename,
+                padname,
+                attenuation=attenuation,
+                # values for sweeps
+                V_set=V_set,
+                V_reset=V_reset,
+                number_sweeps=number_sweeps,
+                # values for keithley
+                V_read=V_read,
+                points=points,
+                interval=interval, # is fixed to 0.1 in vcm_measurement
+                range_read=range_read,
+                limit_read=limit_read,
+                nplc=nplc,
+                # values for tektronix
+                trigger_level=trigger_level,
+                polarity=polarity,
+                recordlength=recordlength,
+                position=position,
+                scale=scale,
+                # values for sympuls
+                pulse_width = pulse_width,
+                pulse_spacing = pulse_spacing
+            )
 
-    datafolder = os.path.join('C:\\Messdaten', padname, samplename)
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename, "series")
     # subfolder = datestr
     file_exits = True
     i=1
-    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
     # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
     filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
     while os.path.isfile(filepath + '.s'):
@@ -261,6 +281,11 @@ def analog_measurement(
     samplename,
     padname,
     attenuation = 0, 
+
+    # values for sweeps
+    V_set = 1.,
+    V_reset = -1.1,
+    number_sweeps = 5,
 
     # values for keithley
     V_read = 0.2,
@@ -285,8 +310,6 @@ def analog_measurement(
 ):
     '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
     Pulses applied during this measurement are also recorded. '''
-    setup_pcm_plots()
-
     number_of_events =0
     data = {}
     data['padname'] = padname
@@ -313,9 +336,42 @@ def analog_measurement(
     data['recordlength'] = recordlength
     data['pulse_width'] = pulse_width
 
-    num_pulses = 0
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    data['timestamp'] = timestamp
 
-    iplots.show()    
+    # functions for sweeps
+    def reset():
+        return kiv(tri(v1 = V_reset, step = 0.02), measure_range = 1e-2, i_limit = 1e-2)
+    def set():
+        return kiv(tri(v1 = V_set, step = 0.02), measure_range = 1e-3, i_limit = 3e-4)
+    def read():
+        return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
+    def get_current_resistance ():
+        data = read()
+        I = data["I"]
+        V = data["Vmeasured"]
+        return V[len(V)//2]/I[len(I)//2]
+
+    # start doing a few sweeps to improve reproducibility
+    set_keithley_plotters()
+    iplots.show()
+
+    # get initial resistance state and switch to HRS if necessary 
+    data['initial_state'] = get_current_resistance()
+    if data['initial_state'] <= 5000:
+        data['initial_set'] = reset()
+    
+    # now in HRS we do {number_sweeps}
+    for i in range(number_sweeps):
+        data[f'set_{i+1}'] = set()
+        data[f'set_{i+1}_state'] = get_current_resistance()
+        data[f'reset_{i+1}'] = reset()
+        data[f'reset_{i+1}_state'] = get_current_resistance()
+
+    # then do analog measurement
+    setup_pcm_plots()
+    iplots.show()  
+    num_pulses = 0  
 
     # recordlength = (pulse_width * 100e9) + 500
     # read resistance state with keithley
@@ -417,7 +473,6 @@ def analog_measurement(
     # subfolder = datestr
     file_exits = True
     i=1
-    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
     # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
     filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
     while os.path.isfile(filepath + '.s'):
