@@ -1,23 +1,21 @@
 """
-This is some basic code to make the Thorlabs XY stage M30XY available in python.
+This is some basic code to make the Thorlabs vertical stage KVS30 available in python.
 
 Thorlabs provides a C#/.net API, which this more or less wraps. Only a very limited
 subset of the API is implemented, most notably the 'jog mode' is missing.
 The implementation is mostly guided by the examples in the API reference,
 this might not be the best way to do things.
 
-The stage has two separate channels for the X and Y direction. These can move
-simulateously if 'blocking = false' is used.
-
 The moves use a trapezoidal velocity profile with a given acceleration to a
 steady state speed. Slowing down is also gradual. The API allows to use a
 non-zero initial speed. This seems to be of little use, as the stage should be
 at rest before a move starts. The Thorlabs GUI doesn't use this either.
 
-The stage can move 15 mm in either direction.
+The stage can move between 0 and 30 mm. Zero is lowest position, 30 mm is
+highest.
 
 Basic use:
-    stage = M30XY()
+    stage = KVS30()
     stage.connect()
     stage.homeStage()
     stage.moveTo(...)
@@ -25,39 +23,44 @@ Basic use:
     stage.close()
 """
 
+import time
+
 # To call Thorlabs .net API
 import clr
 
 api_path : str = "C:/Program Files/Thorlabs/Kinesis/Thorlabs.MotionControl.Benchtop.DCServoCLI.dll"
+stage_path : str ="C:/Program Files/Thorlabs/Kinesis/ThorLabs.MotionControl.VerticalStageCLI.dll"
 
 clr.AddReference(api_path)
+clr.AddReference(stage_path)
 # The MX30 is apparently a benchtop DC servo stage
 import Thorlabs.MotionControl.Benchtop.DCServoCLI as bt
 import Thorlabs.MotionControl.DeviceManagerCLI as dev
 # Move functions come from this I think
 import Thorlabs.MotionControl.GenericMotorCLI as gmc
+import Thorlabs.MotionControl.VerticalStageCLI as vsc
 
 from System import Decimal
 
 # Timeout used in the move and home commands. Homing takes more time normally.
 defaultTimeout = 60000
 
-class M30XY:
+class KVS30:
     """
-    Controls the Thorlabs M30XY stage.
+    Controls the Thorlabs KVS30 vertical stage.
     """
     
     connections = {}
     
-    def __init__(self, sn : str = "101334404"):
+    def __init__(self, sn : str = "24347834"):
         """
-        Constructor for a M30XY stage.
+        Constructor for a KVS30 stage.
 
         Parameters
         ----------
         sn : str, optional
             The serial number of the stage to connect to.
-            The default is "101334404".
+            The default is "24347834".
 
         Returns
         -------
@@ -74,11 +77,15 @@ class M30XY:
         If a connection to the stage with this serial number is already open,
         that connection is recycled.
         
+        Note that in contrast to the M30XY stage, this one can (and should)
+        be switched off at its back.
+        
         Returns
         -------
         None.
 
         """
+        
         dev.DeviceManagerCLI.BuildDeviceList()
         devicesList = dev.DeviceManagerCLI.GetDeviceList()
         
@@ -92,32 +99,23 @@ class M30XY:
         
         if(self.serialNumber in self.connections.keys()):
             self.stage = self.connections[self.serialNumber]["stage"]
-            self.CH1 = self.connections[self.serialNumber]["CH1"]
-            self.CH2 = self.connections[self.serialNumber]["CH2"]
             self.connected = True
         else:
-            self.stage = bt.BenchtopDCServo.CreateBenchtopDCServo(self.serialNumber)
+            self.stage = vsc.VerticalStage.CreateVerticalStage(self.serialNumber)
             self.stage.Connect(self.serialNumber)
             
-            self.CH1 = self.stage.GetChannel(1)
-            self.CH1.StartPolling(250)
-            self.CH1.EnableDevice()
+            self.stage.StartPolling(250)
+            self.stage.EnableDevice()
             
-            self.CH1.LoadMotorConfiguration(self.CH1.DeviceID)
+            time.sleep(0.5)           
             
-            self.CH2 = self.stage.GetChannel(2)
-            self.CH2.StartPolling(250)
-            self.CH2.EnableDevice()
-            
-            self.CH2.LoadMotorConfiguration(self.CH2.DeviceID)
+            self.stage.LoadMotorConfiguration(self.serialNumber)
             
             self.connections.update({ self.serialNumber:
-                                     {"stage": self.stage,
-                                      "CH1": self.CH1,
-                                      "CH2": self.CH2}
-                                     })
+                                     {"stage": self.stage
+                                     }})
             self.connected = True
-        
+            
     def homeStage(self):
         """
         Homes the stage. Recommended to do before using the stage.
@@ -130,37 +128,33 @@ class M30XY:
 
         """
         if(self.serialNumber in self.connections.keys()):
-            self.CH1.Home(defaultTimeout)
-            self.CH2.Home(defaultTimeout)
+            self.stage.Home(defaultTimeout)
         else: raise Exception("Stage not connected!")
         
         
-    def getPosition(self) -> dict:
+    def getPosition(self) -> float:
         """
-        Returns the current position of both axes in millimeters.
+        Returns the current position of in millimeters.
 
         Returns
         -------
-        dict
-            Current position of CH1 and CH2.
+        float
+            Position in millimeters. Higher values are up direction.
 
         """
-        return {"CH1": Decimal.ToDouble(self.CH1.Position),
-                "CH2": Decimal.ToDouble(self.CH2.Position)}
+        return Decimal.ToDouble(self.stage.Position)
     
-    def moveTo(self, ch : str, millimeter : float, blocking : bool = True):
+    def moveTo(self, millimeter : float, blocking : bool = True):
         """
-        Moves the given axis to the specified position in millimeters.
+        Movesto the specified position in millimeters.
 
         The stage moves with the acceleration and velocity last set with
         setVelocity().
-        
+
         Parameters
         ----------
-        ch : str
-            Selects the axis to move, can be 'CH1' or 'CH2'.
         millimeter : float
-            Coordinate to move to. Valid values are -15 ... 15.
+            Coordinate to move to. Valid values are 0 ... 30.
         blocking : bool, optional
             If false, returns immediately,
             e.g. so a move of the other axis can be initiated.
@@ -177,15 +171,10 @@ class M30XY:
             timeout = 0
         
         if(self.serialNumber in self.connections.keys()):
-            if(ch == "CH1"):
-                self.CH1.MoveTo(Decimal(millimeter), timeout)
-            elif(ch == "CH2"):
-                self.CH2.MoveTo(Decimal(millimeter), timeout)
-            else:
-                raise ValueError("Channel must be 'CH1'/'CH2'!")
+            self.stage.MoveTo(Decimal(millimeter), timeout)
         else: raise Exception("Stage not connected!")
-        
-    def moveRelative(self, ch : str, millimeter : float, direction : str = "+"):
+    
+    def moveRelative(self, millimeter : float, direction : str = "+"):
         """
         Performes a move relative to the current position.
         
@@ -194,71 +183,63 @@ class M30XY:
 
         Parameters
         ----------
-        ch : str
-            Selects the axis to move, can be 'CH1' or 'CH2'..
         millimeter : float
             Distance to move. Can be positive or negative.
         direction : str, optional
-            Direction to move stage in. The default is "+".
+            Direction to move stage in. "+" is up direction.
+            The default is "+".
 
         Returns
         -------
         None.
 
         """
-       
+        
         if(direction == "+"):
-            direction = 2
-        elif(direction == "-"):
             direction = 1
+        elif(direction == "-"):
+            direction = 2
         else:
             raise ValueError("Direction must be '+' or '-'!")
         
         if(self.serialNumber in self.connections.keys()):
-            if(ch == "CH1"):
-                self.CH1.MoveRelative(gmc.MotorDirection(direction), Decimal(millimeter), defaultTimeout)
-            elif(ch == "CH2"):
-                self.CH2.MoveRelative(gmc.MotorDirection(direction), Decimal(millimeter), defaultTimeout)
-            else:
-                raise ValueError("Channel must be 'CH1'/'CH2'!")
+            self.stage.MoveRelative(gmc.MotorDirection(direction), Decimal(millimeter), defaultTimeout)
         else: raise Exception("Stage not connected!")
-        
+    
     def getVelocity(self) -> dict:
         """
         Returns the current velocity and acceleration settings.
 
+        Raises
+        ------
+        Exception
+            DESCRIPTION.
+
         Returns
         -------
         dict
-            Current settings for both channels. Velocities are in mm/s,
-            accelerations in mm/s^2
+            Velocity is in mm/s, acceleration in mm/s^2.
 
         """
         if(self.serialNumber in self.connections.keys()):
-            velA = self.CH1.GetVelocityParams()
-            velB = self.CH2.GetVelocityParams()
+            velA = self.stage.GetVelocityParams()
         else: raise Exception("Stage not connected!")
         
-        return {"CH1 min. vel.": Decimal.ToDouble(velA.MinVelocity),
-                "CH1 max. vel.": Decimal.ToDouble(velA.MaxVelocity),
-                "CH1 acc.": Decimal.ToDouble(velA.Acceleration),
-                "CH2 min. vel.": Decimal.ToDouble(velB.MinVelocity),
-                "CH2 max. vel.": Decimal.ToDouble(velB.MaxVelocity),
-                "CH2 acc.": Decimal.ToDouble(velB.Acceleration)}
+        return {"min. vel.": Decimal.ToDouble(velA.MinVelocity),
+                "max. vel.": Decimal.ToDouble(velA.MaxVelocity),
+                "acc.": Decimal.ToDouble(velA.Acceleration)}
     
-    def setVelocity(self, ch : str, maxVel : float = 2.3, acc : float = 5.0,
+    def setVelocity(self, maxVel : float = 2.0, acc : float = 1.0,
                     minVel : float = 0.0):
         """
-        Sets the stage channels acceleration and velocity.
+        Sets the stages acceleration and velocity.
 
         Parameters
         ----------
-        ch : str
-            Selects an axis, can be 'CH1' or 'CH2'.
         maxVel : float, optional
-            Steady state speed of movement in mm/s. The default is 2.3.
+            Steady state speed of movement in mm/s. The default is 2.0.
         acc : float, optional
-            Acceleration to maxVel in mm/s^2. The default is 5.0.
+            Acceleration to maxVel in mm/s^2. The default is 1.0.
         minVel : float, optional
             Initial speed. The default is 0.0.
 
@@ -267,20 +248,15 @@ class M30XY:
         None.
 
         """
-        if(maxVel > 2.4): # mm/s ?
-            raise ValueError("Maximum velocity must be < 2.4!")
+        if(maxVel > 8.0): # mm/s ?
+            raise ValueError("Maximum velocity must be < 8.0!")
         if(acc > 5): # mm/s^2 ?
             raise ValueError("Maximum velocity must be < 5.0!")
         
         if(self.serialNumber in self.connections.keys()):
-            if(ch == "CH1"):
-                self.CH1.SetVelocityParams(Decimal(maxVel), Decimal(acc))
-            elif(ch == "CH2"):
-                self.CH2.SetVelocityParams(Decimal(maxVel), Decimal(acc))
-            raise ValueError("Channel must be 'CH1'/'CH2'!")
+            self.stage.SetVelocityParams(Decimal(maxVel), Decimal(acc))
         else: raise Exception("Stage not connected!")
-        
-        
+    
     def close(self):
         """
         Disables and disconnects from the stage.
@@ -291,10 +267,8 @@ class M30XY:
 
         """
         if(self.serialNumber in self.connections.keys()):
-            self.CH1.StopPolling()
-            self.CH2.StopPolling()
-            self.CH1.DisableDevice()
-            self.CH2.DisableDevice()
+            self.stage.StopPolling()
+            self.stage.DisableDevice()
             self.stage.Disconnect(True)
             
             self.connections.pop(self.serialNumber)
