@@ -204,13 +204,13 @@ def analog_measurement_series(
     repetitions = 3,
 
     # values for sweeps in between analog measurements
-    V_set = 1.,
-    V_reset = -1.1,
-    number_sweeps = 5,
+    V_set = [0.9,1.,1.1],
+    V_reset = [-1.0,-1.1,-1.2],
+    number_sweeps = 10,
 
     # values for keithley
     V_read = 0.2,
-    points = 1e4, # there is only 10 points in vcm_measurement. Why?
+    points = 7e3, # there is only 10 points in vcm_measurement. Why?
     interval = 1e-3, # is fixed to 0.1 in vcm_measurement
     range_read = 1e-3,
     limit_read = 1e-3,
@@ -225,7 +225,7 @@ def analog_measurement_series(
 
     # values for sympuls
     pulse_widths = [],
-    pulse_spacing = 50e-3
+    pulse_spacing = 100e-3
 ):
     
     data = {}
@@ -235,33 +235,34 @@ def analog_measurement_series(
     data['timestamp'] = timestamp
 
     for pulse_width in pulse_widths:
-        for i in range(repetitions):
-            data[f'pulsewidth{pulse_width:.2e}s_{i+1}'.replace("+", "")] = analog_measurement(
-                # values for pandas file
-                samplename,
-                padname,
-                attenuation=attenuation,
-                # values for sweeps
-                V_set=V_set,
-                V_reset=V_reset,
-                number_sweeps=number_sweeps,
-                # values for keithley
-                V_read=V_read,
-                points=points,
-                interval=interval, # is fixed to 0.1 in vcm_measurement
-                range_read=range_read,
-                limit_read=limit_read,
-                nplc=nplc,
-                # values for tektronix
-                trigger_level=trigger_level,
-                polarity=polarity,
-                recordlength=recordlength,
-                position=position,
-                scale=scale,
-                # values for sympuls
-                pulse_width = pulse_width,
-                pulse_spacing = pulse_spacing
-            )
+        for V_set_cycle, V_reset_cycle in zip(V_set, V_reset):
+            for i in range(repetitions):
+                data[f'pulsewidth{pulse_width:.2e}s_{i+1}'.replace("+", "")] = analog_measurement(
+                    # values for pandas file
+                    samplename,
+                    padname,
+                    attenuation=attenuation,
+                    # values for sweeps
+                    V_set=V_set_cycle,
+                    V_reset=V_reset_cycle,
+                    number_sweeps=number_sweeps,
+                    # values for keithley
+                    V_read=V_read,
+                    points=points,
+                    interval=interval, # is fixed to 0.1 in vcm_measurement
+                    range_read=range_read,
+                    limit_read=limit_read,
+                    nplc=nplc,
+                    # values for tektronix
+                    trigger_level=trigger_level,
+                    polarity=polarity,
+                    recordlength=recordlength,
+                    position=position,
+                    scale=scale,
+                    # values for sympuls
+                    pulse_width = pulse_width,
+                    pulse_spacing = pulse_spacing
+                )
 
     datafolder = os.path.join('C:\\Messdaten', padname, samplename, "series")
     # subfolder = datestr
@@ -285,7 +286,7 @@ def analog_measurement(
     # values for sweeps
     V_set = 1.,
     V_reset = -1.1,
-    number_sweeps = 5,
+    number_sweeps = 10,
 
     # values for keithley
     V_read = 0.2,
@@ -304,7 +305,7 @@ def analog_measurement(
 
     # values for sympuls
     pulse_width = 10e-9,
-    pulse_spacing = 50e-3
+    pulse_spacing = 100e-3
     # pg5_measurement = True,
     # continuous = False
 ):
@@ -315,6 +316,9 @@ def analog_measurement(
     data['padname'] = padname
     data['samplename'] = samplename
 
+    data['num_sweeps'] = number_sweeps
+    data['V_set'] = V_set
+    data['V_reset'] = V_reset 
     data['V_read'] = V_read
     data['points'] = points 
     data['interval'] = interval
