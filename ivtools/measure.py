@@ -1620,6 +1620,8 @@ class telegram_bot:
     This class enables use of a telegram bot for basic remote control of the measurement setup
     e.g.: receive interactive figures, microscope pictures, move the sample stage to the next device or start pre-configured electrical measurements
 
+    you need to do 'pip install python-telegram-bot'
+    
     the bot_token is used to control the telegram bot 'TS-Bot' with the bot username: 'TS_controller_bot'
     use 'await' before async functions like 'await tb.send_hello_message()'
 
