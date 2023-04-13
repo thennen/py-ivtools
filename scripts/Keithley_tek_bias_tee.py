@@ -264,6 +264,7 @@ def analog_measurement_series(
                     pulse_spacing = pulse_spacing
                 )
 
+    """
     datafolder = os.path.join('C:\\Messdaten', padname, samplename, "series")
     # subfolder = datestr
     file_exits = True
@@ -274,6 +275,7 @@ def analog_measurement_series(
         i +=1
         filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
     io.write_pandas_pickle(meta.attach(data), filepath)
+    """
 
     return data
 
@@ -417,7 +419,7 @@ def analog_measurement(
     if ttx.triggerstate():
         plt.pause(0.1)
         ttx.disarm()
-        padname+="_no_first_pulse_detected_"
+        # padname+="_no_first_pulse_detected_"
     else:
         number_of_events +=1
         data_scope2 = ttx.get_curve(3)
@@ -456,7 +458,7 @@ def analog_measurement(
     if ttx.triggerstate():
         plt.pause(0.1)
         ttx.disarm()
-        padname+="_no_last_pulse_detected_"
+        # padname+="_no_last_pulse_detected_"
     else:
         number_of_events +=1
         data_scope2 = ttx.get_curve(3)
