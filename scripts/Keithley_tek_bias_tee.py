@@ -347,9 +347,9 @@ def analog_measurement(
 
     # functions for sweeps
     def reset():
-        return kiv(tri(v1 = V_reset, step = 0.02), measure_range = 1e-2, i_limit = 1e-2)
+        return kiv(tri(v1 = V_reset, step = 0.05), measure_range = 1e-2, i_limit = 1e-2)
     def set():
-        return kiv(tri(v1 = V_set, step = 0.02), measure_range = 1e-3, i_limit = 3e-4)
+        return kiv(tri(v1 = V_set, step = 0.05), measure_range = 1e-3, i_limit = 3e-4)
     def read():
         return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
     def get_current_resistance ():
@@ -407,6 +407,7 @@ def analog_measurement(
     # set up sympuls
     sympuls.set_pulse_width(pulse_width)
     
+    """
     # first measurement where tektronix reads pulse
     ttx.arm(source = 3, level = trigger_level, edge = 'r') 
     plt.pause(0.1)
@@ -431,7 +432,8 @@ def analog_measurement(
         # data['t_event'].append(time_array[len(time_array)-2])
         # print(time_array[len(time_array)-2])
     iplots.updateline(data)
-
+    """
+    
     # middle measurements, where keithey just reads and sympuls sends pulses
     while not k.done():
         sympuls.trigger()
