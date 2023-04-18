@@ -406,6 +406,9 @@ def analog_measurement(
 
     # set up sympuls
     sympuls.set_pulse_width(pulse_width)
+
+    # have python wait for keithley to get ready
+    plt.pause(0.5)
     
     """
     # first measurement where tektronix reads pulse
