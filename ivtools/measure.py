@@ -14,8 +14,11 @@ from math import gcd
 from numbers import Number
 import inspect
 from collections import defaultdict
+
 import telegram
 import asyncio
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 import numpy as np
 import pandas as pd
@@ -1621,6 +1624,7 @@ class telegram_bot:
     e.g.: receive interactive figures, microscope pictures, move the sample stage to the next device or start pre-configured electrical measurements
 
     you need to do 'pip install python-telegram-bot'
+    https://docs.python-telegram-bot.org/en/stable/
     
     the bot_token is used to control the telegram bot 'TS-Bot' with the bot username: 'TS_controller_bot'
     use 'await' before async functions like 'await tb.send_hello_message()'
@@ -1655,13 +1659,26 @@ class telegram_bot:
             update = await self.bot.get_updates()
         
         # this gets the chat_id 
-        chat_id = update[0].message.chat_id
+        chat_id = update[-1].message.chat_id
 
         return chat_id
 
-    async def get_chat_user_name(self):
+    async def get_recent_text(self):
         '''
-        this will return the username from the chatid that was passed during class initialization
+        this will return the text string from the most recently received chat message
+        '''
+        
+        async with self.bot:
+            update = await self.bot.get_updates()
+        
+        # this gets the chat_id 
+        text = update[-1].message.text
+
+        return text
+    
+    async def get_recent_chat_user_name(self):
+        '''
+        this will return the username from the most recently received chat
         '''
         
         # get most recent update from chatid
@@ -1669,7 +1686,7 @@ class telegram_bot:
             update = await self.bot.get_updates()
 
         # this gets the username from the chatid
-        name = update[0].message.from_user.first_name
+        name = update[-1].message.from_user.first_name
 
         return name
         
@@ -1700,17 +1717,25 @@ class telegram_bot:
 
         return bot_name
 
+    async def get_name_of_user(self):
+        '''
+        this will return the (first) name of the user from the given chatid
+        '''
+        # get user info
+        async with self.bot:
+            user_info = await self.bot.get_chat(chat_id=self.chat_id)
+        
+        # get first name from user info
+        name = user_info.first_name
+
+        return name
+
     async def send_hello_message(self):
         '''
         this will send a hello message to the chatid with the name of the receiver in the text
         '''
-        
-        # get most recent update from chatid
-        async with self.bot:
-            update = await self.bot.get_updates()
-
-        # this gets the username from the chatid
-        name = update[0].message.from_user.first_name
+        # get first name of user from the given chat_id
+        name = await self.get_name_of_user()
 
         async with self.bot:
             await self.bot.sendMessage(text=f'Hello {name}', chat_id=self.chat_id)
@@ -1738,6 +1763,61 @@ class telegram_bot:
                 await self.bot.send_photo(photo='https://telegram.org/img/t_logo.png', chat_id=self.chat_id)
             else:
                 log.warning('you should pass a filepath or an image web-link')
+    
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+        """Sends a message with three inline buttons attached."""
+
+        keyboard = [
+
+            [
+
+                InlineKeyboardButton("Option 1", callback_data="1"),
+
+                InlineKeyboardButton("Option 2", callback_data="2"),
+
+            ],
+
+            [InlineKeyboardButton("Option 3", callback_data="3")],
+
+        ]
+
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+
+        # await update.message.reply_text("Please choose:", reply_markup=reply_markup)
+        await telegram.Update.message.reply_text("Please choose:", reply_markup=reply_markup)
+
+    async def send_menu(self):
+        '''
+        This will send a button menu and return what button was pressed
+        '''
+
+
+
+        async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+            """Parses the CallbackQuery and updates the message text."""
+
+            query = update.callback_query
+
+
+            # CallbackQueries need to be answered, even if no notification to the user is needed
+
+            # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+
+            await query.answer()
+
+
+            await query.edit_message_text(text=f"Selected option: {query.data}")
+
+        application = Application.builder().token('5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc').build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button))
+        application.run_polling()
+
+
 
 class controlled_interrupt():
     '''
