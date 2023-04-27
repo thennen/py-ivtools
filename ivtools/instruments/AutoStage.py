@@ -30,12 +30,27 @@ class AutoStage:
         self.xyStage.moveTo("CH1", x, blocking = blocking)
         self.xyStage.moveTo("CH2", y, blocking = blocking)
         self.zStage.moveTo(z, blocking = blocking)
+        
+    def load(self):
+        self.zStage.moveTo(0, True)
+        self.xyStage.moveTo("CH1", 0, True)
+        self.xyStage.moveTo("CH2", 15, True)
+        input()
+        self.xyStage.moveTo("CH2", 0, True)
     
     def interactiveMove(self):
         positions = list()
         letter = ""
         modifier = ""
+        
+        step_xy = 1.0
+        step_z = 1.0
+        vel = 2.4
+        acc = 5
+        
         while(letter != "q"):
+            print("XY step: " + str(step_xy) + " Z step: " + str(step_z))
+            
             key = keyboard.read_hotkey(suppress = False)
             keys = key.split("+")
             
@@ -46,32 +61,41 @@ class AutoStage:
                 modifier = ""
                 letter = keys[0].casefold()
                 
-            if(modifier == "shift"):
-                step = 5
-                vel = 2.4
-                acc = 5
-            else:
-                step = 1
-                vel = 2.0
-                acc = 3
+            # if(modifier == "shift"):
+            #     step = 5
+            #     vel = 2.4
+            #     acc = 5
+            # else:
+            #     step = 1
+            #     vel = 2.0
+            #     acc = 3
             
             try:
                 if(letter == "w"):
-                    self.xyStage.moveRelative("CH2", step)
+                    self.xyStage.moveRelative("CH2", step_xy)
                 elif(letter == "s"):
-                    self.xyStage.moveRelative("CH2", -step)
+                    self.xyStage.moveRelative("CH2", -step_xy)
                 elif(letter == "d"):
-                    self.xyStage.moveRelative("CH1", step)
+                    self.xyStage.moveRelative("CH1", step_xy)
                 elif(letter == "a"):
-                    self.xyStage.moveRelative("CH1", -step)
+                    self.xyStage.moveRelative("CH1", -step_xy)
                 elif(letter == "["):
-                    self.zStage.moveRelative(-step)
+                    self.zStage.moveRelative(-step_z)
                 elif(letter == "]"):
-                    self.zStage.moveRelative(step)
+                    self.zStage.moveRelative(step_z)
                 elif(letter == "p"):
                     xy = self.xyStage.getPosition()
                     z = self.zStage.getPosition()
                     positions.append((xy["CH1"], xy["CH2"], z))
+                    print(f"Saved position: {xy['CH1']}, {xy['CH1']}, {z}")
+                elif(letter == "1"):
+                    step_xy = 2*step_xy
+                elif(letter == "2"):
+                    step_xy = 0.5*step_xy
+                elif(letter == "3"):
+                    step_z = 2*step_z
+                elif(letter == "4"):
+                    step_z = 0.5*step_z
             except:
                 pass
                 
