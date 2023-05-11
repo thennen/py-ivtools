@@ -234,9 +234,10 @@ def analog_measurement_series(
     timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
     data['timestamp'] = timestamp
 
-    for pulse_width in pulse_widths:
+    for i in range(repetitions):
         for V_set_cycle, V_reset_cycle in zip(V_set, V_reset):
-            for i in range(repetitions):
+            for pulse_width in pulse_widths:
+                
                 data[f'pulsewidth{pulse_width:.2e}s_{i+1}'.replace("+", "")] = analog_measurement(
                     # values for pandas file
                     samplename,
