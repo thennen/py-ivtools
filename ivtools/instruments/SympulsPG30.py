@@ -6,6 +6,7 @@ import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 import time
 import math
+import inspect
 
 def _sendCmd(interface, cmd): 
     """
@@ -253,6 +254,8 @@ def _read_errors(func):
         if args[0].debug:
             args[0].error()
         return retval
+    wrapper_func.__doc__ = func.__doc__
+    wrapper_func.__signature__ = inspect.signature(func)
     return wrapper_func
     
 class SympulsPG30(object):
