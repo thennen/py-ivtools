@@ -15,6 +15,11 @@ from numbers import Number
 import inspect
 from collections import defaultdict
 
+import telegram
+import asyncio
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -136,6 +141,13 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
     sampling_factor = (n + pretrig + posttrig)
 
+    if not type(wfm) == np.ndarray:
+        wfm = np.array(wfm)
+
+    if smartrange:
+        # Smart range the monitor channel
+        smart_range(np.min(wfm), np.max(wfm), ch=[monitor_ch])
+
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     # TODO: ps.capture has many arguments that are not accessible by a picoiv() call..  add them?
@@ -146,13 +158,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     # This makes me feel good, but I didn't test whether it's really necessary
     time.sleep(.05)
-
-    if not type(wfm) == np.ndarray:
-        wfm = np.array(wfm)
-
-    if smartrange:
-        # Smart range the monitor channel
-        smart_range(np.min(wfm), np.max(wfm), ch=[monitor_ch])
 
     if termination:
         # Account for terminating resistance
@@ -1612,6 +1617,207 @@ def tts_thread(text=None):
             tts_thread.done = True
     tts_thread.done = False
     ttsthread = Threader()
+
+class telegram_bot:
+    '''
+    This class enables use of a telegram bot for basic remote control of the measurement setup
+    e.g.: receive interactive figures, microscope pictures, move the sample stage to the next device or start pre-configured electrical measurements
+
+    you need to do 'pip install python-telegram-bot'
+    https://docs.python-telegram-bot.org/en/stable/
+    
+    the bot_token is used to control the telegram bot 'TS-Bot' with the bot username: 'TS_controller_bot'
+    use 'await' before async functions like 'await tb.send_hello_message()'
+
+    to make the bot communicate with you in your personal chat:
+    search telegram app for TS-Bot
+    send any message to this bot
+    get your personal chat_id (this returns the chat_id of the most recent received message):
+    tb = telegram_bot()
+    chat_id = await tb.get_recent_chat_id()
+
+    set up the bot to talk with you on your personal chat:
+    tb = telegram_bot(chat_id=chat_id)
+    await tb.send_hello_message()
+    '''
+    
+    def __init__(self, chat_id=None, bot_token='5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc'):
+        self.chat_id = chat_id
+        self.bot_token = bot_token
+
+        self.bot = telegram.Bot(token=self.bot_token)
+        
+
+    async def get_recent_chat_id(self):
+        '''
+        this will return the chatid from the most recently received chat message
+        send the bot any text message before running this function to get your own personal chat_id of your conversation with the bot
+        you need the chat_id to let the bot send any message to the given chat
+        '''
+        
+        async with self.bot:
+            update = await self.bot.get_updates()
+        
+        # this gets the chat_id 
+        chat_id = update[-1].message.chat_id
+
+        return chat_id
+
+    async def get_recent_text(self):
+        '''
+        this will return the text string from the most recently received chat message
+        '''
+        
+        async with self.bot:
+            update = await self.bot.get_updates()
+        
+        # this gets the chat_id 
+        text = update[-1].message.text
+
+        return text
+    
+    async def get_recent_chat_user_name(self):
+        '''
+        this will return the username from the most recently received chat
+        '''
+        
+        # get most recent update from chatid
+        async with self.bot:
+            update = await self.bot.get_updates()
+
+        # this gets the username from the chatid
+        name = update[-1].message.from_user.first_name
+
+        return name
+        
+    async def get_bot_user_name(self):
+        '''
+        this will return the username of the bot
+        '''
+        
+        # get info about bot
+        async with self.bot:
+            bot_info = await self.bot.get_me()
+
+        # this gets the username of the bot
+        bot_user_name = bot_info.username
+
+        return bot_user_name
+
+    async def get_bot_name(self):
+        '''
+        this will return the name of the bot
+        '''
+        # get info about bot
+        async with self.bot:
+            bot_info = await self.bot.get_me()
+
+        # this gets the username of the bot
+        bot_name = bot_info.full_name
+
+        return bot_name
+
+    async def get_name_of_user(self):
+        '''
+        this will return the (first) name of the user from the given chatid
+        '''
+        # get user info
+        async with self.bot:
+            user_info = await self.bot.get_chat(chat_id=self.chat_id)
+        
+        # get first name from user info
+        name = user_info.first_name
+
+        return name
+
+    async def send_hello_message(self):
+        '''
+        this will send a hello message to the chatid with the name of the receiver in the text
+        '''
+        # get first name of user from the given chat_id
+        name = await self.get_name_of_user()
+
+        async with self.bot:
+            await self.bot.sendMessage(text=f'Hello {name}', chat_id=self.chat_id)
+    
+    async def send_message(self, text=None):
+        '''
+        this will send a message with the given text to the chatid
+        '''
+        
+        async with self.bot:
+            await self.bot.sendMessage(text=text, chat_id=self.chat_id)
+
+    async def send_picture(self, filepath=None, web_link=None):
+        '''
+        this will send a picture to the chatid
+        pass local filepath or web_link to a picture
+        '''
+        
+        async with self.bot:
+            if filepath:
+                # from local drive
+                await self.bot.send_photo(photo=open(filepath, 'rb'), chat_id=self.chat_id)
+            elif web_link:
+                # from internet
+                await self.bot.send_photo(photo='https://telegram.org/img/t_logo.png', chat_id=self.chat_id)
+            else:
+                log.warning('you should pass a filepath or an image web-link')
+    
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+        """Sends a message with three inline buttons attached."""
+
+        keyboard = [
+
+            [
+
+                InlineKeyboardButton("Option 1", callback_data="1"),
+
+                InlineKeyboardButton("Option 2", callback_data="2"),
+
+            ],
+
+            [InlineKeyboardButton("Option 3", callback_data="3")],
+
+        ]
+
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+
+        # await update.message.reply_text("Please choose:", reply_markup=reply_markup)
+        await telegram.Update.message.reply_text("Please choose:", reply_markup=reply_markup)
+
+    async def send_menu(self):
+        '''
+        This will send a button menu and return what button was pressed
+        '''
+
+
+
+        async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+            """Parses the CallbackQuery and updates the message text."""
+
+            query = update.callback_query
+
+
+            # CallbackQueries need to be answered, even if no notification to the user is needed
+
+            # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+
+            await query.answer()
+
+
+            await query.edit_message_text(text=f"Selected option: {query.data}")
+
+        application = Application.builder().token('5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc').build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button))
+        application.run_polling()
+
+
 
 class controlled_interrupt():
     '''

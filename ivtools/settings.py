@@ -143,6 +143,16 @@ if hostname in ('pciwe46', 'iwe21705'):
         savePicWithMeas = True
         saveAmbient = True
 
+    elif username == 'stasner':
+        # savePicWithMeas = True
+        # saveAmbient = True
+        datafolder = r'D:\stasner\ivdata'
+
+        for di in logging_prints.values(): di['all'] = True # print everything
+
+        # initialize telegram bot with personal chat_id
+        tb = ivtools.measure.telegram_bot(chat_id=906285419, bot_token='5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc')
+
     elif username == 'munoz':
         munoz = 'D:/munoz/'
         datafolder = os.path.join(munoz, 'ivdata')
