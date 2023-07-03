@@ -141,6 +141,13 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
     sampling_factor = (n + pretrig + posttrig)
 
+    if not type(wfm) == np.ndarray:
+        wfm = np.array(wfm)
+
+    if smartrange:
+        # Smart range the monitor channel
+        smart_range(np.min(wfm), np.max(wfm), ch=[monitor_ch])
+
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     # TODO: ps.capture has many arguments that are not accessible by a picoiv() call..  add them?
@@ -151,13 +158,6 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     # This makes me feel good, but I didn't test whether it's really necessary
     time.sleep(.05)
-
-    if not type(wfm) == np.ndarray:
-        wfm = np.array(wfm)
-
-    if smartrange:
-        # Smart range the monitor channel
-        smart_range(np.min(wfm), np.max(wfm), ch=[monitor_ch])
 
     if termination:
         # Account for terminating resistance
