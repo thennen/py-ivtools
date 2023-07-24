@@ -222,6 +222,7 @@ def analog_measurement_series(
     recordlength = 5000,
     position = -2.5,
     scale = 0.04,
+    transient_measurement = False,
 
     # values for sympuls
     pulse_widths = [],
@@ -260,6 +261,7 @@ def analog_measurement_series(
                     recordlength=recordlength,
                     position=position,
                     scale=scale,
+                    transient_measurement=transient_measurement,
                     # values for sympuls
                     pulse_width = pulse_width,
                     pulse_spacing = pulse_spacing
@@ -305,6 +307,7 @@ def analog_measurement(
     recordlength = 5000,
     position = -2.5,
     scale = 0.04,
+    transient_measurement = False,
 
     # values for sympuls
     pulse_width = 10e-9,
@@ -411,86 +414,55 @@ def analog_measurement(
     # have python wait for keithley to get ready
     plt.pause(0.5)
     
-    """
-    # first measurement where tektronix reads pulse
-    ttx.arm(source = 3, level = trigger_level, edge = 'r') 
-    plt.pause(0.1)
-    sympuls.trigger()
-    data['t_event'].append(time_ns())
-    num_pulses += 1
-    # print('trigger'+str(trigger_level))
-    plt.pause(0.2)
-    data.update(k.get_data())
-    if ttx.triggerstate():
-        plt.pause(0.1)
-        ttx.disarm()
-        # padname+="_no_first_pulse_detected_"
-    else:
-        number_of_events +=1
-        data_scope2 = ttx.get_curve(3)
-        # time_array = data['t']
-        data['t_scope'].append(data_scope2['t_ttx'])
-        data['v_answer'].append(data_scope2['V_ttx'])
-        '''Moritz: last current data point measured after last trigger event so the entry one before
-         will be used as time reference (-2 instead of -1, which is the last entry)'''
-        # data['t_event'].append(time_array[len(time_array)-2])
-        # print(time_array[len(time_array)-2])
-    iplots.updateline(data)
-    """
-    
     # middle measurements, where keithey just reads and sympuls sends pulses
     while not k.done():
+        if transient_measurement:
+            ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+            plt.pause(0.1)
         sympuls.trigger()
         data['t_event'].append(time_ns())
         num_pulses += 1
-        # print('trigger'+str(trigger_level))
         # sleep at least 10ms between pulses
-        sleep(pulse_spacing)
+        if transient_measurement:
+            plt.pause(0.2)
+            data.update(k.get_data())
+            if ttx.triggerstate():
+                plt.pause(0.1)
+                ttx.disarm()
+                # padname+="_no_last_pulse_detected_"
+            else:
+                number_of_events +=1
+                data_scope2 = ttx.get_curve(3)
+                # time_array = data['t']
+                data['t_scope'].append(data_scope2['t_ttx'])
+                data['v_answer'].append(data_scope2['V_ttx'])
+        else:
+            sleep(pulse_spacing)
 
-        # data.update(k.get_data())
-        # data['t_event'].append(time_array[len(time_array)-10])
-        # print(time_array[len(time_array)-2])
-        # iplots.updateline(data)
+    # read all the measured data from keithley
+    data.update(k.get_data())
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+    data["num_pulses"] = num_pulses
 
     # last measurement where tektronix reads pulse
     ttx.arm(source = 3, level = trigger_level, edge = 'r') 
     plt.pause(0.1)
     sympuls.trigger()
-    data['t_event'].append(time_ns())
-    num_pulses += 1
-    # print('trigger'+str(trigger_level))
     plt.pause(0.2)
-    data.update(k.get_data())
     if ttx.triggerstate():
         plt.pause(0.1)
         ttx.disarm()
-        # padname+="_no_last_pulse_detected_"
     else:
         number_of_events +=1
         data_scope2 = ttx.get_curve(3)
-        # time_array = data['t']
         data['t_scope'].append(data_scope2['t_ttx'])
         data['v_answer'].append(data_scope2['V_ttx'])
-        '''Moritz: last current data point measured after last trigger event so the entry one before
-         will be used as time reference (-2 instead of -1, which is the last entry)'''
-        # data['t_event'].append(time_array[len(time_array)-2])
-        # print(time_array[len(time_array)])
     iplots.updateline(data)
-
-    # finish up measurement
-    data.update(k.get_data())
-    iplots.updateline(data)
-    #    k.set_channel_state('A', False)
-    #    k.set_channel_state('B', False)
-    k.source_output(ch = 'A', state = False)
-    k.source_output(ch = 'B', state = False)
     ttx.disarm()
 
-    data["num_pulses"] = num_pulses
-
+    # save results
     datafolder = os.path.join('C:\\Messdaten', padname, samplename)
-    # subfolder = datestr
-    file_exits = True
     i=1
     # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
     filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
