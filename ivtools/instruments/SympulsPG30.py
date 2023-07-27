@@ -326,6 +326,8 @@ class SympulsPG30(object):
             self.conn, "source:lupattern:data", 
             pattern
         )
+        # adjust the pattern length
+        self.set_lupattern_length(num_words)
 
     @_read_errors
     def get_upattern(self)->str:
