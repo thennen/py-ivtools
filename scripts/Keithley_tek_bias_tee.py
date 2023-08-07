@@ -9,6 +9,7 @@ from collections import defaultdict
 from scipy.optimize import curve_fit
 from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
+from time import time_ns, sleep, localtime, strftime
 
 def where(*args):
     return np.where(*args)[0]
@@ -68,12 +69,12 @@ def setup_vcm_plots():
         if np.isnan(line.t_hrs).any():
             i+=1
             line = data.iloc[-2]
-        ax.set_title('Read HRS #' + str(len(data)-i))
+        ax.set_title('Pre Pulse Resistance State  #' + str(len(data)-i))
         if not np.isnan(line.t_hrs).any():
             ax.cla()
-            ax.set_title('Read HRS #' + str(len(data)-i))
+            ax.set_title('Pre Resistance State #' + str(len(data)-i))
             ax.plot(line.t_hrs,  line.V_hrs /  line.I_hrs - 50)
-            ax.set_ylabel('Resistance HRS [V/A]')
+            ax.set_ylabel('Pre Resistance [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
         
@@ -83,10 +84,10 @@ def setup_vcm_plots():
         if np.isnan(line.t_ttx).any():
             line = data.iloc[-2]
             i+=1
-        ax.set_title('Answer #' + str(len(data)-i))
+        ax.set_title('Pulse Answer #' + str(len(data)-i))
         if not np.isnan(line.t_ttx).any():
             ax.cla()
-            ax.set_title('Answer #' + str(len(data)-i))
+            ax.set_title('Pulse Answer #' + str(len(data)-i))
             ax.plot(line.t_ttx, line.V_ttx, **kwargs)    
             ax.set_ylabel('Voltage [V]')
             ax.set_xlabel('Time [s]')
@@ -98,12 +99,12 @@ def setup_vcm_plots():
         if np.isnan(line.t_lrs).any():
             line = data.iloc[-2]
             i+=1
-        ax.set_title('Read LRS #' + str(len(data)-i))
+        ax.set_title('Post Pulse Resistance State #' + str(len(data)-i))
         if not np.isnan(line.t_lrs).any():
             ax.cla()
-            ax.set_title('Read LRS #' + str(len(data)-i))
+            ax.set_title('Post Resistance State #' + str(len(data)-i))
             ax.plot(line.t_lrs,  line.V_lrs /  line.I_lrs - 50)
-            ax.set_ylabel('Resistance LRS [V/A]')
+            ax.set_ylabel('Post Resistance [V/A]')
             ax.set_xlabel('Time [s]')
             ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
 
@@ -195,6 +196,312 @@ def set_keithley_plotters():
     iplots.ax2.cla()
     iplots.ax3.cla()
 
+def analog_measurement_series(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
+    repetitions = 3,
+
+    # values for sweeps in between analog measurements
+    V_set = [0.9,1.,1.1],
+    V_reset = [-1.0,-1.1,-1.2],
+    number_sweeps = 10,
+
+    # values for keithley
+    V_read = 0.2,
+    points = 7e3, # there is only 10 points in vcm_measurement. Why?
+    interval = 1e-3, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1e-2,
+
+    # values for tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+
+    # values for sympuls
+    pulse_widths = [],
+    pulse_spacing = 100e-3
+):
+    
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    data['timestamp'] = timestamp
+
+    for i in range(repetitions):
+        for V_set_cycle, V_reset_cycle in zip(V_set, V_reset):
+            for pulse_width in pulse_widths:
+                
+                data[f'pulsewidth{pulse_width:.2e}s_{i+1}'.replace("+", "")] = analog_measurement(
+                    # values for pandas file
+                    samplename,
+                    padname,
+                    attenuation=attenuation,
+                    # values for sweeps
+                    V_set=V_set_cycle,
+                    V_reset=V_reset_cycle,
+                    number_sweeps=number_sweeps,
+                    # values for keithley
+                    V_read=V_read,
+                    points=points,
+                    interval=interval, # is fixed to 0.1 in vcm_measurement
+                    range_read=range_read,
+                    limit_read=limit_read,
+                    nplc=nplc,
+                    # values for tektronix
+                    trigger_level=trigger_level,
+                    polarity=polarity,
+                    recordlength=recordlength,
+                    position=position,
+                    scale=scale,
+                    # values for sympuls
+                    pulse_width = pulse_width,
+                    pulse_spacing = pulse_spacing
+                )
+
+    """
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename, "series")
+    # subfolder = datestr
+    file_exits = True
+    i=1
+    # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
+    filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
+    io.write_pandas_pickle(meta.attach(data), filepath)
+    """
+
+    return data
+
+def analog_measurement(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
+
+    # values for sweeps
+    V_set = 1.,
+    V_reset = -1.1,
+    number_sweeps = 10,
+
+    # values for keithley
+    V_read = 0.2,
+    points = 1e4, # there is only 10 points in vcm_measurement. Why?
+    interval = 1e-3, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1e-2,
+
+    # values for tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+
+    # values for sympuls
+    pulse_width = 10e-9,
+    pulse_spacing = 100e-3
+    # pg5_measurement = True,
+    # continuous = False
+):
+    '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
+    Pulses applied during this measurement are also recorded. '''
+    number_of_events =0
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    data['num_sweeps'] = number_sweeps
+    data['V_set'] = V_set
+    data['V_reset'] = V_reset 
+    data['V_read'] = V_read
+    data['points'] = points 
+    data['interval'] = interval
+    data['range_read'] = range_read 
+    data['limit_read'] = limit_read
+    data['nplc'] = nplc
+    data['trigger_level'] = trigger_level
+    data['polarity'] = polarity
+    data['position'] = position
+    data['scale'] = scale
+    data['pulse_spacing'] = pulse_spacing
+
+    data['t_scope'] = []
+    data['v_pulse'] = []
+    data['v_answer'] = []
+    data['t_event'] = []
+    
+    data['attenuation'] = attenuation
+    data['recordlength'] = recordlength
+    data['pulse_width'] = pulse_width
+
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    data['timestamp'] = timestamp
+
+    # functions for sweeps
+    def reset():
+        return kiv(tri(v1 = V_reset, step = 0.05), measure_range = 1e-2, i_limit = 1e-2)
+    def set():
+        return kiv(tri(v1 = V_set, step = 0.05), measure_range = 1e-3, i_limit = 3e-4)
+    def read():
+        return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
+    def get_current_resistance ():
+        data = read()
+        I = data["I"]
+        V = data["Vmeasured"]
+        return V[len(V)//2]/I[len(I)//2]
+
+    # start doing a few sweeps to improve reproducibility
+    set_keithley_plotters()
+    iplots.show()
+
+    # get initial resistance state and switch to HRS if necessary 
+    data['initial_state'] = get_current_resistance()
+    if data['initial_state'] <= 5000:
+        data['initial_set'] = reset()
+
+    # create list for sets and resets
+    data['sets'] = []
+    data['resets'] = []
+    
+    # now in HRS we do {number_sweeps}
+    for i in range(number_sweeps):
+        data['sets'].append(set())
+        # data[f'set_{i+1}_state'] = get_current_resistance()
+        data['resets'].append(reset())
+        # data[f'reset_{i+1}_state'] = get_current_resistance()
+
+    # get initial HRS after sweeps
+    data['initial_HRS'] = get_current_resistance()
+
+    # then do analog measurement
+    setup_pcm_plots()
+    iplots.show()  
+    num_pulses = 0  
+
+    # recordlength = (pulse_width * 100e9) + 500
+    # read resistance state with keithley
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val= V_read, source_func='v', ch='A')
+    plt.pause(1)
+    k._it_lua(sourceVA = V_read , sourceVB = 0, points = points, interval = interval, rangeI = range_read , limitI = limit_read, nplc = nplc)
+    data['t_begin'] = time_ns()
+
+    # set up tektronix
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)    
+    ttx.inputstate(4, False)
+    ttx.scale(3, scale)
+    ttx.position(3, position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
+    trigger_level = trigger_level*polarity
+
+    # set up sympuls
+    sympuls.set_pulse_width(pulse_width)
+
+    # have python wait for keithley to get ready
+    plt.pause(0.5)
+    
+    """
+    # first measurement where tektronix reads pulse
+    ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+    plt.pause(0.1)
+    sympuls.trigger()
+    data['t_event'].append(time_ns())
+    num_pulses += 1
+    # print('trigger'+str(trigger_level))
+    plt.pause(0.2)
+    data.update(k.get_data())
+    if ttx.triggerstate():
+        plt.pause(0.1)
+        ttx.disarm()
+        # padname+="_no_first_pulse_detected_"
+    else:
+        number_of_events +=1
+        data_scope2 = ttx.get_curve(3)
+        # time_array = data['t']
+        data['t_scope'].append(data_scope2['t_ttx'])
+        data['v_answer'].append(data_scope2['V_ttx'])
+        '''Moritz: last current data point measured after last trigger event so the entry one before
+         will be used as time reference (-2 instead of -1, which is the last entry)'''
+        # data['t_event'].append(time_array[len(time_array)-2])
+        # print(time_array[len(time_array)-2])
+    iplots.updateline(data)
+    """
+    
+    # middle measurements, where keithey just reads and sympuls sends pulses
+    while not k.done():
+        sympuls.trigger()
+        data['t_event'].append(time_ns())
+        num_pulses += 1
+        # print('trigger'+str(trigger_level))
+        # sleep at least 10ms between pulses
+        sleep(pulse_spacing)
+
+        # data.update(k.get_data())
+        # data['t_event'].append(time_array[len(time_array)-10])
+        # print(time_array[len(time_array)-2])
+        # iplots.updateline(data)
+
+    # last measurement where tektronix reads pulse
+    ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+    plt.pause(0.1)
+    sympuls.trigger()
+    data['t_event'].append(time_ns())
+    num_pulses += 1
+    # print('trigger'+str(trigger_level))
+    plt.pause(0.2)
+    data.update(k.get_data())
+    if ttx.triggerstate():
+        plt.pause(0.1)
+        ttx.disarm()
+        # padname+="_no_last_pulse_detected_"
+    else:
+        number_of_events +=1
+        data_scope2 = ttx.get_curve(3)
+        # time_array = data['t']
+        data['t_scope'].append(data_scope2['t_ttx'])
+        data['v_answer'].append(data_scope2['V_ttx'])
+        '''Moritz: last current data point measured after last trigger event so the entry one before
+         will be used as time reference (-2 instead of -1, which is the last entry)'''
+        # data['t_event'].append(time_array[len(time_array)-2])
+        # print(time_array[len(time_array)])
+    iplots.updateline(data)
+
+    # finish up measurement
+    data.update(k.get_data())
+    iplots.updateline(data)
+    #    k.set_channel_state('A', False)
+    #    k.set_channel_state('B', False)
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+    ttx.disarm()
+
+    data["num_pulses"] = num_pulses
+
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename)
+    # subfolder = datestr
+    file_exits = True
+    i=1
+    # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
+    filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
+    io.write_pandas_pickle(meta.attach(data), filepath)
+    # print(len(data))
+    print(f"{num_pulses=}")
+    return data  
+
 def test_measurement_single(
     # values for pandas file
     samplename,
@@ -203,7 +510,7 @@ def test_measurement_single(
 
     # values for keithley
     V_read = -0.2,
-    points = 250, # there is only 10 points in vcm_measurement. Why?
+    points = 250, # there is only 10  points in vcm_measurement. Why?
     interval = 0.1, # is fixed to 0.1 in vcm_measurement
     range_read = 1e-3,
     limit_read = 1e-3,
@@ -2157,3 +2464,332 @@ def calc_t_reset(filename, min_current = -215e-6):
 
     fig.tight_layout()
     fig.show()
+
+def pattern(widthFactor, num_delayFactor, num_of_pulses):
+    
+    patternOn = [1]*widthFactor
+    patternOff = [0]*num_delayFactor
+
+    out = patternOn[:]
+ 
+    for i in range(num_of_pulses-1):      
+        out.extend(patternOff)
+        out.extend(patternOn)    
+
+    return out
+
+
+def PPG30_measurement(samplename,
+padname,
+v1,
+v2,
+positive_amplitude = 1000e-3,
+negative_amplitude = 600e-3,
+set_pattern_format = 'LU',  # Since only LU pattern is user giver pattern
+set_pattern_length = 1,     # Set word lenght. But since it is autmatically (line 329 in sympuls.PG30) selected so we dont have to use this. 
+widthFactor = 1,            # (Daniel way of word function, line 2532 in this file). use in a function to give 1s, number of pulses and delays.
+num_delayFactor = 0,        # Part of function to give 1s, number of pulses and delays
+num_of_pulses = 0,          # Part of function to give 1s, number of pulses and delays
+set_pattern = [],           # give pattern in the form of list. [1,0,-1]
+set_trigger_soruce = 'IMM',
+set_ppg_channel = 'BIP',
+step = 0.01,
+step2 = 0.01,
+V_read = 0.2,
+range_lrs = 1e-3,
+range_hrs = 1e-4,
+range_sweep = 1e-2,
+range_sweep2 = 1e-3,
+cycles = 1,
+pulse_width = 50e-12,
+attenuation = 0,
+automatic_measurement = True,
+pg5_measurement = True,
+recordlength = 250,
+trigger_position = 25,
+edge = 'r',
+sweep = True,
+two_sweeps = False,
+scale = 0.12,
+position = -3,
+trigger_level = 0.05,
+nplc = 10,
+limitI = 3e-4,
+limitI2 = 3e-4,
+r_window = False,
+r_lower = 1e3,
+r_upper = 2e3,
+cc_step = 25e-6):
+
+    setup_vcm_plots()
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    data['positive_amplitude'] = positive_amplitude
+    data['negative_amplitude'] = negative_amplitude
+
+    ##### Daniel way of setting pattern ####
+    #set_pattern  = pattern(widthFactor= widthFactor, num_delayFactor = num_delayFactor, num_of_pulses = num_of_pulses )
+    #print(len(set_pattern))
+
+    #data['set_pattern'] = set_pattern
+    #data['set_pattern_format'] = set_pattern_format
+    #data['set_pattern_length'] = set_pattern_length
+    #data['set_ppg_channel'] = set_ppg_channel
+
+    data['pulse_width'] = pulse_width
+    #data['attenuation'] = attenuation
+    #data['recordlength'] = recordlength
+    #data['V_read'] = V_read
+    
+
+    #data['nplc'] = nplc
+    #data['cycles'] = cycles
+
+    ###### Setting PPG30 ###############################################################
+
+    sympulsPG30.amplitude1(Amp1 = positive_amplitude)
+    sympulsPG30.amplitude2(Amp2 = negative_amplitude)
+    sympulsPG30.pattern(pattern = set_pattern_format)
+    sympulsPG30.format(form = set_ppg_channel)
+    sympulsPG30.set_lupattern(pattern = set_pattern)
+    #set_length = np.ceil(len(set_pattern)/128)                         # setting number of words on PPG30 dividing by digits
+    #sympulsPG30.set_lupattern_length(num_words = set_pattern_length)   # uncomment if we have to use user given word.
+    sympulsPG30.trigger_source(trig = set_trigger_soruce)
+    count_1 = set_pattern.count(1)                                      # count positive pulses
+    count_minus_1 = set_pattern.count(-1)                               # count negative pulses
+    Number_of_pulses = count_1+count_minus_1
+    total_pulse_duration = pulse_width * (count_1+count_minus_1)        # count both pulses without delays
+
+
+
+
+    hrs_list = []
+    lrs_list = []
+    sweep_list = []
+    scope_list = []
+    
+    vlist = tri(v1 = v1, v2 = v2, step = step)
+
+    abort = False
+    for i in range(cycles):
+        if not abort:
+            ### Reading HRS resistance ############################################################################
+            k.source_output(ch = 'A', state = True)
+            k.source_level(source_val= V_read, source_func='v', ch='A')
+
+            plt.pause(1)
+
+            k._it_lua(sourceVA = V_read, sourceVB = 0, points =10, interval = 0.1, rangeI = range_hrs , limitI = 1, nplc = nplc)
+            while not k.done():
+                plt.pause(0.1)
+            k.source_output(ch = 'A', state = False)
+            k.source_output(ch = 'B', state = False)
+            hrs_data = k.get_data()
+            hrs_list.append(add_suffix_to_dict(hrs_data,'_hrs'))
+            data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+            iplots.updateline(data)
+            ### Setting up scope  ################################################################################
+
+            ttx.inputstate(3, True)
+            ttx.inputstate(2, False)
+            ttx.inputstate(1, False)
+            ttx.inputstate(4, False)
+
+            ttx.scale(3, scale)
+            ttx.position(3, position)
+
+
+            ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength= recordlength)
+            if pulse_width < 100e-12:
+                ttx.trigger_position(40)
+            elif pulse_width < 150e-12:
+                ttx.trigger_position(30)
+            else:
+                ttx.trigger_position(trigger_position)
+
+            plt.pause(0.1)
+
+            ttx.arm(source = 3, level = trigger_level, edge = edge)
+
+
+            ### Applying pulse and reading scope data #############################################################
+            if pg5_measurement:
+                sympulsPG30.set_pulse_width(pulse_width)
+            if not automatic_measurement:
+                input('Connect the RF probes and press enter')
+                plt.pause(0.5)
+            else:
+                plt.pause(1)
+                
+            if pg5_measurement:
+                sympulsPG30.trigger()
+            else:
+                print('Apply pulse')
+            plt.pause(0.1)
+            plt.pause(0.2)
+            status = ttx.triggerstate()
+            while status == True:
+                plt.pause(0.1)
+                status = ttx.triggerstate()
+            plt.pause(0.5)
+            scope_list.append(ttx.get_curve(3))
+            data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+            iplots.updateline(data)
+
+            ### Reading LRS resistance #############################################################################
+
+            if not automatic_measurement:
+                input('Connect the DC probes and press enter')
+
+            k.source_output(ch = 'A', state = True)
+            k.source_level(source_val= V_read, source_func='v', ch='A')
+
+            plt.pause(1)
+            k._it_lua(sourceVA = V_read, sourceVB = 0, points = 10, interval = 0.1, rangeI = range_lrs, limitI = 1, nplc = nplc)
+            while not k.done():
+                plt.pause(0.1)
+            k.source_output(ch = 'A', state = False)
+            k.source_output(ch = 'B', state = False)
+            lrs_data = k.get_data()
+            lrs_list.append(add_suffix_to_dict(lrs_data,'_lrs'))
+            data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+            iplots.updateline(data)
+
+            ### performing sweep ###################################################################################
+            if sweep:
+                if two_sweeps:
+                    dates_dict = defaultdict(list)
+                    vlist1 = tri(v1 = v1, v2 = 0, step = step)
+                    vlist2 = tri(v1 = 0, v2 = v2, step = step2)
+                    k.iv(vlist1, measure_range = range_sweep, i_limit = limitI) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    sweep_data = k.get_data()
+                    k.iv(vlist2, measure_range = range_sweep2, i_limit = limitI2) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    data_2nd_sweep = k.get_data()
+                    for key in data_2nd_sweep:
+                        data_to_append = data_2nd_sweep[key]
+                        if not isinstance(data_to_append,dict) and not isinstance(data_to_append, str):
+                            sweep_data[key] = np.append(sweep_data[key], data_to_append)
+                else:  
+                    k.iv(vlist, measure_range = range_sweep) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    k.source_output(ch = 'A', state = False)
+                    k.source_output(ch = 'B', state = False)
+                    sweep_data = k.get_data()
+                sweep_list.append(add_suffix_to_dict(sweep_data,'_sweep'))
+                data = combine_lists_to_data_frame(hrs_list, lrs_list, scope_list, sweep_list)
+                iplots.updateline(data)
+            if r_window:
+                current_compliance = limitI2
+                window_hit = False
+                u=0
+                d=0
+                while not window_hit:
+                    
+                    k.source_output(chan = 'A', state = True)
+                    k.source_level(source_val= V_read, source_func='v', ch='A')
+
+                    plt.pause(1)
+                    k._it_lua(sourceVA = V_read, sourceVB = 0, points = 5, interval = 0.1, measure_range = range_lrs, limitI = 1, nplc = nplc)
+                    while not k.done():
+                        plt.pause(0.1)
+                    k.source_output(ch = 'A', state = False)
+                    k.source_output(ch = 'B', state = False)
+                    r_data = k.get_data()
+                    resistance = np.mean(r_data['V']/r_data['I']) - 50
+                    print('Compliance = ' + str(current_compliance))
+                    print('Resistance = ' + str(resistance))
+
+                    if resistance >= r_lower and resistance <= r_upper:
+                        window_hit = True
+                        break
+                    elif resistance < r_lower:
+                        current_compliance -= cc_step
+                        u = 0
+                        d += 1
+                    elif resistance > 3.5e4 or u >=50:
+                        vlist2 = tri(v1 = 0, v2 = -2, step = step2)
+                        current_compliance = 2e-3
+                    elif d >= 50:
+                        vlist1 = tri(v1 = 2, v2 = 0, step = step)
+                    else:
+                        current_compliance += cc_step
+                        u += 1
+                        d = 0
+
+                    if current_compliance < cc_step:
+                        current_compliance =cc_step
+
+                    if u > 51 or d > 51:
+                        print('Failed hitting resistance window, aborting measurement')
+                        window_hit = True
+                        abort = True
+                        break
+
+                    k.iv(vlist1, measure_range = range_sweep, Ilimit = limitI) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    
+                    k.iv(vlist2, measure_range = range_sweep2, Ilimit = current_compliance) 
+                    while not k.done():
+                        plt.pause(0.1)
+                    vlist1 = tri(v1 = v1, v2 = 0, step = step)
+                    vlist2 = tri(v1 = 0, v2 = v2, step = step2)
+
+                    if current_compliance > 1e-3:
+                        current_compliance = limitI2
+            k.source_output(ch = 'A', state = False)
+            k.source_output(ch = 'B', state = False)
+  
+    data['attenuation'] = attenuation
+    data['pulse_width'] = pulse_width
+    data['scale'] = scale
+    data['position'] = position
+    data['trigger_level'] = trigger_level
+    data['positive_amplitude'] = positive_amplitude
+    data['negative_amplitude'] = negative_amplitude
+    #data['set_pattern'] = set_pattern
+    data['set_pattern_format'] = set_pattern_format
+    data['set_pattern_length'] = set_pattern_length
+    data['set_ppg_channel'] = set_ppg_channel
+
+    data['pulse_width'] = pulse_width
+    data['attenuation'] = attenuation
+    data['recordlength'] = recordlength
+    data['V_read'] = V_read
+    data['positive_pulses'] = count_1
+    data['negative_pulses'] = count_minus_1
+    data['number_of_pulses'] = Number_of_pulses
+
+
+    
+
+    data['nplc'] = nplc
+    data['cycles'] = cycles
+
+
+    datafolder = os.path.join('C:\Messdaten', samplename, padname)
+    subfolder = datestr
+    file_exits = True
+    i=1
+    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(attenuation)) + 'dB_'+str(i))
+    file_link = Path(filepath + '.df')
+    while file_link.is_file():
+        i +=1
+        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(attenuation)) + 'dB_'+str(i))
+        file_link = Path(filepath + '.df')
+    io.write_pandas_pickle(meta.attach(data), filepath)
+
+    print("number of +ve pulses:", count_1)
+    print("number of -ve pulses:", count_minus_1)
+    print("number of pulses:", Number_of_pulses)
+    print("total_duration in ns:", total_pulse_duration *1e9)
+
+
+    return data, abort
