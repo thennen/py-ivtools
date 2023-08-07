@@ -7,6 +7,7 @@ visa_rm = visa.visa_rm # stored here by __init__
 import time
 import math
 import inspect
+
 def _sendCmd(interface, cmd): 
     """ Sends a command to an instrument by first encoding it into utf-8 bytes
         and then using the pyvisa write_raw function to send it.
@@ -251,7 +252,6 @@ def _read_errors(func):
         return retval
     wrapper_func.__doc__ = func.__doc__
     wrapper_func.__signature__ = inspect.signature(func)
-
     return wrapper_func
     
 class SympulsPG30(object):
@@ -259,6 +259,8 @@ class SympulsPG30(object):
     def __init__(self, addr='ASRL5::INSTR', debug=False):
         try:
             self.connect(addr)
+            self.debug = debug
+            self.past_errors = ""
             print(f"Past errors: {self.error()}")
         except:
             log.error('Sympuls connection failed at {}'.format(addr))
@@ -325,7 +327,7 @@ class SympulsPG30(object):
             self.conn, "source:lupattern:data", 
             pattern
         )
-                # adjust the pattern length
+        # adjust the pattern length
         self.set_lupattern_length(num_words)
 
 

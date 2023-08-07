@@ -30,8 +30,8 @@ def setup_pcm_plots():
     def plot1(data, ax=None, **kwargs):
         ax.cla()
         ax.semilogy(data['t'], data['V'] / data['I'], **kwargs)
-        if data['t_event']:
-            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
+        #if data['t_event']:
+        #    ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
         ax.set_ylabel('Resistance [V/A]')
         ax.set_xlabel('Time [s]')
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -48,8 +48,8 @@ def setup_pcm_plots():
     def plot3(data, ax=None, **kwargs):
         ax.cla()
         ax.plot(data['t'], data['I'], **kwargs)
-        if data['t_event']:
-            ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
+        # if data['t_event']:
+        #    ax.vlines(data['t_event'],ax.get_ylim()[0]*1.2,ax.get_ylim()[1]*0.8, alpha = 0.5)
         ax.set_ylabel('Current [A]')
         ax.set_xlabel('Time [s]')
         ax.xaxis.set_major_formatter(mpl.ticker.EngFormatter())
@@ -195,6 +195,285 @@ def set_keithley_plotters():
     iplots.ax1.cla()
     iplots.ax2.cla()
     iplots.ax3.cla()
+
+def analog_measurement_series(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
+    repetitions = 3,
+
+    # values for sweeps in between analog measurements
+    V_set = [0.9,1.,1.1],
+    V_reset = [-1.0,-1.1,-1.2],
+    number_sweeps = 10,
+
+    # values for keithley
+    V_read = 0.2,
+    points = 7e3, # there is only 10 points in vcm_measurement. Why?
+    interval = 1e-3, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1e-2,
+
+    # values for tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+    transient_measurement = False,
+
+    # values for sympuls
+    pulse_widths = [],
+    pulse_spacing = 100e-3
+):
+    
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    data['timestamp'] = timestamp
+
+    for i in range(repetitions):
+        for V_set_cycle, V_reset_cycle in zip(V_set, V_reset):
+            for pulse_width in pulse_widths:
+                
+                data[f'pulsewidth{pulse_width:.2e}s_{i+1}'.replace("+", "")] = analog_measurement(
+                    # values for pandas file
+                    samplename,
+                    padname,
+                    attenuation=attenuation,
+                    # values for sweeps
+                    V_set=V_set_cycle,
+                    V_reset=V_reset_cycle,
+                    number_sweeps=number_sweeps,
+                    # values for keithley
+                    V_read=V_read,
+                    points=points,
+                    interval=interval, # is fixed to 0.1 in vcm_measurement
+                    range_read=range_read,
+                    limit_read=limit_read,
+                    nplc=nplc,
+                    # values for tektronix
+                    trigger_level=trigger_level,
+                    polarity=polarity,
+                    recordlength=recordlength,
+                    position=position,
+                    scale=scale,
+                    transient_measurement=transient_measurement,
+                    # values for sympuls
+                    pulse_width = pulse_width,
+                    pulse_spacing = pulse_spacing
+                )
+
+    """
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename, "series")
+    # subfolder = datestr
+    file_exits = True
+    i=1
+    # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
+    filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, f"{timestamp}_attenuation{attenuation}dB_series_{i}.s")
+    io.write_pandas_pickle(meta.attach(data), filepath)
+    """
+
+    return data
+
+def analog_measurement(
+    # values for pandas file
+    samplename,
+    padname,
+    attenuation = 0, 
+
+    # values for sweeps
+    V_set = 1.,
+    V_reset = -1.1,
+    number_sweeps = 10,
+
+    # values for keithley
+    V_read = 0.2,
+    points = 1e4, # there is only 10 points in vcm_measurement. Why?
+    interval = 1e-3, # is fixed to 0.1 in vcm_measurement
+    range_read = 1e-3,
+    limit_read = 1e-3,
+    nplc = 1e-2,
+
+    # values for tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+    transient_measurement = False,
+
+    # values for sympuls
+    pulse_width = 10e-9,
+    pulse_spacing = 100e-3
+    # pg5_measurement = True,
+    # continuous = False
+):
+    '''run a measurement during which the Keithley2600 applies a constants voltage and measures the current. 
+    Pulses applied during this measurement are also recorded. '''
+    number_of_events =0
+    data = {}
+    data['padname'] = padname
+    data['samplename'] = samplename
+
+    data['num_sweeps'] = number_sweeps
+    data['V_set'] = V_set
+    data['V_reset'] = V_reset 
+    data['V_read'] = V_read
+    data['points'] = points 
+    data['interval'] = interval
+    data['range_read'] = range_read 
+    data['limit_read'] = limit_read
+    data['nplc'] = nplc
+    data['trigger_level'] = trigger_level
+    data['polarity'] = polarity
+    data['position'] = position
+    data['scale'] = scale
+    data['pulse_spacing'] = pulse_spacing
+
+    data['t_scope'] = []
+    data['v_pulse'] = []
+    data['v_answer'] = []
+    data['t_event'] = []
+    
+    data['attenuation'] = attenuation
+    data['recordlength'] = recordlength
+    data['pulse_width'] = pulse_width
+
+    timestamp = strftime("%Y.%m.%d-%H.%M.%S", localtime())
+    data['timestamp'] = timestamp
+
+    # functions for sweeps
+    def reset():
+        return kiv(tri(v1 = V_reset, step = 0.05), measure_range = 1e-2, i_limit = 1e-2)
+    def set():
+        return kiv(tri(v1 = V_set, step = 0.05), measure_range = 1e-3, i_limit = 3e-4)
+    def read():
+        return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
+    def get_current_resistance ():
+        data = read()
+        I = data["I"]
+        V = data["Vmeasured"]
+        return V[len(V)//2]/I[len(I)//2]
+
+    # start doing a few sweeps to improve reproducibility
+    set_keithley_plotters()
+    iplots.show()
+
+    # get initial resistance state and switch to HRS if necessary 
+    data['initial_state'] = get_current_resistance()
+    if data['initial_state'] <= 5000:
+        data['initial_set'] = reset()
+
+    # create list for sets and resets
+    data['sets'] = []
+    data['resets'] = []
+    
+    # now in HRS we do {number_sweeps}
+    for i in range(number_sweeps):
+        data['sets'].append(set())
+        # data[f'set_{i+1}_state'] = get_current_resistance()
+        data['resets'].append(reset())
+        # data[f'reset_{i+1}_state'] = get_current_resistance()
+
+    # get initial HRS after sweeps
+    data['initial_HRS'] = get_current_resistance()
+
+    # then do analog measurement
+    setup_pcm_plots()
+    iplots.show()  
+    num_pulses = 0  
+
+    # recordlength = (pulse_width * 100e9) + 500
+    # read resistance state with keithley
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val= V_read, source_func='v', ch='A')
+    plt.pause(1)
+    k._it_lua(sourceVA = V_read , sourceVB = 0, points = points, interval = interval, rangeI = range_read , limitI = limit_read, nplc = nplc)
+    data['t_begin'] = time_ns()
+
+    # set up tektronix
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)    
+    ttx.inputstate(4, False)
+    ttx.scale(3, scale)
+    ttx.position(3, position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
+    trigger_level = trigger_level*polarity
+
+    # set up sympuls
+    sympuls.set_pulse_width(pulse_width)
+
+    # have python wait for keithley to get ready
+    plt.pause(0.5)
+    
+    # middle measurements, where keithey just reads and sympuls sends pulses
+    while not k.done():
+        if transient_measurement:
+            ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+            plt.pause(0.1)
+        sympuls.trigger()
+        data['t_event'].append(time_ns())
+        num_pulses += 1
+        # sleep at least 10ms between pulses
+        if transient_measurement:
+            plt.pause(0.2)
+            data.update(k.get_data())
+            if ttx.triggerstate():
+                plt.pause(0.1)
+                ttx.disarm()
+                # padname+="_no_last_pulse_detected_"
+            else:
+                number_of_events +=1
+                data_scope2 = ttx.get_curve(3)
+                # time_array = data['t']
+                data['t_scope'].append(data_scope2['t_ttx'])
+                data['v_answer'].append(data_scope2['V_ttx'])
+        else:
+            sleep(pulse_spacing)
+
+    # read all the measured data from keithley
+    data.update(k.get_data())
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+    data["num_pulses"] = num_pulses
+
+    # last measurement where tektronix reads pulse
+    ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+    plt.pause(0.1)
+    sympuls.trigger()
+    plt.pause(0.2)
+    if ttx.triggerstate():
+        plt.pause(0.1)
+        ttx.disarm()
+    else:
+        number_of_events +=1
+        data_scope2 = ttx.get_curve(3)
+        data['t_scope'].append(data_scope2['t_ttx'])
+        data['v_answer'].append(data_scope2['V_ttx'])
+    iplots.updateline(data)
+    ttx.disarm()
+
+    # save results
+    datafolder = os.path.join('C:\\Messdaten', padname, samplename)
+    i=1
+    # f"{timestamp}_pulsewidth={pulse_width:.2e}s_attenuation={attenuation}dB_points={points:.2e}_{i}"
+    filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
+    while os.path.isfile(filepath + '.s'):
+        i +=1
+        filepath = os.path.join(datafolder, f"{timestamp}_pulsewidth{pulse_width:.2e}s_attenuation{attenuation}dB_points{points:.2e}_{i}.s".replace("+", ""))
+    io.write_pandas_pickle(meta.attach(data), filepath)
+    # print(len(data))
+    print(f"{num_pulses=}")
+    return data    
+
 
 def analog_measurement_series(
     # values for pandas file
@@ -627,7 +906,7 @@ def test_measurement_single(
         i +=1
         filepath = os.path.join(datafolder, subfolder, 'test_measurement_'+str(int(pulse_width*1e12)) + 'ps_' +str(int(attenuation)) + 'dB_'+str(int(points/10)) +'secs_' +str(i))
     io.write_pandas_pickle(meta.attach(data), filepath)
-    print(len(data))
+    # print(len(data))
     print(f"{num_pulses=}")
     return data    
 
