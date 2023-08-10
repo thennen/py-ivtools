@@ -14,16 +14,18 @@ class Picoscope(object):
     Picoscope is borg:
     https://code.activestate.com/recipes/66531-singleton-we-dont-need-no-stinkin-singleton-the-bo/
     '''
-    def __init__(self, SerialNumber=None, connect=True):
+    def __init__(self, SerialNumber=None, connect=True, series='ps6000a'):
         if SerialNumber is None:
-            statename = self.__class__.__name__
+            statename = self.__class__.__name__ + '_' + series
         else:
             statename = SerialNumber
         if statename not in ivtools.instrument_states:
             ivtools.instrument_states[statename] = {}
         self.__dict__ = ivtools.instrument_states[statename]
-        from picoscope import ps6000
-        self.ps6000 = ps6000
+
+        series = series.lower()
+        self.psmodule = __import__(f'picoscope.{series}')
+        self.psclass = getattr(getattr(self.psmodule, series), series.replace('ps', 'PS'))
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
         # Then this whole package would have picoscope module as a dependency
         # self.get_data will return data as well as save it here
@@ -50,12 +52,11 @@ class Picoscope(object):
             pass
         else:
             try:
-                self.ps = self.ps6000.PS6000(SerialNumber, connect=True)
+                self.ps = self.psclass(SerialNumber, connect=True)
                 model = self.ps.getUnitInfo('VariantInfo')
                 log.info('Picoscope {} connection succeeded.'.format(model))
                 self.close = self.ps.close
                 self.handle = self.ps.handle
-                # TODO: methods of PS6000 to expose?
                 self.getAllUnitInfo = self.ps.getAllUnitInfo
                 self.getUnitInfo = self.ps.getUnitInfo
             except Exception as e:
@@ -392,7 +393,7 @@ class Picoscope(object):
             freq = nsamples / duration
         # This will return actual sample frequency, then we can determine
         # the number of samples needed.
-        actualfreq, _ = self.ps.setSamplingFrequency(freq, 0)
+        actualfreq, _ = self.ps.setSamplingFrequency(freq, 1)
 
         if duration is not None:
             nsamples = duration * actualfreq
