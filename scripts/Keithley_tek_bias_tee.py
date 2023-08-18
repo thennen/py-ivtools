@@ -2758,6 +2758,26 @@ def pattern(widthFactor, num_delayFactor, num_of_pulses):
     return out
 
 
+
+def find_delays(set_pattern):
+    # Count the total number of ones
+    number_of_positive_pulses =  set_pattern.count(1)
+    number_of_negative_pulses= set_pattern.count(-1)
+    # Find the index of the first occurrence of 1
+    first_one_index = set_pattern.index(1)
+
+    try:
+        # Find the index of the second occurrence of 1, starting the search after the first 1
+        second_one_index = set_pattern.index(1, first_one_index + 1)
+
+        # Count the number of zeros between the first and second occurrences of 1
+        delay_factor = set_pattern[first_one_index + 1:second_one_index].count(0)
+    except ValueError:
+        # If there's no second occurrence of 1, count zeros after the first 1
+       delay_factor = set_pattern[first_one_index + 1:].count(0)
+
+    return delay_factor, number_of_positive_pulses, number_of_negative_pulses
+
 def PPG30_measurement(samplename,
 padname,
 v1,
@@ -2836,10 +2856,11 @@ cc_step = 25e-6):
     #set_length = np.ceil(len(set_pattern)/128)                         # setting number of words on PPG30 dividing by digits
     #sympulsPG30.set_lupattern_length(num_words = set_pattern_length)   # uncomment if we have to use user given word.
     sympulsPG30.trigger_source(trig = set_trigger_soruce)
-    count_1 = set_pattern.count(1)                                      # count positive pulses
-    count_minus_1 = set_pattern.count(-1)                               # count negative pulses
-    Number_of_pulses = count_1+count_minus_1
-    total_pulse_duration = pulse_width * (count_1+count_minus_1)        # count both pulses without delays
+
+    find_delays(set_pattern)
+    delay = delay_factor * pulse_widths                                 # find delays by multiplying pulsewidth with delays factor
+    Number_of_pulses = number_of_positive_pulses + number_of_negative_pulses
+    total_pulse_duration = pulse_width * Number_of_pulses               # count both pulses without delays
 
 
 
@@ -3057,16 +3078,16 @@ cc_step = 25e-6):
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(attenuation)) + 'dB_'+str(i))
+    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'delay_' +str(int(attenuation)) + 'dB_'+str(i))
     file_link = Path(filepath + '.df')
     while file_link.is_file():
         i +=1
-        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(attenuation)) + 'dB_'+str(i))
+        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'delay_' +str(int(attenuation)) + 'dB_'+str(i))
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
-    print("number of +ve pulses:", count_1)
-    print("number of -ve pulses:", count_minus_1)
+    print("number of +ve pulses:", number_of_positive_pulses)
+    print("number of -ve pulses:", number_of_negative_pulses)
     print("number of pulses:", Number_of_pulses)
     print("total_duration in ns:", total_pulse_duration *1e9)
 
