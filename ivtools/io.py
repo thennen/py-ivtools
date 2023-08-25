@@ -30,6 +30,8 @@ import logging
 
 from pathlib import Path
 
+from PIL import Image
+
 
 log = logging.getLogger('io')
 
