@@ -348,6 +348,22 @@ class Picoscope(object):
         log.error('Signal out of pico range!')
         return (max(possible_ranges), 0)
 
+
+    def setResolution(resolution=8):
+        # 6000a has 8, 10, 12 bit
+        if hasattr(self.ps, '_lowLevelSetDeviceResolution'):
+            self.ps.setResolution(str(resolution))
+        elif resolution != 8:
+            model = self.ps.getUnitInfo('VariantInfo')
+            Raise(Exception(f'Picoscope {model} does not have resolution settings.'))
+
+    def getResolution():
+        if hasattr(self.ps, '_lowLevelGetDeviceResolution'):
+            resolution = int(self.ps.getResolution())
+        else:
+            resolution = 8 
+        return resolution
+
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
                 pretrig=0.0, delay=0, resolution=8, 
@@ -385,8 +401,8 @@ class Picoscope(object):
             # I don't know why but the 6000a API pukes when you give any number but zero for the triglevel
             triglevel = 0
 
-        # 6000a has 8, 10, 12 bit
-        self.ps.setResolution(str(resolution))
+        self.setResolution(resolution)
+
 
         # Maximum sample rate is different depending on the number of channels that are enabled.
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
@@ -457,12 +473,9 @@ class Picoscope(object):
         while(not self.ps.isReady()):
             time.sleep(0.01)
 
-        if hasattr(self.ps, '_lowLevelGetDeviceResolution'):
-            # Hopefully you did not change the resolution setting in between capture and get_data
-            # like many instruments this lacks a proper internal handling of metadata
-            resolution = int(self.ps.getResolution())
-        else:
-            resolution = 8 
+        # Hopefully you did not change the resolution setting in between capture and get_data
+        # like many instruments this lacks a proper internal handling of metadata
+        resolution = self.getResolution()
         data['resolution'] = resolution
 
         if not hasattr(ch, '__iter__'):
