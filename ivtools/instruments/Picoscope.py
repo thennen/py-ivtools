@@ -386,7 +386,7 @@ class Picoscope(object):
             triglevel = 0
 
         # 6000a has 8, 10, 12 bit
-        ps.ps.setResolution(str(resolution))
+        self.ps.setResolution(str(resolution))
 
         # Maximum sample rate is different depending on the number of channels that are enabled.
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
