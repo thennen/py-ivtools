@@ -24,6 +24,7 @@ class Picoscope(object):
         self.__dict__ = ivtools.instrument_states[statename]
 
         series = series.lower()
+        # Old picoscope is series ps6000, new picoscope is series ps6000a
         self.psmodule = __import__(f'picoscope.{series}')
         self.psclass = getattr(getattr(self.psmodule, series), series.replace('ps', 'PS'))
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
@@ -379,6 +380,10 @@ class Picoscope(object):
         # If ch not iterable, just put it in a list by itself
         if not hasattr(ch, '__iter__'):
             ch = [ch]
+
+        if trigsource == 'TriggerAux':
+            # I don't know why but the 6000a API pukes when you give any number but zero for the triglevel
+            triglevel = 0
 
         # Maximum sample rate is different depending on the number of channels that are enabled.
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
