@@ -349,7 +349,7 @@ class Picoscope(object):
         return (max(possible_ranges), 0)
 
 
-    def setResolution(resolution=8):
+    def setResolution(self, resolution=8):
         # 6000a has 8, 10, 12 bit
         if hasattr(self.ps, '_lowLevelSetDeviceResolution'):
             self.ps.setResolution(str(resolution))
@@ -357,12 +357,14 @@ class Picoscope(object):
             model = self.ps.getUnitInfo('VariantInfo')
             Raise(Exception(f'Picoscope {model} does not have resolution settings.'))
 
-    def getResolution():
+
+    def getResolution(self):
         if hasattr(self.ps, '_lowLevelGetDeviceResolution'):
             resolution = int(self.ps.getResolution())
         else:
             resolution = 8 
         return resolution
+
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
@@ -402,7 +404,6 @@ class Picoscope(object):
             triglevel = 0
 
         self.setResolution(resolution)
-
 
         # Maximum sample rate is different depending on the number of channels that are enabled.
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
