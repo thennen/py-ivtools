@@ -486,12 +486,16 @@ class Picoscope(object):
             rawint16, _, overflow = self.ps.getDataRaw(c)
             if overflow:
                 log.warning(f'!! Picoscope overflow on Ch {c} !!')
-            if raw and (resolution == 8):
+            if raw:
                 # For some reason pico-python gives the raw values as int16
                 # Probably because some scopes have 16 bit resolution
                 # The 6403c is only 8 bit, and I'm looking to save memory here
-                # Sadly there's no int10 or int12
-                data[c] = np.int8(rawint16 / 2**8)
+                if resolution == 8:
+                    data[c] = np.int8(rawint16 / 2**8)
+                else:
+                    # Sadly there's no int10 or int12
+                    # so this will waste memory
+                    data[c] = rawint16
             else:
                 # I added dtype argument to pico-python
                 data[c] = self.ps.rawToV(c, rawint16, dtype=dtype)
