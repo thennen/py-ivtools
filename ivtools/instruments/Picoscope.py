@@ -355,7 +355,7 @@ class Picoscope(object):
             self.ps.setResolution(str(resolution))
         elif resolution != 8:
             model = self.ps.getUnitInfo('VariantInfo')
-            Raise(Exception(f'Picoscope {model} does not have resolution settings.'))
+            raise Exception(f'Picoscope {model} does not have resolution settings.')
 
 
     def getResolution(self):
