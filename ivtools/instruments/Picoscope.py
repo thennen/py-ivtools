@@ -350,7 +350,7 @@ class Picoscope(object):
 
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
-                pretrig=0.0, delay=0,
+                pretrig=0.0, delay=0, resolution=8, 
                 chrange=None, choffset=None, chcoupling=None, chatten=None, chbwlimit=None):
         '''
         Set up picoscope to capture from specified channel(s).
@@ -384,6 +384,9 @@ class Picoscope(object):
         if trigsource == 'TriggerAux':
             # I don't know why but the 6000a API pukes when you give any number but zero for the triglevel
             triglevel = 0
+
+        # 6000a has 8, 10, 12 bit
+        ps.ps.setResolution(str(resolution))
 
         # Maximum sample rate is different depending on the number of channels that are enabled.
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
@@ -454,17 +457,28 @@ class Picoscope(object):
         while(not self.ps.isReady()):
             time.sleep(0.01)
 
+        if hasattr(self.ps, '_lowLevelGetDeviceResolution'):
+            # Hopefully you did not change the resolution setting in between capture and get_data
+            # like many instruments this lacks a proper internal handling of metadata
+            resolution = int(self.ps.getResolution())
+        else:
+            resolution = 8 
+        data['resolution'] = resolution
+
         if not hasattr(ch, '__iter__'):
             ch = [ch]
+
         for c in ch:
             rawint16, _, overflow = self.ps.getDataRaw(c)
             if overflow:
                 log.warning(f'!! Picoscope overflow on Ch {c} !!')
             if raw:
-                # For some reason pico-python gives the values as int16
+                # For some reason pico-python gives the raw values as int16
                 # Probably because some scopes have 16 bit resolution
                 # The 6403c is only 8 bit, and I'm looking to save memory here
-                data[c] = np.int8(rawint16 / 2**8)
+                # Sadly there's no int10 or int12
+                if resolution == 8:
+                    data[c] = np.int8(rawint16 / 2**8)
             else:
                 # I added dtype argument to pico-python
                 data[c] = self.ps.rawToV(c, rawint16, dtype=dtype)
