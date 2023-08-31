@@ -520,15 +520,16 @@ class Picoscope(object):
         return data
 
     def measure(self, ch='A', freq=None, duration=None, nsamples=None, trigsource='TriggerAux', triglevel=0.1,
-                timeout_ms=1000, direction='Rising', pretrig=0.0, chrange=None, choffset=None, chcoupling=None,
+                timeout_ms=1000, direction='Rising', pretrig=0.0, resolution=8, chrange=None, choffset=None, chcoupling=None,
                 chatten=None, raw=False, dtype=np.float32, plot=True, ax=None):
         '''
         Just capture and get_data in one step
         good for interactive use
         '''
         self.capture(ch, freq=freq, duration=duration, nsamples=nsamples, trigsource=trigsource,
-                     triglevel=triglevel, timeout_ms=timeout_ms, direction=direction, pretrig=pretrig,
+                     triglevel=triglevel, timeout_ms=timeout_ms, direction=direction, pretrig=pretrig, resolution=resolution,
                      chrange=chrange, choffset=choffset, chcoupling=chcoupling, chatten=chatten)
+
         # Hopefully this doesn't timeout or something
         data = self.get_data(ch, raw=raw, dtype=dtype)
         if plot:
