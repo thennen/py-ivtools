@@ -400,7 +400,7 @@ class Picoscope(object):
             ch = [ch]
 
         if trigsource == 'TriggerAux':
-            # I don't know why but the 6000a API pukes when you give any number but zero for the triglevel
+            # The 6000a API pukes when you give any number but zero for the triglevel -- level is fixed at 1.25 V
             triglevel = 0
 
         self.setResolution(resolution)

@@ -96,7 +96,7 @@ def rigol_pulse(wfm, duration, n, interpwfm=True, ch=1):
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            termination=None, channels=None, autosmoothimate=False, splitbylevel=None,
            savewfm=False, pretrig=0, posttrig=0, picoresolution=8, pico_to_iv=None, monitor_ch=None,
-           pulsefunc=rigol_pulse, **kwargs):
+           timeout_ms=30000, pulsefunc=rigol_pulse, **kwargs):
     '''
     Pulse a waveform (n repeats), capture on picoscope channels, and return data with some conversion/post-processing.
 
@@ -155,7 +155,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
                            freq=fs,
                            duration=duration * sampling_factor,
                            pretrig=pretrig / sampling_factor,
-                           resolution=picoresolution)
+                           resolution=picoresolution,
+                           timeout_ms=timeout_ms)
 
     # This makes me feel good, but I didn't test whether it's really necessary
     time.sleep(.05)
