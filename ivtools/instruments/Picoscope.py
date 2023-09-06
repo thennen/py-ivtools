@@ -368,7 +368,7 @@ class Picoscope(object):
         pretrig is in fraction of the whole sampling time, delay is in samples..
 
         if any of chrange, choffset, chcouplings, chattenuation (dicts) are not passed,
-        the settings will be taken from the global variables
+        the settings will be taken from the instance attributes
         '''
 
         # Check that two of freq, duration, nsamples was passed
@@ -397,7 +397,7 @@ class Picoscope(object):
         if duration is not None:
             nsamples = duration * actualfreq
 
-        def global_replace(kwarg, instancearg):
+        def settings_replace(kwarg, instancearg):
             if kwarg is None:
                 # No values passed, use the instance values
                 return instancearg
@@ -409,11 +409,11 @@ class Picoscope(object):
                         kwargcopy[c] = instancearg[c]
                 return kwargcopy
 
-        chrange = global_replace(chrange, self.range)
-        choffset = global_replace(choffset, self.offset)
-        chcoupling = global_replace(chcoupling, self.coupling)
-        chatten = global_replace(chatten, self.atten)
-        chbwlimit = global_replace(chbwlimit, self.BWlimit)
+        chrange = settings_replace(chrange, self.range)
+        choffset = settings_replace(choffset, self.offset)
+        chcoupling = settings_replace(chcoupling, self.coupling)
+        chatten = settings_replace(chatten, self.atten)
+        chbwlimit = settings_replace(chbwlimit, self.BWlimit)
 
         actualfreq, max_samples = self.ps.setSamplingFrequency(actualfreq, nsamples)
         log.info('Actual picoscope sampling frequency: {:,}'.format(actualfreq))
@@ -440,9 +440,8 @@ class Picoscope(object):
         This function returns a simple dict of the arrays and metadata.
         Use pico_to_iv to convert to current, voltage, different data structure.
 
-        if raw is True, do not convert from ADC value - this saves a lot of memory
+        if raw is True, do not convert from ADC value - this can save a lot of memory
         return dict of arrays and metadata (sample rate, channel settings, time...)
-
         '''
         data = dict()
         # Wait for data
@@ -464,18 +463,18 @@ class Picoscope(object):
                 # I added dtype argument to pico-python
                 data[c] = self.ps.rawToV(c, rawint16, dtype=dtype)
                 #data[c] = self.ps.getDataV(c, dtype=dtype)
-        Channels = ['A', 'B', 'C', 'D']
+        channels = ['A', 'B', 'C', 'D']
         # Unfortunately, picopython updates these when you use ps.setChannel
         # So don't setChannel again before get_data, or the following metadata could be wrong!
         # picopython SHOULD return the metadata for each capture with ps.getDataV
-        data['RANGE'] = {ch:chr for ch, chr in zip(Channels, self.ps.CHRange)}
-        data['OFFSET'] = {ch:cho for ch, cho in zip(Channels, self.ps.CHOffset)}
-        data['ATTENUATION'] = {ch:cha for ch, cha in zip(Channels, self.ps.ProbeAttenuation)}
+        data['RANGE'] = {ch:chr for ch, chr in zip(channels, self.ps.CHRange)}
+        data['OFFSET'] = {ch:cho for ch, cho in zip(channels, self.ps.CHOffset)}
+        data['ATTENUATION'] = {ch:cha for ch, cha in zip(channels, self.ps.ProbeAttenuation)}
         CHCOUPLINGS = dict(map(reversed, self.ps.CHANNEL_COUPLINGS.items()))
-        data['COUPLINGS'] = {ch:CHCOUPLINGS[chc] for ch, chc in zip(Channels, self.ps.CHCoupling)}
+        data['COUPLINGS'] = {ch:CHCOUPLINGS[chc] for ch, chc in zip(channels, self.ps.CHCoupling)}
         data['sample_rate'] = self.ps.sampleRate
         # Specify samples captured, because this field will persist even after splitting for example
-        # Then if you split 100,000 samples into 10 x 10,000 having nsamples = 100,000 will be confusing
+        # Then if you split 100,000 samples into 10 × 10,000 having nsamples = 100,000 will be confusing
         nsamples = len(data[ch[0]])
         data['nsamples_capture'] = nsamples
         data['t'] = np.linspace(0, nsamples/data['sample_rate'], nsamples)
@@ -517,7 +516,9 @@ class Picoscope(object):
         colors = dict(A='Blue', B='Red', C='Green', D='Gold')
         channels = ['A', 'B', 'C', 'D']
         # Remove any previous range indicators that might exist on the plot
-        ax.collections = []
+        # ax.collections = [] # can't do this anymore since matplotlib update
+        for coll in ax.collections:
+            coll.remove()
         for c in channels:
             if c in chdata.keys():
                 if chdata[c].dtype == np.int8:

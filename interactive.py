@@ -2,7 +2,17 @@
 This is a script that uses the ivtools library to provide a command-based user interface
 for interactive IV measurements, for when you want a human in the feedback loop.
 
-This file should be run (and rerun) using
+Here, we value brevity of commands that need to be typed into the console, and
+the ability to modify arbitrary parts of the codebase without disrupting the
+interactive measurement process.
+
+This script is designed to be rerun, and all of the code will be updated, with
+everything except the measurement settings and the program state overwritten.
+Therefore you can modify any part of the code/library while making measurements
+without ever leaving the running program or closing/opening instrument connections.
+The need to restart the kernel should therefore be rare.
+
+The file should be run (and rerun) using
 %run -i interactive.py [folder name]
 in ipython (Jupyter qtconsole).
 
@@ -10,19 +20,13 @@ Short version of what it does:
 ⋅ Puts all the functions from every ivtools module into the global namespace
 ⋅ Notifies user of the git status and can optionally auto-commit changes
 ⋅ Automatically connects to instruments as specified in the settings.py file
-⋅ Uses a powerful metadata management system (meta) that is connected to a local database
+⋅ Uses a powerful (but minimalist) metadata management system (meta) that is connected to a local database
 ⋅ Creates a ISO8601 dated directory for storing data.
 ⋅ Logging of text input and output to the data directory, as well as other logging functionality
 ⋅ Opens a set of tiled figures (iplots) that know how to plot data and can be cleared etc from the console
 ⋅ Provides interactive versions of measurement functions that automatically plot and save data
 ⋅ Defines short bindings to certain function calls for interactive convenience (called without ())
 
-
-This script is designed to be rerun, and all of the code will be updated,
-everything but the measurement settings/program state overwritten.
-Therefore you can modify any part of the code/library while making measurements
-and without ever leaving the running program or closing instrument connections.
-The need to restart the kernel should therefore be rare.
 
 
 IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib BEFORE THIS SCRIPT!
@@ -31,8 +35,8 @@ IF THE PLOT WINDOWS OPEN AND THEN CLOSE IMMEDIATELY, YOU HAVE TO RUN %matplotlib
 TODO: In Spyder, ipython logging file isn't created, find out why
 TODO: fix the %matplotlib thing
 TODO: GUI for displaying and changing channel settings, other status information?
-TODO define reload_settings, def reset_state
-IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)
+TODO: define reload_settings, def reset_state
+IDEA: Patch the qtconsole itself to enable global hotkeys (for sample movement, etc)?
 IDEA: buy a wireless keypad and make it index the metadata, start a measurement, etc
 
 Author: Tyler Hennen (tyler@hennen.us)
@@ -590,4 +594,3 @@ if cam:
 
 # If you need some dummy IV loops
 dummydata = read_exampledata()
-
