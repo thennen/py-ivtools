@@ -50,14 +50,17 @@ import os
 import sys
 import time
 import pandas as pd
+
 # Because it does not autodetect in windows..
 pd.set_option('display.width', 1000)
 from datetime import datetime
 from collections import defaultdict, deque
 # Stop a certain matplotlib warning from showing up
 import warnings
+import inspect
 warnings.filterwarnings("ignore", ".*GUI is implemented.*")
 import pyvisa as visa
+import ipykernel
 
 import ivtools
 import importlib
@@ -84,7 +87,9 @@ from ivtools.io import *
 from ivtools.instruments import *
 import logging
 
-magic = get_ipython().magic
+ipy = get_ipython()
+magic = ipy.run_line_magic
+kernelID = ipy.history_manager.get_last_session_id()
 
 # Define this on the first run only
 try:
@@ -99,13 +104,16 @@ if firstrun:
     # Don't run this more than once, or all the existing plots will get de-registered from the
     # matplotlib state machine or whatever and nothing will update anymore
     # TODO find out whether it has been called already
-    magic('matplotlib')
+    magic('matplotlib', 'qt') # uses qtagg backend
     # Preview of the logging colors
     print('\nLogging color code:')
     for logger in ivtools.loggers.keys():
         print(f"\t{ivtools.loggers[logger].replace('%(message)s', logger)}")
     print()
     sys.stdout.flush()
+    firstrun_datestr = time.strftime('%Y-%m-%d')
+
+datestr = time.strftime('%Y-%m-%d') # '2019-08-07'
 
 log = logging.getLogger('interactive')
 
@@ -113,8 +121,6 @@ log = logging.getLogger('interactive')
 hostname = settings.hostname
 username = settings.username
 db_path = settings.db_path  # Database path
-datestr = time.strftime('%Y-%m-%d')
-#datestr = '2019-08-07'
 gitstatus = io.getGitStatus()
 if 'M' in gitstatus:
     log.warning('The following files have uncommited changes:\n\t' + '\n\t'.join(gitstatus['M']))
@@ -154,7 +160,8 @@ class NotConnected():
         return False
     def __repr__(self):
         return 'Instrument not connected yet!'
-instrument_varnames = ('ps','rigol','rigol2','k','teo','sympuls','sympulsPG30','et','ttx','daq','dp','ts')
+# Does not strictly need to be kept up to date, just convenient
+instrument_varnames = ('ps','rigol','rigol2','keith','teo','sympuls','sympulsPG30','et','ttx','daq','dp','ts','cam', 'amb')
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
@@ -169,19 +176,40 @@ else:
 # Connect to all the instruments
 # VISA instrument classes should all be Borg, because the instrument manager cannot be trusted
 # to work properly and reuse existing inst_connections
-for varname, inst_class, *args in inst_connections:
+if inst_connections: log.info('\nAutoconnecting to instruments...')
+for varname, inst_classname, *args in inst_connections:
     if len(args) > 0:
-        if args[0].startswith('USB') or args[0].startswith('GPIB'):
+        if type(args[0])==str and (args[0].startswith('USB') or args[0].startswith('GPIB')):
             # don't bother trying to connect to it if it's not in visa_resources
             if args[0] not in visa_resources:
-                # TODO: I think there are multiple valid formats for visa addresses.
+                # TODO: There are multiple valid formats for visa addresses.
                 # How to equate them?
                 # https://pyvisa.readthedocs.io/en/stable/names.html
-                continue
-    globalvars[varname] = inst_class(*args)
+                #log.warning(f'{args[0]} not listed in visa resources. Skipping connection attempt')
+                #continue
+                log.warning(f'{args[0]} not listed in visa resources. Trying to connect anyway.')
+
+
+    if not hasattr(instruments, inst_classname):
+        log.error(f'Could not find an instrument class named {inst_classname}')
+        continue
+
+    try:
+        globalvars[varname] = getattr(instruments, inst_classname)(*args)
+        success = True # actually maybe...
+    except Exception as x:
+        # In case the instrument class doesn't fail gracefully, we still want to proceed with this script
+        log.error(f'Instantiating {inst_classname} with args {args} raised an exception:\n{x}')
+        success = False
+
+    if success:
+        argstring = ', '.join(format(a) for a in args)
+        log.info(f'{varname} = {inst_classname}({argstring})')
+
+log.info('')
 
 #######################################
-#𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
+# 𝗣𝗹𝗼𝘁𝘁𝗲𝗿 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
 #######################################
 
 # Make sure %matplotlib has been called! Or else figures will appear and then disappear.
@@ -224,12 +252,18 @@ teo_plotters = [[0, partial(ivplot.ivplotter, x='V')],  # programmed waveform is
                 [2, ivplot.VoverIplotter],
                 [3, ivplot.vtplotter]]
 
+teo_plotters_debug = [[0, partial(ivplot.plotiv, x='t', y='HFV')],
+                      [1, partial(ivplot.plotiv, x='t', y='V')],
+                      [2, partial(ivplot.plotiv, x='t', y='I')],
+                      [3, partial(ivplot.plotiv, x='t', y='I2')]]
+
 # What the plots should do by default
 if not iplots.plotters:
+    log.info('')
     if ps:
         iplots.plotters = pico_plotters
         log.info('Setting up default plots for picoscope')
-    elif k:
+    elif keith:
         iplots.plotters = keithley_plotters
         log.info('Setting up default plots for keithley')
     elif teo:
@@ -241,35 +275,51 @@ if not iplots.plotters:
 # 𝗠𝗮𝗸𝗲 𝗱𝗮𝘁𝗮 𝗳𝗼𝗹𝗱𝗲𝗿 𝗮𝗻𝗱 𝗱𝗲𝗳𝗶𝗻𝗲 𝗵𝗼𝘄 𝗱𝗮𝘁𝗮 𝗶𝘀 𝘀𝗮𝘃𝗲𝗱
 #################################################################################
 
-datafolder = settings.datafolder
-# Default data subfolder -- will reflect the date of the last time this script ran
+# This will be different for different PCs and different users
+# datafolder = settings.datafolder
+
+# Data subfolder timestamp will reflect the date of the first time this script ran this session
 # Will NOT automatically rollover to the next date during a measurement that runs past 24:00
-subfolder = datestr
+
+if firstrun: subfolder = None
 if len(sys.argv) > 1:
     # Can give a folder name with command line argument
-    subfolder += '_' + sys.argv[1]
-log.info('Data to be saved in {}'.format(os.path.join(datafolder, subfolder)))
-# TODO:
-log.info('Overwrite \'datafolder\' and/or \'subfolder\' variables to change directory')
-io.makefolder(datafolder, subfolder)
+    # Then no renaming will be necessary afterward
+    subfolder = sys.argv[1]
+
+def prepend_date(s):
+    if not s:
+        return firstrun_datestr
+    elif re.match('^\d{4}-\d{2}-\d{2}_', s):
+        # already has a date, leave it alone
+        return s
+    else:
+        return f'{firstrun_datestr}_{s}'
 
 def datadir():
-    return os.path.join(datafolder, subfolder)
+    datadir = os.path.join(settings.datafolder, prepend_date(subfolder))
+    # might be redundant
+    os.makedirs(datadir, exist_ok=True)
+    # Set up ipython log in the data directory, named after ipython session
+    ipy_log_fp = os.path.join(datadir, f'{firstrun_datestr}_IPython_{kernelID}.log')
+    # io.log_ipy(True, ipy_log_fp) tried to log stdout but it's more trouble than it's worth
+    if not ipy.logfile:
+        magic('logstart', f'-o {ipy_log_fp} over')
+    if ipy.logfile != ipy_log_fp:
+        magic('logstop', '')
+        magic('logstart', f'-o {ipy_log_fp} over')
+    return datadir
+
+log.info(f'Data to be saved in {datadir()}')
+log.info('Overwrite \'settings.datafolder\' and/or \'subfolder\' variables to change directory')
 
 def open_datadir():
     os.system('explorer ' + datadir())
 
 def cd_data():
-    magic('cd ' + datadir())
+    magic('cd', datadir())
 
-# set up ipython log in the data directory
-# TODO: make a copy and change location if datadir() changes
-if firstrun:
-    io.log_ipy(True, os.path.join(datadir(), datestr + '_IPython.log'))
-    #iplots.plotters = keithley_plotters
-
-# noinspection SpellCheckingInspection
-def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=settings.drop_cols):
+def savedata(data=None, folder_path=None, database_path=None, table_name='meta', drop=None):
     """
     Save data to disk and write a row of metadata to an sqlite3 database
     This is a "io.MetaHandler.savedata" wrapping but making use of "settings.py" parameters.
@@ -289,17 +339,23 @@ def savedata(data=None, folder_path=None, database_path=None, table_name='meta',
         folder_path = datadir()
     if database_path is None:
         database_path = db_path
+
+    if drop is None:
+        drop = settings.drop_cols
+
     meta.savedata(data, folder_path, database_path, table_name, drop)
 
 def savefig(name=None, fig=None, **kwargs):
     '''
-    Save a png of the figure in the data directory
+    Save the figure as an image file in the data directory
     '''
     if fig is None:
         fig = plt.gcf()
     fn = meta.filename()
     if name:
         fn += '_' + name
+    if not os.path.splitext(fn)[1]:
+        fn += '.png'
     fp = os.path.join(datadir(), fn)
     fig.savefig(fp, **kwargs)
     log.info(f'Wrote {fp}')
@@ -349,19 +405,25 @@ add_plotter = iplots.add_plotter
 del_plotters = iplots.del_plotters
 
 s = autocaller(savedata)
+cdd = autocaller(cd_data)
 
 
 ###########################################
 # 𝗖𝗼𝗺𝗺𝗼𝗻 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
 ###########################################
 
-def setup_ccircuit():
+def setup_ccircuit(split=False):
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
+    ps.coupling.d = 'DC50'
     ps.range.b = 2
     ps.range.c = 2
-    settings.pico_to_iv = ccircuit_to_iv
+    ps.range.d = .5
+    if split:
+        settings.pico_to_iv = ccircuit_to_iv_split
+    else:
+        settings.pico_to_iv = ccircuit_to_iv
     iplots.plotters = pico_plotters
 
 def setup_keithley():
@@ -377,24 +439,28 @@ def setup_digipot():
     settings.pico_to_iv = digipot_to_iv
     iplots.plotters = pico_plotters
 
-def setup_picoteo():
-    ps.coupling.b = 'DC50'
+def setup_picoteo(HFV=None, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D'):
+    ps.coupling.a = 'DC'
+    ps.coupling.b = 'DC'
     ps.coupling.c = 'DC50'
     ps.coupling.d = 'DC50'
-    ps.range.b = 0.2
+    ps.range.a = 10
+    ps.range.b = 1
     ps.range.c = 0.2
     ps.range.d = 0.2
-    settings.pico_to_iv = TEO_HFext_to_iv
+    settings.pico_to_iv = partial(TEO_HFext_to_iv, HFV=HFV, V_MONITOR=V_MONITOR,
+                                  HF_LIMITED_BW=HF_LIMITED_BW, HF_FULL_BW=HF_FULL_BW)
     iplots.plotters = teo_plotters
 
 ################################################################
 # 𝗜𝗻𝘁𝗲𝗿𝗮𝗰𝘁𝗶𝘃𝗲 𝗺𝗲𝗮𝘀𝘂𝗿𝗲𝗺𝗲𝗻𝘁 𝗳𝘂𝗻𝗰𝘁𝗶𝗼𝗻𝘀
 ################################################################
 
-# Wrap any fuctions that you want to automatically make plots/write to disk with this:
+# Wrap any functions that you want to automatically make plots/write to disk with this:
 # TODO how can we neatly combine data from multiple sources (e.g. temperature readings?)
 #      could use the same wrapper and just compose a new getdatafunc..
-#      or pass a list of functions as getdatafunc, then smash the results together somehow
+#      or pass a list of functions as getdatafunc, then smash the results together somehow.
+#      Ugly interim solution: collect data from different sources inside interactive_wrapper, conditional on flags stored in settings...
 def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, autosave=True, shared_kws=None):
     ''' Activates auto data plotting and saving for wrapped measurement functions '''
     @wraps(measfunc)
@@ -403,6 +469,7 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
             # Protect the following code from keyboard interrupt until after the data is saved
             nointerrupt = measure.controlled_interrupt()
             nointerrupt.start()
+
         if getdatafunc is None:
             # There is no separate function to get data
             # Assume that the measurement function returns the data
@@ -437,13 +504,38 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = newgetdatafunc()
                 data = meta.attach(data)
                 iplots.newline(data)
+
+        # Capture microscope camera image and store in the metadata after every measurement
+        if settings.savePicWithMeas:
+            if cam:
+                frame = cam.getImg()
+                frame = mat2jpg(frame,
+                                scale = settings.camCompression["scale"],
+                                quality = settings.camCompression["quality"])
+                log.info('Updating camera image in metadata.')
+                meta.meta.update({"cameraImage": frame})
+            else:
+                log.warning('No camera connected!')
+        
+        # Store ambient sensor data with measurement
+        if settings.saveAmbient:
+            if amb:
+                ambient = amb.getAll()
+                log.info('Updating ambient sensor data in metadata.')
+                meta.meta.update({"ambientData": ambient})
+            else:
+                log.warning('No ambient sensor connected!')
+
         if autosave:
-            # print(data)
             savedata(data)
             nointerrupt.breakpoint()
             nointerrupt.stop()
+
         measure.beep()
         return data
+
+    measfunc_interactive.__signature__ = inspect.signature(measfunc)
+
     return measfunc_interactive
 
 picoiv = interactive_wrapper(measure.picoiv)
@@ -456,18 +548,20 @@ def set_compliance(cc_value):
     measure.set_compliance(cc_value)
 
 ####  Stuff that gets defined only if a given instrument is present and connected
+log.info('')
 
 if ps:
     ps.print_settings()
+    log.info('')
 
-if k and k.connected(): # Keithley is connected
+if keith and keith.connected(): # Keithley is connected
     live = True
-    if '2636A' in k.idn():
+    if '2636A' in keith.idn():
         # This POS doesn't support live plotting
         live = False
-    kiv_lua = interactive_wrapper(k._iv_lua, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
-    kiv = interactive_wrapper(k.iv, k.get_data, donefunc=k.done, live=live, autosave=True, shared_kws=['ch'])
-    kvi = interactive_wrapper(k.vi, k.get_data, donefunc=k.done, live=live, autosave=True)
+    kiv_lua = interactive_wrapper(keith._iv_lua, keith.get_data, donefunc=keith.done, live=live, autosave=True, shared_kws=['ch'])
+    kiv = interactive_wrapper(keith.iv, keith.get_data, donefunc=keith.done, live=live, autosave=True, shared_kws=['ch'])
+    kvi = interactive_wrapper(keith.vi, keith.get_data, donefunc=keith.done, live=live, autosave=True)
 
 if dp: # digipot is connected
     # TODO: monkeypatch dp.set_R instead?
@@ -481,8 +575,19 @@ if ts: # temperature stage is connected
     def set_temperature(T, delay=30):
         ts.set_temperature(T)
         ivplot.mybreakablepause(delay)
-        meta.static['T'] = ts.get_temperature()
+        meta.static['T'] = ts.read_temperature()
 
 if teo:
     # HF mode
     teoiv = interactive_wrapper(teo.measureHF)
+
+# Microscope camera connected
+if cam:
+    def saveImg():
+        path = os.path.join(datadir(), meta.timestamp()+".png")
+        cam.saveImg(path)
+
+
+# If you need some dummy IV loops
+dummydata = read_exampledata()
+
