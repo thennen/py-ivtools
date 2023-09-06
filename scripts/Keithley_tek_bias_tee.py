@@ -2857,10 +2857,12 @@ cc_step = 25e-6):
     #sympulsPG30.set_lupattern_length(num_words = set_pattern_length)   # uncomment if we have to use user given word.
     sympulsPG30.trigger_source(trig = set_trigger_soruce)
 
-    find_delays(set_pattern)
-    delay = delay_factor * pulse_widths                                 # find delays by multiplying pulsewidth with delays factor
+    delay_factor, number_of_positive_pulses, number_of_negative_pulses =find_delays(set_pattern)
+    delay = delay_factor * pulse_width *1e12                            # find delays by multiplying pulsewidth with delays factor
     Number_of_pulses = number_of_positive_pulses + number_of_negative_pulses
     total_pulse_duration = pulse_width * Number_of_pulses               # count both pulses without delays
+
+    pos_amp = round(deb_to_atten(attenuation)*2*positive_amplitude,2)            # as PPG30 have variable amplitude so we have to calculate actual amplitude
 
 
 
@@ -3063,8 +3065,9 @@ cc_step = 25e-6):
     data['attenuation'] = attenuation
     data['recordlength'] = recordlength
     data['V_read'] = V_read
-    data['positive_pulses'] = count_1
-    data['negative_pulses'] = count_minus_1
+    data['delay'] = delay
+    data['positive_pulses'] = number_of_positive_pulses
+    data['negative_pulses'] = number_of_negative_pulses
     data['number_of_pulses'] = Number_of_pulses
 
 
@@ -3078,18 +3081,19 @@ cc_step = 25e-6):
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'delay_' +str(int(attenuation)) + 'dB_'+str(i))
+    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'ps_delay_'
+     +str(float(pos_amp)) + 'v_' +str(int(attenuation)) + 'dB_'+str(i))
     file_link = Path(filepath + '.df')
     while file_link.is_file():
         i +=1
-        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'delay_' +str(int(attenuation)) + 'dB_'+str(i))
+        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'ps_delay_' 
+            +str(float(pos_amp)) + 'v_' +str(int(attenuation)) + 'dB_'+str(i))
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
-    print("number of +ve pulses:", number_of_positive_pulses)
-    print("number of -ve pulses:", number_of_negative_pulses)
     print("number of pulses:", Number_of_pulses)
     print("total_duration in ns:", total_pulse_duration *1e9)
+    print("delay width in ps:", delay)
 
 
     return data, abort
