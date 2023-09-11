@@ -895,7 +895,6 @@ def colorbar_manual(vmin=0, vmax=1, cmap='jet', ax=None, cax=None, **kwargs):
     cb = plt.colorbar(sm, ax=ax, cax=cax, **kwargs)
     return cb
 
-
 def mypause(interval):
     ''' plt.pause calls plt.show, which steals focus on some systems.  Use this instead '''
     if interval > 0:
