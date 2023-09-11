@@ -876,9 +876,6 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                     ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.1, color=colors[c])
                 else:
                     ax.plot(x, chplotdata, color=colors[c], label=None, alpha=alpha, **kwargs)
-                    # lightly indicate the channel range
-                    # TODO: only if different from i == 0, otherwise we get too many overlapping
-                    ax.fill_between((0, np.max(x)), -choffset - chrange, -choffset + chrange, alpha=0.1, color=colors[c])
 
     ax.legend(title='Channel')
     ax.set_ylabel('Voltage [V]')
