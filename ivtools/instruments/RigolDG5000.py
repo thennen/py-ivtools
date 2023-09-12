@@ -191,7 +191,7 @@ class RigolDG5000(object):
         Manual says you can change output resistance from 1ohm to 10kohm
         I think this is just mistranslated chinese meaning the resistance of the load
         '''
-        # Default is infinity??
+        # Default is infinity
         return self.set_or_query(f'OUTPUT{ch}:IMPEDANCE', r)
 
     def sync(self, state=None):
@@ -202,7 +202,7 @@ class RigolDG5000(object):
 
     def screensaver(self, state=None):
         ''' Turn the screensaver on or off.
-        Screensaver causes problems with triggering because DG5000 is a piece of junk. '''
+        Screensaver causes serious problems with triggering because DG5000 is a piece of junk. '''
         if state is not None:
             state = 'ON' if state else 'OFF'
         return self.set_or_query(':DISP:SAV', state)
@@ -306,6 +306,10 @@ class RigolDG5000(object):
         self.conn.write_binary_values(message, values, datatype='H', is_big_endian=False)
 
     ### Waveform loading by many different methods, all of which are terrible for their own set of reasons
+
+    # CAREFUL: for some undocumented reason, Rigol turns its sync ports off (:OUTP1:SYNC OFF) while uploading waveforms
+    # this causes a 10 mV edge on the sync port which can cause unwanted triggering!
+    # problem goes away if the line is terminated, but trigger ports may be high impedance (i.e. picoscope 6000e series)
 
     def load_wfm_usbdrive(self, filename='wfm.RAF', wait=True):
         '''
