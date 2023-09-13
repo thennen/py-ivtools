@@ -29,6 +29,9 @@ class Picoscope(object):
         self.psclass = getattr(getattr(self.psmodule, series), series.replace('ps', 'PS'))
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
         # Then this whole package would have picoscope module as a dependency
+
+
+
         # self.get_data will return data as well as save it here
         self.data = None
         # Store channel settings in this class
@@ -60,6 +63,11 @@ class Picoscope(object):
                 self.handle = self.ps.handle
                 self.getAllUnitInfo = self.ps.getAllUnitInfo
                 self.getUnitInfo = self.ps.getUnitInfo
+
+                if self.psclass.__name__ == 'picoscope.ps6000a':
+                    # this is a fix for the recently added ps6000a wrapper that the repo owner hesitated to merge.
+                    ps.ps.CHANNEL_COUPLINGS['DC50'] = 50
+
             except Exception as e:
                 self.ps = None
                 log.error('Connection to picoscope failed. There could be an unclosed session.')
@@ -478,6 +486,13 @@ class Picoscope(object):
         # like many instruments this lacks a proper internal handling of metadata
         resolution = self.getResolution()
         data['resolution'] = resolution
+        # does not go +-32768, depends on resolution setting!
+        # this is probably because they only use 2**nbits - 1 bins 
+        # so that it is symmetric and can represent zero volts with zero ADC count
+        # 8-bit: +-32512
+        # 10-bit: +-32704
+        # 12-bit: +-32736
+        maxVal = self.ps.getMaxValue() 
 
         if not hasattr(ch, '__iter__'):
             ch = [ch]
@@ -487,17 +502,19 @@ class Picoscope(object):
             if overflow:
                 log.warning(f'!! Picoscope overflow on Ch {c} !!')
             if raw:
-                # For some reason pico-python gives the raw values as int16
+                # For some reason pico-python gives the raw values as int16, even if you capture with 8 bits
                 # Probably because some scopes have 16 bit resolution
                 # The 6403c is only 8 bit, and I'm looking to save memory here
                 if resolution == 8:
-                    data[c] = np.int8(rawint16 / 2**8)
+                    # int8 goes from -128 to 127, we won't use -128
+                    data[c] = np.int8(rawint16 / maxVal * 127)
                 else:
                     # Sadly there's no int10 or int12
                     # so this will waste memory
                     data[c] = rawint16
             else:
-                # I added dtype argument to pico-python
+                # I added dtype argument to pico-python to save memory
+                # this method corrects for maxVal
                 data[c] = self.ps.rawToV(c, rawint16, dtype=dtype)
                 #data[c] = self.ps.getDataV(c, dtype=dtype)
         channels = ['A', 'B', 'C', 'D']

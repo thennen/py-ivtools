@@ -382,15 +382,30 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
 
 def raw_to_V(datain, dtype=np.float32):
     '''
-    Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
-    arrays and the RANGE and OFFSET values.
+    Convert digitized values to voltage values.
+    datain should be a dict with the 8/10/12 bit channel arrays and the RANGE and OFFSET values.
     return a new dict with updated channel arrays
+
+    Doesn't use the state of picoscope like ps.rawToV() would, but rather the metadata stored in datain
     '''
+
+    # picoscope int16 does not go +-32768, but depends on resolution setting!
+    # this is probably because they only use 2**nbits - 1 bins 
+    # so that it is symmetric and can represent zero volts with zero ADC count
+    maxval = {8:32512, 10:32704, 12:32736}
+
     channels = ['A', 'B', 'C', 'D']
     dataout = {}
     for c in channels:
-        if (c in datain.keys()) and (datain[c].dtype == np.int8):
-            dataout[c] = datain[c] / dtype(2**8) * dtype(datain['RANGE'][c] * 2) - dtype(datain['OFFSET'][c])
+        if (c in datain.keys()):
+            if (datain[c].dtype == np.int8):
+                # ivtools converted this in Picoscope.get_data(..., raw=True)
+                dataout[c] = datain[c] / 127 * dtype(datain['RANGE'][c]) - dtype(datain['OFFSET'][c])
+            elif (datain[c].dtype == np.int16):
+                # might be 10 or 12 bit
+                # have to hope the information is included in datain, which it should be..
+                res = datain['resolution']
+                dataout[c] = datain[c] / dtype(maxval[res]) * dtype(datain['RANGE'][c]) - dtype(datain['OFFSET'][c])
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
@@ -398,13 +413,13 @@ def raw_to_V(datain, dtype=np.float32):
 
 def V_to_raw(datain):
     '''
-    Inverse of raw_to_V
+    Inverse of raw_to_V (for 8 bit)
     '''
     channels = ['A', 'B', 'C', 'D']
     dataout = {}
     for c in channels:
         if (c in datain.keys()) and (datain[c].dtype in (np.float32, np.float64)):
-            dataout[c] = np.int8(np.round((datain[c] + datain['OFFSET'][c]) * 2**8 / datain['RANGE'][c] / 2))
+            dataout[c] = np.int8(np.round((datain[c] + datain['OFFSET'][c]) * 127 / datain['RANGE'][c]))
     for k in datain.keys():
         if k not in dataout.keys():
             dataout[k] = datain[k]
@@ -1100,7 +1115,7 @@ def ccircuit_to_iv(datain, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     C = datain['C']
@@ -1111,11 +1126,13 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     #dataout['I'] = 1e3 * (B - C) / R
     if 'B' in datain:
         B = datain['B']
-        dataout['Vneedle'] = dtype(B)
-        dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
+        # Vneedle is basically never used.  if needed, can be calculated easily
+        #dataout['Vneedle'] = dtype(B)
+        dataout['Vd'] = dataout['V'] - dtype(B) # Does not take phase shift into account!
     dataout['I'] = dtype(C / gain)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    units = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A'}
+    #units = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A'}
+    units = {'V':'V', 'Vd':'V', 'I':'A'}
     dataout['units'] = {k:v for k,v in units.items() if k in dataout}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
@@ -1139,7 +1156,7 @@ def ccircuit_to_iv_split(datain, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     C = datain['C']
@@ -1151,12 +1168,13 @@ def ccircuit_to_iv_split(datain, dtype=np.float32):
     #dataout['I'] = 1e3 * (B - C) / R
     if 'B' in datain:
         B = datain['B']
-        dataout['Vneedle'] = dtype(B)
-        dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
+        # Vneedle is basically never used.  if needed, can be calculated easily
+        #dataout['Vneedle'] = dtype(B)
+        dataout['Vd'] = dataout['V'] - dtype(B) # Does not take phase shift into account!
     dataout['I']=dtype(2*C/gain) 
     dataout['I_low']=dtype(2*D/gain)
     #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    units = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A', 'I_low':'A'}
+    units = {'V':'V', 'Vd':'V', 'I':'A', 'I_low':'A'}
     dataout['units'] = {k:v for k,v in units.items() if k in dataout}
     #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
     # parameters for conversion
@@ -1182,7 +1200,7 @@ def ccircuit_yellow_to_iv(datain, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain['B'].dtype == np.int8:
+    if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
     B = datain['B']
     C = datain['C']
@@ -1227,7 +1245,7 @@ def rehan_to_iv(datain, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     C = datain['C']
@@ -1254,7 +1272,7 @@ def femto_log_to_iv(datain, dtype=np.float32):
     dataout = datain
 
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
     B = datain['B']
@@ -1293,7 +1311,7 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
     dataout = datain
     # If data is raw, convert it here
     chs = [ch for ch in ('A', 'B', 'C', 'D') if ch in datain]
-    if datain[chs[0]].dtype == np.int8:
+    if datain[chs[0]].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
 
     if 'units' not in dataout:
@@ -1346,7 +1364,7 @@ def Rext_to_iv(datain, R=50, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
+    if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
 
     # Use channel A and C as input, because simultaneous sampling is faster than using A and B
@@ -1387,7 +1405,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_gain=0.5, dtype=np.float32):
 
     dataout = datain
     # If data is raw, convert it here
-    if datain[chs_sampled[0]].dtype == np.int8:
+    if datain[chs_sampled[0]].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
 
     if 'units' not in dataout:
