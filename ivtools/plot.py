@@ -822,6 +822,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     '''
     Plot the channel data of picoscope
     Includes an indication of the measurement range used
+    TODO: don't convert data to V (float), just change the axis?
     '''
     if ax is None:
         fig, ax = plt.subplots()
@@ -841,7 +842,11 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
             # should be list
             return enumerate(chdata)
 
+    maxval = {8:32512, 10:32704, 12:32736}
+
     for i,data in iterdata():
+        res = data.get('resolution')
+        if res is None: res = 8
         for c in channels:
             if c in data.keys():
                 # Do we need to convert to voltage?  There's not a good way to tell for sure!
@@ -849,12 +854,19 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
                 if data[c].dtype == np.int8:
                     # Should definitely be 8-bit values, not yet converted to V
                     # Convert to voltage for plot
-                    chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
+                    chplotdata = data[c] / 127 * data['RANGE'][c] - data['OFFSET'][c]
+                elif data[c].dtype == np.int16:
+                    # What to do here (slightly) depends on the true resolution of the data
+                    chplotdata = data[c] / maxval[res] * data['RANGE'][c] - data['OFFSET'][c]
                 elif 'smoothing' in data:
-                    # I am going to assume this is smoothed 8-bit values, not converted to V yet
+                    # I am going to assume these are smoothed values, not converted to V yet
                     # Sorry future self for the inevitable case when this not true..
                     # e.g. if you get data with ps.get_data(..., raw=False), then smooth it, then send it here
-                    chplotdata = data[c] / 2**8 * data['RANGE'][c] * 2 - data['OFFSET'][c]
+                    if res == 8:
+                        # wrong if for some reason we still have the 16-bit representation
+                        chplotdata = data[c] / 127 * data['RANGE'][c] - data['OFFSET'][c]
+                    else:
+                        chplotdata = data[c] / maxval[res] * data['RANGE'][c] - data['OFFSET'][c]
                 else:
                     chplotdata = data[c]
 
