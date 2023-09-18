@@ -15,7 +15,9 @@ import os
 import socket
 from importlib import reload
 
-import ivtools.instruments as instruments
+# Problem with this is that the settings.py version of instruments doesn't get reloaded
+#import ivtools.instruments as instruments
+
 # circular import?
 import ivtools.measure
 
@@ -34,8 +36,6 @@ pyivtools_dir = os.path.split(ivtools_dir)[0]
 
 # TODO: why did I put these in all caps?
 ### Settings for compliance circuit
-COMPLIANCE_CURRENT = 0
-INPUT_OFFSET = 0
 COMPLIANCE_CALIBRATION_FILE = os.path.join(ivtools_dir, 'instruments', 'calibration', 'compliance_calibration.pkl')
 CCIRCUIT_GAIN = 1930  # common base resistance * differential amp gain
 
@@ -91,6 +91,19 @@ db_path = os.path.join(pyivtools_dir, 'metadata.db')
 # Shared logging file
 logging_file = os.path.join(pyivtools_dir, 'logging.log')
 
+# Settings for MikrOkular camera
+savePicWithMeas = False
+camSettings = {'brightness': 0.70,
+               'contrast': 0.5,
+               'hue': 0.5,
+               'saturation': 0.50,
+               'gamma': 0.5,
+               'sharpness': 1.0,
+               'exposure': 1.0}
+camCompression = {"scale" : 0.5,
+                  "quality" : 50}
+
+saveAmbient = False
 
 ######################################################################################
 # 𝗛𝗼𝘀𝘁𝗻𝗮𝗺𝗲 𝗮𝗻𝗱 𝘂𝘀𝗲𝗿 𝘀𝗽𝗲𝗰𝗶𝗳𝗶𝗰 𝘀𝗲𝘁𝘁𝗶𝗻𝗴𝘀
@@ -106,16 +119,19 @@ if hostname in ('pciwe46', 'iwe21705'):
     datafolder = r'D:\data\{}'.format(username)
     db_path = 'D:\metadata.db'
 
-    inst_connections = [('ps', instruments.Picoscope),
-                        ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
-                        ('rigol2', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
-                        #('teo', instruments.TeoSystem),
-                        #('daq', instruments.USB2708HS),
-                        ('ts', instruments.EugenTempStage),
-                        ('dp', instruments.WichmannDigipot),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.11::inst0::INSTR'),
-                        # ('k', instruments.Keithley2600, 'TCPIP::192.168.11.12::inst0::INSTR'),
-                        ('k', instruments.Keithley2600)]  # Keithley can be located automatically now
+    # tuple(variablename, classname, *[arguments to pass to the class init (such as address)])
+    inst_connections = [('ps', 'Picoscope'),
+                        ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR'),
+                        ('rigol2', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T182500117::INSTR'),
+                        #('teo', 'TeoSystem'),
+                        #('daq', 'USB2708HS'),
+                        ('ts', 'EugenTempStage'),
+                        ('dp', 'WichmannDigipot'),
+                        ('cam', 'MikrOkular', 0, camSettings),
+                        ('amb', 'AmbientModule', "COM15"),
+                        # ('keith', 'Keithley2600', 'TCPIP::192.168.11.11::inst0::INSTR'),
+                        # ('keith', 'Keithley2600', 'TCPIP::192.168.11.12::inst0::INSTR'),
+                        ('keith', 'Keithley2600')]  # Keithley can be located automatically now
 
     if username == 'hennen':
         autocommit = True
@@ -123,7 +139,19 @@ if hostname in ('pciwe46', 'iwe21705'):
         for di in logging_prints.values(): di['all'] = True # print everything
 
     elif username == 'mohr':
-        inst_connections.append(('teo', instruments.TeoSystem))
+        #inst_connections.append(('teo', 'TeoSystem'))
+        savePicWithMeas = True
+        saveAmbient = True
+
+    elif username == 'stasner':
+        # savePicWithMeas = True
+        # saveAmbient = True
+        datafolder = r'D:\stasner\ivdata'
+
+        for di in logging_prints.values(): di['all'] = True # print everything
+
+        # initialize telegram bot with personal chat_id
+        tb = ivtools.measure.telegram_bot(chat_id=906285419, bot_token='5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc')
 
     elif username == 'munoz':
         munoz = 'D:/munoz/'
@@ -131,28 +159,32 @@ if hostname in ('pciwe46', 'iwe21705'):
         db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
         logging_file = os.path.join(munoz, 'ivtools_logging.log')
         logging_prints = {
-            'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-            'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+            'instruments': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'io':          {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'plots':       {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'analyze':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'measure':     {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True},
+            'interactive': {'all': None, 'DEBUG':False, 'INFO':True, 'WARNING':True, 'ERROR':True, 'CRITICAL':True}
         }
+        inst_connections = [('ps', 'Picoscope'),
+                            ('keith', 'Keithley2600'),
+                            ('dp', 'WichmannDigipot'),
+                            ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T155000186::INSTR')]
     else:
         datafolder = r'D:\{}\ivdata'.format(username)
 
 elif hostname in ('pciwe38', 'iwe21407'):
     # Moritz computer
     datafolder = r'C:\Messdaten'
-    inst_connections =  [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),
-    ('ttx', instruments.TektronixDPO73304D ,'GPIB0::1::INSTR'),
-    ('sympuls', instruments.Sympuls ,'ASRL3::INSTR'),
-    ('sympulsPG30', instruments.SympulsPG30,'ASRL5::INSTR')]
-   # ('pg100', instruments.PG100 ,'ASRL3::IsNSTR')]
+    inst_connections =  [('keith', 'Keithley2600', 'GPIB0::27::INSTR'),
+    ('ttx', 'TektronixDPO73304D' ,'GPIB0::1::INSTR'),
+    ('sympuls', 'Sympuls' ,'ASRL3::INSTR'),
+    ('sympulsPG30', 'SympulsPG30','ASRL5::INSTR')]
+   # ('pg100', 'PG100' ,'ASRL3::INSTR')]
 
 elif hostname == 'pcluebben2':
     datafolder = r'C:\data'
-    inst_connections = [('k', instruments.Keithley2600, 'GPIB0::27::INSTR'),]
+    inst_connections = [('keith', 'Keithley2600', 'GPIB0::27::INSTR'),]
 
 elif hostname == 'pciwe34':
     # Mark II
@@ -162,14 +194,14 @@ elif hostname == 'pciwe34':
     # Therefore I will use the operating system drive..
     # datafolder = r'G:\Messdaten\hennen'
     datafolder = r'C:\Messdaten\hennen'
-    inst_connections = [('et', instruments.Eurotherm2408),
-                        ('k', instruments.Keithley2600, 'GPIB0::27::INSTR')]
+    inst_connections = [('et', 'Eurotherm2408'),
+                        ('keith', 'Keithley2600', 'GPIB0::27::INSTR')]
 
 elif hostname == 'CHMP2':
     datafolder = r'C:\data'
-    inst_connections = [('ps', instruments.Picoscope),
-                        ('rigol', instruments.RigolDG5000, 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
-                        ('p', instruments.UF2000Prober, 'GPIB0::5::INSTR')]
+    inst_connections = [('ps', 'Picoscope'),
+                        ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
+                        ('p', 'UF2000Prober', 'GPIB0::5::INSTR')]
 
 elif username == 'alexgar':
     munoz = '/Users/alexgar/sciebo/munoz/'
@@ -177,12 +209,12 @@ elif username == 'alexgar':
     db_path = os.path.join(munoz, 'Metadata/munoz_database.db')
     logging_file = os.path.join(munoz, 'ivtools_logging.log')
     logging_prints = {
-        'instruments': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'io':          {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'plots':       {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'analyze':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'measure':     {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
-        'interactive': {'all': None, 'DEBUG': False, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
+        'instruments': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'io':          {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'plots':       {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'analyze':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'measure':     {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True},
+        'interactive': {'all': None, 'DEBUG': True, 'INFO': True, 'WARNING': True, 'ERROR': True, 'CRITICAL': True}
     }
 
 else:

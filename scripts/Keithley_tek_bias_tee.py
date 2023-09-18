@@ -11,6 +11,8 @@ from scipy.interpolate import interp1d
 from scipy.signal import savgol_filter
 from time import time_ns, sleep, localtime, strftime
 
+k = keith
+
 def where(*args):
     return np.where(*args)[0]
 

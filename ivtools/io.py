@@ -28,6 +28,10 @@ from scipy.io import savemat
 import sqlite3
 import logging
 
+from pathlib import Path
+
+from PIL import Image
+
 
 log = logging.getLogger('io')
 
@@ -136,7 +140,7 @@ class MetaHandler(object):
         # select the ith row of the metadataframe
         self.i = i
         if type(self.df) == pd.DataFrame:
-            self.meta = self.df.iloc[self.i]
+            self.meta = dict(self.df.iloc[self.i])
         else:
             self.meta = self.df[self.i]
 
@@ -738,7 +742,11 @@ def db_load(db_path=db_path, table_name='meta'):
     :return: Table of the database as a pandas.DataFrame.
     '''
     db_conn = sqlite3.connect(db_path)
-    query = db_conn.execute(f"SELECT * From {table_name}")
+    try:
+        query = db_conn.execute(f"SELECT * From {table_name}")
+    except Exception as e:
+        db_conn.close()
+        raise(e)
     col_names_encoded = [column[0] for column in query.description]
     df = pd.DataFrame.from_records(data=query.fetchall(), columns=col_names_encoded)
     col_names = db_decode(col_names_encoded)
@@ -903,15 +911,21 @@ def gitCommit(message='AUTOCOMMIT'):
     return output
 
 
-def log_ipy(start=True, logfilepath=None):
+def log_ipy(start=True, logfilepath=None, mode='over'):
     '''
     Append ipython and std in/out to a text file
+    it seems the ipython magic %logstart logs output but not stdout, so this is a naive attempt to add it
+
     There are some strange bugs involved
     spyder just crashes, for example
     don't be surprised if it messes something up
     '''
-    magic = get_ipython().magic
-    magic('logstop')
+    #magic = get_ipython().magic
+    ipy = get_ipython()
+    magic = ipy.run_line_magic
+
+    if logfilepath == ipy.logfile: pass
+    magic('logstop', '')
 
     # Sorry, I just don't know a better way to do this.
     # I want to store the normal standard out somewhere it's safe
@@ -922,8 +936,7 @@ def log_ipy(start=True, logfilepath=None):
         sys.stdstdout = sys.stdout
 
     class Logger(object):
-        ''' Something to replace stdout '''
-
+        ''' Something to split stdout into both the terminal and the log file'''
         def __init__(self):
             self.terminal = sys.stdstdout
             self.log = open(logfilepath, 'a')
@@ -931,10 +944,11 @@ def log_ipy(start=True, logfilepath=None):
         def write(self, message):
             self.terminal.write(message)
             # Comment the lines and append them to ipython log file
+            # with open(logfilepath, 'a') as f:
             self.log.writelines(['#[Stdout]# {}\n'.format(line) for line in message.split('\n') if line != ''])
 
         def flush(self):
-            self.log.flush()
+            # self.log.flush()
             # This needs to be here otherwise there's no line break in the terminal.  Don't worry about it.
             self.terminal.flush()
 
@@ -945,7 +959,10 @@ def log_ipy(start=True, logfilepath=None):
 
     if start:
         # logfilepath = os.path.join(datafolder, subfolder, datestr + '_IPython.log')
-        magic('logstart -o {} append'.format(logfilepath))
+        #magic('logstart -o {} append'.format(logfilepath))
+        # over is not a good mode
+        # append is not a good mode because we will duplicate the log if the same session starts it more than once
+        magic('logstart', f'-o {logfilepath} {mode}')
         logger = Logger()
         sys.stdout = logger
     else:
@@ -1015,8 +1032,12 @@ def glob(pattern='*', directory='.', subdirs=False, exclude=None):
         filename = os.path.split(fpath)[-1]
         # Should it be excluded
         if exclude is not None:
-            if fnmatch.fnmatch(filename, exclude.join('**')):
-                return False
+            if isinstance(exclude, str):
+                return not fnmatch.fnmatch(filename, exclude.join('**'))
+            else:
+                for arg in exclude:
+                    if fnmatch.fnmatch(filename, arg.join('**')):
+                        return False
         # Does it match
         return fnmatch.fnmatch(filename, pattern)
 
@@ -1314,7 +1335,7 @@ def read_txt(filepath, **kwargs):
     # Note that the unit names are simply assumed here -- no attempt to read the units from the file
     units = {'I': 'A', 'V': 'V', 't': 's', 'T': 'K'}
 
-    dataout = {k: df[k].as_matrix() for k in df.columns}
+    dataout = {k: df[k].values for k in df.columns}
     dataout['mtime'] = os.path.getmtime(filepath)
     dataout['units'] = {k: v for k, v in units.items() if k in dataout.keys()}
     dataout['longnames'] = {k: v for k, v in longnames.items() if k in dataout.keys()}
@@ -1388,9 +1409,9 @@ def read_matlab(filepath):
 
     def _check_keys(d):
         '''
-      checks if entries in dictionary are mat-objects. If yes
-      todict is called to change them to nested dictionaries
-      '''
+        checks if entries in dictionary are mat-objects. If yes
+        todict is called to change them to nested dictionaries
+        '''
         for key in d:
             if isinstance(d[key], spio.matlab.mio5_params.mat_struct):
                 d[key] = _todict(d[key])
@@ -1400,8 +1421,8 @@ def read_matlab(filepath):
 
     def _todict(matobj):
         '''
-      A recursive function which constructs from matobjects nested dictionaries
-      '''
+        A recursive function which constructs from matobjects nested dictionaries
+        '''
         d = {}
         for strg in matobj._fieldnames:
             elem = matobj.__dict__[strg]
@@ -1416,10 +1437,10 @@ def read_matlab(filepath):
 
     def _tolist(ndarray):
         '''
-      A recursive function which constructs lists from cellarrays
-      (which are loaded as numpy ndarrays), recursing into the elements
-      if they contain matobjects.
-      '''
+        A recursive function which constructs lists from cellarrays
+        (which are loaded as numpy ndarrays), recursing into the elements
+        if they contain matobjects.
+        '''
         elem_list = []
         for sub_elem in ndarray:
             if isinstance(sub_elem, spio.matlab.mio5_params.mat_struct):
@@ -1534,6 +1555,11 @@ def write_meta_csv(data, filepath):
 
 ###### other things
 
+def read_exampledata():
+    fp = os.path.join(repoDir, 'ivtools', 'sampledata', 'example_ivloops.df')
+    return read_pandas(fp)
+
+
 def change_devicemeta(filepath, newmeta, filenamekeys=None, deleteold=False):
     ''' For when you accidentally write a file with the wrong sample information attached '''
     filedir, filename = os.path.split(filepath)
@@ -1647,6 +1673,72 @@ def writefig(filename, subdir='', plotdir='Plots', overwrite=True, savefig=False
             log.info('Wrote {}.plt'.format(plotfp))
 
 
+def tile_figs(pattern='*_loops.png', out_fn='grid.png', folder='.', scale=.5, aspect=16/9, crop=True, pad=0, rect=False, keeplabels=True):
+    '''
+    for when you have too many subplots that would bring matplotlib to its knees
+    this stitches pngs together to make a giant grid
+
+    pngs are tiled from the top to bottom, left to right, in the order of the sorted filenames
+
+    hopefully they are all the same size and have the same axis ranges.
+    if not, all hell will probably break loose
+    '''
+    pngfiles = [fp for fp in glob(pattern, folder)]
+    n = len(pngfiles)
+    # get close to the right aspect ratio
+    W = int(np.sqrt(n*aspect)) # number of plots in width direction
+    H = int(np.ceil(n / W))    # number of plots in height direction
+    # extra = W*H - n
+    if rect:
+        H -= 1 # skip the last row to make a nice tidy rectangle
+        n = W*H
+        pngfiles = pngfiles[:n]
+
+    pngs = [Image.open(fn) for fn in pngfiles]
+
+    # all pngs should have the same size/axis frame as this representative
+    rep = pngs[0]
+
+    if crop:
+        #crop_pngs = [png.crop([91, 15, 615, 428]) for png in pngs]
+        # Try to find the axis frames automatically -- should be easy
+        pixsum = np.sum(np.array(rep)[:,:,:3], -1)
+        framethresh = 200 # mean of the sum of the RGB channels
+        wframe = np.where(np.mean(pixsum, 0) < framethresh)[0]
+        hframe = np.where(np.mean(pixsum, 1) < framethresh)[0]
+        area = [wframe[0], hframe[0], wframe[1]+1, hframe[1]+1]
+        if keeplabels:
+            # don't cut labels if plot is on left or bottom
+            crop_pngs = []
+            for i,png in enumerate(pngs):
+                area2 = area.copy()
+                if i % W == 0: area2[0] = 0
+                if i // W == H - 1:  area2[3] = rep.height
+                crop_pngs.append(png.crop(area2))
+        else:
+            crop_pngs = [png.crop(area) for png in pngs]
+    else:
+        crop_pngs = pngs
+
+    crop_resize_pngs = [im.resize([int(s*scale) for s in im.size]) for im in crop_pngs]
+
+    grid_width = sum(im.width for im in crop_resize_pngs[:W]) + pad*(W-1)
+    grid_height = sum(im.height for im in crop_resize_pngs[::W]) + pad*(H-1)
+    grid = Image.new('RGB', (grid_width, grid_height), color=(255,255,255))
+
+    x = 0
+    y = 0
+    for i,p in enumerate(crop_resize_pngs):
+        grid.paste(p, (x, y))
+        if (i+1) % W == 0:
+            y += p.height + pad
+            x = 0
+        else:
+            x += p.width + pad
+
+    grid.save(os.path.join(folder, out_fn))
+
+
 def update_depsheet():
     # Try to get the new deposition sheet
     moduledir = os.path.split(__file__)[0]
@@ -1654,3 +1746,139 @@ def update_depsheet():
     sourcefile = r'X:\emrl\Pool\Projekte\HGST-CERAM\CeRAM_Depositions.xlsx'
     log.info(f'copy {sourcefile} {localfile}')
     return subprocess.getoutput(f'copy {sourcefile} {localfile}')
+
+
+
+
+
+##############################################
+### Functions for processing camera images ###
+##############################################
+
+# TODO: Maybe don't call this jpg if we don't now if this works with loaded jpgs?
+
+def mat2jpg(mat, scale=1, quality=95):
+    """
+
+    Converts matrix of color values to jpg formatted byte vector.
+
+    Parameters
+    ----------
+    mat : ndarray
+        2D/3D matrix with byte (unit8) values.
+    scale : TYPE, optional
+        DESCRIPTION. The default is 1.
+    quality : TYPE, optional
+        DESCRIPTION. The default is 95.
+
+    Returns
+    -------
+    jpg : ndarray
+        Vector with byte values, formatted as jpg.
+
+    """
+    import cv2 as cv
+    if scale != 1:
+        height = int(mat.shape[0] * scale)
+        width = int(mat.shape[1] * scale)
+
+        mat = cv.resize(mat, (width, height))
+    # TODO: Warn if scale > 1 ?
+
+    # Quality is jpg image quality, it's between 0 and 100,
+    # both values inclusive, higher is better
+    # 95 is opencv default
+    quality = round(quality)
+    if quality not in range(0, 101):
+        raise Exception("Quality must be between 0 and 100 (inclusive)!")
+
+    # This returns a vector of bytes, which seems to be the compressed image
+    # and also contains information on its format
+    # So far no documentation was found that the quality flag and the value are
+    # to be a list, this is by analogy to the C++ example
+    succ, jpg = cv.imencode(".jpg", mat, [cv.IMWRITE_JPEG_QUALITY, quality])
+
+    if not succ:
+        raise Exception("Failed to encode image!")
+
+    return jpg
+
+def jpg2mat(jpg):
+    """
+    Converts jpg formatted data to matrix of color values.
+
+    Parameters
+    ----------
+    jpg : ndarray
+        Vector with byte values, formatted as jpg.
+
+    Returns
+    -------
+    mat : ndarray
+        2D/3D matrix with byte (unit8) values.
+
+    """
+    import cv2 as cv
+    # This apparently doesn't have a success return value,
+    # if not succesfull mat is empty
+    mat = cv.imdecode(jpg, cv.IMREAD_UNCHANGED)
+
+    if mat is None:
+        raise Exception("Could not decode image!")
+
+    return mat
+
+def extractJpg(files=None, throw=False, name="cameraImage"):
+    """
+    Extracts the stored camera image from a measurement file and save it to disc.
+
+    Parameters
+    ----------
+    files : str,[str], optional
+        Path(es) to the datafiles. If None, all files in the current folder
+        are processed. The default is None.
+    throw : bool, optional
+        Should there be an exception if no image is found in a file?
+        Otherwise these are silently ignored. The default is False.
+    name : str, optional
+        The index of the image in the datafile. The default is "CameraImage".
+
+    Returns
+    -------
+    None.
+
+    """
+    if type(files) == str:
+        d = pd.read_pickle(files)
+        try:
+            jpg = d[name]
+        except:
+            if throw:
+                raise Exception("Could not extract image for " +
+                      d["file_timestamp"] + "!")
+
+            return
+
+        p = Path(files)
+        with open(p.with_suffix(".jpg"), "wb") as w:
+                w.write(jpg)
+    else:
+        if files is None:
+            files = [f for f in os.listdir(".") if f.endswith(".s")]
+
+        for f in files:
+            d = pd.read_pickle(f)
+            try:
+                jpg = d[name]
+            except:
+                if throw:
+                    raise Exception("Could not extract image for " +
+                          d["file_timestamp"] + "!")
+
+                continue
+
+            p = Path(f)
+
+            # So the thing encoded by opencv is apparently really a valid jpg!
+            with open(p.with_suffix(".jpg"), "wb") as w:
+                w.write(jpg)

@@ -38,7 +38,8 @@ def arrowpath(x, y, ax=None, **kwargs):
     for k,v in kwargs.items():
         if k in kws:
             qkwargs[k] = v
-    ax.quiver(x[:-1], y[:-1], x[1:]-x[:-1], y[1:]-y[:-1], **qkwargs)
+    quiv = ax.quiver(x[:-1], y[:-1], x[1:]-x[:-1], y[1:]-y[:-1], **qkwargs)
+    return quiv
 
 def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidth=2, ax=None, **kwargs):
     '''
@@ -83,6 +84,7 @@ def plot_multicolor(x, y, c=None, cmap='rainbow', vmin=None, vmax=None, linewidt
 
     ax.add_collection(lc)
     ax.autoscale()
+    return lc
 
 def plot_multicolor_speed(x, y, t=None, cmap='rainbow', vmin=None, vmax=None, ax=None, **kwargs):
     '''
@@ -828,7 +830,7 @@ def plot_channels(chdata, ax=None, alpha=.8, **kwargs):
     colors = dict(A='Blue', B='Red', C='Green', D='Gold')
     channels = ['A', 'B', 'C', 'D']
     # Remove the previous range indicators
-    ax.collections = []
+    for c in ax.collections: c.remove()
 
     def iterdata():
         if type(chdata) in (dict, pd.Series):
@@ -962,7 +964,15 @@ class InteractiveFigs(object):
     can have several plotting functions per axis though, I think?
     '''
     # TODO: save/load configurations to disk?
-    def __init__(self, n=4, clear_state=False):
+    def __init__(self, n:'rows'=2, m:'cols'=None, clear_state=False):
+        # Use to just have one argument "n" which meant total number of plots, don't break:
+        if m is None:
+            rows = 2
+            cols = n // 2
+        else:
+            rows = n
+            cols = m
+            n = rows * cols
         statename = self.__class__.__name__
         if statename not in ivtools.class_states:
             ivtools.class_states[statename] = {}
@@ -1000,23 +1010,24 @@ class InteractiveFigs(object):
             plt.close(fig)
 
             # Get working area
-            from win32api import GetMonitorInfo, MonitorFromPoint
-            monitor_info = GetMonitorInfo(MonitorFromPoint((0,0)))
+            from win32api import GetMonitorInfo, MonitorFromPoint, EnumDisplayMonitors
+            monitor_info = GetMonitorInfo(EnumDisplayMonitors()[-1][0])
+            #monitor_info = GetMonitorInfo(MonitorFromPoint((2000,0))) # Used to be (0,0) for left monitor
             x0, y0, x1, y1 = monitor_info['Work']
             xpixels = x1 - x0
             ypixels = y1 - y0
 
-            figheight = ypixels / 2 - yborder
-            figwidth = figheight * 1.3
+            figheight = int(round(ypixels / rows - yborder))
+            figwidth = int(round(min(figheight * 1.3, xpixels / cols - xborder)))
 
             self.figsize = (figwidth, figheight)
 
             # strange ordering of plots, top to bottom, right to left
             def figloc(n):
-                x = x1 - (1 + n // 2) * (figwidth + xborder)
-                y = y0 + (n % 2) * (figheight + yborder)
-                return x,y
-            self.figlocs = [figloc(i) for i in range(7)]
+                x = x1 - (1 + n // rows) * (figwidth + xborder)
+                y = y0 + (n % rows) * (figheight + yborder)
+                return int(round(x)), int(round(y))
+            self.figlocs = [figloc(i) for i in range(n)]
 
             self.figs = []
             self.axs = []
@@ -1040,7 +1051,8 @@ class InteractiveFigs(object):
         '''
         fig, ax = plt.subplots()
         fig.set_tight_layout(True)
-        fig.canvas.set_window_title('Interactive Plot {}'.format(n))
+        window_title = f'Interactive Plot {n}'
+        fig.canvas.manager.set_window_title(window_title)
         if len(self.figs) <= n:
             self.figs.extend([None] * (n - len(self.figs) + 1))
         if len(self.axs) <= n:
@@ -1103,11 +1115,13 @@ class InteractiveFigs(object):
 
     def set_maxlines(self, maxlines=None):
         self.maxlines = maxlines
-        for ax in self.axs:
-            if maxlines is None:
-                ax.lines = list(ax.lines)
-            else:
-                ax.lines = deque(ax.lines, maxlen=maxlines)
+        return
+        # Matplotlib update broke this, not sure how to re-implement
+        #for ax in self.axs:
+        #    if maxlines is None:
+        #        ax.lines = list(ax.lines)
+        #    else:
+        #        ax.lines = deque(ax.lines, maxlen=maxlines)
 
     @staticmethod
     def get_func_name(func):
@@ -1136,7 +1150,7 @@ class InteractiveFigs(object):
                 ax = self.axs[axnum]
                 if any(ax.lines):
                     color = ax.lines[-1].get_color()
-                    del ax.lines[-1]
+                    ax.lines[-1].remove()
                 else:
                     color = None
                 argspec = inspect.getfullargspec(plotter)
@@ -1779,8 +1793,8 @@ def write_frames(data, directory, splitbranch=True, shadow=True, extent=None, st
             elif len(sig) == 1:
                 axfunc(ax)
         plt.savefig(os.path.join(directory, 'Loop_{:03d}'.format(i)))
-        del ax.lines[-1]
-        del ax.lines[-1]
+        ax.lines[-1].remove()
+        ax.lines[-1].remove()
 
 def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
     ''' Temporary name, make a movie showing iv loops as they are swept'''
@@ -1839,7 +1853,8 @@ def write_frames_2(data, directory, persist=5, framesperloop=50, extent=None):
         # I hope i starts at zero, it won't if you pass a dataframe slice
         if i > persist:
             # Remove the oldest loop
-            del ax.lines[0:3]
+            for line in ax.lines[0:3]:
+                line.remove()
 
 
 def frames_to_mp4(directory, fps=10, prefix='Loop', crf=5, outname='out'):
@@ -1924,6 +1939,9 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
         logxmin, logxmax = np.log10(xmin), np.log10(xmax)
         xp = np.logspace(logxmin, logxmax + np.log10(xmax - xmin), n)
 
+    if R < 0:
+        xp = xp[::-1]
+
     # Load lines aren't lines on log scale, so plot many points
     x = np.linspace(xmin, xmax, 500)
     # Plot one at a time so you can just label one (for legend)
@@ -1931,7 +1949,8 @@ def plot_load_lines(R, n=20, Iscale=1, ax=None, **kwargs):
     for xi,yi in zip(xp, yp):
         ax.plot(x, yi - slope * (x - xi), **plotargs)
     # Label the last one
-    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(metric_prefix(R)))
+    #ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(metric_prefix(R)))
+    ax.lines[-1].set_label('{}$\Omega$ Load Line'.format(mpl.ticker.EngFormatter()(R)))
     # Put the limits back
     ax.set_xlim(*xlims)
     ax.set_ylim(*ylims)
@@ -1980,29 +1999,33 @@ def plot_power_lines(pvals=None, npvals=10, ax=None, xmin=None):
 
 
 ### Other kinds of plotting utilities
-def metric_prefix(x):
+def metric_prefix(x, format='.1f'):
     '''
-    returns a string representation of x using metrix prefix (μ, m, k, M)
+    returns a string representation of x using metrix prefix (μ, m, k, M, ...)
     should be equivalent to mpl.ticker.EngFormatter()(x)
     '''
-    #longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
-    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
-    if abs(x) < min(values):
-        return '{:n}'.format(x)
+    prefix = ['Q', 'R', 'Y', 'Z', 'E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ',
+              'n', 'p', 'f', 'a', 'z', 'y', 'r', 'q']
+    values = 10.**(np.arange(30, -31, -3))
     for v, p in zip(values, prefix):
         if abs(x) >= v:
-            return '{:n} {}'.format(x/v, p)
+            break
+    return f'{x/v:{format}} {p}'
 
-def metric_prefix_longname(x, decimals=1):
-    longnames = ['exa', 'peta', 'tera', 'giga', 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto', 'atto']
-    prefix = ['E', 'P', 'T', 'G', 'M', 'k', '', 'm', 'μ', 'n', 'p', 'f', 'a']
-    values = [1e18, 1e15, 1e12, 1e9, 1e6, 1e3, 1e0, 1e-3, 1e-6, 1e-9, 1e-12, 1e-15, 1e-18]
-    if abs(x) < min(values):
-        return '{:n}'.format(x)
+
+def metric_prefix_longname(x, format='.1f'):
+    '''
+    basically for text-to-speech
+    '''
+    longnames = ['quetta', 'rona', 'yotta', 'exa', 'peta', 'tera', 'giga',
+                 'mega', 'kilo', '', 'milli', 'micro', 'nano', 'pico', 'femto',
+                 'atto', 'zepto', 'yocto', 'ronto', 'quecto']
+    values = 10.**(np.arange(30, -31, -3))
     for v, p in zip(values, longnames):
         if abs(x) >= v:
-            return f'{x/v:.{decimals}f} {p}'
+            break
+    return f'{x/v:{format}} {p}'
+
 
 def engformatter(axis='y', ax=None):
     ''' puts the metric prefix on the tick labels '''
@@ -2018,7 +2041,7 @@ def engformatter(axis='y', ax=None):
 def scale_axis_labels(scale=6, axis='y', ax=None):
     '''
     Scale the axis labels by factors of 10 without having to scale the data itself
-    attempts to insert the metric prefix into the axis label
+    attempts to insert the metric prefix into the axis label (assuming the units are in square brackets)
     don't attempt to apply it twice, it will mess up your axis label
     '''
     if ax is None:
