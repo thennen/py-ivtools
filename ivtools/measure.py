@@ -188,7 +188,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     ivtools.plot.mybreakablepause(n * duration)
 
-    log.debug('Waiting for data from picoscope.')
+    log.debug('Getting data from picoscope.')
     # Raw data (int type matching scope resolution)
     chdata = ps.get_data(channels, raw=True)
     log.debug('Got data from picoscope.')
@@ -1114,7 +1114,7 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     # Make I, V arrays and store the parameters used to make them
 
     dataout = datain
-    # If data is raw, convert it here
+    # If data is raw, convert it here (input channel data will not be changed!)
     if datain['A'].dtype in (np.int8, np.int16):
         datain = raw_to_V(datain, dtype=dtype)
     A = datain['A']
