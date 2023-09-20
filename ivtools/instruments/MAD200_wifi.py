@@ -34,8 +34,8 @@ class MAD200_Wifi():
     Then, this will communicate with the MAD200 chip over a TCP socket on port 1337
     It's not particularly fast, but should get the job done.
     """
-    def __init__(self):
-        self.connect()
+    def __init__(self, host='192.168.4.1', port=1337):
+        self.connect(host, port)
         self.debug = False
         self.nbytes = 3
         self.data = 0b00000000_00000000_00000000
