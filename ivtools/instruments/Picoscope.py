@@ -14,18 +14,24 @@ class Picoscope(object):
     Picoscope is borg:
     https://code.activestate.com/recipes/66531-singleton-we-dont-need-no-stinkin-singleton-the-bo/
     '''
-    def __init__(self, SerialNumber=None, connect=True):
+    def __init__(self, SerialNumber=None, connect=True, series='ps6000a'):
         if SerialNumber is None:
-            statename = self.__class__.__name__
+            statename = self.__class__.__name__ + '_' + series
         else:
             statename = SerialNumber
         if statename not in ivtools.instrument_states:
             ivtools.instrument_states[statename] = {}
         self.__dict__ = ivtools.instrument_states[statename]
-        from picoscope import ps6000
-        self.ps6000 = ps6000
+
+        series = series.lower()
+        # Old picoscope is series ps6000, new picoscope is series ps6000a
+        self.psmodule = __import__(f'picoscope.{series}')
+        self.psclass = getattr(getattr(self.psmodule, series), series.replace('ps', 'PS'))
         # I could have subclassed PS6000, but then I would have to import it before the class definition...
         # Then this whole package would have picoscope module as a dependency
+
+
+
         # self.get_data will return data as well as save it here
         self.data = None
         # Store channel settings in this class
@@ -50,14 +56,18 @@ class Picoscope(object):
             pass
         else:
             try:
-                self.ps = self.ps6000.PS6000(SerialNumber, connect=True)
+                self.ps = self.psclass(SerialNumber, connect=True)
                 model = self.ps.getUnitInfo('VariantInfo')
                 log.info('Picoscope {} connection succeeded.'.format(model))
                 self.close = self.ps.close
                 self.handle = self.ps.handle
-                # TODO: methods of PS6000 to expose?
                 self.getAllUnitInfo = self.ps.getAllUnitInfo
                 self.getUnitInfo = self.ps.getUnitInfo
+
+                if self.psclass.__name__ == 'picoscope.ps6000a':
+                    # this is a fix for the recently added ps6000a wrapper that the repo owner hesitated to merge.
+                    ps.ps.CHANNEL_COUPLINGS['DC50'] = 50
+
             except Exception as e:
                 self.ps = None
                 log.error('Connection to picoscope failed. There could be an unclosed session.')
@@ -346,9 +356,27 @@ class Picoscope(object):
         log.error('Signal out of pico range!')
         return (max(possible_ranges), 0)
 
+
+    def setResolution(self, resolution=8):
+        # 6000a has 8, 10, 12 bit
+        if hasattr(self.ps, '_lowLevelSetDeviceResolution'):
+            self.ps.setResolution(str(resolution))
+        elif resolution != 8:
+            model = self.ps.getUnitInfo('VariantInfo')
+            raise Exception(f'Picoscope {model} does not have resolution settings.')
+
+
+    def getResolution(self):
+        if hasattr(self.ps, '_lowLevelGetDeviceResolution'):
+            resolution = int(self.ps.getResolution())
+        else:
+            resolution = 8 
+        return resolution
+
+
     def capture(self, ch='A', freq=None, duration=None, nsamples=None,
                 trigsource='TriggerAux', triglevel=0.1, timeout_ms=30000, direction='Rising',
-                pretrig=0.0, delay=0,
+                pretrig=0.0, delay=0, resolution=8, 
                 chrange=None, choffset=None, chcoupling=None, chatten=None, chbwlimit=None):
         '''
         Set up picoscope to capture from specified channel(s).
@@ -379,6 +407,12 @@ class Picoscope(object):
         if not hasattr(ch, '__iter__'):
             ch = [ch]
 
+        if trigsource == 'TriggerAux':
+            # The 6000a API pukes when you give any number but zero for the triglevel -- level is fixed at 1.25 V
+            triglevel = 0
+
+        self.setResolution(resolution)
+
         # Maximum sample rate is different depending on the number of channels that are enabled.
         # Therefore, if you want the highest possible rate, you should keep unused channels disabled.
         # Enable only the channels being used, disable the rest
@@ -392,7 +426,7 @@ class Picoscope(object):
             freq = nsamples / duration
         # This will return actual sample frequency, then we can determine
         # the number of samples needed.
-        actualfreq, _ = self.ps.setSamplingFrequency(freq, 0)
+        actualfreq, _ = self.ps.setSamplingFrequency(freq, 1)
 
         if duration is not None:
             nsamples = duration * actualfreq
@@ -448,19 +482,39 @@ class Picoscope(object):
         while(not self.ps.isReady()):
             time.sleep(0.01)
 
+        # Hopefully you did not change the resolution setting in between capture and get_data
+        # like many instruments this lacks a proper internal handling of metadata
+        resolution = self.getResolution()
+        data['resolution'] = resolution
+        # does not go +-32768, depends on resolution setting!
+        # this is probably because they only use 2**nbits - 1 bins 
+        # so that it is symmetric and can represent zero volts with zero ADC count
+        # 8-bit: +-32512
+        # 10-bit: +-32704
+        # 12-bit: +-32736
+        maxVal = self.ps.getMaxValue() 
+
         if not hasattr(ch, '__iter__'):
             ch = [ch]
+
         for c in ch:
             rawint16, _, overflow = self.ps.getDataRaw(c)
             if overflow:
                 log.warning(f'!! Picoscope overflow on Ch {c} !!')
             if raw:
-                # For some reason pico-python gives the values as int16
+                # For some reason pico-python gives the raw values as int16, even if you capture with 8 bits
                 # Probably because some scopes have 16 bit resolution
                 # The 6403c is only 8 bit, and I'm looking to save memory here
-                data[c] = np.int8(rawint16 / 2**8)
+                if resolution == 8:
+                    # int8 goes from -128 to 127, we won't use -128
+                    data[c] = np.int8(rawint16 / maxVal * 127)
+                else:
+                    # Sadly there's no int10 or int12
+                    # so this will waste memory
+                    data[c] = rawint16
             else:
-                # I added dtype argument to pico-python
+                # I added dtype argument to pico-python to save memory
+                # this method corrects for maxVal
                 data[c] = self.ps.rawToV(c, rawint16, dtype=dtype)
                 #data[c] = self.ps.getDataV(c, dtype=dtype)
         channels = ['A', 'B', 'C', 'D']
@@ -483,15 +537,16 @@ class Picoscope(object):
         return data
 
     def measure(self, ch='A', freq=None, duration=None, nsamples=None, trigsource='TriggerAux', triglevel=0.1,
-                timeout_ms=1000, direction='Rising', pretrig=0.0, chrange=None, choffset=None, chcoupling=None,
+                timeout_ms=1000, direction='Rising', pretrig=0.0, resolution=8, chrange=None, choffset=None, chcoupling=None,
                 chatten=None, raw=False, dtype=np.float32, plot=True, ax=None):
         '''
         Just capture and get_data in one step
         good for interactive use
         '''
         self.capture(ch, freq=freq, duration=duration, nsamples=nsamples, trigsource=trigsource,
-                     triglevel=triglevel, timeout_ms=timeout_ms, direction=direction, pretrig=pretrig,
+                     triglevel=triglevel, timeout_ms=timeout_ms, direction=direction, pretrig=pretrig, resolution=resolution,
                      chrange=chrange, choffset=choffset, chcoupling=chcoupling, chatten=chatten)
+
         # Hopefully this doesn't timeout or something
         data = self.get_data(ch, raw=raw, dtype=dtype)
         if plot:

@@ -416,7 +416,7 @@ cdd = autocaller(cd_data)
 # 𝗖𝗼𝗺𝗺𝗼𝗻 𝗰𝗼𝗻𝗳𝗶𝗴𝘂𝗿𝗮𝘁𝗶𝗼𝗻𝘀
 ###########################################
 
-def setup_ccircuit(split=False):
+def setup_ccircuit(split=False, savespace=False):
     ps.coupling.a = 'DC'
     ps.coupling.b = 'DC50'
     ps.coupling.c = 'DC50'
@@ -428,6 +428,15 @@ def setup_ccircuit(split=False):
         settings.pico_to_iv = ccircuit_to_iv_split
     else:
         settings.pico_to_iv = ccircuit_to_iv
+
+    derived_cols = ['I', 'V', 'Vd', 'Vneedle', 'I', 't']
+    if savespace:
+        # Drop all derived float columns to take up less disk space
+        settings.drop_cols = derived_cols
+    else:
+        # this could potentially cause problems..
+        settings.drop_cols = [c for c in settings.dropcols if c not in derived_cols]
+
     iplots.plotters = pico_plotters
 
 def setup_keithley():
