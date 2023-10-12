@@ -27,7 +27,7 @@
 # Rigol2, Ch2 → split into back panel trigger inputs of both Rigol1 and Rigol2 (only way to trigger simultaneously)
 
 # Picoscope A → sample of Vapplied
-# Picoscope C → 50 ohm current measurement on Source Line SL
+# Picoscope C → 50 ohm current measurement on Source Line SL (labeled Vin)
 
 
 # Arduino MKR Wifi handles the communication with the million switches in the chip
@@ -172,7 +172,7 @@ def IV(Vpos=2, Vneg=-1.4, Vgpos=1.3, Vgneg=3, dur=1e-4, n=100, nsamples=1e5):
 
     trigger()
 
-    d = ps.get_data(['A', 'C'])
+    d = ps.get_data(['A', 'C'], raw=True)
     savedata(d)
 
     d = ivtools.settings.pico_to_iv(d)
@@ -240,7 +240,7 @@ def measurement():
     meta['BL'] = 2
     for n in range(512):
         column(n)
-        time.sleep(.5) # TODO: replace with wifi confirmation -- should not take nearly this long
+        time.sleep(3.5) # TODO: replace with wifi confirmation -- should not take nearly this long
         with block1():
                 time.sleep(.1)
                 IV(Vpos=1.5, Vneg=-1.4, Vgpos=1.3, Vgneg=3, dur=1e-4, n=100, nsamples=1e5)

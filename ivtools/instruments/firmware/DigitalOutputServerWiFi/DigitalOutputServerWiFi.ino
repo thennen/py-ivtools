@@ -90,7 +90,7 @@ void setup() {
   //}
 
 
-  server.begin();                           // start the web server on port 80
+  server.begin();                           // start the web server on port 1337
   printWifiStatus();                        // you're connected now, so print out the status
 }
 
@@ -123,7 +123,8 @@ void loop() {
               for (i = 0; i < BUFSIZE; i++) {
                 for (j = 0; j < 8; j++) {
                   // Output the binary representation of the characters
-                  // probably close enough to simultaneously for our purposes
+                  // probably close enough to simultaneously for our purposes (measured 4 us in between..)
+                  // Want to go faster?  set PORTA, PORTB, or whatever the equivalent is for this microcontroller.
                   if (i*8 + j < npins) {
                     digitalWrite(pins[npins - 1 - i*8 - j], bitRead(buffer[BUFSIZE - 1 - i], j));
                   }

@@ -29,6 +29,8 @@ import ivtools.instruments as instruments
 import ivtools.settings
 import ivtools.plot
 
+ivfunc = ivtools.analyze.ivfunc
+
 log = logging.getLogger('measure')
 
 ########### Picoscope + Rigol AWG testing #############
@@ -399,8 +401,8 @@ def raw_to_V(datain, dtype=np.float32):
     for c in channels:
         if (c in datain.keys()):
             if (datain[c].dtype == np.int8):
-                # ivtools converted this in Picoscope.get_data(..., raw=True)
-                dataout[c] = datain[c] / 127 * dtype(datain['RANGE'][c]) - dtype(datain['OFFSET'][c])
+                # Assuming ivtools converted this in Picoscope.get_data(..., raw=True)
+                dataout[c] = datain[c] / dtype(127) * dtype(datain['RANGE'][c]) - dtype(datain['OFFSET'][c])
             elif (datain[c].dtype == np.int16):
                 # might be 10 or 12 bit
                 # have to hope the information is included in datain, which it should be..
@@ -1102,6 +1104,10 @@ def digipotiv(V1, V2, R1=0, R2=0,
 
 ########### Setup-dependent conversions from picoscope channel data to IV data ###################
 
+# Usually these are called on inividual dicts as they come out of the measurement setup
+# but they are @ivfunc so you can also call them on other data structures like Dataframe and list of dicts
+
+@ivfunc
 def ccircuit_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1140,6 +1146,7 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
+@ivfunc
 def ccircuit_to_iv_split(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1182,6 +1189,7 @@ def ccircuit_to_iv_split(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
+@ivfunc
 def ccircuit_yellow_to_iv(datain, dtype=np.float32):
     '''
     For the redesigned circuit that sources voltage
@@ -1222,6 +1230,7 @@ def ccircuit_yellow_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
+@ivfunc
 def rehan_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1265,6 +1274,7 @@ def rehan_to_iv(datain, dtype=np.float32):
 
     return dataout
 
+@ivfunc
 def femto_log_to_iv(datain, dtype=np.float32):
     # Adjust output offset so that 0.1V in --> 1V out on the 2V input setting
     # Then 0.1V in --> 1.25V out on the 200mV setting
@@ -1285,6 +1295,7 @@ def femto_log_to_iv(datain, dtype=np.float32):
 
     return dataout
 
+@ivfunc
 def TEO_HFext_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1347,6 +1358,7 @@ def TEO_HFext_to_iv(datain, dtype=np.float32):
 
     return dataout
 
+@ivfunc
 def Rext_to_iv(datain, R=50, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1380,6 +1392,7 @@ def Rext_to_iv(datain, R=50, dtype=np.float32):
 
     return dataout
 
+@ivfunc
 def digipot_to_iv(datain, gain=1/50, Vd_gain=0.5, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
@@ -1432,6 +1445,7 @@ def digipot_to_iv(datain, gain=1/50, Vd_gain=0.5, dtype=np.float32):
 
     return dataout
 
+@ivfunc
 def probe_channels(something_to_iv):
     """
     Sends in a probe to the iv conversion function to determine which channels it actually uses.

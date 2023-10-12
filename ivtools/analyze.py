@@ -158,7 +158,9 @@ def ivfunc(func):
             # It's just one IV dict
             return(func(data, *args, **kwargs))
         else:
-            log.warning('ivfunc did not understand the input datatype {}'.format(dtype))
+            log.debug('ivfunc got unanticipated input datatype {}'.format(dtype))
+            # Just try it and pray!
+            return(func(data, *args, **kwargs))
     return func_wrapper
 
 

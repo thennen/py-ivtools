@@ -6,25 +6,25 @@ import time
 import socket
 
 # bit position of each pin
-# NOT THE ARDUINO PIN!
-block1 = 17  # FIO0
-block2 = 16  # FIO1
-block3 = 15  # FIO2
-slset1 = 14  # FIO3
-slset2 = 13  # FIO4
-slreset = 12 # FIO5
-wlset = 11   # FIO6
-wlreset = 10 # FIO7
-s0 = 9       # EIO0
-s1 = 8       # EIO1
-s2 = 7       # EIO2
-s3 = 6       # EIO3
-s4 = 5       # EIO4
-s5 = 4       # EIO5
-s6 = 3       # EIO6
-s7 = 2       # EIO7
-s8 = 1       # CIO0
-s9 = 0       # CIO1
+# NOT THE ARDUINO PIN! Those are defined in the firmware, and commented here
+block1 = 17  # Arduino D3 , formerly Labjack FIO0
+block2 = 16  # Arduino D4 , formerly Labjack FIO1
+block3 = 15  # Arduino D5 , formerly Labjack FIO2
+slset1 = 14  # Arduino D6 , formerly Labjack FIO3
+slset2 = 13  # Arduino D7 , formerly Labjack FIO4
+slreset = 12 # Arduino D8 , formerly Labjack FIO5
+wlset = 11   # Arduino D9 , formerly Labjack FIO6
+wlreset = 10 # Arduino D10, formerly Labjack FIO7
+s0 = 9       # Arduino D0 , formerly Labjack EIO0
+s1 = 8       # Arduino D21, formerly Labjack EIO1
+s2 = 7       # Arduino D20, formerly Labjack EIO2
+s3 = 6       # Arduino D19, formerly Labjack EIO3
+s4 = 5       # Arduino D18, formerly Labjack EIO4
+s5 = 4       # Arduino D17, formerly Labjack EIO5
+s6 = 3       # Arduino D16, formerly Labjack EIO6
+s7 = 2       # Arduino D15, formerly Labjack EIO7
+s8 = 1       # Arduino D2 , formerly Labjack CIO0
+s9 = 0       # Arduino D1 , formerly Labjack CIO1
 
 sPort = [s1, s2, s3, s4, s5, s6, s7, s8, s9]
 
@@ -79,14 +79,16 @@ class MAD200_Wifi():
         return True
 
     def setFF(self, dev):
-        bits = [block1, slset1, wlset] + [sPort[k] for k in range(9) if (dev >> k) % 2]
+        if (self.data >> block1) % 2: # If block1 already set, don't touch it (not sure if this is right)
+            bits = [slset1, wlset] + [sPort[k] for k in range(9) if (dev >> k) % 2]
+        else:
+            bits = [block1, slset1, wlset] + [sPort[k] for k in range(9) if (dev >> k) % 2]
         self.setDIOs(bits)
-        time.sleep(0.1)
+        #time.sleep(0.1)
         self.setDIOs([s0])
-        time.sleep(0.1)
-        print('what')
+        #time.sleep(0.1)
+        #print('what')
         self.resetDIOs([s0]+bits)
-        # TODO: return block1 to its prior state?
 
     def setFF2(self, dev, bl):
         bits = [block2, slset2] + [sPort[k] for k in range(9) if (dev >> k) % 2]
@@ -114,3 +116,23 @@ class MAD200_Wifi():
     def _resetAllDIOs(self):
         self.data = 0
         self.send_data(self.data)
+
+# store pins in the class in case we don't have the module ...
+MAD200_Wifi.block1 = block1
+MAD200_Wifi.block2 = block2
+MAD200_Wifi.block3 = block3
+MAD200_Wifi.slset1 = slset1
+MAD200_Wifi.slset2 = slset2
+MAD200_Wifi.slreset = slreset
+MAD200_Wifi.wlset = wlset
+MAD200_Wifi.wlreset = wlreset
+MAD200_Wifi.s0 = s0
+MAD200_Wifi.s1 = s1
+MAD200_Wifi.s2 = s2
+MAD200_Wifi.s3 = s3
+MAD200_Wifi.s4 = s4
+MAD200_Wifi.s5 = s5
+MAD200_Wifi.s6 = s6
+MAD200_Wifi.s7 = s7
+MAD200_Wifi.s8 = s8
+MAD200_Wifi.s9 = s9
