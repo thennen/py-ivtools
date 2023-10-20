@@ -15,13 +15,13 @@ else:
     sample_number = 2
 
 meta = load_metadb().dropna(0, how='any', subset=['dep_code', 'sample_number']).dropna(1, how='all')
-meta['sample_number'] = np.int32(meta['sample_number'])
+#meta['sample_number'] = np.int32(meta['sample_number'])
 probed_devices = meta[(meta['dep_code'] == dep_code) & (meta['sample_number'] == sample_number)][['module', 'device','die_rel']].drop_duplicates()
 
 probed_devices.device = np.int8(np.float64(probed_devices.device))
 probed_devices.die_rel = np.int8(np.float64(probed_devices.die_rel))
 # has a row for every device on a wafer
-lassen = pd.read_pickle('C:/t/py-ivtools/ivtools/sampledata/all_lassen_device_info.pkl')
+lassen = pd.read_pickle('C:/Users/mohr/py-ivtools/ivtools/sampledata/all_lassen_device_info.pkl')
 lassen = lassen[lassen.coupon == 30]
 lassen = lassen[lassen.module_num.isin([1, 14])]
 # only care about these

@@ -1,18 +1,24 @@
 """
-Functions for measuring IV data
+This module contains code that is used to coordinate control and data collection
+from setups involving multiple instruments, focused on (I,V) measurements.
 
-This contains code that is used to coordinate control and data collection from setups involving multiple instruments
-
-Also utilities that are just generally useful for doing measurements
+Module also contains other utilities that are just generally useful for doing measurements
 """
 import logging
 import os
-import pickle
+import functools
 import signal
 import time
 from fractions import Fraction
 from math import gcd
 from numbers import Number
+import inspect
+from collections import defaultdict
+
+import telegram
+import asyncio
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 import numpy as np
 import pandas as pd
@@ -21,14 +27,44 @@ from matplotlib import pyplot as plt
 import ivtools.analyze
 import ivtools.instruments as instruments
 import ivtools.settings
+import ivtools.plot
 
 log = logging.getLogger('measure')
 
-
 ########### Picoscope + Rigol AWG testing #############
+
+def pulse_and_capture(wfm, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, pretrig=0, posttrig=0,
+                      **kwargs):
+    '''
+    Send n pulses of the input waveform and capture on specified channels of picoscope.
+    Duration determines the length of one repetition of waveform.
+
+    Basically a minimal version of picoiv that does no post-processing or other fancy business
+    '''
+    rigol = instruments.RigolDG5000()
+    ps = instruments.Picoscope()
+
+    # Set up to capture for n times the duration of the pulse
+    # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
+    sampling_factor = (n + pretrig + posttrig)
+
+    ps.capture(ch, freq=fs,
+                   duration=duration * sampling_factor,
+                   pretrig=pretrig / sampling_factor,
+                   **kwargs)
+    # Pulse the waveform n times, this will trigger the picoscope capture.
+    rigol.pulse_arbitrary(wfm, duration, n=n, interp=interpwfm)
+
+    data = ps.get_data(ch)
+
+    return data
 
 def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offset=0, phase=0, duration=None,
                               ncycles=10, samplespercycle=None, fs=None, extrasample=0, **kwargs):
+    '''
+    same as pulse_and_capture but using a built-in waveform
+    TODO: this should just be a special case of pulse_and_capture, not repeated code
+    '''
     rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
 
@@ -50,42 +86,26 @@ def pulse_and_capture_builtin(ch=['A', 'B'], shape='SIN', amp=1, freq=None, offs
 
     return data
 
-def pulse_and_capture(waveform, ch=['A', 'B'], fs=1e6, duration=1e-3, n=1, interpwfm=True, pretrig=0, posttrig=0,
-                      **kwargs):
+def rigol_pulse(wfm, duration, n, interpwfm=True, ch=1):
     '''
-    Send n pulses of the input waveform and capture on specified channels of picoscope.
-    Duration determines the length of one repetition of waveform.
+    This is the default pulsing component for picoiv -- not so useful on its own
     '''
     rigol = instruments.RigolDG5000()
-    ps = instruments.Picoscope()
-
-    # Set up to capture for n times the duration of the pulse
-    # TODO have separate arguments for pulse duration and frequency, sampling frequency, number of samples per pulse
-    # TODO make pulse and capture for builtin waveforms
-    sampling_factor = (n + pretrig + posttrig)
-
-    ps.capture(ch, freq=fs,
-                   duration=duration * sampling_factor,
-                   pretrig=pretrig / sampling_factor,
-                   **kwargs)
-    # Pulse the waveform n times, this will trigger the picoscope capture.
-    rigol.pulse_arbitrary(waveform, duration, n=n, interp=interpwfm)
-
-    data = ps.get_data(ch)
-
-    return data
+    rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=ch)
 
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
-           termination=None, channels=['A', 'B'], autosmoothimate=False, splitbylevel=None,
-           savewfm=False, pretrig=0, posttrig=0, interpwfm=True, **kwargs):
+           termination=None, channels=None, autosmoothimate=False, splitbylevel=None,
+           savewfm=False, pretrig=0, posttrig=0, pico_to_iv=None, monitor_ch=None,
+           pulsefunc=rigol_pulse, **kwargs):
     '''
-    Pulse a waveform, measure on picoscope channels, and return data
-    Provide either fs or nsamples
+    Pulse a waveform (n repeats), capture on picoscope channels, and return data with some conversion/post-processing.
 
-    smartrange 1 autoranges the monitor channel
-    smartrange 2 tries some other fancy shit to autorange the current measurement channel
+    Provide either fs (picoscope sample frequency) or nsamples (total number of samples per shot)
 
-    autosplit will split the waveforms into n chunks
+    smartrange squeezes the range on the monitor channel, since we know the
+    waveform we are going to apply (wfm)
+
+    autosplit will split the capture into chunks in post-processing
 
     termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
 
@@ -93,70 +113,93 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     use "pretrig" and "posttrig" to sample before and after the waveform
     units are fraction of one pulse duration
 
-    kwargs go nowhere
+    Some of the default arguments come from the settings module (pico_to_iv, monitor_ch, channels)
+
+    To use other AWGs and/or triggers, pass a different pulsefunc.
+    If pulsefunc takes arguments wfm, duration, or n, or are annotated to correspond to those,
+    the picoiv arguments are passed through to pulsefunc, as well as any extra kwargs
     '''
-    rigol = instruments.RigolDG5000()
     ps = instruments.Picoscope()
+
+    if not (bool(fs) ^ bool(nsamples)):
+        raise Exception('Must pass either fs or nsamples, and not both')
+
+    if fs is None:
+        fs = nsamples / duration
+
+    if pico_to_iv is None:
+        pico_to_iv = ivtools.settings.pico_to_iv
+
+    if channels is None:
+        channels = sorted(probe_channels(pico_to_iv))
+        if not channels:
+            channels = ['A', 'C']
+
+    if monitor_ch is None:
+        monitor_ch = ivtools.settings.MONITOR_PICOCHANNEL
+
+    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
+    sampling_factor = (n + pretrig + posttrig)
 
     if not type(wfm) == np.ndarray:
         wfm = np.array(wfm)
 
-    if not (bool(fs) ^ bool(nsamples)):
-        raise Exception('Must pass either fs or nsamples, and not both')
-    if fs is None:
-        fs = nsamples / duration
-
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
+    if smartrange:
         # Smart range the monitor channel
-        smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
-
-    # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
-
-    sampling_factor = (n + pretrig + posttrig)
+        smart_range(np.min(wfm), np.max(wfm), ch=[monitor_ch])
 
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
+    # TODO: ps.capture has many arguments that are not accessible by a picoiv() call..  add them?
     actual_fs = ps.capture(ch=channels,
                            freq=fs,
                            duration=duration * sampling_factor,
                            pretrig=pretrig / sampling_factor)
 
-    # This makes me feel good, but I don't think it's really necessary
+    # This makes me feel good, but I didn't test whether it's really necessary
     time.sleep(.05)
+
     if termination:
         # Account for terminating resistance
         # e.g. multiply applied voltages by 2 for 50 ohm termination
         wfm *= (50 + termination) / termination
 
-    # Send a pulse
-    rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=1)
-
+    ### Send a pulse and trigger the measurement
+    # pulsefunc can "request" data from picoiv by signalling with its signature
+    # this could potentially break in strange ways but it's worth it to avoid a major code overhaul
+    # These are shared arguments I think pulsefunc might want us to pass through
+    pulseargs = {'wfm':wfm, 'duration':duration, 'n':n}
+    # I'm going to ignore that it is technically possible that the arguments are positional-only
+    for k,v in inspect.signature(pulsefunc).parameters.items():
+        # bind by function annotation first, so we don't have to rename anything that could break compatibility
+        if v.annotation in pulseargs:
+            kwargs[k] = pulseargs[v.annotation]
+        elif k in pulseargs:
+            kwargs[k] = pulseargs[k]
+    # Send a pulse (should be accompanied by a trigger for picoscope)
+    pulsefunc(**kwargs)
     trainduration = n * duration
     log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
-    time.sleep(n * duration * 1.05)
-    #ps.waitReady()
+    ivtools.plot.mybreakablepause(n * duration)
+
     log.debug('Getting data from picoscope.')
-    # Get the picoscope data
-    # This goes into a global strictly for the purpose of plotting the (unsplit) waveforms.
+    # Raw data (int type matching scope resolution)
     chdata = ps.get_data(channels, raw=True)
     log.debug('Got data from picoscope.')
+
     # Convert to IV data (keeps channel data)
-    ivdata = ivtools.settings.pico_to_iv(chdata)
+    ivdata = pico_to_iv(chdata)
 
     ivdata['nshots'] = n
 
     if savewfm:
         # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
-        # You will need to interpolate it, however..
-        # Or can we read it off the rigol??
+        # You will need to interpolate it, however.. Or can we instead read the interpolation off the rigol?
         ivdata['Vwfm'] = wfm
 
     if autosmoothimate:
         # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
-        # if you do that, the data still gets written in its raw form, which is preferable usually
+        # if you do that, the data still gets written in its raw form, which is usually preferable
         # Below, we irreversibly drop data.
         nsamples_shot = ivdata['nsamples_capture'] / n
         # Smooth by 0.3% of a shot
@@ -175,65 +218,29 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
 
-    if autosplit and (n > 1):
-        log.debug('Splitting data into individual pulses')
-        if splitbylevel is None:
+    if autosplit: # True by default
+        if (splitbylevel is None) and (n > 1):
+            log.debug(f'Splitting data into n={n} individual pulses')
             nsamples = duration * actual_fs
             if 'downsampling' in ivdata:
                 # Not exactly correct but I hope it's close enough
                 nsamples /= ivdata['downsampling']
             ivdata = ivtools.analyze.splitiv(ivdata, nsamples=nsamples)
-        elif splitbylevel is not None:
+        elif splitbylevel:
             # splitbylevel can split loops even if they are not the same length
-            # Could take more time though?
-            # This is not a genius way to determine to split at + or - dV/dt
+            # Rising edge or falling edge? Could take another argument for that..
+            # This is a not-genius way to determine whether to split at + or - dV/dt
             increasing = bool(sign(argmax(wfm) - argmin(wfm)) + 1)
+            ltgt = '>' if increasing else '<'
+            log.debug(f'Splitting data at V={splitbylevel} V, where dV/dt {ltgt} 0')
             ivdata = ivtools.analyze.split_by_crossing(ivdata, V=splitbylevel, increasing=increasing, smallest=20)
+        else:
+            # log.debug('Nothing to split')
+            pass
+    elif splitbylevel:
+            log.debug('splitbylevel does nothing if autosplit is False')
 
     return ivdata
-
-def digipotiv(V1, V2, R1=0, R2=0,
-              duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
-              savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
-
-    '''
-    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with triangle sweeps and different
-    series resistance values e.g. during SET and RESET.
-
-    just a slightly more convenient way to write a for-loop
-    TODO: wrap picoiv automatically and add arguments to it
-
-    @param V_set: Voltage to applied during SET, it can be a list of values or 0 if you only want to do RESET.
-    If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
-    @param V_reset: Same as V_set.
-    @param R_set: Series Resistance during SET, it can be a list of values.
-    @param R_reset: Series Resistance during RESET, it can be a list of values.
-
-    everything else goes to picoiv
-    '''
-    ps = instruments.Picoscope()
-    dp = instruments.WichmannDigipot()
-
-    V1, V2, R1, R2 = arg_broadcast(V1, V2, R1, R2)
-
-    sweeps = []
-    for v1, v2, r1, r2 in zip(V1, V2, R1, R2):
-        if v1 != 0:
-            wfm_set = tri(0, v1)
-            dp.set_R(r1)
-            d_set = picoiv(wfm=wfm_set, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
-                           termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
-                           savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
-            sweeps.append(d_set)
-        if v2 != 0:
-            wfm_reset = tri(0, -v2)
-            dp.set_R(r2)
-            d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
-                             termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
-                             savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
-            sweeps.append(d_reset)
-
-    return sweeps
 
 def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsource='TriggerAux'):
     ''' Apply a series of sine waves with rigol, and sample the response on picoscope. Return data without analysis.'''
@@ -311,7 +318,6 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 
         duration = ncycles / freq
 
-
         # TODO: Should I apply the signal for a while before sampling?  Here I am sampling immediately from the first cycle.
         # The aux trigger has a delay and jitter for some reason.  Maybe triggering directly on the channel is better?
         if trigsource == 'TriggerAux':
@@ -339,28 +345,12 @@ def freq_response(ch='A', fstart=10, fend=1e8, n=10, amp=.3, offset=0, trigsourc
 def tripulse(n=1, v1=1.0, v2=-1.0, duration=None, rate=None):
     '''
     Generate n bipolar triangle pulses.
-    Voltage sweep rate will  be constant.
+    Voltage sweep rate will be constant.
     Trigger immediately
     '''
-    from instruments import RigolDG5000
     rigol = instruments.RigolDG5000()
-
     rate, duration = _rate_duration(v1, v2, rate, duration)
-
     wfm = tri(v1, v2)
-
-    rigol.pulse_arbitrary(wfm, duration, n=n)
-
-def sinpulse(n=1, vmax=1.0, vmin=-1.0, duration=None):
-    '''
-    Generate n sine pulses.
-    Trigger immediately
-    If you pass vmin != -vmax, will not start at zero!
-    '''
-    rigol = instruments.RigolDG5000()
-
-    wfm = (vmax - vmin) / 2 * np.sin(np.linspace(0, 2*pi, ps.AWGMaxSamples)) + ((vmax + vmin) / 2)
-
     rigol.pulse_arbitrary(wfm, duration, n=n)
 
 def smart_range(v1, v2, R=None, ch=['A', 'B']):
@@ -384,30 +374,6 @@ def smart_range(v1, v2, R=None, ch=['A', 'B']):
         ps.range[monitor_channel] = arange
         ps.offset[monitor_channel] = aoffs
 
-    if 'B' in ch:
-        # Smart ranging channel B is harder, since we don't know what kind of device is being measured.
-        # Center the measurement range on zero current
-        #OFFSET['B'] = -COMPLIANCE_CURRENT * 2e3
-        # channelb should never go below zero, except for potentially op amp overshoot
-        # I have seen it reach -0.1V
-        CC = ivtools.settings.COMPLIANCE_CURRENT
-        polarity = np.sign(ivtools.settings.CCIRCUIT_GAIN)
-        if R is None:
-            # Hypothetical resistance method
-            # Signal should never go below 0V (compliance)
-            b_min = 0
-            b_resistance = max(abs(v1), abs(v2)) / CC / 1.1
-            # Compliance current sets the voltage offset at zero input.
-            # Add 10% to be safe.
-            b_max = polarity * (CC - min(v1, v2) / b_resistance) * 2e3 * 1.1
-        else:
-            # R was passed, assume device has constant resistance with this value
-            b_min = (CC - max(v1, v2) / R) * 2e3
-            b_max = (CC- min(v1, v2) / R) * 2e3
-        brange, boffs = ps.best_range((b_min, b_max))
-        ps.range['B'] = brange
-        ps.offset['B'] = boffs
-
 def raw_to_V(datain, dtype=np.float32):
     '''
     Convert 8 bit values to voltage values.  datain should be a dict with the 8 bit channel
@@ -426,7 +392,7 @@ def raw_to_V(datain, dtype=np.float32):
 
 def V_to_raw(datain):
     '''
-    inverse of raw_to_V
+    Inverse of raw_to_V
     '''
     channels = ['A', 'B', 'C', 'D']
     dataout = {}
@@ -457,28 +423,36 @@ def _rate_duration(v1, v2, rate=None, duration=None):
 
 ########### Picoscope + Teo testing ###################
 
-def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, autosplit=True,
-            termination=None, channels=['B', 'C', 'D'], autosmoothimate=False, splitbylevel=None,
-            savewfm=False, pretrig=0, posttrig=0):
+def picoteo(wfm, n=1, duration=None, fs=None, nsamples=None, smartrange=None, autosplit=False,
+            HFV_ch=None, V_MONITOR_ch='B', HF_LIM_ch='C', HF_FUL_ch='D',
+            splitbylevel=None, termination=None, autosmoothimate=False,
+            savewfm=False, save_teo_int=True, pretrig=0, posttrig=0):
     '''
-    Temporary note: This function hasn't been thoroughly tested - expect a bit more work
+    Pulse a waveform with teo, measure on picoscope and teo, and return data
 
-    Pulse a waveform with teo, measure on picoscope, and return data
+    Parameters:
+        wfm: Array of voltage values to be applied. Or the name of a waveform loaded in Teo.
+        n: Number of repetitions of the waveform
+        duration: Duration of the wfm. If None, wfm values will be applied at Teo frequency: 500 MHz.
+        fs: Picoscope sample frequency
+        nsamples: Picoscope number of samples (alternative to fs)
+        smartrange: =1 autoranges the monitor channel. =2 tries some other fancy shit to autorange the current
+            measurement channel
+        autosplit: Automatically split data
+        HFV_ch: Picoscope channel used to monitor teo HFV
+        V_MONITOR_ch: Picoscope channel used to monitor teo V_MONITOR
+        HF_LIM_ch: Picoscope channel used to monitor teo HF_LIMITED_BW
+        HF_FUL_ch: Picoscope channel used to monitor teo HF_FULL_BW
+        splitbylevel: no idea
+        termination: termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
+        autosmoothimate: Automatically smooth and decimate
+        savewfm: save original waveform
+        save_teo_int: save Teo internal measurements
+        pretrig: sample before the waveform. Units are fraction of one pulse duration
+        posttrig: sample after the waveform. Units are fraction of one pulse duration
 
-    smartrange 1 autoranges the monitor channel
-    smartrange 2 tries some other fancy shit to autorange the current measurement channel
-
-    autosplit will split the waveforms into n chunks
-
-    termination=50 will double the waveform amplitude to cancel resistive losses when using terminator
-
-    by default we sample for exactly the length of the waveform,
-    use "pretrig" and "posttrig" to sample before and after the waveform
-    units are fraction of one pulse duration
 
     TODO: substantial amount of this code is shared with picoiv. Refactor to share the same code.
-    TODO: right now it only returns picoscope data - shouldn't it also be able to return the internal teo data?
-          because that can take a lot of time, should include a switch for it
     '''
 
     teo = instruments.TeoSystem()
@@ -486,11 +460,6 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
 
     # decide what sample rate to use
     teo_freq = 500e6
-    if fs is None:
-        if duration is None:
-            fs = teo_freq
-        else:
-            fs = nsamples / duration
 
     if type(wfm) is str:
         wfm_name = wfm
@@ -500,27 +469,42 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
             wfm = teo.download_wfm(wfm_name)[0]
         if duration is not None:
             raise Exception("You can't pass 'duration' when using a saved waveform")
-        duration = (len(wfm)-1)/teo_freq
+        lenw = len(wfm)
+        duration = (lenw-1)/teo_freq
     else:
         wfm_name = None
         if not type(wfm) == np.ndarray:
             wfm = np.array(wfm)
+        lenw = len(wfm)
         if duration is not None:
             wfm = teo.interp_wfm(wfm, duration)
+            lenw = len(wfm)
         else:
-            duration = (len(wfm) - 1) / teo_freq
+            duration = (lenw - 1) / teo_freq
 
-    if smartrange == 2:
-        # Smart range for the compliance circuit
-        smart_range(np.min(wfm), np.max(wfm), ch=['A', 'B'])
-    elif smartrange:
+
+    if (bool(fs) * bool(nsamples)):
+        raise Exception('Can not pass fs and nsamples, only one of them')
+
+    if fs is None:
+        if nsamples is None:
+            fs = teo_freq
+        else:
+            fs = nsamples / duration
+
+    if smartrange:
         # Smart range the monitor channel
         # TODO: Are we assuming that picoscope is taking its own sample of the HFV output?
         # the Vmonitor channel can also be autoranged. Just needs to be adapted for the
         # offset/gain of the teo monitor output!
         smart_range(np.min(wfm), np.max(wfm), ch=[ivtools.settings.MONITOR_PICOCHANNEL])
+    channels = [HFV_ch, V_MONITOR_ch, HF_LIM_ch, HF_FUL_ch]
+    channels = [ch for ch in channels if ch is not None]
+    log.info(channels)
 
-    teo_nsamples = len(wfm)
+    chunksize = 2 ** 11
+    npad = chunksize - (lenw % chunksize)
+    pad_duration = (npad - 1) / fs
 
     # Let pretrig and posttrig refer to the fraction of a single pulse, not the whole pulsetrain
     sampling_factor = (n + pretrig + posttrig)
@@ -536,7 +520,7 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     actual_pico_freq = ps.capture(ch=channels,
                                   freq=fs,
-                                  duration=duration * sampling_factor,
+                                  duration=(duration+pad_duration) * sampling_factor,
                                   pretrig=pretrig / sampling_factor,
                                   delay=delay)
 
@@ -544,7 +528,7 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
 
     log.debug(f"Teo frequency: 500.0 MHz\n"
               f"Picoscope frequency: {actual_pico_freq*1e-6} MHz\n"
-              f"Teo number of samples: {teo_nsamples}\n"
+              f"Teo number of samples: {lenw}\n"
               f"Picoscope number of samples: {pico_nsamples}")
 
 
@@ -556,12 +540,11 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
         wfm *= (50 + termination) / termination
 
     # Send a pulse
-
+    trainduration = (duration+pad_duration) * sampling_factor
     log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     teo.output_wfm(wfm, n=n)
 
-    trainduration = n * duration
-    time.sleep(n * duration * 1.05)
+    time.sleep(trainduration * 1.05)
     #ps.waitReady()
     log.debug('Getting data from picoscope.')
     # Get the picoscope data
@@ -599,6 +582,30 @@ def picoteo(wfm, duration=None, n=1, fs=None, nsamples=None, smartrange=None, au
         factor = max(int(nsamples_shot / npts), 1)
         log.debug('Smoothimating data with window {}, factor {}'.format(window, factor))
         ivdata = ivtools.analyze.smoothimate(ivdata, window=window, factor=factor, columns=None)
+
+    if save_teo_int:
+        teo_data = teo.get_data()
+        ivdata['V_teo'] = teo_data['V']
+        ivdata['I_teo'] = teo_data['I']
+        ivdata['t_teo'] = teo_data['t']
+        ivdata['wfm_teo'] = teo_data['Vwfm']
+        ivdata['idn_teo'] = teo_data['idn']
+        ivdata['sample_rate_teo'] = teo_data['sample_rate']
+        ivdata['gain_step_teo'] = teo_data['gain_step']
+        if 'units' not in ivdata:
+            ivdata['units'] = {}
+            print('Hi')
+        print(ivdata['units'])
+        ivdata['units']['V_teo'] = teo_data['units']['V']
+        ivdata['units']['I_teo'] = teo_data['units']['I']
+        ivdata['units']['t_teo'] = teo_data['units']['t']
+        ivdata['units']['wfm_teo'] = teo_data['units']['Vwfm']
+        print(ivdata['units'])
+        if 'calibration_teo' not in ivdata:
+            ivdata['calibration_teo'] = {}
+        ivdata['calibration_teo']['V_teo'] = teo_data['calibration']['V']
+        ivdata['calibration_teo']['I_teo'] = teo_data['calibration']['I']
+
 
     if autosplit and (n > 1):
         log.debug('Splitting data into individual pulses')
@@ -672,179 +679,9 @@ def measure_ac_gain(R=1000, freq=1e4, ch='C', outamp=1):
     return max(abs(fft.fft(data[ch]))[1:-1]) / max(abs(fft.fft(data['A']))[1:-1]) * R
 
 
-########### Old compliance circuit ###################
-# this version had no auto-offset-compensation
-# used a look up table and usb DAQ
+########### Compliance circuit ###################
 
-# Voltage dividers
-# (Compliance control voltage)      DAC0 - 12kohm - 12kohm
-# (Input offset corrcetion voltage) DAC1 - 12kohm - 1.2kohm
-
-def set_compliance_old(cc_value):
-    '''
-    Use two analog outputs to set the compliance current and compensate input offset.
-    Right now we use static lookup tables for compliance and compensation values.
-    '''
-    daq = instruments.USB2708HS()
-    if cc_value > 1e-3:
-        raise Exception('Compliance value out of range! Max 1 mA.')
-    fn = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
-    abspath = os.path.abspath(fn)
-    if os.path.isfile(abspath):
-        print('Reading calibration from file {abspath}'.format())
-    else:
-        raise Exception('No compliance calibration.  Run calibrate_compliance().')
-    with open(fn, 'rb') as f:
-        cc = pickle.load(f)
-    DAC0 = round(np.interp(cc_value, cc['ccurrent'], cc['dacvals']))
-    DAC1 = np.interp(DAC0, cc['dacvals'], cc['compensationV'])
-    print('Setting compliance to {} A'.format(cc_value))
-    daq.analog_out(0, dacval=DAC0)
-    daq.analog_out(1, volts=DAC1)
-    ivtools.settings.COMPLIANCE_CURRENT = cc_value
-    ivtools.settings.INPUT_OFFSET = 0
-
-def calibrate_compliance_old(iterations=3, startfromfile=True, ndacvals=40):
-    '''
-    Set and measure some compliance values throughout the range, and save a calibration look up table
-    Need picoscope channel B connected to circuit output
-    and picoscope channel A connected to circuit input (through needles or smallish resistor is fine)
-    This takes a minute..
-    '''
-
-    ps = instruments.Picoscope()
-    daq = instruments.USB2708HS()
-    # Measure compliance currents and input offsets with static Vb
-
-    fig1, ax1 = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    ccurrent_list = []
-    offsets_list = []
-    dacvals = np.int16(np.linspace(0, 2**11, ndacvals))
-
-    fn = ivtools.settings.COMPLIANCE_CALIBRATION_FILE
-    abspath = os.path.abspath(fn)
-    fdir = os.path.split(abspath)[0]
-    if not os.path.isdir(fdir):
-        os.makedirs(fdir)
-    if startfromfile and not os.path.isfile(fn):
-        print(f'No calibration file exists at {abspath}')
-        startfromfile = False
-
-    for it in range(iterations):
-        ccurrent = []
-        offsets = []
-        if len(offsets_list) == 0:
-            if startfromfile:
-                print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-                with open(fn, 'rb') as f:
-                    cc = pickle.load(f)
-                compensations = np.interp(dacvals, cc['dacvals'], cc['compensationV'])
-            else:
-                # Start with constant compensation
-                compensations = .55 /0.088 * np.ones(len(dacvals))
-        else:
-            compensations -= np.array(offsets_list[-1]) / .085
-        for v,cv in zip(dacvals, compensations):
-            daq.analog_out(1, volts=cv)
-            daq.analog_out(0, v)
-            plot.mypause(.1)
-            #plt.pause(.1)
-            cc, offs = measure_compliance()
-            ccurrent.append(cc)
-            offsets.append(offs)
-        ccurrent_list.append(ccurrent)
-        offsets_list.append(offsets)
-        ax1.plot(dacvals, np.array(ccurrent) * 1e6, '.-')
-        ax1.set_xlabel('DAC0 value')
-        ax1.set_ylabel('Compliance Current [$\mu$A]')
-        ax2.plot(dacvals, offsets, '.-', label='Iteration {}'.format(it))
-        ax2.set_xlabel('DAC0 value')
-        ax2.set_ylabel('Input offset')
-        ax2.legend()
-        plot.mypause(.1)
-        #plt.pause(.1)
-    output = {'dacvals':dacvals, 'ccurrent':ccurrent, 'compensationV':compensations,
-              'date':time.strftime('%Y-%m-%d'), 'time':time.strftime('%H:%M:%S'), 'iterations':iterations}
-
-    with open(fn, 'wb') as f:
-        pickle.dump(output, f)
-    print('Wrote calibration to ' + fn)
-
-    return compensations
-
-def plot_compliance_calibration_old():
-    fn = 'compliance_calibration.pkl'
-    print('Reading calibration from file {}'.format(os.path.abspath(fn)))
-    with open(fn, 'rb') as f:
-        cc = pickle.load(f)
-    ccurrent = 1e6 * np.array(cc['ccurrent'])
-    dacvals = cc['dacvals']
-    compensationV = cc['compensationV']
-    fig, ax = plt.subplots()
-    fig2, ax2 = plt.subplots()
-    ax.plot(dacvals, ccurrent, '.-')
-    ax.set_xlabel('DAC0 value')
-    ax.set_ylabel('Compliance Current [$\mu$A]')
-    ax2.plot(dacvals, compensationV, '.-')
-    ax2.set_xlabel('DAC0 value')
-    ax2.set_ylabel('Compensation V (DAC1)')
-    plt.tight_layout()
-    return cc
-
-def measure_compliance_old():
-    '''
-    Our circuit does not yet compensate the output for different current compliance levels
-    Right now current compliance is set by a physical knob, not by the computer.  This will change.
-    The current way to measure compliance approximately is by measuring the output at zero volts input,
-    because in this case, the entire compliance current flows across the output resistor.
-
-    There is a second complication because the input is not always at zero volts, because it is not compensated fully.
-    This can be measured as long is there is some connection between the AWG output and the compliance circuit input (say < 1Mohm).
-    '''
-    import ivtools.plot as plot
-    gain = ivtools.settings.CCIRCUIT_GAIN
-    rigol = instruments.RigolDG5000()
-    ps = instruments.Picoscope()
-    # Put AWG in hi-Z mode (output channel off)
-    # Then current at compliance circuit input has to be ~zero
-    # (except for CHA scope input, this assumes it is set to 1Mohm, not 50ohm)
-    ps.ps.setChannel('A', 'DC', 50e-3, 1, 0)
-    rigol.output(False)
-    plot.mypause(.1)
-    #plt.pause(.1)
-    # Immediately capture some samples on channels A and B
-    # Use these channel settings for the capture -- does not modify global settings
-    # TODO pick the channel settings better or make it complain when the signal is out of range
-    picosettings = {'chrange': {'A':.2, 'B':2},
-                    'choffset': {'A':0, 'B':np.sign(gain)*-2},
-                    'chatten': {'A':1, 'B':1},
-                    'chcoupling': {'A':'DC', 'B':'DC'}}
-    ps.capture(['A', 'B'], freq=1e5, duration=1e-1, timeout_ms=1, **picosettings)
-    picodata = ps.get_data(['A', 'B'])
-    #plot_channels(picodata)
-    Amean = np.mean(picodata['A'])
-    Bmean = np.mean(picodata['B'])
-
-    # Channel A should be connected to the rigol output and to the compliance circuit input, perhaps through a resistance.
-    ivtools.settings.INPUT_OFFSET = Amean
-    print('Measured voltage offset of compliance circuit input: {}'.format(Amean))
-
-    # Channel B should be measuring the circuit output with the entire compliance current across the output resistance.
-
-    # Seems rigol doesn't like to pulse zero volts. It makes a beep but then apparently does it anyway.
-    #Vout = pulse_and_capture(waveform=np.zeros(100), ch='B', fs=1e6, duration=1e-3)
-    ccurrent =  Bmean / (gain)
-    ivtools.settings.COMPLIANCE_CURRENT = ccurrent
-    print('Measured compliance current: {} A'.format(ccurrent))
-
-    return (ccurrent, Amean)
-
-
-########### New compliance circuit ###################
-# self-biasing compliance circuit version that uses AWG for current control
-
-def calibrate_compliance_with_keithley(Rload=1000):
+def calibrate_compliance_with_keithley(Rload=1000, kch='A'):
     '''
     Use keithley to calibrate current compliance levels
     Attach keithley channel A to input of compliance circuit through a resistor (Rload)
@@ -876,9 +713,9 @@ def calibrate_compliance_with_keithley(Rload=1000):
     data = []
     for v in vlist:
         rigol.DC(v, 2)
-        d = k.iv(tri(Vmin, Vmax, n=100))
+        d = k.iv(tri(Vmin, Vmax, n=100), ch=kch)
         k.waitready()
-        d = k.get_data()
+        d = k.get_data(ch=kch)
         data.append(d)
     data = pd.DataFrame(data)
 
@@ -1099,8 +936,12 @@ def hybrid_IV(Imax=500e-6, Vmin=-3, dur=1e-3):
 
 def digipot_test(plot=True):
     '''
-    This rapidly makes sure everything is working properly
-    Short the needles, use channel A as the input waveform monitor, chC as the current and chB as node voltage
+    This rapidly makes sure everything is working properly with the digipot board, since it lacks built-in diagnostics
+
+    Put Rigol ch1 into the digipot input,
+    split rigol into pico chA for monitoring
+    connect digipot voltage output into pico chB
+    monitor digipot output current on rigol chC
     '''
     # Use these settings but don't change the state of picoscope
     coupling = dict(A='DC', B='DC50', C='DC50')
@@ -1151,7 +992,7 @@ def digipot_test(plot=True):
             # Or
             ax.plot(d['V'], d['V']/d['I'], label=w)
             color = ax.lines[-1].get_color()
-            ax.plot([-5,5], [Rnom, Rnom], label=w, linestyle='--', alpha=.2, color=color)
+            ax.plot([-5,5], [Rnom+50, Rnom+50], label=w, linestyle='--', alpha=.2, color=color)
             plt.pause(.1)
             plt.xlim(-3, 3)
             plt.ylim(40, 60000)
@@ -1194,43 +1035,51 @@ def digipot_calibrate(plot=True):
     print([d['R'][0].round(2) for d in data])
     return data
 
+def digipotiv(V1, V2, R1=0, R2=0,
+              duration=1e-3, fs=None, nsamples=100_000, smartrange=1, termination=None, autosmoothimate=False,
+              savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
 
-########### Conversion from picoscope channel data to IV data ###################
-
-def ccircuit_to_iv_old(datain, dtype=np.float32):
     '''
-    Convert picoscope channel data to IV dict
-    For the early version of compliance circuit, which needs manual compensation
-    '''
-    # Keep all original data from picoscope
-    # Make I, V arrays and store the parameters used to make them
+    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with triangle sweeps and different
+    series resistance values e.g. during SET and RESET.
 
-    dataout = datain
-    CC = ivtools.settings.COMPLIANCE_CURRENT
-    IO = ivtools.settings.INPUT_OFFSET
-    # If data is raw, convert it here
-    if datain['A'].dtype == np.int8:
-        datain = raw_to_V(datain, dtype=dtype)
-    A = datain['A']
-    B = datain['B']
-    #C = datain['C']
-    gain = ivtools.settings.CCIRCUIT_GAIN
-    dataout['V'] = dtype(A - IO)
-    #dataout['V_formula'] = 'CHA - IO'
-    dataout['INPUT_OFFSET'] = IO
-    #dataout['I'] = 1e3 * (B - C) / R
-    # Current circuit has 0V output in compliance, and positive output under compliance
-    # Unless you know the compliance value, you can't get to current, because you don't know the offset
-    # TODO: Figure out if/why this works
-    dataout['I'] = dtype(-B / gain + CC)
-    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
-    dataout['units'] = {'V':'V', 'I':'A'}
-    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
-    # parameters for conversion
-    #dataout['Rout_conv'] = R
-    dataout['CC'] = CC
-    dataout['gain'] = gain
-    return dataout
+    just a slightly more convenient way to write a for-loop
+    TODO: wrap picoiv automatically and add arguments to it
+
+    @param V_set: Voltage to applied during SET, it can be a list of values or 0 if you only want to do RESET.
+    If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
+    @param V_reset: Same as V_set.
+    @param R_set: Series Resistance during SET, it can be a list of values.
+    @param R_reset: Series Resistance during RESET, it can be a list of values.
+
+    everything else goes to picoiv
+    '''
+    ps = instruments.Picoscope()
+    dp = instruments.WichmannDigipot()
+
+    V1, V2, R1, R2 = arg_broadcast(V1, V2, R1, R2)
+
+    sweeps = []
+    for v1, v2, r1, r2 in zip(V1, V2, R1, R2):
+        if v1 != 0:
+            wfm_set = tri(0, v1)
+            dp.set_R(r1)
+            d_set = picoiv(wfm=wfm_set, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
+                           termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
+                           savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
+            sweeps.append(d_set)
+        if v2 != 0:
+            wfm_reset = tri(0, -v2)
+            dp.set_R(r2)
+            d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
+                             termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
+                             savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
+            sweeps.append(d_reset)
+
+    return sweeps
+
+
+########### Setup-dependent conversions from picoscope channel data to IV data ###################
 
 def ccircuit_to_iv(datain, dtype=np.float32):
     '''
@@ -1268,6 +1117,46 @@ def ccircuit_to_iv(datain, dtype=np.float32):
     dataout['gain'] = gain
     return dataout
 
+def ccircuit_to_iv_split(datain, dtype=np.float32):
+    '''
+    Convert picoscope channel data to IV dict
+    For the newer version of compliance circuit, which compensates itself and amplifies the needle voltage
+    chA should monitor the applied voltage
+    chB (optional) should be the needle voltage
+    The amplified current from the ccircuit is splitted by an RF-splitter into chC and chD
+    chC should be the amplified current (set to a high ps.range for measuring large current ranges)
+    chD should be the amplified current (set to the minimal ps.range for high resolution at low currents)
+
+    '''
+    # Keep all original data from picoscope
+    # Make I, V arrays and store the parameters used to make them
+
+    dataout = datain
+    # If data is raw, convert it here
+    if datain['A'].dtype == np.int8:
+        datain = raw_to_V(datain, dtype=dtype)
+    A = datain['A']
+    C = datain['C']
+    D = datain['D']
+    #C = datain['C']
+    gain = ivtools.settings.CCIRCUIT_GAIN
+    dataout['V'] = dtype(A)
+    #dataout['V_formula'] = 'CHA - IO'
+    #dataout['I'] = 1e3 * (B - C) / R
+    if 'B' in datain:
+        B = datain['B']
+        dataout['Vneedle'] = dtype(B)
+        dataout['Vd'] = dataout['V'] - dataout['Vneedle'] # Does not take phase shift into account!
+    dataout['I']=dtype(2*C/gain) 
+    dataout['I_low']=dtype(2*D/gain)
+    #dataout['I_formula'] = '- CHB / (Rout_conv * gain_conv) + CC_conv'
+    units = {'V':'V', 'Vd':'V', 'Vneedle':'V', 'I':'A', 'I_low':'A'}
+    dataout['units'] = {k:v for k,v in units.items() if k in dataout}
+    #dataout['units'] = {'V':'V', 'I':'$\mu$A'}
+    # parameters for conversion
+    #dataout['Rout_conv'] = R
+    dataout['gain'] = gain
+    return dataout
 
 def ccircuit_yellow_to_iv(datain, dtype=np.float32):
     '''
@@ -1372,16 +1261,25 @@ def femto_log_to_iv(datain, dtype=np.float32):
 
     return dataout
 
-def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dtype=np.float32):
+def TEO_HFext_to_iv(datain, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for TEO HF output channels
 
+    HFV → A
+    V_MONITOR → B
+    HF_LIMITED_BW → C
+    HF_FULL_BW → D
     '''
     # TODO: How can we know what gain setting was used??
     #       For now we will just ask Teo what the current state is..
     teo = instruments.TeoSystem()
-    gainstep = teo.gain()
+    gain_step = teo.gain()
+
+    HFV='A'
+    V_MONITOR='B'
+    HF_LIMITED_BW='C'
+    HF_FULL_BW='D'
 
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
@@ -1395,53 +1293,48 @@ def TEO_HFext_to_iv(datain, V_MONITOR='B', HF_LIMITED_BW='C', HF_FULL_BW='D', dt
     if 'units' not in dataout:
         dataout['units'] = {}
 
-    #if HFV and (HFV in datain):
-    #    dataout['HFV'] = datain[HFV]
+    if 'calibration_teo' not in dataout:
+        dataout['calibration_teo'] = {}
+
+    if HFV and (HFV in datain):
+        dataout['units']['HFV'] = 'V'
+        dataout['HFV'] = datain[HFV]
 
     if V_MONITOR and (V_MONITOR in datain):
         dataout['units']['V'] = 'V'
-        if teo.calibration is not None:
-            Vdata = np.polyval(teo.calibration.loc[gainstep, 'V_MONITOR'], datain[V_MONITOR])
-        else:
-            Vdata = datain[V_MONITOR]
-        if datain['COUPLINGS'][V_MONITOR] == 'DC':
-            Vdata /= 2
+        Vdata, Vcal = teo.apply_calibration(datain[V_MONITOR], 'V_MONITOR', gain_step)
         dataout['V'] = Vdata
+        dataout['calibration_teo']['V'] = Vcal
 
 
     if HF_LIMITED_BW and (HF_LIMITED_BW in datain):
-        dataout['units']['I'] = 'I'
-        if teo.calibration is not None:
-            Idata = np.polyval(teo.calibration.loc[gainstep, 'HF_LIMITED_BW'], datain[HF_LIMITED_BW])
-        else:
-            Idata = datain[V_MONITOR]
-        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
-            Idata /= 2
+        dataout['units']['I'] = 'A'
+        Idata, Ical = teo.apply_calibration(datain[HF_LIMITED_BW], 'HF_LIMITED_BW', gain_step)
         dataout['I'] = Idata
+        dataout['calibration_teo']['I'] = Ical
 
     if HF_FULL_BW and (HF_FULL_BW in datain):
-        dataout['units']['I2'] = 'I2'
-        if teo.calibration is not None:
-            I2data = np.polyval(teo.calibration.loc[gainstep, 'HF_FULL_BW'], datain[HF_FULL_BW])
-        else:
-            I2data = datain[HF_FULL_BW]
-        if datain['COUPLINGS'][HF_LIMITED_BW] == 'DC':
-            I2data /= 2
+        dataout['units']['I2'] = 'A'
+        I2data, I2cal = teo.apply_calibration(datain[HF_FULL_BW], 'HF_FULL_BW', gain_step)
         dataout['I2'] = I2data
+        dataout['calibration_teo']['I2'] = I2cal
 
     # TODO if only one of HF_LIMITED or HF_FULL is used, call the signal I, and indicate somehow where it came from
-    # TODO Store calibration slope and intercept used
 
     return dataout
 
-def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
+def Rext_to_iv(datain, R=50, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     This is for the configuration where you are using a series resistance
     for a shunt current measurement
 
     e.g. using the scope inputs (R = 50Ω or 1MΩ)
+
+    Measure current on channel C (for highest sample rate)
     '''
+    Ichannel='C'
+
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
@@ -1463,7 +1356,7 @@ def Rext_to_iv(datain, R=50, Ichannel='C', dtype=np.float32):
 
     return dataout
 
-def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', Vd_gain=0.5, dtype=np.float32):
+def digipot_to_iv(datain, gain=1/50, Vd_gain=0.5, dtype=np.float32):
     '''
     Convert picoscope channel data to IV dict
     for digipot circuit with device voltage probe
@@ -1472,7 +1365,12 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', Vd_gain=0.5,
     Vd_gain 0.5 for V follower and 50 ohm output/input
 
     Simultaneous sampling is faster when not using adjacent channels (i.e. A&B)
+
+    Vdevice → ch B
+    current → ch C
     '''
+    Vd_channel='B'
+    I_channel='C'
     # Keep all original data from picoscope
     # Make I, V arrays and store the parameters used to make them
 
@@ -1510,8 +1408,38 @@ def digipot_to_iv(datain, gain=1/50, Vd_channel='B', I_channel='C', Vd_gain=0.5,
 
     return dataout
 
+def probe_channels(something_to_iv):
+    """
+    Sends in a probe to the iv conversion function to determine which channels it actually uses.
+
+    If the probe fails it might give a partial set of channels.
+
+    I use this to determine which channels to sample from on picoscope by default
+    because I'm too lazy to always remember and type channels=['A', 'B', 'C']
+    """
+    class Probe(defaultdict):
+        touched = set()
+        def __getitem__(self, x):
+            #print("ouch!")
+            self.touched.add(x)
+            return super().__getitem__(x)
+
+    a = np.array([1])
+    probe = Probe(lambda: a)
+
+    try:
+        something_to_iv(probe)
+    except:
+        log.warning("Probe failed")
+
+    channels = {'A', 'B', 'C', 'D'}
+    return probe.touched.intersection(channels)
+
 
 ############# Waveforms ###########################
+
+# TODO add pulse trains
+
 def tri(v1, v2=0, n=None, step=None, repeat=1):
     '''
     Create a triangle pulse waveform with a constant sweep rate.  Starts and ends at zero.
@@ -1527,6 +1455,7 @@ def tri(v1, v2=0, n=None, step=None, repeat=1):
     # 1. actually has n points?
     # 2. has constant datapoint spacing?
     # 3. contains the extrema?
+    # 4. hits all the same values on the up and down sweep?
 
     # For IV sweeps I would say containing the extrema is important,
     # In order to make sure the waveform actually contains 0, v1 and v2, we need to allow
@@ -1688,6 +1617,207 @@ def tts_thread(text=None):
             tts_thread.done = True
     tts_thread.done = False
     ttsthread = Threader()
+
+class telegram_bot:
+    '''
+    This class enables use of a telegram bot for basic remote control of the measurement setup
+    e.g.: receive interactive figures, microscope pictures, move the sample stage to the next device or start pre-configured electrical measurements
+
+    you need to do 'pip install python-telegram-bot'
+    https://docs.python-telegram-bot.org/en/stable/
+    
+    the bot_token is used to control the telegram bot 'TS-Bot' with the bot username: 'TS_controller_bot'
+    use 'await' before async functions like 'await tb.send_hello_message()'
+
+    to make the bot communicate with you in your personal chat:
+    search telegram app for TS-Bot
+    send any message to this bot
+    get your personal chat_id (this returns the chat_id of the most recent received message):
+    tb = telegram_bot()
+    chat_id = await tb.get_recent_chat_id()
+
+    set up the bot to talk with you on your personal chat:
+    tb = telegram_bot(chat_id=chat_id)
+    await tb.send_hello_message()
+    '''
+    
+    def __init__(self, chat_id=None, bot_token='5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc'):
+        self.chat_id = chat_id
+        self.bot_token = bot_token
+
+        self.bot = telegram.Bot(token=self.bot_token)
+        
+
+    async def get_recent_chat_id(self):
+        '''
+        this will return the chatid from the most recently received chat message
+        send the bot any text message before running this function to get your own personal chat_id of your conversation with the bot
+        you need the chat_id to let the bot send any message to the given chat
+        '''
+        
+        async with self.bot:
+            update = await self.bot.get_updates()
+        
+        # this gets the chat_id 
+        chat_id = update[-1].message.chat_id
+
+        return chat_id
+
+    async def get_recent_text(self):
+        '''
+        this will return the text string from the most recently received chat message
+        '''
+        
+        async with self.bot:
+            update = await self.bot.get_updates()
+        
+        # this gets the chat_id 
+        text = update[-1].message.text
+
+        return text
+    
+    async def get_recent_chat_user_name(self):
+        '''
+        this will return the username from the most recently received chat
+        '''
+        
+        # get most recent update from chatid
+        async with self.bot:
+            update = await self.bot.get_updates()
+
+        # this gets the username from the chatid
+        name = update[-1].message.from_user.first_name
+
+        return name
+        
+    async def get_bot_user_name(self):
+        '''
+        this will return the username of the bot
+        '''
+        
+        # get info about bot
+        async with self.bot:
+            bot_info = await self.bot.get_me()
+
+        # this gets the username of the bot
+        bot_user_name = bot_info.username
+
+        return bot_user_name
+
+    async def get_bot_name(self):
+        '''
+        this will return the name of the bot
+        '''
+        # get info about bot
+        async with self.bot:
+            bot_info = await self.bot.get_me()
+
+        # this gets the username of the bot
+        bot_name = bot_info.full_name
+
+        return bot_name
+
+    async def get_name_of_user(self):
+        '''
+        this will return the (first) name of the user from the given chatid
+        '''
+        # get user info
+        async with self.bot:
+            user_info = await self.bot.get_chat(chat_id=self.chat_id)
+        
+        # get first name from user info
+        name = user_info.first_name
+
+        return name
+
+    async def send_hello_message(self):
+        '''
+        this will send a hello message to the chatid with the name of the receiver in the text
+        '''
+        # get first name of user from the given chat_id
+        name = await self.get_name_of_user()
+
+        async with self.bot:
+            await self.bot.sendMessage(text=f'Hello {name}', chat_id=self.chat_id)
+    
+    async def send_message(self, text=None):
+        '''
+        this will send a message with the given text to the chatid
+        '''
+        
+        async with self.bot:
+            await self.bot.sendMessage(text=text, chat_id=self.chat_id)
+
+    async def send_picture(self, filepath=None, web_link=None):
+        '''
+        this will send a picture to the chatid
+        pass local filepath or web_link to a picture
+        '''
+        
+        async with self.bot:
+            if filepath:
+                # from local drive
+                await self.bot.send_photo(photo=open(filepath, 'rb'), chat_id=self.chat_id)
+            elif web_link:
+                # from internet
+                await self.bot.send_photo(photo='https://telegram.org/img/t_logo.png', chat_id=self.chat_id)
+            else:
+                log.warning('you should pass a filepath or an image web-link')
+    
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+        """Sends a message with three inline buttons attached."""
+
+        keyboard = [
+
+            [
+
+                InlineKeyboardButton("Option 1", callback_data="1"),
+
+                InlineKeyboardButton("Option 2", callback_data="2"),
+
+            ],
+
+            [InlineKeyboardButton("Option 3", callback_data="3")],
+
+        ]
+
+
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+
+        # await update.message.reply_text("Please choose:", reply_markup=reply_markup)
+        await telegram.Update.message.reply_text("Please choose:", reply_markup=reply_markup)
+
+    async def send_menu(self):
+        '''
+        This will send a button menu and return what button was pressed
+        '''
+
+
+
+        async def button(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+
+            """Parses the CallbackQuery and updates the message text."""
+
+            query = update.callback_query
+
+
+            # CallbackQueries need to be answered, even if no notification to the user is needed
+
+            # Some clients may have trouble otherwise. See https://core.telegram.org/bots/api#callbackquery
+
+            await query.answer()
+
+
+            await query.edit_message_text(text=f"Selected option: {query.data}")
+
+        application = Application.builder().token('5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc').build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button))
+        application.run_polling()
+
+
 
 class controlled_interrupt():
     '''

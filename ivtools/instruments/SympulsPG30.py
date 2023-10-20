@@ -1,4 +1,4 @@
-# Copyright 2023 Faisal Munir, Jari Klinkmann, RWTH Aachen University
+# Authors: Faisal Munir, Jari Klinkmann, RWTH Aachen University
 
 import logging
 log = logging.getLogger('instruments')
@@ -9,21 +9,17 @@ import math
 import inspect
 
 def _sendCmd(interface, cmd): 
-    """
-    Sends a command to an instrument by first encoding it into utf-8 bytes
-    and then using the pyvisa write_raw function to send it.
-    
-    Parameters
-    ----------
-    interface : <class 'pyvisa.resources.serial.SerialInstrument'>
+    """ Sends a command to an instrument by first encoding it into utf-8 bytes
+        and then using the pyvisa write_raw function to send it.
+        Parameters
+        ----------
+        interface : <class 'pyvisa.resources.serial.SerialInstrument'>
         instrument instance to which to send the command.
-    cmd : str
+        cmd : str
         the command for the instrument (usually SCPI).
-
-    Returns
-    -------
-    None.
-
+        Returns
+        -------
+        None.
     """
     # cmd must be complete with '\n' ending
     interface.write_raw(bytes(bytearray(cmd+"\n", 'utf-8')))
@@ -268,6 +264,8 @@ class SympulsPG30(object):
             print(f"Past errors: {self.error()}")
         except:
             log.error('Sympuls connection failed at {}'.format(addr))
+        self.debug = debug
+        self.past_errors = ""
 
     def connect(self, addr):
         self.conn = visa_rm.get_instrument(addr)
@@ -282,9 +280,12 @@ class SympulsPG30(object):
         
     @_read_errors    
     def set_upattern(self, pattern):
-        '''sets upattern of Sympuls PPG. pattern can be string of form
-        "01010000", list of form [1, -1, 0, 0] or bytearray.
-        Note that upattern length is fixed to 1 word = 32 bytes'''
+        '''
+        sets upattern of Sympuls PPG. pattern can be string of form
+        01010000, list of form [1, -1, 0, 0] or bytearray.
+        Note that upattern length is fixed to 1 word = 32 bytes
+
+        '''
         # convert pattern to block data
         pattern = _to_patternbytes(pattern)
         # check that length is 32 bytes
@@ -326,6 +327,9 @@ class SympulsPG30(object):
             self.conn, "source:lupattern:data", 
             pattern
         )
+        # adjust the pattern length
+        self.set_lupattern_length(num_words)
+
 
     @_read_errors
     def get_upattern(self)->str:
@@ -359,38 +363,40 @@ class SympulsPG30(object):
         print(self.past_errors)
 
     @_read_errors
-    def Freq(self, freq):
+    def freq(self, freq):
         '''Define Freqeuncy betwwen 200MHz -- 15GHz'''
         self.write(':SOUR:FREQ '+ str(freq))
         ''' .format is a method to call string, {} is used to add space'''
 
     @_read_errors
-    def PulseWidth(self, pulsewidth):
-        '''Define pulse width betwwen 200MHz -- 15GHz'''
-        if pulsewidth < 66e-12 or pulsewidth > 5e-9:
+    def set_pulse_width(self, pulse_width):
+        '''Define pulse width betwwen 200MHz (400MHz/2.5ns for 1 digit) -- 15GHz (33.33ps for 1 digit) Clock= bit clock/2'''
+        ''' Device capability is between 66ps-5ns, which 15GHz-200MHz in freq'''
+        ### We divide pulse width by 2, so that we can avoid 2 digits in pattern
+        if pulse_width < 33e-12 or pulse_width > 2.5e-9:
             raise Exception('pulse width should be between 5ns and 66ps')
-        self.write(':SOUR:FREQ '+ str(1/pulsewidth))
-        Frequency = str((1/pulsewidth)/1e9)+(str(' GHz'))
+        self.write(':SOUR:FREQ '+ str(1/(2*pulse_width)))
+        Frequency = str((1/(2*pulse_width))/1e9)+(str(' GHz'))
         return Frequency
 
     @_read_errors
-    def Amplitude1(self, Amp1):
+    def amplitude1(self, Amp1):
         '''Define Postive amplitude betwwen 1000mV --  2000mV for 
-        example Amplitude1('1000mV')'''
+        example Amplitude1('1000mV') or (1000e-3)'''
         #self.write(':OUTput3:AMPLitude1  {}' .format(Amp1))
         self.write(':OUTput3:AMPLitude1 '+ str(Amp1))
         ''' .format is a method to call string, {} is used to add space'''
 
     @_read_errors
-    def Amplitude2(self, Amp2):
+    def amplitude2(self, Amp2):
         '''Define negative amplitude betwwen 600mV -- 1200mV for example 
         Amplitude2('1000mV')'''
         #self.write(':OUTput3:AMPLitude1  {}' .format(Amp2))
-        self.write(':OUTput3:AMPLitude1 '+ str(Amp2))
+        self.write(':OUTput3:AMPLitude2 '+ str(Amp2))
         ''' .format is a method to call string, {} is used to add space'''      
 
     @_read_errors
-    def Format(self, form):
+    def format(self, form):
         '''Define format as an BIP or NRZ output for example Format('NRZ') 
         and BIP for bipolar'''
         #self.write(':SOUR:FORM {}' .format(form))
@@ -398,7 +404,7 @@ class SympulsPG30(object):
         ''' .format is a method to call string, {} is used to add space'''
 
     @_read_errors
-    def Pattern(self, pattern):
+    def pattern(self, pattern):
         '''Define Pattern as an LUPattern (for FWRM) or UPATtern (for FWRAM 120) 
         or TESTPATTERN example Pattern('LUPATTERN')'''
         if pattern == 'LU':
@@ -412,7 +418,7 @@ class SympulsPG30(object):
 
     
     @_read_errors
-    def SubPattern(self, subpattern):
+    def sub_pattern(self, subpattern):
         '''Define format as an LUPATTERN (for FWRM) or UPATTERN (for FWRAM 120)
         or TESTPATTERN example Pattern('LUPATTERN')'''
         self.write(':SOUR:FUNC {}' .format(subpattern))
@@ -447,20 +453,23 @@ class SympulsPG30(object):
         return _query(self.conn, "source:lupattern:divisor?").replace("\n", "")
 
     @_read_errors
-    def TriggerSource(self, trig):
+    def trigger_source(self, trig):
         '''Define trigger as AUTO or IMMediate or EXTernal example 
         TrigSource('IMM')'''
         self.write(':TRIG2:SOUR {}' .format(trig))
         ''' .format is a method to call string, {} is used to add space'''
 
     @_read_errors
-    def Trigger(self):
+    def trigger(self):
         '''When Trigger Ssource is IMM, then you can trigger manually by just 
-        Trigger()'''
+            Trigger()
+        '''
         self.write(':INIT:IMM')
-        ''' .format is a method to call string, {} is used to add space'''    
-        
+        ''' .format is a method to call string, {} is used to add space''' 
     @_read_errors 
     def reset(self):
         '''Reset sympuls to factory defaults.'''
         self.write("*RST")
+        
+
+            
