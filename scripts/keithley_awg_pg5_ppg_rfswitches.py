@@ -10,42 +10,50 @@ from time import localtime, strftime, sleep
 
 """
 this is the code for jari's pcm measurements.
+
+The following wiring of inputs to the RF switches is assumed:
+    - input A: Keithley
+    - input B: AWG
+    - input C: Sympuls PG5
+Furthermore it is assumed that ground goes to Tektronix channel 3
+
 The measurement works as follows:
 
 1) INITIALIZATION STAGE
-    - AWG is initialized to give a SET signal (rectangular followed by sawtooth on channel 1)
-    - Keithley is initialized
+    - AWG (input B) is initialized to give a SET signal (rectangular followed by sawtooth on channel 1)
+    - Keithley (input A) is initialized
+    - Sympuls PG5 (input C) is initiaized
     - Tektronix is initialized
     - ALL RF switches turned OFF
 
 2) MEASUREMENT STAGE
     - a dictionary with all measurement settings and for all measurement data is begun
 
-    - RF switch for Keithley is turned ON
+    - RF switch for Keithley (input A) is turned ON
     - Keithley reads resistance
-    - RF switch for Keithley is turned OFF
+    - RF switch for Keithley (input A) is turned OFF
     - Keithley data is read and saved to dictionary
 
     - Tektronix is armed
-    - RF switch for AWG is turned ON
+    - RF switch for AWG (input B) is turned ON
     - AWG SET is triggered
-    - RF switch for AWG is turned OFF
+    - RF switch for AWG (input B) is turned OFF
     - Tektronix data is read and saved to dictionary
 
-    - RF switch for Keithley is turned ON
+    - RF switch for Keithley (input A) is turned ON
     - Keithley reads resistance
-    - RF switch for Keithley is turned OFF
+    - RF switch for Keithley (input B) is turned OFF
     - Keithley data is read and saved to dictionary
 
     - Tektronix is armed
-    - RF switch for PG5 is turned ON
+    - RF switch for PG5 (input C) is turned ON
     - PG5 RESET is triggered
-    - RF switch for PG5 is turned OFF
+    - RF switch for PG5 (input C) is turned OFF
     - Tektronix data is read and saved to dictionary
 
-    - RF switch for Keithley is turned ON
+    - RF switch for Keithley (input A) is turned ON
     - Keithley reads resistance
-    - RF switch for Keithley is turned OFF
+    - RF switch for Keithley (input A) is turned OFF
     - Keithley data is read and saved to dictionary
 
     - dictionary is written to file and saved
@@ -78,7 +86,14 @@ def jari_pcm_measurement (
     P_limit=0,
     nplc=1,
 
-    # parameters for awg
+    # parameters for Tektronix
+    trigger_level = 0.025,
+    polarity = 1,
+    recordlength = 5000,
+    position = -2.5,
+    scale = 0.04,
+
+    # TODO: parameters for AWG
 
 ):
     # define helper functions
@@ -93,9 +108,9 @@ def jari_pcm_measurement (
     """
     this is the code to read device under test resistance on the
     RF switches, AWG, PPG, PG5 setup. It works as follows:
-        - RF switch for Keithley is turned ON
+        - RF switch for Keithley (output A) is turned ON
         - Keithley reads resistance
-        - RF switch for Keithley is turned OFF
+        - RF switch for Keithley (output A) is turned OFF
         - Keithley data is read and saved to dictionary
     """
     def _read_resistance (
@@ -109,7 +124,7 @@ def jari_pcm_measurement (
     ):
         
         # TODO: turn on RF switch for keithley
-        ...
+        rf_switches.a_on()
 
         # perform i-v sweep to read resistance
         k._iv_lua(
@@ -121,12 +136,36 @@ def jari_pcm_measurement (
         data = k.get_data()
 
         # TODO: turn off RF switch for keithley
-        ...
+        rf_switches.a_off()
         
         return data
     
-    # define 
+    # INITIALIZATION STAGE 
+
+    # set up Keithley
+    k.source_output(ch = 'A', state = True)
+    k.source_level(source_val=V_read, source_func='v', ch='A')
+    plt.pause(1)
+
+    # set up Tektronix
+    ttx.inputstate(1, False)
+    ttx.inputstate(2, False)
+    ttx.inputstate(3, True)    
+    ttx.inputstate(4, False)
+    ttx.scale(3, scale)
+    ttx.position(3, position*polarity)
+    ttx.change_samplerate_and_recordlength(100e9, recordlength)
+    trigger_level = trigger_level*polarity
+
+    # set up sympuls
+    sympuls.set_pulse_width(pg5_pulse_width)
+
+    # TODO: set up AWG
+
+    # have python wait for keithley to get ready
+    plt.pause(0.5)
     
+    # MEASUREMENT STAGE
     # perform measurements
     for measurement_no in range(1, total_measurements+1):
 
@@ -138,8 +177,10 @@ def jari_pcm_measurement (
         data['padname'] = padname
         data['total_measurements'] = total_measurements
         data['measurement_no'] = measurement_no
+        # values for Sympuls
         data['pg5_attenuation'] = pg5_attenuation
         data['pg5_pulse_width'] = pg5_pulse_width
+        # values for Keithley
         data['V_read'] = V_read
         data['V_step'] = V_step
         data['V_range'] = V_range
@@ -147,6 +188,14 @@ def jari_pcm_measurement (
         data['I_limit'] = I_limit
         data['P_limit'] = P_limit
         data['nplc'] = nplc
+        # values for Tektronix
+        data['trigger_level'] = trigger_level
+        data['polarity'] = polarity
+        data['position'] = position
+        data['scale'] = scale
+        data['recordlength'] = recordlength
+        # TODO: values for AWG
+
 
         #1: read resistance before SET with Keithley
         data['initial_resistance'] = _read_resistance(
@@ -155,6 +204,26 @@ def jari_pcm_measurement (
         )
 
         #2: TODO: perform SET with AWG and measure with Tektronix
+        rf_switches.b_on()
+
+        ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+        plt.pause(0.1)
+        
+        # TODO: AWG code
+        
+        plt.pause(0.2)
+        if ttx.triggerstate():
+            plt.pause(0.1)
+            ttx.disarm()
+            data['t_set'] = None
+            data['v_set'] = None
+        else:
+            data_scope = ttx.get_curve(3)
+            data['t_set'] = data_scope['t_ttx']
+            data['v_set'] = data_scope['V_ttx']
+        ttx.disarm()
+
+        rf_switches.b_off()
 
         #3: read resistance after SET and before RESET with Keithley
         data['middle_resistance'] = _read_resistance(
@@ -163,6 +232,22 @@ def jari_pcm_measurement (
         )
 
         #4: TODO: perform RESET with PG5 and measure with Tektronix
+        rf_switches.c_on()
+        ttx.arm(source = 3, level = trigger_level, edge = 'r') 
+        plt.pause(0.1)
+        sympuls.trigger()
+        plt.pause(0.2)
+        if ttx.triggerstate():
+            plt.pause(0.1)
+            ttx.disarm()
+            data['t_reset'] = None
+            data['v_reset'] = None
+        else:
+            data_scope = ttx.get_curve(3)
+            data['t_reset'] = data_scope['t_ttx']
+            data['v_reset'] = data_scope['V_ttx']
+        ttx.disarm()
+        rf_switches.c_off()
 
         #5: read resistance after RESET with Keithley
         data['end_resistance'] = _read_resistance(
@@ -180,4 +265,14 @@ def jari_pcm_measurement (
             i+=1
         io.write_pandas_pickle(meta.attach(data), filepath)
 
-    # finish up measurement
+    # SHUTDOWN PHASE
+
+    # shut down Keithley
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = False)
+
+    # shut down Tektronix
+    ttx.disarm()
+    ttx.inputstate(3, False)  
+
+    # TODO: shut down AWG
