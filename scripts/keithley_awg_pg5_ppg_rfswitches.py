@@ -4,9 +4,15 @@ log = logging.getLogger('instruments')
 import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 import numpy as np
+import matplotlib.pyplot as plt
 import os
 from time import localtime, strftime, sleep
-
+from saturnpy.saturn_system import Saturn_System
+from saturnpy.saturn_system_enum import Globaltrigger, Trigger_sources, System_state, Rhea_state
+from saturnpy import rhea
+from saturnpy.helpers import send_ascii_file
+from typing import Final
+from decimal import Decimal
 
 """
 this is the code for jari's pcm measurements.
@@ -76,6 +82,12 @@ def jari_pcm_measurement (
     # parameters for pg5
     pg5_attenuation,
     pg5_pulse_width,
+
+    # parameters for AWG
+    V_SET,
+    t_SET_max, 
+    t_SET_flank, 
+    delay, 
     
     # parameters for keithley
     V_read,
@@ -92,8 +104,6 @@ def jari_pcm_measurement (
     recordlength = 5000,
     position = -2.5,
     scale = 0.04,
-
-    # TODO: parameters for AWG
 
 ):
     # define helper functions
@@ -123,7 +133,7 @@ def jari_pcm_measurement (
         nplc=1
     ):
         
-        # TODO: turn on RF switch for keithley
+        # turn on RF switch for keithley
         rf_switches.a_on()
 
         # perform i-v sweep to read resistance
@@ -135,11 +145,40 @@ def jari_pcm_measurement (
             sleep(0.01)
         data = k.get_data()
 
-        # TODO: turn off RF switch for keithley
+        # turn off RF switch for keithley
         rf_switches.a_off()
         
         return data
-    
+    """
+    returns two arrays time, voltage
+    the time is in seconds, voltage in volts
+    the signal is a square wave followed by a linear decrease
+    parameters:
+    - amplitude is the voltage of the square signal
+    - max_time is the width of the square signal
+    - flank_time is the time in which the voltage linearly decreases
+        from amplitude to 0
+    - delay is extra time at the beginning and at the end 
+        where the signal is 0
+    - stepsize in seconds is the width of the square signals that the
+        signal is composed of
+    """
+    def _SET_signal (amplitude, max_time, flank_time, delay, stepsize):
+        time = [
+            0, delay, 
+            delay+stepsize, delay+stepsize+max_time,
+            delay+stepsize+max_time+flank_time,
+            2*delay+stepsize+max_time+flank_time
+        ]
+        voltage = [
+            0, 0,
+            amplitude, amplitude,
+            0,
+            0
+        ]
+        return time, voltage
+
+
     # INITIALIZATION STAGE 
 
     # set up Keithley
@@ -160,10 +199,51 @@ def jari_pcm_measurement (
     # set up sympuls
     sympuls.set_pulse_width(pg5_pulse_width)
 
-    # TODO: set up AWG
-
-    # have python wait for keithley to get ready
-    plt.pause(0.5)
+    # set up AWG
+    # turn off all channels and turn 1 to default settings
+    awg = saturnAWG()
+    awg.S1M1R1.on(False)
+    awg.S1M1R2.on(False)
+    awg.S1M1R3.on(False)
+    awg.S1M1R4.on(False)
+    awg.S1M1R1.reset()
+    # configure channel 1
+    # set 50 ohm termination to true
+    awg.S1M1R1.term(True)
+    # set channel to trigger from GT1 trigger
+    awg.S1M1R1.trigger([Trigger_sources.GT1], True)
+    # Name and path for signal definition
+    name = "rhea_demo"
+    path = "c:\\rhea_demo\\"
+    # Create signal definition
+    signal_time, signal_voltage = _SET_signal(
+        V_SET, t_SET_max, t_SET_flank,
+        delay, 1e-9
+    )
+    signal = rhea.DA_Signal(
+        name, path, signal_time, 
+        signal_voltage, stepsize = '1n'
+    )
+    # Create definition file
+    rhea_ini = signal.create_file()
+    # Send signal definitions file to remote Saturn System
+    # This is only necessary if Saturn Studio II is running on the Saturn System.
+    if (awg.ss2_host_ip != 'localhost'):
+        send_ascii_file(awg.ss2_host_ip, source = rhea_ini, target = rhea_ini)
+    # Initialize RHEA DA-module
+    # Initialization is done for all RHEA channels/modules at once
+    awg.S1M1.init()
+    # Read RHEA state
+    print("RHEA state before init: ", awg.S1M1.state)
+    # Load waveform data to selected channel, do not combine with predefined waveforms
+    awg.S1M1R1.load(rhea_ini)
+    # Switch channel output on
+    awg.S1M1R1.on(True)
+    # confirm all changes
+    awg.S1M1.confirm(diff=False)
+    awg.wait_for_rhea(Rhea_state.READY, timeout_seconds=20)
+    print("RHEA state after init: ", awg.S1M1.state)
+    print("System state after init: ", awg.system_state)
     
     # MEASUREMENT STAGE
     # perform measurements
@@ -194,8 +274,12 @@ def jari_pcm_measurement (
         data['position'] = position
         data['scale'] = scale
         data['recordlength'] = recordlength
-        # TODO: values for AWG
-
+        # values for AWG
+        data['V_SET'] = V_SET
+        data['t_SET_max'] = t_SET_max
+        data['t_SET_flank'] = t_SET_flank
+        data['delay'] = delay 
+        data['stepsize'] = 1e-9
 
         #1: read resistance before SET with Keithley
         data['initial_resistance'] = _read_resistance(
@@ -203,14 +287,15 @@ def jari_pcm_measurement (
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
 
-        #2: TODO: perform SET with AWG and measure with Tektronix
+        #2: perform SET with AWG and measure with Tektronix
         rf_switches.b_on()
 
         ttx.arm(source = 3, level = trigger_level, edge = 'r') 
         plt.pause(0.1)
         
-        # TODO: AWG code
-        
+        # AWG code
+        awg.manual_trigger([Globaltrigger.GT1])
+
         plt.pause(0.2)
         if ttx.triggerstate():
             plt.pause(0.1)
@@ -231,7 +316,7 @@ def jari_pcm_measurement (
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
 
-        #4: TODO: perform RESET with PG5 and measure with Tektronix
+        #4: perform RESET with PG5 and measure with Tektronix
         rf_switches.c_on()
         ttx.arm(source = 3, level = trigger_level, edge = 'r') 
         plt.pause(0.1)
@@ -275,4 +360,6 @@ def jari_pcm_measurement (
     ttx.disarm()
     ttx.inputstate(3, False)  
 
-    # TODO: shut down AWG
+    # shut down AWG
+    awg.S1M1R1.reset()
+    awg.S1M1.confirm(diff=False)
