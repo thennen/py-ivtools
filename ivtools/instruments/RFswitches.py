@@ -9,7 +9,7 @@ import scipy
 
 class RFswitches (object):
 
-    def __init__(self, addr='COM4'):
+    def __init__(self, addr='COM7'):
         try:
             self.connect(addr)
         except:
@@ -27,37 +27,41 @@ class RFswitches (object):
         self.conn.write_termination ='\n'
 
     # turn all outputs ON/OFF
-    def all_on ():
-        '''turn on all inputs'''
-        self.write(':A1')
-        self.write(':B1')
-        self.write(':C1')
-    def all_off ():
+    def all_off (self):
         '''turn off all inputs'''
         self.write(':A0')
         self.write(':B0')
         self.write(':C0')
 
     # turn output A ON/OFF
-    def a_off ():
-        '''turn on input A'''
+    def a_off (self):
+        '''turn off input A'''
         self.write(':A0')
-    def a_on ():
-        '''turn on inputs A'''
+    def a_on (self):
+        '''turn on inputs A
+	and turn off B and C'''
+	self.write(':B0')
+	self.write(':C0')
         self.write(':A1')
 
     # turn output B ON/OFF
-    def b_off ():
-        '''turn on input B'''
+    def b_off (self):
+        '''turn off input B'''
         self.write(':B0')
-    def b_on ():
-        '''turn on input B'''
+    def b_on (self):
+        '''turn on input B
+	and turn off A and C'''
+	self.write(':A0')
+	self.write(':C0')
         self.write(':B1')
 
     # turn output C ON/OFF
-    def c_off ():
-        '''turn on input C'''
+    def c_off (self):
+        '''turn off input C'''
         self.write(':C0')
-    def c_on ():
-        '''turn on input C'''
+    def c_on (self):
+        '''turn on input C
+	and turn off A and B'''
+	self.write(':A0')
+	self.write(':B0')
         self.write(':C1')
