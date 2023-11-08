@@ -28,6 +28,12 @@ class saturn_0360(Saturn_System):
         #    ivtools.instrument_states[statename] = {}
         #self.__dict__ = ivtools.instrument_states[statename]
 
+        # TCP settings of Saturn Studio II
+        # (Use 'localhost' if Saturn Studio II is running on the PC on which this script is executed.
+        #  Use Saturn System IP address instead, if Saturn Studio II is running on the Saturn System.)
+        ss2_host_ip ='192.168.10.5'
+        ss2_host_port = 8081
+
         # init the saturn
         super().__init__(verbose = verbose)
         self.connect_S2(ip=ss2_host_ip, port=ss2_host_port )
@@ -35,3 +41,10 @@ class saturn_0360(Saturn_System):
         # Add modules and/or channels to system object
         # Rhea module
         self.S1M1: Final[rhea.DA_module] = self.add_DA_module('S1M1', samplerate=Decimal('1e9'))
+
+        # Initialize RHEA DA-module
+        # Initialization is done for all RHEA channels/modules at once
+        self.S1M1.init()
+
+        # Read RHEA state
+        print("RHEA state: ", self.S1M1.state)
