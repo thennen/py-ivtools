@@ -40,8 +40,8 @@ class RFswitches (object):
     def a_on (self):
         '''turn on inputs A
 	    and turn off B and C'''
-	    self.write(':B0')
-	    self.write(':C0')
+        self.write(':B0')
+        self.write(':C0')
         self.write(':A1')
 
     # turn output B ON/OFF
@@ -51,8 +51,8 @@ class RFswitches (object):
     def b_on (self):
         '''turn on input B
 	    and turn off A and C'''
-	    self.write(':A0')
-	    self.write(':C0')
+        self.write(':A0')
+        self.write(':C0')
         self.write(':B1')
 
     # turn output C ON/OFF
@@ -62,6 +62,6 @@ class RFswitches (object):
     def c_on (self):
         '''turn on input C
 	    and turn off A and B'''
-	    self.write(':A0')
-	    self.write(':B0')
+        self.write(':A0')
+        self.write(':B0')
         self.write(':C1')
