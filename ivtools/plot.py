@@ -973,6 +973,10 @@ class InteractiveFigs(object):
     '''
     # TODO: save/load configurations to disk?
     def __init__(self, n:'rows'=2, m:'cols'=None, clear_state=False):
+        backend = mpl.get_backend()
+        if not backend.lower().startswith('qt'):
+            raise Exception('You need to use qt backend to use interactive figs!')
+
         # Use to just have one argument "n" which meant total number of plots, don't break:
         if m is None:
             rows = 2
