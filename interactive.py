@@ -435,7 +435,7 @@ def setup_ccircuit(split=False, savespace=False):
         settings.drop_cols = derived_cols
     else:
         # this could potentially cause problems..
-        settings.drop_cols = [c for c in settings.dropcols if c not in derived_cols]
+        settings.drop_cols = [c for c in settings.drop_cols if c not in derived_cols]
 
     iplots.plotters = pico_plotters
 
