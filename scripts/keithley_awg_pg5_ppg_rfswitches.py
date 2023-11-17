@@ -6,13 +6,73 @@ visa_rm = visa.visa_rm # stored here by __init__
 import numpy as np
 import matplotlib.pyplot as plt
 import os
+import atexit
 from time import localtime, strftime, sleep
-from saturnpy.saturn_system import Saturn_System
-from saturnpy.saturn_system_enum import Globaltrigger, Trigger_sources, System_state, Rhea_state
-from saturnpy import rhea
-from saturnpy.helpers import send_ascii_file
 from typing import Final
 from decimal import Decimal
+
+"""
+connect SaturnAWG
+"""
+
+from saturnpy.saturn_system import Saturn_System
+from saturnpy.saturn_system_enum import Globaltrigger, Trigger_sources, System_state, Rhea_state
+from saturnpy.helpers import send_ascii_file
+from saturnpy import rhea
+
+class SaturnAWG(Saturn_System):
+
+    # Forward declaration of channel objects
+    # (not strictly necessary, but makes it easier to work with, 
+    #  especially editors which support function autocompletion etc.)
+    S1M1: rhea.DA_module
+    S1M1R1: rhea.DA_channel
+    S1M1R2: rhea.DA_channel
+    S1M1R3: rhea.DA_channel
+    S1M1R4: rhea.DA_channel
+    # TCP settings of Saturn Studio II
+    # (Use 'localhost' if Saturn Studio II is running on the PC on which this script is executed.
+    #  Use Saturn System IP address instead, if Saturn Studio II is running on the Saturn System.)
+    ss2_host_ip ='192.168.10.5'
+    ss2_host_port = 8081
+
+    def __init__(self, verbose=False):
+
+        # register in ivtools
+        #statename = self.__class__.__name__
+        #if statename not in ivtools.instrument_states:
+        #    ivtools.instrument_states[statename] = {}
+        #self.__dict__ = ivtools.instrument_states[statename]
+
+        # init the saturn
+        super().__init__(verbose = verbose)
+        self.connect_S2(ip=self.ss2_host_ip, port=self.ss2_host_port )
+        atexit.register(self.disconnect_S2)
+
+        # Add modules and/or channels to system object
+        # Rhea module
+        self.S1M1: Final[rhea.DA_module] = self.add_DA_module('S1M1', samplerate=Decimal('1e9'))
+
+        # Initialize RHEA DA-module
+        # Initialization is done for all RHEA channels/modules at once
+        self.S1M1.init()
+
+        # Reset all channels to default config (off, term, on, 1V sine at 1MHz)
+        self.S1M1R1.reset()
+        self.S1M1R2.reset()
+        self.S1M1R3.reset()
+        self.S1M1R4.reset()
+        self.S1M1.confirm(diff=False)
+
+        # Read RHEA state
+        print("RHEA state: ", self.S1M1.state)
+
+
+# connect the necessary instruments
+
+k = keith
+awg = SaturnAWG()
+rf_switches = RFswitches()
 
 """
 this is the code for jari's pcm measurements.
@@ -87,7 +147,7 @@ def jari_pcm_measurement (
     V_SET,
     t_SET_max, 
     t_SET_flank, 
-    delay, 
+    fade_out, 
     
     # parameters for keithley
     V_read,
@@ -99,6 +159,7 @@ def jari_pcm_measurement (
     nplc=1,
 
     # parameters for Tektronix
+    channel = 1,
     trigger_level = 0.025,
     polarity = 1,
     recordlength = 5000,
@@ -163,15 +224,13 @@ def jari_pcm_measurement (
     - stepsize in seconds is the width of the square signals that the
         signal is composed of
     """
-    def _SET_signal (amplitude, max_time, flank_time, delay, stepsize):
+    def _SET_signal (amplitude, max_time, flank_time, fade_out):
         time = [
-            0, delay, 
-            delay+stepsize, delay+stepsize+max_time,
-            delay+stepsize+max_time+flank_time,
-            2*delay+stepsize+max_time+flank_time
+            0, max_time, 
+            max_time+flank_time, 
+            max_time+flank_time+fade_out
         ]
         voltage = [
-            0, 0,
             amplitude, amplitude,
             0,
             0
@@ -179,20 +238,22 @@ def jari_pcm_measurement (
         return time, voltage
 
 
-    # INITIALIZATION STAGE 
+    # INITIALIZATION STAGE
 
     # set up Keithley
-    k.source_output(ch = 'A', state = True)
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = True)
     k.source_level(source_val=V_read, source_func='v', ch='A')
     plt.pause(1)
 
     # set up Tektronix
-    ttx.inputstate(1, False)
-    ttx.inputstate(2, False)
-    ttx.inputstate(3, True)    
-    ttx.inputstate(4, False)
-    ttx.scale(3, scale)
-    ttx.position(3, position*polarity)
+    for i in range(1,5):
+        if i==channel:
+            ttx.inputstate(channel, True)
+        else:
+            ttx.inputstate(i, False)
+    ttx.scale(channel, scale)
+    ttx.position(channel, position*polarity)
     ttx.change_samplerate_and_recordlength(100e9, recordlength)
     trigger_level = trigger_level*polarity
 
@@ -201,24 +262,18 @@ def jari_pcm_measurement (
 
     # set up AWG
     # turn off all channels and turn 1 to default settings
-    awg = saturnAWG()
+    awg.S1M1R1.reset()
     awg.S1M1R1.on(False)
     awg.S1M1R2.on(False)
     awg.S1M1R3.on(False)
     awg.S1M1R4.on(False)
-    awg.S1M1R1.reset()
     # configure channel 1
-    # set 50 ohm termination to true
-    awg.S1M1R1.term(True)
-    # set channel to trigger from GT1 trigger
-    awg.S1M1R1.trigger([Trigger_sources.GT1], True)
     # Name and path for signal definition
     name = "rhea_demo"
     path = "c:\\rhea_demo\\"
     # Create signal definition
     signal_time, signal_voltage = _SET_signal(
-        V_SET, t_SET_max, t_SET_flank,
-        delay, 1e-9
+        V_SET, t_SET_max, t_SET_flank, fade_out
     )
     signal = rhea.DA_Signal(
         name, path, signal_time, 
@@ -233,10 +288,12 @@ def jari_pcm_measurement (
     # Initialize RHEA DA-module
     # Initialization is done for all RHEA channels/modules at once
     awg.S1M1.init()
-    # Read RHEA state
-    print("RHEA state before init: ", awg.S1M1.state)
     # Load waveform data to selected channel, do not combine with predefined waveforms
     awg.S1M1R1.load(rhea_ini)
+    # set 50 ohm termination to true
+    awg.S1M1R1.term(True)
+    # set channel to trigger from GT1 trigger
+    awg.S1M1R1.trigger([Trigger_sources.GT1], True)
     # Switch channel output on
     awg.S1M1R1.on(True)
     # confirm all changes
@@ -278,7 +335,7 @@ def jari_pcm_measurement (
         data['V_SET'] = V_SET
         data['t_SET_max'] = t_SET_max
         data['t_SET_flank'] = t_SET_flank
-        data['delay'] = delay 
+        data['fade_out'] = fade_out 
         data['stepsize'] = 1e-9
 
         #1: read resistance before SET with Keithley
@@ -289,23 +346,25 @@ def jari_pcm_measurement (
 
         #2: perform SET with AWG and measure with Tektronix
         rf_switches.b_on()
-
-        ttx.arm(source = 3, level = trigger_level, edge = 'r') 
-        plt.pause(0.1)
+        plt.pause(5)
+        ttx.arm(source = channel, level = trigger_level, edge = 'r') 
+        plt.pause(1.1)
         
         # AWG code
         awg.manual_trigger([Globaltrigger.GT1])
 
-        plt.pause(0.2)
+        plt.pause(1.2)
         if ttx.triggerstate():
             plt.pause(0.1)
             ttx.disarm()
             data['t_set'] = None
             data['v_set'] = None
+            print('no signal was found for awg')
         else:
-            data_scope = ttx.get_curve(3)
+            data_scope = ttx.get_curve(channel)
             data['t_set'] = data_scope['t_ttx']
             data['v_set'] = data_scope['V_ttx']
+            plt.plot(data['t_set'], data['v_set'], label='awg')
         ttx.disarm()
 
         rf_switches.b_off()
@@ -318,19 +377,22 @@ def jari_pcm_measurement (
 
         #4: perform RESET with PG5 and measure with Tektronix
         rf_switches.c_on()
-        ttx.arm(source = 3, level = trigger_level, edge = 'r') 
-        plt.pause(0.1)
+        plt.pause(5)
+        ttx.arm(source = channel, level = trigger_level, edge = 'r') 
+        plt.pause(1.1)
         sympuls.trigger()
-        plt.pause(0.2)
+        plt.pause(1.2)
         if ttx.triggerstate():
             plt.pause(0.1)
             ttx.disarm()
             data['t_reset'] = None
             data['v_reset'] = None
+            print('no signal was found for pg5')
         else:
-            data_scope = ttx.get_curve(3)
+            data_scope = ttx.get_curve(channel)
             data['t_reset'] = data_scope['t_ttx']
             data['v_reset'] = data_scope['V_ttx']
+            plt.plot(data['t_reset'], data['v_reset'], label='pg5')
         ttx.disarm()
         rf_switches.c_off()
 
@@ -358,7 +420,7 @@ def jari_pcm_measurement (
 
     # shut down Tektronix
     ttx.disarm()
-    ttx.inputstate(3, False)  
+    ttx.inputstate(channel, False)  
 
     # shut down AWG
     awg.S1M1R1.reset()
