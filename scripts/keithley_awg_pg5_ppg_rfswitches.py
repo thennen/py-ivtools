@@ -133,39 +133,40 @@ REPEAT
 """
 def jari_pcm_measurement (
     # total number of measurements
-    total_measurements,
+    total_measurements=1,
 
     # parameters for the documentation
-    samplename,
-    padname,
+    samplename='test',
+    padname='jari_pcm_measurements_test',
+    comments='',
 
     # parameters for pg5
-    pg5_attenuation,
-    pg5_pulse_width,
+    pg5_attenuation=0,
+    pg5_pulse_width=10e-9,
 
     # parameters for AWG
-    V_SET,
-    t_SET_max, 
-    t_SET_flank, 
-    fade_out, 
+    V_SET=1,
+    t_SET_max=10e-9, 
+    t_SET_flank=10e-9, 
+    fade_out=10e-9, 
     
     # parameters for keithley
-    V_read,
-    V_step,
-    V_range,
-    I_range,
-    I_limit,
-    P_limit=0,
+    V_read=0.5,
+    V_step=0.05,
+    V_range=1,
+    I_range=1e-3,
+    I_limit=1e-3,
+    P_limit=1e-3,
     nplc=1,
 
     # parameters for Tektronix
+    ttx_attenuation = 0,
     channel = 1,
-    trigger_level = 0.025,
+    trigger_level = 0.1,
     polarity = 1,
     recordlength = 5000,
     position = -2.5,
-    scale = 0.04,
-
+    scale = 0.5,
 ):
     # define helper functions
     """
@@ -225,26 +226,47 @@ def jari_pcm_measurement (
         signal is composed of
     """
     def _SET_signal (amplitude, max_time, flank_time, fade_out):
-        time = [
-            0, max_time, 
-            max_time+flank_time, 
-            max_time+flank_time+fade_out
-        ]
-        voltage = [
-            amplitude, amplitude,
+        if max_time!=0 and flank_time!=0:
+            time = [
+                0,
+                max_time, 
+                max_time+flank_time, 
+                max_time+flank_time+fade_out
+            ]
+            voltage = [
+                amplitude,
+                amplitude, 
+                0,
+                0
+            ]
+        elif max_time==0 and flank_time!=0:
+            time = [
             0,
-            0
-        ]
+            flank_time, 
+            flank_time+fade_out
+            ]
+            voltage = [
+                amplitude,
+                0,
+                0
+            ]
+        elif flank_time==0 and max_time!=0:
+            time = [
+            0, max_time, 
+            max_time+1e-9,
+            max_time+1e-9+fade_out
+            ]
+            voltage = [
+                amplitude, amplitude, 
+                0, 
+                0
+            ]
+        else:
+            raise Exception('Signal Form is currently not possible')
         return time, voltage
 
 
     # INITIALIZATION STAGE
-
-    # set up Keithley
-    k.source_output(ch = 'A', state = False)
-    k.source_output(ch = 'B', state = True)
-    k.source_level(source_val=V_read, source_func='v', ch='A')
-    plt.pause(1)
 
     # set up Tektronix
     for i in range(1,5):
@@ -256,6 +278,15 @@ def jari_pcm_measurement (
     ttx.position(channel, position*polarity)
     ttx.change_samplerate_and_recordlength(100e9, recordlength)
     trigger_level = trigger_level*polarity
+    # record any disturbances during setup
+    ttx.arm(source = channel, level = trigger_level, edge = 'r') 
+    plt.pause(0.1)
+
+    # set up Keithley
+    k.source_output(ch = 'A', state = False)
+    k.source_output(ch = 'B', state = True)
+    k.source_level(source_val=V_read, source_func='v', ch='A')
+    plt.pause(1)
 
     # set up sympuls
     sympuls.set_pulse_width(pg5_pulse_width)
@@ -301,7 +332,25 @@ def jari_pcm_measurement (
     awg.wait_for_rhea(Rhea_state.READY, timeout_seconds=20)
     print("RHEA state after init: ", awg.S1M1.state)
     print("System state after init: ", awg.system_state)
+    plt.pause(5)
+    # an initial triggering is needed for the next trigger to work
+    # somehow the device is ignoring the first time it is triggered
+    print("Test trigger ALL: ", awg.manual_trigger([Globaltrigger.ALL]))
     
+    # record any initial disturbances
+    plt.pause(1)
+    if ttx.triggerstate():
+        plt.pause(0.1)
+        ttx.disarm()
+        print('setup finished.')
+    else:
+        data_scope = ttx.get_curve(channel)
+        print('setup finished. an unexpected signal was recorded during setup.')
+        plt.plot(data_scope['t_ttx'], data_scope['V_ttx'])
+        plt.show()      
+    ttx.disarm()
+    plt.pause(10)
+
     # MEASUREMENT STAGE
     # perform measurements
     for measurement_no in range(1, total_measurements+1):
@@ -312,6 +361,7 @@ def jari_pcm_measurement (
         data['timestamp'] = timestamp
         data['samplename'] = samplename
         data['padname'] = padname
+        data['comments'] = comments
         data['total_measurements'] = total_measurements
         data['measurement_no'] = measurement_no
         # values for Sympuls
@@ -326,11 +376,13 @@ def jari_pcm_measurement (
         data['P_limit'] = P_limit
         data['nplc'] = nplc
         # values for Tektronix
+        data['channel'] = channel
         data['trigger_level'] = trigger_level
         data['polarity'] = polarity
         data['position'] = position
         data['scale'] = scale
         data['recordlength'] = recordlength
+        data['ttx_attenuation'] = ttx_attenuation
         # values for AWG
         data['V_SET'] = V_SET
         data['t_SET_max'] = t_SET_max
@@ -346,14 +398,10 @@ def jari_pcm_measurement (
 
         #2: perform SET with AWG and measure with Tektronix
         rf_switches.b_on()
-        plt.pause(5)
         ttx.arm(source = channel, level = trigger_level, edge = 'r') 
-        plt.pause(1.1)
-        
-        # AWG code
-        awg.manual_trigger([Globaltrigger.GT1])
-
-        plt.pause(1.2)
+        plt.pause(0.5)
+        data['awg_trigger'] = awg.manual_trigger([Globaltrigger.GT1])
+        plt.pause(0.3)
         if ttx.triggerstate():
             plt.pause(0.1)
             ttx.disarm()
@@ -377,11 +425,10 @@ def jari_pcm_measurement (
 
         #4: perform RESET with PG5 and measure with Tektronix
         rf_switches.c_on()
-        plt.pause(5)
         ttx.arm(source = channel, level = trigger_level, edge = 'r') 
-        plt.pause(1.1)
+        plt.pause(0.5)
         sympuls.trigger()
-        plt.pause(1.2)
+        plt.pause(0.3)
         if ttx.triggerstate():
             plt.pause(0.1)
             ttx.disarm()
@@ -423,5 +470,5 @@ def jari_pcm_measurement (
     ttx.inputstate(channel, False)  
 
     # shut down AWG
-    awg.S1M1R1.reset()
-    awg.S1M1.confirm(diff=False)
+    # awg.S1M1R1.reset()
+    # awg.S1M1.confirm(diff=False)
