@@ -197,7 +197,7 @@ def jari_pcm_measurement (
         
         # turn on RF switch for keithley
         rf_switches.a_on()
-
+        plt.pause(0.1)
         # perform i-v sweep to read resistance
         k._iv_lua(
             _tri(V_read, V_step), Irange=I_range, Ilimit=I_limit, 
@@ -206,7 +206,7 @@ def jari_pcm_measurement (
         while not k.done():
             sleep(0.01)
         data = k.get_data()
-
+        plt.pause(0.1)
         # turn off RF switch for keithley
         rf_switches.a_off()
         
@@ -264,7 +264,17 @@ def jari_pcm_measurement (
         else:
             raise Exception('Signal Form is currently not possible')
         return time, voltage
-
+    """
+    extract measurement data from the keithley
+    get resistance
+    """
+    def _extract_keithley_measurement(k_data):
+        return k_data["t"], k_data["Vmeasured"], k_data["I"]
+    def _get_resistance(V,I):
+        idx = np.where(
+            (np.abs(V)>=0.15)
+        )[0]
+        return np.mean(V[idx] / I[idx])
 
     # INITIALIZATION STAGE
 
@@ -399,7 +409,7 @@ def jari_pcm_measurement (
 
         #2: perform SET with AWG and measure with Tektronix
         rf_switches.b_on()
-        ttx.arm(source = channel, level = trigger_level, edge = 'r') 
+        ttx.arm(source = channel, level = -trigger_level, edge = 'f') 
         plt.pause(0.5)
         data['awg_trigger'] = awg.manual_trigger([Globaltrigger.GT1])
         plt.pause(0.3)
@@ -449,6 +459,15 @@ def jari_pcm_measurement (
             V_read=V_read, V_step=V_step, V_range=V_range,
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
+
+        # print some summary infos about measurement
+        t_ini, V_ini, I_ini = _extract_keithley_measurement(data["initial_resistance_measurement"])
+        t_mid, V_mid, I_mid = _extract_keithley_measurement(data["middle_resistance_measurement"])
+        t_end, V_end, I_end = _extract_keithley_measurement(data["end_resistance_measurement"])
+        R_ini = _get_resistance(V=V_ini, I=I_ini)
+        R_mid = _get_resistance(V=V_mid, I=I_mid)
+        R_end = _get_resistance(V=V_end, I=I_end)
+        print(f"round {measurement_no}: R_ini={R_ini/1e3:.1f}kΩ, R_mid={R_mid/1e3:.1f}kΩ, R_end={R_end/1e3:.1f}kΩ")
 
         # write measurement data to file
         date = strftime("%Y.%m.%d", localtime())
