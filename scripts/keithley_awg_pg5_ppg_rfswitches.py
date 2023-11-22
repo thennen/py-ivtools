@@ -241,9 +241,9 @@ def jari_pcm_measurement (
             ]
         elif max_time==0 and flank_time!=0:
             time = [
-            0,
-            flank_time, 
-            flank_time+fade_out
+                0,
+                flank_time, 
+                flank_time+fade_out
             ]
             voltage = [
                 amplitude,
@@ -252,9 +252,9 @@ def jari_pcm_measurement (
             ]
         elif flank_time==0 and max_time!=0:
             time = [
-            0, max_time, 
-            max_time+1e-9,
-            max_time+1e-9+fade_out
+                0, max_time, 
+                max_time+1e-9,
+                max_time+1e-9+fade_out
             ]
             voltage = [
                 amplitude, amplitude, 
@@ -389,9 +389,10 @@ def jari_pcm_measurement (
         data['t_SET_flank'] = t_SET_flank
         data['fade_out'] = fade_out 
         data['stepsize'] = 1e-9
+        data['awg_signal'] = signal
 
         #1: read resistance before SET with Keithley
-        data['initial_resistance'] = _read_resistance(
+        data['initial_resistance_measurement'] = _read_resistance(
             V_read=V_read, V_step=V_step, V_range=V_range,
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
@@ -418,7 +419,7 @@ def jari_pcm_measurement (
         rf_switches.b_off()
 
         #3: read resistance after SET and before RESET with Keithley
-        data['middle_resistance'] = _read_resistance(
+        data['middle_resistance_measurement'] = _read_resistance(
             V_read=V_read, V_step=V_step, V_range=V_range,
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
@@ -444,7 +445,7 @@ def jari_pcm_measurement (
         rf_switches.c_off()
 
         #5: read resistance after RESET with Keithley
-        data['end_resistance'] = _read_resistance(
+        data['end_resistance_measurement'] = _read_resistance(
             V_read=V_read, V_step=V_step, V_range=V_range,
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
