@@ -399,7 +399,7 @@ def jari_pcm_measurement (
         data['t_SET_flank'] = t_SET_flank
         data['fade_out'] = fade_out 
         data['stepsize'] = 1e-9
-        data['awg_signal'] = signal
+        data['awg_signal'] = signal_time, signal_voltage
 
         #1: read resistance before SET with Keithley
         data['initial_resistance_measurement'] = _read_resistance(
@@ -409,7 +409,7 @@ def jari_pcm_measurement (
 
         #2: perform SET with AWG and measure with Tektronix
         rf_switches.b_on()
-        ttx.arm(source = channel, level = -trigger_level, edge = 'f') 
+        ttx.arm(source = channel, level = trigger_level, edge = 'r') 
         plt.pause(0.5)
         data['awg_trigger'] = awg.manual_trigger([Globaltrigger.GT1])
         plt.pause(0.3)
