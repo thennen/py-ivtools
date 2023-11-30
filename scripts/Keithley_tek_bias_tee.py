@@ -390,11 +390,13 @@ def analog_measurement(
     data['resets'] = []
     
     # now in HRS we do {number_sweeps}
-    for i in range(number_sweeps):
+    for i in range(number_sweeps-1):
         data['sets'].append(set())
         # data[f'set_{i+1}_state'] = get_current_resistance()
         data['resets'].append(reset())
         # data[f'reset_{i+1}_state'] = get_current_resistance()
+    data['sets'].append(kiv(tri(v1=V_set,step=0.05),measure_range=1e-3,i_limit=3e-4))
+    data['resets'].appen(kiv(tri(v1=V_reset,step=0.05),measure_range=1e-2,i_limit=1e-2))
 
     # get initial HRS after sweeps
     data['initial_HRS'] = get_current_resistance()
@@ -459,6 +461,7 @@ def analog_measurement(
     k.source_output(ch = 'B', state = False)
     data["num_pulses"] = num_pulses
 
+    """
     # last measurement where tektronix reads pulse
     ttx.arm(source = 3, level = trigger_level, edge = 'r') 
     plt.pause(0.1)
@@ -474,6 +477,7 @@ def analog_measurement(
         data['v_answer'].append(data_scope2['V_ttx'])
     iplots.updateline(data)
     ttx.disarm()
+    """
 
     # save results
     datafolder = os.path.join('C:\\Messdaten', padname, samplename)
