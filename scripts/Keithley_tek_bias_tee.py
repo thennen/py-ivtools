@@ -353,9 +353,21 @@ def analog_measurement(
 
     # functions for sweeps
     def reset():
-        return kiv(tri(v1 = V_reset, step = 0.05), measure_range = 1e-2, i_limit = 1e-2)
+        k._iv_lua(
+            tri(V_reset, 0.05), Irange=1e-2, Ilimit=1e-2,
+            Plimit=V_reset*1e-3, nplc=nplc, Vrange=V_reset
+        )
+        while not k.done():
+            sleep(0.01)
+        return k.get_data()
     def set():
-        return kiv(tri(v1 = V_set, step = 0.05), measure_range = 1e-3, i_limit = 3e-4)
+        k._iv_lua(
+            tri(V_set, 0.05), Irange=1e-3, Ilimit=3e-4, 
+            Plimit=V_set*1e-3, nplc=nplc, Vrange=V_set
+        )
+        while not k.done():
+            sleep(0.01)
+        return k.get_data()
     def read():
         return kiv(tri(v1 = V_read, step = 0.02), measure_range = 1e-3, i_limit = 1e-3)
     def get_current_resistance ():
