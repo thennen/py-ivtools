@@ -82,7 +82,46 @@ and then descend/ascend from preak to 0 with step as step size.
 def _tri (peak, step):
     flank = np.arange(0, peak, step)
     return np.concatenate([flank, [peak], flank[::-1]])
-
+"""
+this is the code to read device under test resistance on the
+RF switches, AWG, PPG, PG5 setup. It works as follows:
+    - RF switch for Keithley (output A) is turned ON
+    - Keithley performs iv-sweeps
+    - RF switch for Keithley (output A) is turned OFF
+    - Keithley data is read and saved to dictionary
+"""
+def _iv_sweeps (
+    no_sweeps,
+    V_SET,
+    V_RESET,
+    V_step,
+    nplc=1
+):
+    data = {}
+    # turn on RF switch for keithley
+    rf_switches.a_on()
+    plt.pause(0.1)
+    # perform i-v sweep to
+    for i in range(no_sweeps):
+        k._iv_lua(
+            _tri(V_SET, V_step), Irange=1e-3, Ilimit=3e-4, 
+            Plimit=V_SET*1e-3, nplc=nplc, Vrange=V_SET
+        )
+        while not k.done():
+            sleep(0.01)
+        data[f'SET_{i+1}'] = k.get_data()
+        k._iv_lua(
+            _tri(V_RESET, V_step), Irange=1e-2, Ilimit=1e-2, 
+            Plimit=1, nplc=nplc, Vrange=V_RESET
+        )
+        while not k.done():
+            sleep(0.01)
+        data[f'RESET_{i+1}'] = k.get_data()
+    plt.pause(0.1)
+    # turn off RF switch for keithley
+    rf_switches.a_off()
+    
+    return data
 """
 this is the code to read device under test resistance on the
 RF switches, AWG, PPG, PG5 setup. It works as follows:
@@ -203,13 +242,15 @@ this is the code for jari's pcm measurements.
 
 The following wiring of inputs to the RF switches is assumed:
     - input A: Keithley
-    - input B: AWG
+    - input B: AWG channel 1 (SET)
+    - input C: AWG channel 2 (RESET)
 Furthermore it is assumed that ground goes to Tektronix channel 3
 
 The measurement works as follows:
 
 1) INITIALIZATION STAGE
-    - AWG (input B) is initialized to give SET and RESET signals (rectangular followed by sawtooth on channel 1)
+    - AWG channel 1 (input B) is initialized to give SET signal (rectangular followed by sawtooth on channel 1)
+    - AWG channel 2 (input C) is initialized to give RESET signal (rectangular)
     - Keithley (input A) is initialized
     - Tektronix is initialized
     - ALL RF switches turned OFF
@@ -218,25 +259,30 @@ The measurement works as follows:
     - a dictionary with all measurement settings and for all measurement data is begun
 
     - RF switch for Keithley (input A) is turned ON
+    - perform defined number of iv-sweeps
+    - RF switch for Keithley (input A) is turned OFF
+    - Keithley data is read and saved to dictionary
+
+    - RF switch for Keithley (input A) is turned ON
     - Keithley reads resistance
     - RF switch for Keithley (input A) is turned OFF
     - Keithley data is read and saved to dictionary
 
     - Tektronix is armed
-    - RF switch for AWG (input B) is turned ON
+    - RF switch for AWG channel 1 (input B) is turned ON
     - AWG SET is triggered
-    - RF switch for AWG (input B) is turned OFF
+    - RF switch for AWG channel 1 (input B) is turned OFF
     - Tektronix data is read and saved to dictionary
 
     - RF switch for Keithley (input A) is turned ON
     - Keithley reads resistance
-    - RF switch for Keithley (input B) is turned OFF
+    - RF switch for Keithley (input A) is turned OFF
     - Keithley data is read and saved to dictionary
 
     - Tektronix is armed
-    - RF switch for AWG (input B) is turned ON
+    - RF switch for AWG channel 2 (input C) is turned ON
     - AWG RESET is triggered
-    - RF switch for AWG (input B) is turned OFF
+    - RF switch for AWG (input C) is turned OFF
     - Tektronix data is read and saved to dictionary
 
     - RF switch for Keithley (input A) is turned ON
@@ -270,7 +316,11 @@ def jari_pcm_measurement_2 (
     V_RESET=1,
     fade_out=10e-9, 
     
-    # parameters for keithley
+    # parameters for keithley read and sweep
+    no_iv_sweeps=0,
+    V_SET_sweep=1,
+    V_RESET_sweep=-1.1,
+    V_step_sweep=0.05,
     V_read=0.5,
     V_step=0.05,
     V_range=1,
@@ -311,58 +361,56 @@ def jari_pcm_measurement_2 (
     plt.pause(1)
 
     # set up AWG
-    # turn off all channels and turn 1 to default settings
+    # turn off all channels and turn 1,2 to default settings
     awg.S1M1R1.reset()
+    awg.S1M1R2.reset()
     awg.S1M1R1.on(False)
     awg.S1M1R2.on(False)
     awg.S1M1R3.on(False)
     awg.S1M1R4.on(False)
     # configure channel 1
     # Name and path for signal definition
-    name = "SET_signal"
+    name_SET = "SET_signal"
+    name_RESET = "RESET_signal"
     path = "c:\\rhea_demo\\"
     # Create signal definition
-    signal_time, signal_voltage = _SET_signal(
+    signal_time_SET, signal_voltage_SET = _SET_signal(
         amplitude=V_SET, max_time=t_SET_max, flank_time=t_SET_flank, fade_out=fade_out
     )
-    signal = rhea.DA_Signal(
-        name, path, signal_time, 
-        signal_voltage, stepsize = '1n'
-    )
-    # Create definition file
-    rhea_ini = signal.create_file()
-    # Send signal definitions file to remote Saturn System
-    # This is only necessary if Saturn Studio II is running on the Saturn System.
-    if (awg.ss2_host_ip != 'localhost'):
-        send_ascii_file(awg.ss2_host_ip, source = rhea_ini, target = rhea_ini)
-    # Name and path for signal definition
-    name = "RESET_signal"
-    path = "c:\\rhea_demo\\"
-    # Create signal definition
-    signal_time, signal_voltage = _RESET_signal(
+    signal_time_RESET, signal_voltage_RESET = _RESET_signal(
         amplitude=V_RESET, length=t_RESET, fade_out=fade_out
     )
-    signal = rhea.DA_Signal(
-        name, path, signal_time, 
-        signal_voltage, stepsize = '1n'
+    signal_SET = rhea.DA_Signal(
+        name_SET, path, signal_time_SET, 
+        signal_voltage_SET, stepsize = '1n'
+    )
+    signal_RESET = rhea.DA_Signal(
+        name_RESET, path, signal_time_RESET, 
+        signal_voltage_RESET, stepsize = '1n'
     )
     # Create definition file
-    rhea_ini = signal.create_file()
+    rhea_ini_SET = signal_SET.create_file()
+    rhea_ini_RESET = signal_RESET.create_file()
     # Send signal definitions file to remote Saturn System
     # This is only necessary if Saturn Studio II is running on the Saturn System.
     if (awg.ss2_host_ip != 'localhost'):
-        send_ascii_file(awg.ss2_host_ip, source = rhea_ini, target = rhea_ini)
+        send_ascii_file(awg.ss2_host_ip, source = rhea_ini_SET, target = rhea_ini_SET)
+        send_ascii_file(awg.ss2_host_ip, source = rhea_ini_RESET, target = rhea_ini_RESET)
     # Initialize RHEA DA-module
     # Initialization is done for all RHEA channels/modules at once
     awg.S1M1.init()
     # Load waveform data to selected channel, do not combine with predefined waveforms
-    awg.S1M1R1.load(rhea_ini)
+    awg.S1M1R1.load(rhea_ini_SET)
+    awg.S1M1R2.load(rhea_ini_RESET)
     # set 50 ohm termination to true
     awg.S1M1R1.term(True)
+    awg.S1M1R2.term(True)
     # set channel to trigger from GT1 trigger
     awg.S1M1R1.trigger([Trigger_sources.GT1], True)
+    awg.S1M1R2.trigger([Trigger_sources.GT2], True)
     # Switch channel output on
     awg.S1M1R1.on(True)
+    awg.S1M1R2.on(True)
     # confirm all changes
     awg.S1M1.confirm(diff=False)
     awg.wait_for_rhea(Rhea_state.READY, timeout_seconds=20)
@@ -400,10 +448,11 @@ def jari_pcm_measurement_2 (
         data['comments'] = comments
         data['total_measurements'] = total_measurements
         data['measurement_no'] = measurement_no
-        # values for Sympuls
-        data['pg5_attenuation'] = pg5_attenuation
-        data['pg5_pulse_width'] = pg5_pulse_width
         # values for Keithley
+        data['no_iv_sweeps'] = no_iv_sweeps
+        data['V_SET_sweep'] = V_SET_sweep
+        data['V_RESET_sweep'] = V_RESET_sweep
+        data['V_step_sweep'] = V_step_sweep
         data['V_read'] = V_read
         data['V_step'] = V_step
         data['V_range'] = V_range
@@ -423,9 +472,18 @@ def jari_pcm_measurement_2 (
         data['V_SET'] = V_SET
         data['t_SET_max'] = t_SET_max
         data['t_SET_flank'] = t_SET_flank
+        data['V_RESET'] = V_RESET
+        data['t_RESET'] = t_RESET
         data['fade_out'] = fade_out 
         data['stepsize'] = 1e-9
-        data['awg_signal'] = signal_time, signal_voltage
+        data['SET_signal'] = signal_time_SET, signal_voltage_SET
+        data['RESET_signal'] = signal_time_RESET, signal_voltage_RESET
+
+        #0: perform preliminary sweeps
+        data['iv_sweeps'] = _iv_sweeps(
+            no_sweeps=no_iv_sweeps, V_SET=V_SET_sweep,
+            V_RESET=V_RESET_sweep, V_step=V_step_sweep, nplc=nplc
+        )
 
         #1: read resistance before SET with Keithley
         data['initial_resistance_measurement'] = _read_resistance(
@@ -433,25 +491,24 @@ def jari_pcm_measurement_2 (
             I_range=I_range, I_limit=I_limit, P_limit=P_limit, nplc=nplc
         )
 
-        #2: perform SET with AWG and measure with Tektronix
+        #2: perform SET with AWG channel 1 and measure with Tektronix
         rf_switches.b_on()
         ttx.arm(source = channel, level = trigger_level, edge = 'r') 
         plt.pause(0.5)
-        data['awg_trigger'] = awg.manual_trigger([Globaltrigger.GT1])
+        data['SET_trigger'] = awg.manual_trigger([Globaltrigger.GT1])
         plt.pause(0.3)
         if ttx.triggerstate():
             plt.pause(0.1)
             ttx.disarm()
             data['t_set'] = None
             data['v_set'] = None
-            print('no signal was found for awg')
+            print('no signal was found for SET')
         else:
             data_scope = ttx.get_curve(channel)
             data['t_set'] = data_scope['t_ttx']
             data['v_set'] = data_scope['V_ttx']
-            plt.plot(data['t_set'], data['v_set'], label='awg')
+            plt.plot(data['t_set'], data['v_set'], label='SET')
         ttx.disarm()
-
         rf_switches.b_off()
 
         #3: read resistance after SET and before RESET with Keithley
@@ -464,19 +521,19 @@ def jari_pcm_measurement_2 (
         rf_switches.c_on()
         ttx.arm(source = channel, level = trigger_level, edge = 'r') 
         plt.pause(0.5)
-        sympuls.trigger()
+        data['RESET_trigger'] = awg.manual_trigger([Globaltrigger.GT2])
         plt.pause(0.3)
         if ttx.triggerstate():
             plt.pause(0.1)
             ttx.disarm()
             data['t_reset'] = None
             data['v_reset'] = None
-            print('no signal was found for pg5')
+            print('no signal was found for RESET')
         else:
             data_scope = ttx.get_curve(channel)
             data['t_reset'] = data_scope['t_ttx']
             data['v_reset'] = data_scope['V_ttx']
-            plt.plot(data['t_reset'], data['v_reset'], label='pg5')
+            plt.plot(data['t_reset'], data['v_reset'], label='RESET')
         ttx.disarm()
         rf_switches.c_off()
 
