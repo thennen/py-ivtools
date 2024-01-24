@@ -2746,8 +2746,12 @@ def calc_t_reset(filename, min_current = -215e-6):
     fig.tight_layout()
     fig.show()
 
-def pattern(widthFactor, num_delayFactor, num_of_pulses):
-    
+
+
+    #### making list for set_pattern
+    # Widthfactor: number of ones, num_delayFactor: number of zeros between ones, num_of_pulses: total pulses repeated
+
+def pattern_list(widthFactor, num_delayFactor, num_of_pulses):
     patternOn = [1]*widthFactor
     patternOff = [0]*num_delayFactor
 
@@ -2774,11 +2778,15 @@ def find_delays(set_pattern):
 
         # Count the number of zeros between the first and second occurrences of 1
         delay_factor = set_pattern[first_one_index + 1:second_one_index].count(0)
+        
     except ValueError:
         # If there's no second occurrence of 1, count zeros after the first 1
-       delay_factor = set_pattern[first_one_index + 1:].count(0)
+        delay_factor = set_pattern[first_one_index + 1:].count(0)
 
     return delay_factor, number_of_positive_pulses, number_of_negative_pulses
+
+
+
 
 def PPG30_measurement(samplename,
 padname,
@@ -2791,7 +2799,7 @@ set_pattern_length = 1,     # Set word lenght. But since it is autmatically (lin
 widthFactor = 1,            # (Daniel way of word function, line 2532 in this file). use in a function to give 1s, number of pulses and delays.
 num_delayFactor = 0,        # Part of function to give 1s, number of pulses and delays
 num_of_pulses = 0,          # Part of function to give 1s, number of pulses and delays
-set_pattern = [],           # give pattern in the form of list. [1,0,-1]
+set_pattern = pattern_list, # give pattern in the form of list. [1,0,-1]
 set_trigger_soruce = 'IMM',
 set_ppg_channel = 'BIP',
 step = 0.01,
@@ -2802,7 +2810,7 @@ range_hrs = 1e-4,
 range_sweep = 1e-2,
 range_sweep2 = 1e-3,
 cycles = 1,
-pulse_width = 50e-12,
+pulse_width = 50e-12 ,
 attenuation = 0,
 automatic_measurement = True,
 pg5_measurement = True,
@@ -2831,7 +2839,7 @@ cc_step = 25e-6):
     data['negative_amplitude'] = negative_amplitude
 
     ##### Daniel way of setting pattern ####
-    #set_pattern  = pattern(widthFactor= widthFactor, num_delayFactor = num_delayFactor, num_of_pulses = num_of_pulses )
+    set_pattern  = pattern_list(widthFactor= widthFactor, num_delayFactor = num_delayFactor, num_of_pulses = num_of_pulses )
     #print(len(set_pattern))
 
     #data['set_pattern'] = set_pattern
@@ -2854,15 +2862,19 @@ cc_step = 25e-6):
     sympulsPG30.amplitude2(Amp2 = negative_amplitude)
     sympulsPG30.pattern(pattern = set_pattern_format)
     sympulsPG30.format(form = set_ppg_channel)
+
     sympulsPG30.set_lupattern(pattern = set_pattern)
     #set_length = np.ceil(len(set_pattern)/128)                            # setting number of words on PPG30 dividing by digits
     #sympulsPG30.set_lupattern_length(num_words = set_pattern_length)      # uncomment if we have to use user given word.
     sympulsPG30.trigger_source(trig = set_trigger_soruce)
 
-    delay_factor, number_of_positive_pulses, number_of_negative_pulses =find_delays(set_pattern)
-    delay = delay_factor * pulse_width *1e12                               # find delays by multiplying pulsewidth with delays factor
-    Number_of_pulses = number_of_positive_pulses + number_of_negative_pulses
-    total_pulse_duration = pulse_width * Number_of_pulses                  # count both pulses without delays
+    ##delay_factor, number_of_positive_pulses, number_of_negative_pulses =find_delays(set_pattern)
+    ##delay = delay_factor * pulse_width *1e12                               # find delays by multiplying pulsewidth with delays factor
+
+    delay = num_delayFactor * pulse_width *1e12                              # find delays by multiplying pulsewidth with delays factor
+
+    ##Number_of_pulses = number_of_positive_pulses + number_of_negative_pulses
+    total_pulse_duration = ((pulse_width *widthFactor)+(num_delayFactor*pulse_width))*num_of_pulses       # count  pulses with delays
 
     pos_amp_deb = round(deb_to_atten(attenuation)*2*positive_amplitude,2)  # as PPG30 have variable amplitude so we have to calculate actual amplitude
     pos_amp = str(pos_amp_deb).replace('.', 'p')
@@ -2906,12 +2918,7 @@ cc_step = 25e-6):
 
 
             ttx.change_samplerate_and_recordlength(samplerate = 100e9, recordlength= recordlength)
-            if pulse_width < 100e-12:
-                ttx.trigger_position(40)
-            elif pulse_width < 150e-12:
-                ttx.trigger_position(30)
-            else:
-                ttx.trigger_position(trigger_position)
+            ttx.trigger_position(trigger_position)
 
             plt.pause(0.1)
 
@@ -2932,6 +2939,7 @@ cc_step = 25e-6):
             else:
                 print('Apply pulse')
             plt.pause(0.1)
+      
             plt.pause(0.2)
             status = ttx.triggerstate()
             while status == True:
@@ -3052,7 +3060,7 @@ cc_step = 25e-6):
             k.source_output(ch = 'B', state = False)
   
     data['attenuation'] = attenuation
-    data['pulse_width'] = pulse_width
+    data['pulse_width'] = pulse_width*widthFactor
     data['scale'] = scale
     data['position'] = position
     data['trigger_level'] = trigger_level
@@ -3062,15 +3070,11 @@ cc_step = 25e-6):
     data['set_pattern_format'] = set_pattern_format
     data['set_pattern_length'] = set_pattern_length
     data['set_ppg_channel'] = set_ppg_channel
-
-    data['pulse_width'] = pulse_width
     data['attenuation'] = attenuation
     data['recordlength'] = recordlength
     data['V_read'] = V_read
     data['delay'] = delay
-    data['positive_pulses'] = number_of_positive_pulses
-    data['negative_pulses'] = number_of_negative_pulses
-    data['number_of_pulses'] = Number_of_pulses
+    data['number_of_pulses'] = num_of_pulses 
 
 
     
@@ -3083,17 +3087,17 @@ cc_step = 25e-6):
     subfolder = datestr
     file_exits = True
     i=1
-    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'ps_delay_' 
+    filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12*widthFactor)) + 'ps_'+str(int(num_of_pulses )) + 'pulses_'+str(int(delay)) + 'ps_delay_' 
         +str(pos_amp) + 'v_' +str(int(attenuation)) + 'dB_'+str(i))
     file_link = Path(filepath + '.df')
     while file_link.is_file():
         i +=1
-        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12)) + 'ps_'+str(int(Number_of_pulses)) + 'pulses_'+str(int(delay)) + 'ps_delay_' 
+        filepath = os.path.join(datafolder, subfolder, str(int(pulse_width*1e12*widthFactor)) + 'ps_'+str(int(num_of_pulses )) + 'pulses_'+str(int(delay)) + 'ps_delay_' 
             +str(pos_amp) + 'v_' +str(int(attenuation)) + 'dB_'+str(i))
         file_link = Path(filepath + '.df')
     io.write_pandas_pickle(meta.attach(data), filepath)
 
-    print("number of pulses:", Number_of_pulses)
+    print("number of pulses:", num_of_pulses)
     print("total_duration in ns:", total_pulse_duration *1e9)
     print("delay width in ps:", delay)
 
