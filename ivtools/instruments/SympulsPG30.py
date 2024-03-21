@@ -1,4 +1,4 @@
-# Authors: Faisal Munir, Jari Klinkmann, RWTH Aachen University
+# Authors: Faisal Munir, Jari Klinkmann (c) 2023
 
 import logging
 log = logging.getLogger('instruments')
