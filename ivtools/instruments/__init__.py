@@ -93,4 +93,4 @@ __all__ = imported_names
 # def Borg():
 
 # clean up namespace?
-del reload, import_module, files, modules, module_globals
+del reload, import_module, files, modules, module_globals, thing, thing_name
