@@ -977,7 +977,8 @@ class InteractiveFigs(object):
         if not backend.lower().startswith('qt'):
             raise Exception('You need to use qt backend to use interactive figs!')
 
-        # Use to just have one argument "n" which meant total number of plots, don't break:
+        # Formerly had just one argument "n" which meant total number of plots.
+        # This is so any old code won't break:
         if m is None:
             rows = 2
             cols = n // 2
@@ -1009,11 +1010,15 @@ class InteractiveFigs(object):
             rect = ctypes.wintypes.RECT()
             DWMWA_EXTENDED_FRAME_BOUNDS = 9
             f(ctypes.wintypes.HWND(w),
-            ctypes.wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
-            ctypes.byref(rect),
-            ctypes.sizeof(rect)
-            )
+              ctypes.wintypes.DWORD(DWMWA_EXTENDED_FRAME_BOUNDS),
+              ctypes.byref(rect),
+              ctypes.sizeof(rect)
+              )
             x0, y0, x1, y1 = rect.left, rect.top, rect.right, rect.bottom
+
+            # TODO: Does not work properly if you have dpi scaling.
+            # and QT seems to have a different scaling than the OS, making this complicated..
+            #scaleFactor = ctypes.windll.shcore.GetScaleFactorForDevice(0)
 
             wx = x1 - x0
             wy = y1 - y0

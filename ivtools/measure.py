@@ -90,6 +90,30 @@ def rigol_pulse(wfm, duration, n, interpwfm=True, ch=1):
     rigol = instruments.RigolDG5000()
     rigol.pulse_arbitrary(wfm, duration=duration, interp=interpwfm, n=n, ch=ch)
 
+def rigol_sync_pulse(wfm1:'wfm', wfm2, duration, n, interpwfm1=True, interpwfm2=False):
+    '''
+    This is another pulsing component for picoiv.
+
+    Uses rigol2 to trigger both channels of rigol1.
+    connect rigol2 ch1 output with a splitter into the two external triggers (SMB ports) on back of rigol1.
+    '''
+    rigol = instruments.RigolDG5000('USB0::0x1AB1::0x0640::DG5T155000186::INSTR')
+    rigol2 = instruments.RigolDG5000('USB0::0x1AB1::0x0640::DG5T182500117::INSTR')
+
+    rigol.load_volatile_wfm(wfm1, duration, ch=1, interp=interpwfm1)
+    rigol.load_volatile_wfm(wfm2, duration, ch=2, interp=interpwfm2)
+
+    rigol.setup_burstmode(n=n, trigsource='EXT', ch=1)
+    rigol.setup_burstmode(n=n, trigsource='EXT', ch=2)
+    # This delay seems to be necessary the first time you set up burst mode?
+    #time.sleep(1)
+    time.sleep(.1)
+
+    rigol.trigsource('EXT')
+
+    # Trigger
+    rigol2.pulse_builtin('SQU', duration=1e-6, amp=5, offset=5, ch=1)
+
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            termination=None, channels=None, autosmoothimate=False, splitbylevel=None,
            savewfm=False, pretrig=0, posttrig=0, picoresolution=8, pico_to_iv=None, monitor_ch=None,
@@ -114,8 +138,9 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     Some of the default arguments come from the settings module (pico_to_iv, monitor_ch, channels)
 
     To use other AWGs and/or triggers, pass a different pulsefunc.
-    If pulsefunc takes arguments wfm, duration, or n, or are annotated to correspond to those,
-    the picoiv arguments are passed through to pulsefunc, as well as any extra kwargs
+    If pulsefunc takes arguments "wfm", "duration", or "n", or has arguments annotated by those strings,
+    the picoiv arguments with those names are shared with pulsefunc.
+    All extra kwargs are also passed to pulsefunc (only)..
     '''
     ps = instruments.Picoscope()
 
@@ -196,7 +221,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     ivdata['nshots'] = n
 
     if savewfm:
-        # Measured voltage has noise sometimes it's nice to plot vs the programmed waveform.
+        # Measured voltage has noise. sometimes it's nice to plot vs the programmed waveform.
         # You will need to interpolate it, however.. Or can we instead read the interpolation off the rigol?
         ivdata['Vwfm'] = wfm
 
@@ -859,10 +884,10 @@ def compliance_voltage(I, Is=2.5825e-10, Ioff=-2.063e-6, Re=1997.3, Vneg=-9.6):
 
 def hybrid_IV(Imax=500e-6, Vmin=-3, dur=1e-3):
     '''
-    this does a current sweep in the positive direction, followed by a voltage sweep in the
+    This does a current sweep in the positive direction, followed by a voltage sweep in the
     negative direction using compliance circuit.  All I,V points are measured
 
-    will work better with compliance circuit that sits on the sourcing side
+    Works better with the compliance circuit that sits on the sourcing side
 
     tested a bit but it's a work in progress
     TODO: make a pulse2ch_and_capture for these synchronized signals, and use that
@@ -1058,19 +1083,21 @@ def digipotiv(V1, V2, R1=0, R2=0,
               savewfm=False, pretrig=0, posttrig=0, interpwfm=True):
 
     '''
-    Uses a Rigol, Picoscope and Digipot to measure ReRAM loops with triangle sweeps and different
+    Uses a Rigol, Picoscope and Digipot to measure bipolar loops with triangle sweeps and different
     series resistance values e.g. during SET and RESET.
 
-    just a slightly more convenient way to write a for-loop
+    just a slightly more convenient way to write a for-loop while
     TODO: wrap picoiv automatically and add arguments to it
 
-    @param V_set: Voltage to applied during SET, it can be a list of values or 0 if you only want to do RESET.
-    If V_set is a list and V_reset a number, V_reset will be repeated for every V_set value, and viceversa.
-    @param V_reset: Same as V_set.
-    @param R_set: Series Resistance during SET, it can be a list of values.
-    @param R_reset: Series Resistance during RESET, it can be a list of values.
+    Following arguments are broadcastable
+    if V1 or V2 == 0, the pulse is skipped
 
-    everything else goes to picoiv
+    @param V1: voltage amplitude for SET/RESET (whichever polarity you want to come first), 
+    @param V2: voltage amplitude for RESET/SET (probably opposite polarity as V1)
+    @param R1: Series Resistance during V1 
+    @param R2: Series Resistance during V2
+
+    other arguments go to picoiv
     '''
     ps = instruments.Picoscope()
     dp = instruments.WichmannDigipot()
@@ -1087,7 +1114,7 @@ def digipotiv(V1, V2, R1=0, R2=0,
                            savewfm=savewfm, pretrig=pretrig, posttrig=posttrig, interpwfm=interpwfm)
             sweeps.append(d_set)
         if v2 != 0:
-            wfm_reset = tri(0, -v2)
+            wfm_reset = tri(0, v2)
             dp.set_R(r2)
             d_reset = picoiv(wfm=wfm_reset, duration=duration, fs=fs, nsamples=nsamples, smartrange=smartrange,
                              termination=termination, channels=['A', 'B', 'C'], autosmoothimate=autosmoothimate,
