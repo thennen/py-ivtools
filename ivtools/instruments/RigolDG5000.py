@@ -520,7 +520,7 @@ class RigolDG5000(object):
 
         burst_state = self.burst(ch=ch)
         # Only update waveform if necessary
-        if np.any(waveform != self.volatilewfm[ch]):
+        if (len(waveform) != len(self.volatilewfm[ch])) or np.any(waveform != self.volatilewfm[ch]):
             if burst_state:
                 output_state = self.output(None, ch=ch)
                 if output_state:
