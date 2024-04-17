@@ -9,16 +9,21 @@ visa_rm = visa.visa_rm # stored here by __init__
 
 class RigolDG5000(object):
     '''
-    This instrument is really a pain in the ass.  Good example of a job not well done by Rigol.
+    This instrument is really a pain in the ass.  Good example of an engineering job not well done. But we spent a lot of time learning its quirks and are kind of stuck with it for now.
+
     In addition to the terrible RF design (output resistance is not 50 Ω), the programming is extremely flaky and many of the datasheet specs are false.
 
-    But we spent a lot of time learning its quirks and are kind of stuck with it for now.
+    Most annoyingly, the instrument has a very hard time going anywhere near the advertised number of arbitrary waveform samples.
 
-    Do not send anything to the Rigol that differs in any way from what it expects,
-    or it will just hang forever and need to be manually restarted along with the entire python kernel.
+    There are some errors that are not reproducible, meaning you always need to be suspicious of this instrument and monitor its output carefully.
 
-    Certain commands just randomly cause the machine to crash in the same way.  Such as when you try
-    to query the number of points stored in the NV memory
+    Certain commands (Such as querying the number of points stored in the NV memory) randomly cause the machine to crash.
+    Then it hangs indefinitely and needs to be manually restarted along with the entire python kernel.
+
+    It is possible that some of the problems have been fixed by a firmware update. But as I understand you need to apply
+    them one-by-one in exactly the right order or you can brick the instrument, and therefore we haven't had the courage to try it.
+
+    I did not wrap the entire API, just what we have needed so far.
     '''
     def __init__(self, addr=None):
         self.verbose = False
@@ -92,7 +97,6 @@ class RigolDG5000(object):
                 else:
                     raise E
 
-
             # Convert to numeric?
             replymap = {'ON': 1, 'OFF': 0}
 
@@ -122,7 +126,7 @@ class RigolDG5000(object):
         The only way to get anywhere near the advertised number of samples
         theoretically works up to 16 MPts = 2**24 samples
         wfm should be between -1 and 1, this will convert it to uint16
-        Can load up to 512 MPts in "play mode", which reduces the sample rate
+        Can load up to 128 MPts in "play mode", which can also reduce the sample rate
         There are magic values of waveform lengths that can be used, there is no obvious logic to this
         safe values are anything < 2^19 = 524,288 samples, and any whole power of 2 after that
         if > 2^14 = 16383 points, the bursts are delayed by ~910 ns after the trigger..
@@ -316,7 +320,7 @@ class RigolDG5000(object):
         Load waveform from usb drive.  Should be a binary sequence of unsigned shorts.
         File needs to have extension .RAF
         This is the only way to reach the advertised number of waveform samples, or anywhere near it
-        Should be able to go to 16 MPts on normal mode, 512 MPts on play mode, but this was not tested
+        Should be able to go to 16 MPts on normal mode, 128 MPts on play mode, but this was not tested
 
         wait=True can cause problems, because it uses another command to query whether rigol is responding
         again, but this command itself can make rigol puke..
@@ -342,14 +346,13 @@ class RigolDG5000(object):
             err = self.error()
             #self.idn()
             self.conn.timeout = oldtimeout
-            # This shit causes an error every time now.  Used to work.
+            # This causes an error every time now.  Used to work.
             if err:
             #    raise Exception(err)
                 log.error(err)
 
     def load_wfm_binary(self, wfm, ch=1):
         """
-        TODO: write about all the bullshit involved with this
         I have seen these waveforms simply fail to trigger unless you wait a second after enabling the channel output
         You need to wait after loading this waveform and after turning the output on, sometimes an obscene amount of time?
         the "idle level" in burst mode will be the first value of the waveform ??
@@ -462,7 +465,7 @@ class RigolDG5000(object):
 
     def color(self, c='RED'):
         '''
-        Change the highlighting color on rigol screen for some reason
+        Change the highlighting color on rigol screen
         'RED', 'DEEPRED', 'YELLOW', 'GREEN', 'AZURE', 'NAVYBLUE', 'BLUE', 'LILAC', 'PURPLE', 'ARGENT'
         '''
         self.write(':DISP:WIND:HLIG:COL {}'.format(c))
@@ -508,7 +511,7 @@ class RigolDG5000(object):
         we turn burst mode back on.
         '''
         # toggling output state is slow, clunky, annoying, and should not be necessary.
-        # it might also cause some spikes that could damage the device.
+        # it might also cause some spikes that could damage the device under test.
         # Also goes into high impedance output which could have some undesirable consequences.
         # Problem is that the command which loads in a volatile waveform switches rigol
         # out of burst mode automatically.  If the output is still enabled, you will get a
