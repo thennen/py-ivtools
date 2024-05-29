@@ -1675,7 +1675,7 @@ class telegram_bot:
     await tb.send_hello_message()
     '''
 
-    def __init__(self, chat_id=None, bot_token='5927560730:AAEXhbOeRxhKoyb9xBmeF6PrrRNC5SR5-yc'):
+    def __init__(self, chat_id=None, bot_token='insert_token'):
         # Avoid having telegram as an ivtools dependency
         import telegram
         from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
