@@ -4,6 +4,8 @@ import pyvisa as visa
 visa_rm = visa.visa_rm # stored here by __init__
 import time
 import scipy
+
+
 class Sympuls(object):
     def __init__(self, addr='ASRL3::INSTR'):
         try:

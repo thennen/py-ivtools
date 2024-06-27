@@ -165,7 +165,10 @@ class NotConnected():
     def __repr__(self):
         return 'Instrument not connected yet!'
 # Does not strictly need to be kept up to date, just convenient
-instrument_varnames = ('ps','rigol','rigol2','keith','teo','sympuls','sympulsPG30','et','ttx','daq','dp','ts','cam', 'amb')
+instrument_varnames = (
+    'ps','rigol','rigol2','keith','teo','sympuls','sympulsPG30','et',
+    'ttx','daq','dp','ts','cam','amb','RFswitches'
+)
 globalvars = globals()
 for v in instrument_varnames:
     if v not in globalvars:
@@ -518,6 +521,11 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 data = meta.attach(data)
                 iplots.newline(data)
 
+        # TODO: Someone added the below to this interactive wrapper, but they don't really belong here.
+        #       They should be done by a function that is an argument to the wrapper (e.g. measfunc)
+        #       What we are missing is a way to compose different measurement functions in a way that
+        #       combines all the data together and doesn't break. (monads would be nice here..)
+
         # Capture microscope camera image and store in the metadata after every measurement
         if settings.savePicWithMeas:
             if cam:
@@ -538,6 +546,9 @@ def interactive_wrapper(measfunc, getdatafunc=None, donefunc=None, live=False, a
                 meta.meta.update({"ambientData": ambient})
             else:
                 log.warning('No ambient sensor connected!')
+
+        #
+        #
 
         if autosave:
             savedata(data)
