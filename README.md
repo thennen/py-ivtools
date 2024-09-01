@@ -37,7 +37,7 @@ The setup is kept within range of a soldering iron, so if we need to make a modi
 Instead of an expensive wafer positioning system, I used a piece of aluminum which slides on the table top for course positioning. Fine positioning is done with the x,y,z controls of the micropositioners.  This costs next to nothing and is surprisingly stable and flexible.  More importantly, it didn't take two years of effort to push through the university purchasing system.
 
 The sample stage also has programmable
-[temperature control](ivtools\instruments\firmware\EugenTempStage) using an analog PID controller and Peltier element, and has since been expanded by Johannes Mohr and Pascal Stasner with an auto-positioning system.
+[temperature control](ivtools/instruments/firmware/EugenTempStage) using an analog PID controller and Peltier element, and has since been expanded by Johannes Mohr and Pascal Stasner with an auto-positioning system.
 
 ## ivtools library
 
