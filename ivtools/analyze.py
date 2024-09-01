@@ -10,9 +10,8 @@ There is some pain involved with this, which I try to abstract away, but python 
 
 Generally, analyzing list of dicts will be faster, but DataFrames more convenient
 
-TODO: organize this better
+TODO organize this better
 TODO remove all side effects from functions (convert_to_uA, add_missing_keys, ...)
-TODO make a small file with test data (single iv and multiple iv) and load them here, so we can test the functions
 """
 
 # Local imports
