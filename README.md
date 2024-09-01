@@ -114,8 +114,8 @@ Here you see four customizable plots that visualize the incoming data as it is m
 
 Importantly, we have the ability to modify arbitrary parts of the codebase without disrupting the interactive measurement process.  This script is designed to be rerun, and all of the library code will be reloaded, with everything except the measurement settings and the program state overwritten.  You can modify almost any part of the code/library while making measurements without ever leaving the running program or closing/opening instrument connections.  The need to restart the kernel should therefore be rare.
 
-The file should be ran and reran in ipython (Jupyter qtconsole) using
-```python
+The file should be run and rerun in ipython (Jupyter qtconsole) using
+```ipython
 %run -i interactive.py [data folder name]
 ```
 
