@@ -14,7 +14,7 @@ which are each described below.
 
 ## Installation
 
-Because of the unusual requirements, the package is not meant to be installed, but run and modified directly from the cloned repository.  The code is written for windows, but much of it is cross-platform.
+Because of unusual requirements, the package is not meant to be installed, but run and modified directly from the cloned repository.  The code is written for windows, but much of it is cross-platform.
 
 To use:
 
@@ -49,8 +49,7 @@ These primitive structures are each converted to Pandas objects (pd.Series for s
 
 
 An example I,V trace (pd.Series):
-```python
-print(trace)
+```
 I                     [-2.4287506e-06, -2.4287506e-06, -5.6670924e-0...
 V                     [-0.057499997, -0.073125005, -0.10125, -0.1168...
 t                     [0.04100001367334789, 0.04100004567334857, 0.0...
@@ -59,7 +58,6 @@ OFFSET                        {'A': 0.04, 'B': 0.0, 'C': 0.3, 'D': 0.0}
 ATTENUATION                    {'A': 1.0, 'B': 1.0, 'C': 1.0, 'D': 1.0}
 COUPLINGS                {'A': 'DC', 'B': 'AC', 'C': 'DC50', 'D': 'AC'}
 sample_rate                                            156249997.671694
-nsamples_capture                                              156250000
 units                                              {'V': 'V', 'I': 'A'}
 gain                                                               1930
 nshots                                                           100000
@@ -78,27 +76,26 @@ filepath              D:\t\ivdata\2020-11-17_W264740_reram_complianc...
 file_timestamp                                    2020-11-17_150250_530
 downsampling                                                          5
 smoothing                                                             5
-smoothimate_passes                                                    1
 Name: 0, dtype: object
 ```
 
-The `ivtools` library is structured as several .py files that contain related code (mostly functions):
+The [`ivtools`](ivtools) library is structured as several .py files that contain related code (mostly functions):
 
-**ivtools\instruments\\*** -- Classes and firmware for various PC-connected equipment in our labs.  Each instrument class contains code specific to a single instrument and does not contain application code.
+[**ivtools\instruments\\***](ivtools/instruments) -- Classes and firmware for various PC-connected equipment in our labs.  Each instrument class contains code specific to a single instrument and does not contain application code.
 These are mostly independent and can easily be separated from the package.
 
-**measure.py** -- Functions that coordinate several different instruments to perform a measurement (e.g. triggering an AWG and capturing on a separate oscilloscope).
+[**measure.py**](ivtools/measure.py) -- Functions that coordinate several different instruments to perform a measurement (e.g. triggering an AWG and capturing on a separate oscilloscope).
 
-**analyze.py** -- Metadata-preserving analysis functions for I,V data.  These are written to operate on a single dict input, and when decorated with `@ivfunc` the same function also works for lists of dicts, pd.Series and pd.DataFrames.
+[**analyze.py**](ivtools/analyze.py) -- Metadata-preserving analysis functions for I,V data.  These are written to operate on a single dict input, and when decorated with `@ivfunc` the same function also works for lists of dicts, pd.Series and pd.DataFrames.
 Array arguments can be broadcasted, and functions can also be passed as arguments to modify and extend capabilities.
 
-**plot.py** -- Various plotting functions for I,V datasets.
+[**plot.py**](ivtools/plot.py) -- Various plotting functions for I,V datasets.
 
-**io.py** -- Functions for reading, writing, and converting data in different formats.  Also contains the metadata management and database interface.
+[**io.py**](ivtools/io.py) -- Functions for reading, writing, and converting data in different formats.  Also contains the metadata management and database interface.
 
-**settings.py** -- Programatically stores default settings, and user-specific settings.
+[**settings.py**](ivtools/settings.py) -- Programatically stores default settings, and user-specific settings.
 
-**scripts\\*** -- User scripts that may contain application specific code, and could potentially be useful to other users.
+[**scripts\\***](scripts) -- User scripts that may contain application specific code, and could potentially be useful to other users.
 
 ## interactive.py
 
@@ -115,7 +112,7 @@ Here you see four customizable plots that visualize the incoming data as it is m
 Importantly, we have the ability to modify arbitrary parts of the codebase without disrupting the interactive measurement process.  This script is designed to be rerun, and all of the library code will be reloaded, with everything except the measurement settings and the program state overwritten.  You can modify almost any part of the code/library while making measurements without ever leaving the running program or closing/opening instrument connections.  The need to restart the kernel should therefore be rare.
 
 The file should be run and rerun in ipython (Jupyter qtconsole) using
-```ipython
+```
 %run -i interactive.py [data folder name]
 ```
 
@@ -124,8 +121,8 @@ Short version of what the script does:
 * Creates a ISO8601 dated directory for storing data.
 * Logs all console input and output to the data directory, and has other logging functionality.
 * Notifies user of the git status and can optionally auto-commit changes.
-* Automatically connects to instruments as specified in the [`settings.py`](settings.py) file
+* Automatically connects to instruments as specified in the [`settings.py`](ivtools/settings.py) file
 * Uses a metadata management system (`meta`), which is a low-friction way to step through the metadata as probes are repositioned, ensuring that sample data is always attached to measurement data.  It also writes to a local (sqlite) database.
 * Opens a set of customizable figures (`iplots`) that are tiled across the screen and know how to plot data and can be controlled (cleared, etc). from the console.
-* Provides interactive versions of measurement functions defined in `measure.py` that automatically plot and save data.
+* Provides interactive versions of measurement functions defined in [`measure.py`](ivtools/measure.py) that automatically plot and save data.
 * Defines short bindings to certain function calls for interactive convenience (called without ()).
