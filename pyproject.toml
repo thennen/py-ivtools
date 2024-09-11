@@ -1,0 +1,15 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["ivtools"]
+
+[project]
+name = "ivtools"
+version = "0.1.0"
+requires-python = ">=3.6"
+dependencies = ["colorama >= 0.4.6", "ipykernel >= 6.22.0", "matplotlib >= 3.7.0", "mcculw >= 1.0.0",
+                "numpy >= 1.23.5", "opencv_python >= 4.7.0.72", "pandas >= 1.5.3", "picoscope >= 0.7.19",
+                "psutil >= 5.9.0", "pyserial >= 3.5", "pyttsx3 >= 2.90", "PyVISA >= 1.13.0",
+                "pywin32 >= 305.1", "scipy >= 1.10.0"]

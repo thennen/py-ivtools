@@ -14,13 +14,27 @@ which are each described below.
 
 ## Installation
 
-Because of unusual requirements, the package is not meant to be installed, but run and modified directly from the cloned repository.  The code is written for windows, but much of it is cross-platform.
+This package is designed to be edited by the user, so I recommend installing it in [development mode](https://setuptools.pypa.io/en/latest/userguide/development_mode.html) (with the -e flag).
+This means `ivtools` will be loaded directly from the project folder and you can make changes without needing to reinstall.
 
-To use:
+The code is written for MS Windows, but much of it is cross-platform.
 
-1. Clone this repository
-2. Install dependencies listed in  [`requirements.txt`](requirements.txt) using pip
-3. If using for measurements, you'll likely need to install [NI-VISA](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html).
+To install (e.g. using Anaconda Prompt)
+:
+
+1. Clone (or download) this repository
+    ```cmd
+    git clone https://github.com/thennen/py-ivtools.git
+    ```
+2. Navigate to the project directory
+    ```cmd
+    cd py-ivtools
+    ```
+3. Run
+    ```
+    python -m pip install -e .
+    ```
+4. If using for measurements, you'll likely need to install [NI-VISA](https://www.ni.com/en/support/downloads/drivers/download.ni-visa.html).
 
 ## Physical Setup 
 

@@ -1,8 +1,6 @@
 import logging.config
 import os.path
-
 from colorama import Fore, Style
-
 import ivtools
 import ivtools.settings
 
