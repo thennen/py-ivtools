@@ -4,6 +4,8 @@
 </center>
 </h1>
 
+[![DOI](https://zenodo.org/badge/648195662.svg)](https://zenodo.org/doi/10.5281/zenodo.13751863)
+
 This is a package for measurement and analysis of current-voltage (I,&nbsp;V) characteristics.
 I developed it during my PhD work, with contributions from several colleagues and students.  It runs on various setups at 
 <a href="https://www.iwe.rwth-aachen.de/" target="_blank">IWE2</a>, [PGI-7](https://www.fz-juelich.de/en/pgi/divisions/electronic-materials-pgi-7), and other institutes.  It has been mainly used in a research setting for testing emerging memories such as ReRAM, PCM, OTS, CeRAM, and other obscure nanodevices.
