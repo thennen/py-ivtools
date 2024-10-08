@@ -6,7 +6,7 @@
 
 [![DOI](https://zenodo.org/badge/648195662.svg)](https://zenodo.org/doi/10.5281/zenodo.13751863)
 
-This is a package for measurement and analysis of current-voltage (I,&nbsp;V) characteristics.
+This is a package for reproducible measurement and analysis of current-voltage (I,&nbsp;V) characteristics.
 I developed it during my PhD work, with contributions from several colleagues and students.  It runs on various setups at 
 <a href="https://www.iwe.rwth-aachen.de/" target="_blank">IWE2</a>, [PGI-7](https://www.fz-juelich.de/en/pgi/divisions/electronic-materials-pgi-7), and other institutes.  It has been mainly used in a research setting for testing emerging memories such as ReRAM, PCM, OTS, CeRAM, and other obscure nanodevices.
 
@@ -134,7 +134,7 @@ The file should be run and rerun in ipython (Jupyter qtconsole) using
 
 Short version of what the script does:
 * Puts all the functions from every ivtools module into the global namespace.
-* Creates a ISO8601 dated directory for storing data.
+* Creates an ISO8601 dated directory for storing data.
 * Logs all console input and output to the data directory, and has other logging functionality.
 * Notifies user of the git status and can optionally auto-commit changes.
 * Automatically connects to instruments as specified in the [`settings.py`](ivtools/settings.py) file
