@@ -1,11 +1,33 @@
 import numpy as np
 import time
+import os
+import glob
+import ctypes.util
 import pandas as pd
 import logging
 import matplotlib as mpl
 from matplotlib import pyplot as plt
 import ivtools
 log = logging.getLogger('instruments')
+
+def _find_pico_dll(series):
+    '''
+    pico-python finds the driver DLL through the PATH, which works if the PicoSDK is installed.
+    If it is not, fall back to the copy that ships with the PicoScope software.
+    '''
+    if os.name != 'nt' or ctypes.util.find_library(series):
+        return
+    candidates = glob.glob(os.path.join(os.environ.get('ProgramFiles', r'C:\Program Files'),
+                                        'Pico Technology', '*', f'{series}.dll'))
+    if not candidates:
+        log.error(f'Could not find {series}.dll. Install the PicoSDK or the PicoScope software.')
+        return
+    # Prefer the SDK if it is there, otherwise take the newest PicoScope install
+    candidates.sort(key=lambda p: ('SDK' not in p, -os.path.getmtime(p)))
+    dlldir = os.path.dirname(candidates[0])
+    log.info(f'Using picoscope driver from {dlldir}')
+    os.environ['PATH'] = dlldir + os.pathsep + os.environ['PATH']
+    os.add_dll_directory(dlldir)
 
 class Picoscope(object):
     '''
@@ -14,7 +36,10 @@ class Picoscope(object):
     Picoscope is borg:
     https://code.activestate.com/recipes/66531-singleton-we-dont-need-no-stinkin-singleton-the-bo/
     '''
-    def __init__(self, SerialNumber=None, connect=True, series='ps6000a'):
+    def __init__(self, SerialNumber=None, connect=True, series=None):
+        if series is None:
+            # 'ps6000' for the older 6000 A-D models (e.g. 6403C), 'ps6000a' for the 6000E models
+            series = getattr(ivtools.settings, 'picoscope_series', 'ps6000a')
         if SerialNumber is None:
             statename = self.__class__.__name__ + '_' + series
         else:
@@ -24,6 +49,7 @@ class Picoscope(object):
         self.__dict__ = ivtools.instrument_states[statename]
 
         series = series.lower()
+        _find_pico_dll(series)
         # Old picoscope is series ps6000, new picoscope is series ps6000a
         self.psmodule = __import__(f'picoscope.{series}')
         self.psclass = getattr(getattr(self.psmodule, series), series.replace('ps', 'PS'))
@@ -45,6 +71,12 @@ class Picoscope(object):
             self.coupling = self._PicoCoupling(self)
             self.range = self._PicoRange(self)
             self.BWlimit = self._PicoBWLimit(self)
+            # Per-setup channel defaults, e.g. {'coupling': {'B': 'DC50'}, 'atten': {'B': 10.4}}
+            # Coupling is applied before attenuation, because changing attenuation rescales the range
+            chdefaults = getattr(ivtools.settings, 'picoscope_channel_defaults', {})
+            for setting in ('coupling', 'atten', 'range', 'offset', 'BWlimit'):
+                for c, value in chdefaults.get(setting, {}).items():
+                    getattr(self, setting).set(c, value)
         if connect:
             self.connect(SerialNumber)
 
@@ -160,7 +192,7 @@ class Picoscope(object):
             oldvalue = self[channel]
             newvalue = oldvalue
 
-            if coupling == '':
+            if coupling == 'DC50':
                 possible_ranges = self.possible_ranges_50 * atten
                 max_offsets = self.max_offsets_50 * atten
             else:
@@ -463,9 +495,42 @@ class Picoscope(object):
                                BWLimited=chbwlimit[c],
                                enabled=True)
         # Set up trigger.  Will timeout in 30s
-        self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, delay=delay, timeout_ms=timeout_ms)
+        if trigsource is None:
+            # No trigger: capture starts as soon as the block runs.
+            # This also fires the internal AWG, if it was loaded with triggerSource='ScopeTrig'
+            self.ps.setSimpleTrigger(ch[0], 0, enabled=False)
+        else:
+            self.ps.setSimpleTrigger(trigsource, triglevel, direction=direction, delay=delay, timeout_ms=timeout_ms)
         self.ps.runBlock(pretrig)
         return actualfreq
+
+    def siggen(self, shape, vmin, vmax, duration, n=1, trigsource='ScopeTrig'):
+        '''
+        Play n cycles of a built-in function generator shape, from vmin to vmax (volts at the generator output).
+        shape is one of 'Square', 'Triangle', 'Sine', 'RampUp', 'RampDown'.
+        duration is the length of one cycle.
+
+        With the default trigsource='ScopeTrig', the cycles start together with the next capture.
+        (Models without an AWG, like the 6403C, only have these built-in shapes.)
+        '''
+        if max(abs(vmin), abs(vmax)) > 2:
+            raise Exception(f'Signal generator output is limited to ±2 V (asked for {vmin:.3g} to {vmax:.3g} V)')
+        if vmax <= vmin:
+            raise Exception('vmax must be greater than vmin')
+        offset = (vmax + vmin) / 2
+        pkToPk = vmax - vmin
+        self.ps.setSigGenBuiltInSimple(offsetVoltage=offset, pkToPk=pkToPk, waveType=shape,
+                                       frequency=1 / duration, shots=n,
+                                       triggerType='Rising', triggerSource=trigsource)
+        log.debug(f'Signal generator: {n} x {shape}, {vmin:.4g} to {vmax:.4g} V, {duration:.4g} s per cycle')
+
+    def siggen_off(self):
+        '''
+        Set the signal generator output to 0 V DC.
+        After a triggered shape, the output otherwise stays at the shape's idle level.
+        '''
+        self.ps.setSigGenBuiltInSimple(offsetVoltage=0, pkToPk=0, waveType='DCVoltage', frequency=1000,
+                                       shots=0, triggerSource='None')
 
     def get_data(self, ch='A', raw=False, dtype=np.float32):
         '''

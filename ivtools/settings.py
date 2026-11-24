@@ -54,8 +54,23 @@ drop_cols = [] # ['I', 'V', 't']
 pico_to_iv = ivtools.measure.Rext_to_iv # 50 ohm channel C
 # pico_to_iv = ivtools.measure.TEO_HFext_to_iv
 
+# Which driver to use: 'ps6000' for the older 6000 A-D models (e.g. 6403C), 'ps6000a' for the 6000E models
+picoscope_series = 'ps6000a'
+
+# Picoscope channel settings to apply on startup, e.g. {'coupling': {'B': 'DC50'}, 'atten': {'B': 10.4}}
+picoscope_channel_defaults = {}
+
+# Picoscope channels for picoiv to sample.  None: the channels that pico_to_iv uses
+picoiv_channels = None
+
+# Default pulsing function for picoiv
+# rigol_pulse uses a Rigol AWG, pico_awg_pulse uses the picoscope's built-in AWG
+pulsefunc = ivtools.measure.rigol_pulse
+
+# Gain of the amplifier after the picoscope's built-in AWG (used by pico_awg_pulse)
+pico_awg_gain = 10
+
 # More settings?
-# Like picoscope defaults?
 # For interactive mode?
 
 hostname = socket.gethostname()
@@ -202,6 +217,27 @@ elif hostname == 'CHMP2':
     inst_connections = [('ps', 'Picoscope'),
                         ('rigol', 'RigolDG5000', 'USB0::0x1AB1::0x0640::DG5T161750020::INSTR'),
                         ('p', 'UF2000Prober', 'GPIB0::5::INSTR')]
+
+elif hostname == 'Snufferbatch':
+    # PicoScope 6403C, using its built-in AWG through an amplifier
+    datafolder = r'C:\data\{}'.format(username)
+    picoscope_series = 'ps6000'
+    inst_connections = [('ps', 'Picoscope')]
+
+    # Like the compliance circuit setup, but the applied voltage is monitored with a "poor man's pickoff"
+    # A: applied voltage, 470 Ω pickoff into the 50 Ω input = 10.4x attenuation
+    # B: voltage after the DUT
+    # C: amplified current (CCIRCUIT_GAIN)
+    MONITOR_PICOCHANNEL = 'A'
+    picoscope_channel_defaults = {'coupling': {'A': 'DC50', 'B': 'DC50', 'C': 'DC50'},
+                                  'atten': {'A': (470 + 50) / 50}}
+    pico_to_iv = ivtools.measure.ccircuit_to_iv
+    # ccircuit_to_iv only uses B if it was sampled, so sample it explicitly
+    picoiv_channels = ['A', 'B', 'C']
+
+    # The 6403C has a function generator (built-in shapes), not an AWG
+    pulsefunc = ivtools.measure.pico_siggen_pulse
+    pico_awg_gain = 10  # not yet calibrated
 
 elif username == 'alexgar':
     munoz = '/Users/alexgar/sciebo/munoz/'

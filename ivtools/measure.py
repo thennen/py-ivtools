@@ -114,11 +114,91 @@ def rigol_sync_pulse(wfm1:'wfm', wfm2, duration, n, interpwfm1=True, interpwfm2=
     # Trigger
     rigol2.pulse_builtin('SQU', duration=1e-6, amp=5, offset=5, ch=1)
 
+# One cycle of each picoscope built-in shape, as it comes out of the generator, scaled to 0..1
+# x is the phase (0 to 1).  Measured on a 6403C.
+# The output sits at the idle level before the trigger and after the last cycle,
+# so only a waveform whose idle level is 0 V keeps the DUT unbiased between measurements.
+_SIGGEN_SHAPES = {
+    # High for the first half cycle, then low.  Idles low.  e.g. 0 to v
+    'Square': lambda x: (x < 0.5).astype(float),
+    # Starts at the minimum, peaks at half cycle.  Idles at the minimum.  e.g. tri(v, 0)
+    'Triangle': lambda x: 2 * np.where(x < 0.5, x, 1 - x),
+    # Starts in the middle going up.  Idles in the middle.  e.g. v * sin(2πx), bipolar sweeps
+    'Sine': lambda x: 0.5 + 0.5 * np.sin(2 * np.pi * x),
+}
+_SIGGEN_IDLE = {'Square': 0, 'Triangle': 0, 'Sine': 0.5}
+
+def _match_siggen_shape(wfm, tolerance=0.03):
+    '''
+    Find the built-in signal generator shape that matches wfm, if any.
+    Returns the shape name or None
+    '''
+    wfm = np.asarray(wfm, dtype=np.float64)
+    span = np.max(wfm) - np.min(wfm)
+    if span == 0:
+        return None
+    normwfm = (wfm - np.min(wfm)) / span
+    # Resample onto a fine grid, so short waveforms are compared fairly, allowing for different sampling conventions:
+    # linear with both endpoints, e.g. tri(1, 0) = [0, 1, 0]
+    # linear over one period without the endpoint, e.g. sine(1, length=20)
+    # steps, e.g. [1, 1, 0, 0]
+    x = np.linspace(0, 1, 1000, endpoint=False)
+    n = len(wfm)
+    resampled = [np.interp(x, np.linspace(0, 1, n), normwfm),
+                 np.interp(x, np.arange(n + 1) / n, np.append(normwfm, normwfm[0])),
+                 normwfm[(x * n).astype(int)]]
+    rms = lambda a, b: np.sqrt(np.mean((a - b)**2))
+    errors = {shape: min(rms(f(x), r) for r in resampled) for shape, f in _SIGGEN_SHAPES.items()}
+    best = min(errors, key=errors.get)
+    log.debug(f'Signal generator shape match errors: {errors}')
+    return best if errors[best] < tolerance else None
+
+def pico_siggen_pulse(wfm, duration, n, shape=None, gain=None):
+    '''
+    Pulsing component for picoiv that uses the picoscope's built-in function generator.
+    It can only play built-in shapes (square, triangle, ...), not arbitrary waveforms.
+
+    wfm is the voltage you want after the amplifier.  Only its minimum and maximum are used,
+    divided by gain (default: ivtools.settings.pico_awg_gain).
+    If shape is not given, it is determined from wfm, and an error is raised if wfm doesn't look like
+    one of the supported shapes as they come out of the generator (see _SIGGEN_SHAPES), e.g.
+        tri(v, 0)                        -> 'Triangle', unipolar sweep
+        v * np.sin(2*np.pi*x)            -> 'Sine', bipolar sweep
+        np.r_[np.ones(50), np.zeros(50)] -> 'Square', pulse
+
+    The generator is set to fire on the scope trigger, so picoiv calls this BEFORE arming the capture
+    and captures without a trigger (see the before_capture attribute below).
+    Afterward, picoiv calls pico_siggen_pulse.after_capture, which sets the output to 0 V.
+    '''
+    ps = instruments.Picoscope()
+    if gain is None:
+        gain = ivtools.settings.pico_awg_gain
+    if shape is None:
+        shape = _match_siggen_shape(wfm)
+        if shape is None:
+            raise Exception('The picoscope signal generator can only play built-in shapes, '
+                            f'and wfm does not match any of {list(_SIGGEN_SHAPES)} as they come out of the generator. '
+                            'Pass shape=... to use the min and max of wfm with a built-in shape anyway.')
+    wmin, wmax = np.min(wfm), np.max(wfm)
+    idle = wmin + _SIGGEN_IDLE.get(shape, 0) * (wmax - wmin)
+    if abs(idle) > 0.01 * (wmax - wmin):
+        log.warning(f'The signal generator will idle at {idle:.3g} V before and after the {shape}, '
+                    'which biases the DUT until the output is reset')
+    ps.siggen(shape, wmin / gain, wmax / gain, duration, n=n, trigsource='ScopeTrig')
+
+def _pico_siggen_reset():
+    instruments.Picoscope().siggen_off()
+
+# Tells picoiv to set up the generator before the capture, and to capture without a trigger
+pico_siggen_pulse.before_capture = True
+# and to set the output back to 0 V afterward
+pico_siggen_pulse.after_capture = _pico_siggen_reset
+
 def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosplit=True,
            termination=None, channels=None, autosmoothimate=False, splitbylevel=None,
            savewfm=False, pretrig=0, posttrig=0, picoresolution=8, pico_to_iv=None, monitor_ch=None,
-           trigsource='TriggerAux', triglevel=0.1, trigdirection='Rising', 
-           timeout_ms=30000, pulsefunc=rigol_pulse, **kwargs):
+           trigsource='TriggerAux', triglevel=0.1, trigdirection='Rising',
+           timeout_ms=30000, pulsefunc=None, **kwargs):
     '''
     Pulse a waveform (n repeats), capture on picoscope channels, and return data with some conversion/post-processing.
 
@@ -137,12 +217,19 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
 
     Some of the default arguments come from the settings module (pico_to_iv, monitor_ch, channels)
 
-    To use other AWGs and/or triggers, pass a different pulsefunc.
+    To use other AWGs and/or triggers, pass a different pulsefunc (default: ivtools.settings.pulsefunc).
     If pulsefunc takes arguments "wfm", "duration", or "n", or has arguments annotated by those strings,
     the picoiv arguments with those names are shared with pulsefunc.
     All extra kwargs are also passed to pulsefunc (only)..
+    If pulsefunc has the attribute before_capture=True (e.g. pico_siggen_pulse), it gets called before
+    the capture is armed, and the capture runs without a trigger.
+    If pulsefunc has an after_capture attribute, it gets called after the data is transferred.
     '''
     ps = instruments.Picoscope()
+
+    if pulsefunc is None:
+        pulsefunc = getattr(ivtools.settings, 'pulsefunc', rigol_pulse)
+    before_capture = getattr(pulsefunc, 'before_capture', False)
 
     if not (bool(fs) ^ bool(nsamples)):
         raise Exception('Must pass either fs or nsamples, and not both')
@@ -153,6 +240,8 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     if pico_to_iv is None:
         pico_to_iv = ivtools.settings.pico_to_iv
 
+    if channels is None:
+        channels = getattr(ivtools.settings, 'picoiv_channels', None)
     if channels is None:
         channels = sorted(probe_channels(pico_to_iv))
         if not channels:
@@ -171,6 +260,30 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
         # Smart range the monitor channel
         smart_range(np.min(wfm), np.max(wfm), ch=[monitor_ch])
 
+    # Don't modify the caller's array
+    pulsewfm = wfm.astype(np.float64)
+    if termination:
+        # Account for terminating resistance
+        # e.g. multiply applied voltages by 2 for 50 ohm termination
+        pulsewfm *= (50 + termination) / termination
+
+    # pulsefunc can "request" data from picoiv by signalling with its signature
+    # this could potentially break in strange ways but it's worth it to avoid a major code overhaul
+    # These are shared arguments I think pulsefunc might want us to pass through
+    pulseargs = {'wfm':pulsewfm, 'duration':duration, 'n':n}
+    # I'm going to ignore that it is technically possible that the arguments are positional-only
+    for k,v in inspect.signature(pulsefunc).parameters.items():
+        # bind by function annotation first, so we don't have to rename anything that could break compatibility
+        if v.annotation in pulseargs:
+            kwargs[k] = pulseargs[v.annotation]
+        elif k in pulseargs:
+            kwargs[k] = pulseargs[k]
+
+    if before_capture:
+        # e.g. the picoscope's own AWG, which fires when the capture starts
+        pulsefunc(**kwargs)
+        trigsource = None
+
     # Set picoscope to capture
     # Sample frequencies have fixed values, so it's likely the exact one requested will not be used
     # TODO: ps.capture has some arguments that are not accessible by a picoiv() call..  add them?
@@ -184,28 +297,12 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
                            direction=trigdirection,
                            timeout_ms=timeout_ms)
 
-    # This makes me feel good, but I didn't test whether it's really necessary
-    time.sleep(.05)
-
-    if termination:
-        # Account for terminating resistance
-        # e.g. multiply applied voltages by 2 for 50 ohm termination
-        wfm *= (50 + termination) / termination
-
-    ### Send a pulse and trigger the measurement
-    # pulsefunc can "request" data from picoiv by signalling with its signature
-    # this could potentially break in strange ways but it's worth it to avoid a major code overhaul
-    # These are shared arguments I think pulsefunc might want us to pass through
-    pulseargs = {'wfm':wfm, 'duration':duration, 'n':n}
-    # I'm going to ignore that it is technically possible that the arguments are positional-only
-    for k,v in inspect.signature(pulsefunc).parameters.items():
-        # bind by function annotation first, so we don't have to rename anything that could break compatibility
-        if v.annotation in pulseargs:
-            kwargs[k] = pulseargs[v.annotation]
-        elif k in pulseargs:
-            kwargs[k] = pulseargs[k]
-    # Send a pulse (should be accompanied by a trigger for picoscope)
-    pulsefunc(**kwargs)
+    if not before_capture:
+        # This makes me feel good, but I didn't test whether it's really necessary
+        time.sleep(.05)
+        ### Send a pulse and trigger the measurement
+        # Send a pulse (should be accompanied by a trigger for picoscope)
+        pulsefunc(**kwargs)
     trainduration = n * duration
     log.info('Applying pulse(s) ({:.2e} seconds).'.format(trainduration))
     ivtools.plot.mybreakablepause(n * duration)
@@ -215,6 +312,10 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     chdata = ps.get_data(channels, raw=True)
     log.debug('Got data from picoscope.')
 
+    after_capture = getattr(pulsefunc, 'after_capture', None)
+    if after_capture:
+        after_capture()
+
     # Convert to IV data (keeps channel data)
     ivdata = pico_to_iv(chdata)
 
@@ -223,7 +324,7 @@ def picoiv(wfm, duration=1e-3, n=1, fs=None, nsamples=None, smartrange=1, autosp
     if savewfm:
         # Measured voltage has noise. sometimes it's nice to plot vs the programmed waveform.
         # You will need to interpolate it, however.. Or can we instead read the interpolation off the rigol?
-        ivdata['Vwfm'] = wfm
+        ivdata['Vwfm'] = pulsewfm
 
     if autosmoothimate:
         # This is largely replaced by putting autosmoothimate in the preprocessing list for the interactive figures!
@@ -1603,6 +1704,13 @@ def square(vpulse, duty=.5, length=2**12, startval=0, endval=0, startendratio=1)
     pulsearray = np.ones(ontime) * vpulse
     postarray = np.ones(posttime) * endval
     return np.concatenate((prearray, pulsearray, postarray))
+
+def sine(amp, length=1000):
+    '''
+    One cycle of a sine waveform, 0 → +amp → 0 → -amp → (0).
+    A bipolar sweep that the picoscope's built-in signal generator can play.
+    '''
+    return amp * np.sin(2 * np.pi * np.arange(length) / length)
 
 
 ############# Misc ##############################
